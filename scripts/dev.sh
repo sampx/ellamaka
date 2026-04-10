@@ -49,10 +49,11 @@ ellamaka dev server
 
 Usage: $self [command] [options]
 
-Commands:
-  start    Start backend + frontend in background (default)
-  stop     Stop all dev servers
-  help     Show this help message
+  Commands:
+  start         Start backend + frontend in background (default)
+  backend       Start only the backend server
+  stop          Stop all dev servers
+  help          Show this help message
 
 Options:
   -h, --help        Show this help message
@@ -70,9 +71,10 @@ EOF
 }
 
 cmd="start"
+backend_only=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    stop|-h|--help|help) cmd="$1"; shift ;;
+    stop|-h|--help|help|backend) cmd="$1"; shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -89,6 +91,7 @@ done
 case "$cmd" in
   stop) stop; exit ;;
   -h|--help|help) usage; exit ;;
+  backend) backend_only=true ;;
 esac
 
 if [ -f "$pidfile" ] || [ -n "$(port_pid 4096)" ] || [ -n "$(port_pid 3000)" ]; then
@@ -118,10 +121,13 @@ OPENCODE_CONFIG="$space/opencode.jsonc" \
   nohup "$opencode_bin" serve "${serve_flags[@]}" > "$backend_out" 2>&1 &
 echo $! >> "$pidfile"
 
-nohup bun --cwd "$root/packages/app" dev > "$frontend_out" 2>&1 &
-echo $! >> "$pidfile"
-
-echo "started (backend :4096, frontend :3000)"
+if [ "$backend_only" = false ]; then
+  nohup bun --cwd "$root/packages/app" dev > "$frontend_out" 2>&1 &
+  echo $! >> "$pidfile"
+  echo "started (backend :4096, frontend :3000)"
+else
+  echo "started (backend :4096)"
+fi
 
 # warmup: trigger plugin lazy-loading
 for i in $(seq 1 10); do
