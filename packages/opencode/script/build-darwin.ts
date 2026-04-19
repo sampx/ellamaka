@@ -31,9 +31,10 @@ const pkg = await Bun.file("./package.json").json()
 // ========== 解析参数 ==========
 
 const archArg = process.argv.find((a, i) => i > 0 && process.argv[i - 1] === "--arch")
+const arch = archArg === "arm64" ? "arm64" : "x64"
 const target = {
   os: "darwin",
-  arch: (archArg === "arm64" ? "arm64" : "x64") as "arm64" | "x64",
+  arch,
 }
 
 const skipInstall = process.argv.includes("--skip-install")
@@ -168,7 +169,7 @@ const result = await Bun.build({
     autoloadDotenv: false,
     autoloadTsconfig: true,
     autoloadPackageJson: true,
-    target: `bun-${target.os}-${target.arch}`,
+    target: `bun-${target.os}-${target.arch}` as "bun-darwin-arm64" | "bun-darwin-x64",
     outfile: `dist/${distName}/bin/${binaryName}`,
     execArgv: [`--user-agent=opencode/${version}`, "--use-system-ca", "--"],
     windows: {},
