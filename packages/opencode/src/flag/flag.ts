@@ -34,10 +34,16 @@ export namespace Flag {
   export const OPENCODE_DISABLE_CLAUDE_CODE = truthy("OPENCODE_DISABLE_CLAUDE_CODE")
   export const OPENCODE_DISABLE_CLAUDE_CODE_PROMPT =
     OPENCODE_DISABLE_CLAUDE_CODE || truthy("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT")
+  // OPENCODE_DISABLE_CLAUDE_CODE_SKILLS only controls .claude directory skills
+  // It does NOT cascade to disable .agents skills
   export const OPENCODE_DISABLE_CLAUDE_CODE_SKILLS =
     OPENCODE_DISABLE_CLAUDE_CODE || truthy("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS")
+  // OPENCODE_DISABLE_AGENTS_SKILLS controls .agents directory skills independently
+  export const OPENCODE_DISABLE_AGENTS_SKILLS = truthy("OPENCODE_DISABLE_AGENTS_SKILLS")
+  // OPENCODE_DISABLE_EXTERNAL_SKILLS controls ALL external skills (both .claude and .agents)
+  // This is the "disable everything" flag
   export const OPENCODE_DISABLE_EXTERNAL_SKILLS =
-    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS || truthy("OPENCODE_DISABLE_EXTERNAL_SKILLS")
+    truthy("OPENCODE_DISABLE_EXTERNAL_SKILLS")
   export declare const OPENCODE_DISABLE_PROJECT_CONFIG: boolean
   export const OPENCODE_FAKE_VCS = process.env["OPENCODE_FAKE_VCS"]
   export declare const OPENCODE_CLIENT: string

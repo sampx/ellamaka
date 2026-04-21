@@ -145,6 +145,17 @@ export namespace Skill {
   ) {
     if (!Flag.OPENCODE_DISABLE_EXTERNAL_SKILLS) {
       for (const dir of EXTERNAL_DIRS) {
+        // .claude skills are controlled by OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
+        // .agents skills are controlled by OPENCODE_DISABLE_AGENTS_SKILLS
+        // Both are controlled by OPENCODE_DISABLE_EXTERNAL_SKILLS (checked above)
+        const disabled =
+          dir === ".claude"
+            ? Flag.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
+            : dir === ".agents"
+              ? Flag.OPENCODE_DISABLE_AGENTS_SKILLS
+              : false
+        if (disabled) continue
+
         const root = path.join(Global.Path.home, dir)
         if (!(yield* fsys.isDir(root))) continue
         yield* scan(state, bus, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
@@ -155,6 +166,16 @@ export namespace Skill {
         .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
       for (const root of upDirs) {
+        // Skip if the parent directory's skills are disabled
+        const dirName = path.basename(root)
+        const disabled =
+          dirName === ".claude"
+            ? Flag.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
+            : dirName === ".agents"
+              ? Flag.OPENCODE_DISABLE_AGENTS_SKILLS
+              : false
+        if (disabled) continue
+
         yield* scan(state, bus, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
       }
     }
