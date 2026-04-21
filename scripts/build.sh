@@ -13,7 +13,7 @@ Options:
   --x64                   Build for x86_64 (default)
   --arm64                 Build for Apple Silicon
   --install               Create symlink to install directory
-  --install-dir <dir>     Custom install directory (default: ~/.opencode/bin)
+  --install-dir <dir>     Custom install directory (default: ~/.wopal/bin)
   --skip-embed-web-ui     Skip embedding web UI
   --skip-smoke-test       Skip smoke test after build
 EOF
@@ -25,7 +25,7 @@ cd "$(dirname "$0")/../packages/opencode"
 
 ARCH="x64"
 INSTALL=false
-INSTALL_DIR="$HOME/.opencode/bin"
+INSTALL_DIR="$HOME/.wopal/bin"
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do

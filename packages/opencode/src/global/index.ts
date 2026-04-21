@@ -1,15 +1,14 @@
 import fs from "fs/promises"
-import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import path from "path"
 import os from "os"
 import { Filesystem } from "../util/filesystem"
 
-const app = "opencode"
+const root = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
 
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
+const data = path.join(root, "ellamaka", "data")
+const cache = path.join(root, "ellamaka", "cache")
+const config = path.join(root, "ellamaka", "config")
+const state = path.join(root, "ellamaka", "state")
 
 export namespace Global {
   export const Path = {

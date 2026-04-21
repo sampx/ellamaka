@@ -26,7 +26,7 @@ export namespace ConfigPaths {
         : []),
       ...(await Array.fromAsync(
         Filesystem.up({
-          targets: [".opencode"],
+          targets: [".wopal"],
           start: Global.Path.home,
           stop: Global.Path.home,
         }),
