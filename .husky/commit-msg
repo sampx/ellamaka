@@ -11,7 +11,7 @@ COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
 FIRST_LINE=$(echo "$COMMIT_MSG" | head -n1)
 
 # Valid commit types
-VALID_TYPES="feat|fix|refactor|docs|test|chore|style|perf|ci|build|revert"
+VALID_TYPES="feat|fix|refactor|docs|test|chore|enhance|style|perf|ci|build|revert"
 
 # Color definitions
 RED='\033[0;31m'
@@ -56,6 +56,7 @@ validate_commit_message() {
         echo "  docs     - Documentation"
         echo "  test     - Testing"
         echo "  chore    - Build/tools"
+        echo "  enhance  - Enhancement"
         echo "  style    - Code formatting (no logic change)"
         echo "  perf     - Performance improvement"
         echo "  ci       - CI/CD config"
@@ -79,10 +80,10 @@ validate_commit_message() {
         return 1
     fi
     
-    # Check description length (max 50 chars)
+    # Check description length (max 60 chars)
     local desc_len=${#description}
-    if [ $desc_len -gt 50 ]; then
-        echo -e "${RED}Error: description too long (${desc_len} chars, max 50)${NC}"
+    if [ $desc_len -gt 60 ]; then
+        echo -e "${RED}Error: description too long (${desc_len} chars, max 60)${NC}"
         echo ""
         echo -e "${YELLOW}Suggestion:${NC}"
         echo "  Shorten the description or move details to the body"
