@@ -125,7 +125,7 @@ if [ "$debug" = true ]; then
   echo "logs:  $logdir/"
 fi
 
-OPENCODE_CONFIG="$space/opencode.jsonc" \
+OPENCODE_CONFIG="$space/.wopal/opencode.jsonc" \
   env "${debug_env[@]}" \
   nohup "$opencode_bin" serve "${serve_flags[@]}" > "$backend_out" 2>&1 &
 echo $! >> "$pidfile"

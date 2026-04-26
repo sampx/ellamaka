@@ -5,7 +5,11 @@ import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 
 // WOPAL_HOME: ellamaka customization — use ~/.wopal/ellamaka/* paths
-const wopalRoot = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
+// tilde is a shell construct — Node.js does not expand it, resolve manually
+const wopalHomeRaw = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
+const wopalRoot = wopalHomeRaw.startsWith("~/")
+  ? path.join(os.homedir(), wopalHomeRaw.slice(2))
+  : wopalHomeRaw
 const data = path.join(wopalRoot, "ellamaka", "data")
 const cache = path.join(wopalRoot, "ellamaka", "cache")
 const config = path.join(wopalRoot, "ellamaka", "config")
