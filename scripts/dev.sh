@@ -13,7 +13,7 @@ resolve() {
 
 root="$(cd "$(dirname "$(resolve "$0")")/.." && pwd)"
 space="$(cd "$root/../.." && pwd)"
-opencode_bin="$root/packages/opencode/dist/opencode-darwin-x64/bin/opencode"
+opencode_bin="$root/packages/opencode/dist/opencode-darwin-x64/bin/ellamaka"
 
 stop() {
   local pidfile="$space/.tmp/ellamaka-dev.pid"
@@ -98,7 +98,7 @@ if [ "$cmd" = "tui" ]; then
     : > "$space/logs/wopal-plugins-debug.log"
     debug_env=(WOPAL_PLUGIN_DEBUG="$debug_modules" WOPAL_PLUGIN_LOG_FILE="$space/logs/wopal-plugins-debug.log")
   fi
-  exec env "${debug_env[@]}" OPENCODE_CONFIG="$space/opencode.jsonc" "$opencode_bin"
+  exec env "${debug_env[@]}" OPENCODE_CONFIG="$space/.wopal/opencode.jsonc" "$opencode_bin"
 fi
 
 # server / backend mode
