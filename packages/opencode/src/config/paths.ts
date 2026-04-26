@@ -3,12 +3,12 @@ export * as ConfigPaths from "./paths"
 import path from "path"
 import os from "os"
 import { Filesystem } from "@/util"
-import { Flag } from "@/flag/flag"
-import { Global } from "@/global"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { Global } from "@opencode-ai/core/global"
 import { unique } from "remeda"
 import { JsonError, InvalidError } from "./error"
 import * as Effect from "effect/Effect"
-import { AppFileSystem } from "@opencode-ai/shared/filesystem"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 
 export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
   name: string,
