@@ -140,7 +140,7 @@ start_backend() {
 start_frontend() {
   local port=3000
   while is_running "$port"; do ((port++)); done
-  nohup bun --cwd "$root/packages/app" dev -p "$port" > /dev/null 2>&1 &
+  nohup bun --cwd "$root/packages/app" dev --port "$port" > /dev/null 2>&1 &
   echo $! >> "$PIDFILE"
   echo "frontend :$port started"
 }
