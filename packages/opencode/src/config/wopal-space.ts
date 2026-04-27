@@ -32,6 +32,8 @@ export interface WopalSpaceDeps {
   ) => Effect.Effect<void, never, never>
   ensureGitignore: (dir: string) => Effect.Effect<void, never, never>
   applyPostMerge: () => void
+  initContainers: () => void
+  getResult: () => Info
 }
 
 export interface WopalSpaceResult {
@@ -108,10 +110,7 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
       }
     }
 
-    const result: Info = {}
-    result.agent = result.agent || {}
-    result.mode = result.mode || {}
-    result.plugin = result.plugin || []
+    deps.initContainers()
 
     const depFibers: Fiber.Fiber<void, never>[] = []
     for (const dir of localWopalDirs) {
@@ -120,9 +119,13 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
     }
 
     for (const dir of directories) {
-      result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-      result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
-      result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
+      yield* deps.merge(dir, {
+        command: yield* Effect.promise(() => ConfigCommand.load(dir)),
+        agent: mergeDeep(
+          mergeDeep({}, yield* Effect.promise(() => ConfigAgent.load(dir))),
+          yield* Effect.promise(() => ConfigAgent.loadMode(dir)),
+        ),
+      } as Info)
       if (!Flag.OPENCODE_PURE) {
         const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
         yield* deps.mergePluginOrigins(dir, list)
@@ -142,7 +145,7 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
     deps.applyPostMerge()
 
     return {
-      config: result,
+      config: deps.getResult(),
       directories,
       deps: depFibers,
       consoleState: {

@@ -551,6 +551,12 @@ export const layer = Layer.effect(
           mergePluginOrigins,
           ensureGitignore: (dir) => ensureGitignore(dir).pipe(Effect.orDie),
           applyPostMerge,
+          initContainers: () => {
+            result.agent = result.agent || {}
+            result.mode = result.mode || {}
+            result.plugin = result.plugin || []
+          },
+          getResult: () => result,
         }, ctx)
         if (wopalResult) return wopalResult
 
