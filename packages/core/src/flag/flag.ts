@@ -101,6 +101,9 @@ export const Flag = {
   get OPENCODE_PURE() {
     return truthy("OPENCODE_PURE")
   },
+  get WOPAL_SPACE() {
+    return truthy("WOPAL_SPACE")
+  },
   get OPENCODE_PLUGIN_META_FILE() {
     return process.env["OPENCODE_PLUGIN_META_FILE"]
   },

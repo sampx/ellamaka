@@ -87,9 +87,16 @@ const cli = yargs(args)
     describe: "run without external plugins",
     type: "boolean",
   })
+  .option("wopal-space", {
+    describe: "enable wopal space configuration mode",
+    type: "boolean",
+  })
   .middleware(async (opts) => {
     if (opts.pure) {
       process.env.OPENCODE_PURE = "1"
+    }
+    if (opts.wopalSpace) {
+      process.env.WOPAL_SPACE = "1"
     }
 
     await Log.init({

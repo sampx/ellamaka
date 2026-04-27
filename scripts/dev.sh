@@ -13,17 +13,21 @@ resolve() {
 
 root="$(cd "$(dirname "$(resolve "$0")")/.." && pwd)"
 space="$(cd "$root/../.." && pwd)"
-opencode_bin="$root/packages/opencode/dist/opencode-darwin-x64/bin/ellamaka"
+opencode_entry="$root/packages/opencode/src/index.ts"
+opencode_dir="$root/packages/opencode"
+
+LOGDIR="$space/logs"
+PIDFILE="$LOGDIR/ellamaka-dev.pid"
 
 stop() {
-  local pidfile="$space/.tmp/ellamaka-dev.pid"
   local pids=()
-  if [ -f "$pidfile" ]; then
+  if [ -f "$PIDFILE" ]; then
     while IFS= read -r pid; do
       pids+=("$pid")
-    done < "$pidfile"
-    rm -f "$pidfile"
+    done < "$PIDFILE"
+    rm -f "$PIDFILE"
   fi
+  rm -f "$LOGDIR/ellamaka-dev-server.log" "$LOGDIR/wopal-plugins-debug.log"
   for port in 4096 3000; do
     local pp="$(lsof -ti :"$port" 2>/dev/null)"
     [ -n "$pp" ] && pids+=($pp)
@@ -40,7 +44,7 @@ stop() {
 
 usage() {
   cat <<EOF
-ellamaka - OpenCode dev launcher
+ellamaka - EllaMaka dev launcher
 
 Usage: $self [command] [options]
 
@@ -56,10 +60,9 @@ Options:
   --debug [mods]    Enable debug mode (default: all)
                     Modules: task, rules, or comma-separated list
 
-Debug logs (server mode only):
-  $space/logs/backend.log              Backend stdout/stderr
-  $space/logs/frontend.log             Frontend stdout/stderr
-  $space/logs/wopal-plugins-debug.log  Plugin debug output
+Debug logs:
+  $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
+  $LOGDIR/wopal-plugins-debug.log   Plugin debug output
 
 Server: http://127.0.0.1:4096
 Frontend: http://localhost:3000
@@ -73,7 +76,8 @@ debug_modules=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    stop|-h|--help|help|server|backend) cmd="$1"; shift ;;
+    stop|-h|--help|help|server) cmd="$1"; shift ;;
+    backend) cmd="server"; backend_only=true; shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -91,60 +95,96 @@ case "$cmd" in
   -h|--help|help) usage; exit ;;
 esac
 
-if [ "$cmd" = "tui" ]; then
-  debug_env=()
+mkdir -p "$LOGDIR"
+
+# ----- helpers -----
+
+is_running() { lsof -ti :"$1" > /dev/null 2>&1; }
+
+wait_backend() {
+  local i
+  for i in $(seq 1 30); do
+    curl -sf http://127.0.0.1:4096/health > /dev/null 2>&1 && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+warmup_config() {
+  curl -sf -H "x-opencode-directory: $space" http://127.0.0.1:4096/config > /dev/null 2>&1 || true
+}
+
+start_backend() {
+  local srv_env=(
+    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
+    OPENCODE_DISABLE_AGENTS_SKILLS=1
+    OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
+  )
+  local srv_args=(serve --wopal-space --port 4096 --print-logs)
+
   if [ "$debug" = true ]; then
-    mkdir -p "$space/logs"
-    : > "$space/logs/wopal-plugins-debug.log"
-    debug_env=(WOPAL_PLUGIN_DEBUG="$debug_modules" WOPAL_PLUGIN_LOG_FILE="$space/logs/wopal-plugins-debug.log")
+    srv_args+=(--log-level DEBUG)
+    srv_env+=(
+      WOPAL_PLUGIN_DEBUG="$debug_modules"
+      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+    )
   fi
-  exec env "${debug_env[@]}" OPENCODE_CONFIG="$space/.wopal/opencode.jsonc" "$opencode_bin"
+
+  cd "$space"
+  env "${srv_env[@]}" \
+    nohup bun "$opencode_entry" "${srv_args[@]}" > "$LOGDIR/ellamaka-dev-server.log" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$PIDFILE"
+}
+
+start_frontend() {
+  local port=3000
+  while is_running "$port"; do ((port++)); done
+  nohup bun --cwd "$root/packages/app" dev -p "$port" > /dev/null 2>&1 &
+  echo $! >> "$PIDFILE"
+  echo "frontend :$port started"
+}
+
+# ----- tui mode -----
+
+if [ "$cmd" = "tui" ]; then
+  if ! is_running 4096; then
+    [ "$debug" = true ] && echo "logs: $LOGDIR/ellamaka-dev-server.log"
+    start_backend
+    echo -n "starting server (pid $(cat "$PIDFILE"))"
+    wait_backend && echo " ready" || echo " (health check timeout)"
+    start_frontend
+  else
+    echo "attaching to running server"
+  fi
+  warmup_config
+  cd "$opencode_dir"
+  exec bun "$opencode_entry" attach "http://localhost:4096" --dir "$space"
 fi
 
-# server / backend mode
-pidfile="$space/.tmp/ellamaka-dev.pid"
-logdir="$space/logs"
+# ----- server mode -----
 
-if [ -f "$pidfile" ] || [ -n "$(lsof -ti :4096 2>/dev/null)" ] || [ -n "$(lsof -ti :3000 2>/dev/null)" ]; then
-  echo "already running. run '$self stop' first."
-  exit 1
+if [ -f "$PIDFILE" ] || is_running 4096 || is_running 3000; then
+  echo "already running."
+  read -p "stop and restart? [Y/n] " yn
+  case "${yn:-Y}" in
+    [Yy]*) stop; echo "";;
+    *) exit 0;;
+  esac
 fi
 
-mkdir -p "$space/.tmp"
-backend_out="/dev/null"
-debug_env=()
-serve_flags=(--port 4096)
+[ "$debug" = true ] && echo "debug: modules=$debug_modules"
+echo "logs: $LOGDIR/"
 
-if [ "$debug" = true ]; then
-  mkdir -p "$logdir"
-  backend_out="$logdir/backend.log"
-  : > "$logdir/wopal-plugins-debug.log"
-  debug_env=(WOPAL_PLUGIN_DEBUG="$debug_modules" WOPAL_PLUGIN_LOG_FILE="$logdir/wopal-plugins-debug.log")
-  serve_flags+=(--print-logs --log-level DEBUG)
-  echo "debug: modules=$debug_modules"
-  echo "logs:  $logdir/"
-fi
-
-OPENCODE_CONFIG="$space/.wopal/opencode.jsonc" \
-  env "${debug_env[@]}" \
-  nohup "$opencode_bin" serve "${serve_flags[@]}" > "$backend_out" 2>&1 &
-echo $! >> "$pidfile"
+start_backend
 
 if [ "$backend_only" = false ]; then
-  nohup bun --cwd "$root/packages/app" dev >/dev/null 2>&1 &
-  echo $! >> "$pidfile"
-  echo "started (backend :4096, frontend :3000)"
+  start_frontend
+  echo "started (backend :4096 + frontend)"
 else
   echo "started (backend :4096)"
 fi
 
-# warmup: trigger plugin lazy-loading
-for i in $(seq 1 10); do
-  if curl -sf http://127.0.0.1:4096/health > /dev/null 2>&1; then
-    curl -sf -H "x-opencode-directory: $space" http://127.0.0.1:4096/api/v1/session > /dev/null 2>&1 || true
-    break
-  fi
-  sleep 0.5
-done
+wait_backend && warmup_config
 
 echo "run '$self stop' to stop"
