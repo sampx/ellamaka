@@ -1,6 +1,7 @@
 import { Installation } from "@/installation"
 import { Server } from "@/server/server"
 import { Log } from "@/util"
+import type { Level } from "@opencode-ai/core/util/log"
 import { Instance } from "@/project/instance"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { Rpc } from "@/util"
@@ -18,10 +19,7 @@ ensureProcessMetadata("worker")
 await Log.init({
   print: process.argv.includes("--print-logs"),
   dev: Installation.isLocal(),
-  level: (() => {
-    if (Installation.isLocal()) return "DEBUG"
-    return "INFO"
-  })(),
+  level: (process.env.OPENCODE_LOG_LEVEL as Level) ?? (Installation.isLocal() ? "DEBUG" : "INFO"),
 })
 
 Heap.start()

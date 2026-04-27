@@ -98,6 +98,9 @@ const cli = yargs(args)
     if (opts.wopalSpace) {
       process.env.WOPAL_SPACE = "1"
     }
+    if (opts.logLevel) {
+      process.env.OPENCODE_LOG_LEVEL = opts.logLevel
+    }
 
     await Log.init({
       print: process.argv.includes("--print-logs"),
