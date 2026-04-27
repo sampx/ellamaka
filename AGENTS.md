@@ -98,6 +98,20 @@ const table = sqliteTable("session", {
 - Test actual implementation, do not duplicate logic into tests
 - Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
 
+## Upstream Merge Conflict Minimization
+
+This repo tracks upstream opencode via the `dev` branch. All local customizations (ellamaka/wopal-space features) must follow these rules to minimize merge conflict surface:
+
+1. **New files over in-line edits**: Custom logic goes in dedicated new files (e.g. `wopal-space.ts`), not embedded in upstream source files. The upstream file only gets a minimal call-site insertion (import + one `yield*` call).
+
+2. **Closure injection over raw Service passing**: When the new module needs access to upstream internals (closures, Effect services), inject them as callback interfaces — not by passing the Service objects directly. This avoids leaking upstream type changes into the new module.
+
+3. **Early-return gates**: Custom branches use `if (flag) { ... return result }` before the upstream flow starts, so upstream changes to the main flow never overlap with custom code in the same region.
+
+4. **Post-merge helpers extracted once**: When upstream logic must be shared (e.g. `applyPostMerge()`), extract it into a named helper in the upstream file and call it from both paths — do not duplicate the logic.
+
+5. **No cosmetic reorderings**: Never reorder imports, dependencies, or object keys in upstream files. These create noise diffs that explode conflict windows on merge.
+
 ## Type Checking
 
 - Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.
