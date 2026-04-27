@@ -3,7 +3,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import os from "os"
 import z from "zod"
-import { mergeDeep, pipe, unique } from "remeda"
+import { mergeDeep, pipe } from "remeda"
 import { Global } from "@opencode-ai/core/global"
 import fsNode from "fs/promises"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -43,6 +43,7 @@ import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
+import { tryLoadWopalSpaceConfig } from "./wopal-space"
 
 const log = Log.create({ service: "config" })
 
@@ -520,124 +521,38 @@ export const layer = Layer.effect(
           }
         }
 
-        // ==================== Wopal-space 配置模式 ====================
-        if (Flag.WOPAL_SPACE && ctx.worktree && !Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-          log.debug("wopal-space mode detection", { directory: ctx.directory, worktree: ctx.worktree })
-          const wopalFound = yield* fs
-            .up({ targets: [".wopal"], start: ctx.directory, stop: ctx.worktree })
-            .pipe(Effect.catch(() => Effect.succeed([] as string[])))
-
-          if (wopalFound.length > 0) {
-            const localWopalDirs = wopalFound.toReversed()
-            const homeWopal = path.join(Global.Path.home, ".wopal")
-
-            const directories = [...unique([
-              Global.Path.config,
-              ...(existsSync(homeWopal) ? [homeWopal] : []),
-              ...localWopalDirs,
-            ])]
-
-            const global = yield* getGlobal()
-            yield* merge(Global.Path.config, global, "global")
-
-            for (const dir of localWopalDirs) {
-              let loaded = false
-              for (const file of ["settings.jsonc", "settings.json"]) {
-                const settingsPath = path.join(dir, "config", file)
-                const text = yield* readConfigFile(settingsPath)
-                if (text) {
-                  const raw = ConfigParse.jsonc(text, settingsPath) as Record<string, unknown>
-                  if (raw?.ellamaka && typeof raw.ellamaka === "object") {
-                    yield* merge(
-                      settingsPath,
-                      yield* loadConfig(
-                        JSON.stringify(raw.ellamaka),
-                        { dir: path.dirname(settingsPath), source: settingsPath },
-                      ).pipe(
-                        Effect.catchDefect((err: unknown) => {
-                          log.warn("failed to parse ellamaka config, skipping", {
-                            path: settingsPath,
-                            error: err instanceof Error ? err.message : String(err),
-                          })
-                          return Effect.succeed({} as Info)
-                        }),
-                      ),
-                    )
-                    loaded = true
-                  }
-                }
-              }
-              if (!loaded) {
-                log.warn("wopal space detected but no config/settings.jsonc with ellamaka field found", { dir })
-              }
-            }
-
-            result.agent = result.agent || {}
-            result.mode = result.mode || {}
-            result.plugin = result.plugin || []
-
-            const deps: Fiber.Fiber<void, never>[] = []
-            for (const dir of localWopalDirs) {
-              yield* ensureGitignore(dir).pipe(Effect.orDie)
-              const dep = yield* npmSvc
-                .install(dir, {
-                  add: [{
-                    name: "@opencode-ai/plugin",
-                    version: InstallationLocal ? undefined : InstallationVersion,
-                  }],
-                })
-                .pipe(
-                  Effect.exit,
-                  Effect.tap((exit) =>
-                    Exit.isFailure(exit)
-                      ? Effect.sync(() => {
-                          log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                        })
-                      : Effect.void,
-                  ),
-                  Effect.asVoid,
-                  Effect.forkDetach,
-                )
-              deps.push(dep)
-            }
-
-            for (const dir of directories) {
-              result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-              result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
-              result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
-              if (!Flag.OPENCODE_PURE) {
-                const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-                yield* mergePluginOrigins(dir, list)
-              }
-            }
-
-            if (process.env.OPENCODE_CONFIG_CONTENT) {
-              const source = "OPENCODE_CONFIG_CONTENT"
-              const next = yield* loadConfig(process.env.OPENCODE_CONFIG_CONTENT, {
-                dir: ctx.directory,
-                source,
+        const wopalResult = yield* tryLoadWopalSpaceConfig({
+          findWopalDirs: (start, stop) =>
+            fs.up({ targets: [".wopal"], start, stop }).pipe(Effect.catch(() => Effect.succeed([] as string[]))),
+          installPluginDeps: (dir) =>
+            npmSvc
+              .install(dir, {
+                add: [{
+                  name: "@opencode-ai/plugin",
+                  version: InstallationLocal ? undefined : InstallationVersion,
+                }],
               })
-              yield* merge(source, next, "local")
-              log.debug("loaded custom config from OPENCODE_CONFIG_CONTENT")
-            }
-
-            applyPostMerge()
-
-            return {
-              config: result,
-              directories,
-              deps,
-              consoleState: {
-                consoleManagedProviders: [],
-                activeOrgName: undefined,
-                switchableOrgCount: 0,
-              },
-            }
-          }
-
-          log.warn("--wopal-space enabled but no .wopal directory found between cwd and worktree")
-        }
-        // ==================== 原有正常流程（完全不变） ====================
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.sync(() => {
+                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                      })
+                    : Effect.void,
+                ),
+                Effect.asVoid,
+                Effect.forkDetach,
+              ),
+          readConfigFile,
+          loadConfig,
+          getGlobal,
+          merge,
+          mergePluginOrigins,
+          ensureGitignore: (dir) => ensureGitignore(dir).pipe(Effect.orDie),
+          applyPostMerge,
+        }, ctx)
+        if (wopalResult) return wopalResult
 
         for (const [key, value] of Object.entries(auth)) {
           if (value.type === "wellknown") {
