@@ -183,7 +183,7 @@ const result = await Bun.build({
     OPENCODE_MIGRATIONS: JSON.stringify(migrations),
     OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
     OPENCODE_WORKER_PATH: workerPath,
-    OPENCODE_CHANNEL: "'dev'",
+    OPENCODE_CHANNEL: "'ellamaka-main'",
     OPENCODE_LIBC: "",
   },
 })

@@ -209,6 +209,10 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
       })
 
       const latestImpl = Effect.fn("Installation.latest")(function* (installMethod?: Method) {
+        if (InstallationChannel === "ellamaka-main") {
+          return InstallationVersion
+        }
+
         const detectedMethod = installMethod || (yield* methodImpl())
 
         if (detectedMethod === "brew") {
@@ -261,6 +265,12 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
       }, Effect.orDie)
 
       const upgradeImpl = Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
+        if (InstallationChannel === "ellamaka-main") {
+          return yield* new UpgradeFailedError({
+            stderr: "ellamaka-main requires manual rebuild. Run: git pull && bun run script/build-darwin.ts",
+          })
+        }
+
         let result: { code: ChildProcessSpawner.ExitCode; stdout: string; stderr: string } | undefined
         switch (m) {
           case "curl":
