@@ -52,7 +52,7 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
       return undefined
     }
 
-    log.debug("wopal-space mode detection", { directory: ctx.directory, worktree: ctx.worktree })
+    log.info("wopal-space mode detected", { directory: ctx.directory, worktree: ctx.worktree })
 
     const wopalFound = yield* deps.findWopalDirs(ctx.directory, ctx.worktree)
 
