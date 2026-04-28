@@ -1,4 +1,5 @@
 import { render, TimeToFirstDraw, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import "opentui-spinner/solid"
 import * as Clipboard from "@tui/util/clipboard"
 import * as Selection from "@tui/util/selection"
 import { createCliRenderer, MouseButton, type CliRendererConfig } from "@opentui/core"
