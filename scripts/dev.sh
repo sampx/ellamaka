@@ -28,7 +28,7 @@ stop() {
     rm -f "$PIDFILE"
   fi
   rm -f "$LOGDIR/ellamaka-dev-server.log" "$LOGDIR/wopal-plugins-debug.log"
-  for port in 4096 3000; do
+  for port in 4097 3000; do
     local pp="$(lsof -ti :"$port" 2>/dev/null)"
     [ -n "$pp" ] && pids+=($pp)
   done
@@ -50,8 +50,7 @@ Usage: $self [command] [options]
 
   Commands:
   (none)        Start opencode TUI (default)
-  server        Start backend (+ frontend) as headless server
-  backend       Start only the backend server
+  server        Start backend as headless server
   stop          Stop all dev servers
   help          Show this help message
 
@@ -64,20 +63,17 @@ Debug logs:
   $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
   $LOGDIR/wopal-plugins-debug.log   Plugin debug output
 
-Server: http://127.0.0.1:4096
-Frontend: http://localhost:3000
+Server: http://127.0.0.1:4097 (dev) / http://127.0.0.1:4096 (prod)
 EOF
 }
 
 cmd="tui"
-backend_only=false
 debug=false
 debug_modules=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     stop|-h|--help|help|server) cmd="$1"; shift ;;
-    backend) cmd="server"; backend_only=true; shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -104,14 +100,14 @@ is_running() { lsof -ti :"$1" > /dev/null 2>&1; }
 wait_backend() {
   local i
   for i in $(seq 1 30); do
-    curl -sf http://127.0.0.1:4096/health > /dev/null 2>&1 && return 0
+    curl -sf http://127.0.0.1:4097/health > /dev/null 2>&1 && return 0
     sleep 0.5
   done
   return 1
 }
 
 warmup_config() {
-  curl -sf -H "x-opencode-directory: $space" http://127.0.0.1:4096/config > /dev/null 2>&1 || true
+  curl -sf -H "x-opencode-directory: $space" http://127.0.0.1:4097/config > /dev/null 2>&1 || true
 }
 
 start_backend() {
@@ -120,7 +116,7 @@ start_backend() {
     OPENCODE_DISABLE_AGENTS_SKILLS=1
     OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
   )
-  local srv_args=(serve --wopal-space --port 4096 --print-logs)
+  local srv_args=(serve --wopal-space --port 4097 --print-logs)
 
   if [ "$debug" = true ]; then
     srv_args+=(--log-level DEBUG)
@@ -137,34 +133,29 @@ start_backend() {
   echo "$pid" > "$PIDFILE"
 }
 
-start_frontend() {
-  local port=3000
-  while is_running "$port"; do ((port++)); done
-  nohup bun --cwd "$root/packages/app" dev --port "$port" > /dev/null 2>&1 &
-  echo $! >> "$PIDFILE"
-  echo "frontend :$port started"
-}
-
 # ----- tui mode -----
 
 if [ "$cmd" = "tui" ]; then
-  if ! is_running 4096; then
+if ! is_running 4097; then
     [ "$debug" = true ] && echo "logs: $LOGDIR/ellamaka-dev-server.log"
     start_backend
     echo -n "starting server (pid $(cat "$PIDFILE"))"
     wait_backend && echo " ready" || echo " (health check timeout)"
-    start_frontend
   else
     echo "attaching to running server"
+    if ! wait_backend; then
+      echo "backend not healthy, please run '$self stop' first"
+      exit 1
+    fi
   fi
   warmup_config
   cd "$opencode_dir"
-  exec bun "$opencode_entry" attach "http://localhost:4096" --dir "$space"
+  exec bun "$opencode_entry" attach "http://localhost:4097" --dir "$space"
 fi
 
 # ----- server mode -----
 
-if [ -f "$PIDFILE" ] || is_running 4096 || is_running 3000; then
+if [ -f "$PIDFILE" ] || is_running 4097; then
   echo "already running."
   read -p "stop and restart? [Y/n] " yn
   case "${yn:-Y}" in
@@ -178,12 +169,7 @@ echo "logs: $LOGDIR/"
 
 start_backend
 
-if [ "$backend_only" = false ]; then
-  start_frontend
-  echo "started (backend :4096 + frontend)"
-else
-  echo "started (backend :4096)"
-fi
+echo "started (backend :4097)"
 
 wait_backend && warmup_config
 
