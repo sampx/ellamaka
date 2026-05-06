@@ -146,6 +146,14 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
   - 6 skill 测试: 上游 skill 发现重构后已知问题（前次合并也有）
   - 19 网络/超时/时序测试: 无头环境固有
 
+**当日后续修复（本次提交）**:
+- `core/flag/flag.ts`: 将 `WOPAL_SPACE` 改为 getter，修复 TUI / worker 双实例下的模式识别时序问题
+- `config/wopal-space.ts` + `config/config.ts` + `plugin/shared.ts`: 为 `.wopal/plugins/*` 指向的本地源码插件自动安装 `file:` 依赖，宿主不再只装 `@opencode-ai/plugin`
+- `cli/cmd/tui/config/tui.ts`: `WOPAL_SPACE` 模式下过滤自动发现的 `.opencode` 目录，避免遗留 TUI 插件继续从 `.opencode/plugins/*` 加载
+- `core/util/log.ts` + `scripts/dev.sh`: 新增 `WOPAL_DEBUG_LOG_DIR`，debug 模式下将 app `dev.log` 与插件调试日志统一落到工作区 `logs/`
+- `core/global.ts` + `core/package.json` + `bun.lock`: 移除 `xdg-basedir` 依赖，继续固定使用 `WOPAL_HOME` / `~/.wopal/ellamaka/*` 路径体系
+- `scripts/build.sh` + `scripts/dev.sh`: 安装脚本改为复制二进制而非 worktree symlink；开发脚本补齐 preload、默认 in-process TUI 与 attach/server 分流
+
 ---
 
 ### 2026-04-26 | upstream v1.14.19 → v1.14.25

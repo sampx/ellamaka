@@ -221,6 +221,26 @@ export async function readPluginPackage(target: string): Promise<PluginPackage> 
   return { dir, pkg, json }
 }
 
+export async function findPathPluginPackage(spec: string): Promise<PluginPackage | undefined> {
+  if (!isPathPluginSpec(spec)) return
+
+  const file = Filesystem.resolve(spec.startsWith("file://") ? fileURLToPath(spec) : spec)
+  const stat = await Filesystem.statAsync(file)
+  let dir = stat?.isDirectory() ? file : path.dirname(file)
+
+  while (true) {
+    const pkg = path.join(dir, "package.json")
+    if (await Filesystem.exists(pkg)) {
+      const json = await Filesystem.readJson<Record<string, unknown>>(pkg)
+      return { dir, pkg, json }
+    }
+
+    const parent = path.dirname(dir)
+    if (parent === dir) return
+    dir = parent
+  }
+}
+
 export async function createPluginEntry(spec: string, target: string, kind: PluginKind): Promise<PluginEntry> {
   const source = pluginSource(spec)
   const pkg =

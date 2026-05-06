@@ -59,12 +59,18 @@ let write = (msg: any) => {
   return msg.length
 }
 
+function dir(options: Options) {
+  return options.dev && process.env.WOPAL_DEBUG_LOG_DIR ? process.env.WOPAL_DEBUG_LOG_DIR : Global.Path.log
+}
+
 export async function init(options: Options) {
   if (options.level) level = options.level
-  void cleanup(Global.Path.log)
+  const logdir = dir(options)
+  await fs.mkdir(logdir, { recursive: true })
+  void cleanup(logdir)
   if (options.print) return
   logpath = path.join(
-    Global.Path.log,
+    logdir,
     options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
   )
   await fs.truncate(logpath).catch(() => {})

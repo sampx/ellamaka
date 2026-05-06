@@ -530,13 +530,16 @@ export const layer = Layer.effect(
         const wopalResult = yield* tryLoadWopalSpaceConfig({
           findWopalDirs: (start, stop) =>
             fs.up({ targets: [".wopal"], start, stop }).pipe(Effect.catch(() => Effect.succeed([] as string[]))),
-          installPluginDeps: (dir) =>
+          installPluginDeps: (dir, add) =>
             npmSvc
               .install(dir, {
-                add: [{
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                }],
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                  ...add,
+                ],
               })
               .pipe(
                 Effect.exit,

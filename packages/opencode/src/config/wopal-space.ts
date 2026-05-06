@@ -9,15 +9,37 @@ import { ConfigParse } from "./parse"
 import { ConfigCommand } from "./command"
 import { ConfigAgent } from "./agent"
 import { ConfigPlugin } from "./plugin"
+import { findPathPluginPackage } from "../plugin/shared"
 import { Effect, Exit, Fiber } from "effect"
 import type { Info } from "./config"
 import type { ConsoleState } from "./console-state"
 
 const log = Log.create({ service: "config" })
 
+type InstallDependency = {
+  name: string
+  version?: string
+}
+
+async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
+  const seen = new Set<string>()
+  const list: (InstallDependency & { dir: string })[] = []
+
+  for (const plugin of await ConfigPlugin.load(dir)) {
+    const spec = ConfigPlugin.pluginSpecifier(plugin)
+    const pkg = await findPathPluginPackage(spec).catch(() => undefined)
+    const name = typeof pkg?.json.name === "string" ? pkg.json.name.trim() : undefined
+    if (!pkg || !name || seen.has(pkg.dir)) continue
+    seen.add(pkg.dir)
+    list.push({ dir: pkg.dir, name, version: `file:${pkg.dir}` })
+  }
+
+  return list.toSorted((a, b) => a.dir.localeCompare(b.dir)).map(({ dir: _dir, ...item }) => item)
+}
+
 export interface WopalSpaceDeps {
   findWopalDirs: (start: string, stop: string) => Effect.Effect<string[], never, never>
-  installPluginDeps: (dir: string) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
+  installPluginDeps: (dir: string, add: InstallDependency[]) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
   loadConfig: (
     text: string,
@@ -115,7 +137,7 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
     const depFibers: Fiber.Fiber<void, never>[] = []
     for (const dir of localWopalDirs) {
       yield* deps.ensureGitignore(dir).pipe(Effect.orDie)
-      depFibers.push(yield* deps.installPluginDeps(dir))
+      depFibers.push(yield* deps.installPluginDeps(dir, yield* Effect.promise(() => localPluginInstallDeps(dir))))
     }
 
     for (const dir of directories) {

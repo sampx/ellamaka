@@ -1,17 +1,21 @@
 import path from "path"
 import fs from "fs/promises"
-import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 
-const app = "opencode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
-const tmp = path.join(os.tmpdir(), app)
+// WOPAL_HOME: ellamaka customization — use ~/.wopal/ellamaka/* paths
+// tilde is a shell construct — Node.js does not expand it, resolve manually
+const wopalHomeRaw = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
+const wopalRoot = wopalHomeRaw.startsWith("~/")
+  ? path.join(os.homedir(), wopalHomeRaw.slice(2))
+  : wopalHomeRaw
+const data = path.join(wopalRoot, "ellamaka", "data")
+const cache = path.join(wopalRoot, "ellamaka", "cache")
+const config = path.join(wopalRoot, "ellamaka", "config")
+const state = path.join(wopalRoot, "ellamaka", "state")
+const tmp = path.join(os.tmpdir(), "ellamaka")
 
 const paths = {
   get home() {
