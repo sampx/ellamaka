@@ -1,7 +1,7 @@
 import path from "path"
 import { existsSync } from "fs"
 import { mergeDeep } from "remeda"
-import { Log } from "../util"
+import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationLocal, InstallationVersion } from "@opencode-ai/core/installation/version"

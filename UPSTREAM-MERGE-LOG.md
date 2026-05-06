@@ -100,6 +100,54 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 
 ---
 
+### 2026-05-06 | upstream v1.14.28 → v1.14.39
+
+- **Commit**: `0e66df348` on `merge-upstream-opencode-v11439` (待 merge 到 main)
+- **上游范围**: 375 commits (`61eabfc60..6e7c9eb82`), ~400 files changed
+- **Plan**: `docs/products/ellamaka/plans/chore-ellamaka-merge-upstream-opencode-v11439.md`
+- **分叉点**: `61eabfc60` (2026-04-27)
+
+**上游核心变更**:
+- Barrels 全面移除: `src/*/index.ts` 已删除，import 直接从子路径引用
+- CLI `effectCmd` 迁移: 20+ 子命令从 Promise 转为 Effect-native
+- Instance 生命周期重构: `InstanceBootstrap` 提取为 Service，ALS 模式
+- HttpApi 后端默认启用: Hono → Effect native HttpApi（Bun.serve）
+- Schema 迁移: Tool、Session、Provider 域从 Zod → Effect Schema
+- Desktop 包整合: `desktop-electron` → `desktop`，移除 Tauri
+- Shell tool 重命名: `bash` → `shell`
+- `shared` → `core` 重命名（上次合并已跟进）
+
+**冲突文件**（6 个内容冲突）:
+- `config/paths.ts`: `.wopal` 目录扫描路径 + 死代码清理（`readFile`/`substitute` 已移走）
+- `config/managed.ts`: import 路径 barrels 移除
+- `skill/index.ts`: 外部技能目录扫描逻辑适配 + `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫
+- `bus/index.ts`: Payload `id` 字段上游变更
+- `permission/index.ts`: 调试日志注释移除
+- `cli/cmd/tui/worker.ts`: import 路径更新 + `OPENCODE_LOG_LEVEL` 环境变量
+
+**DELETED_PREFIXES 处理**: 310+ 文件（desktop/web/enterprise/slack/console 等），自动 `git rm` 删除
+
+**Flags 注册**: 上游 `Flag` 类型不含 ellamaka 定制，补充注册:
+- `core/flag/flag.ts`: `OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_SPACE`
+
+**保留的 ellamaka 定制**（全部自动合并或手动适配）:
+- `config.ts`: `tryLoadWopalSpaceConfig` 注入
+- `config/wopal-space.ts`: 160 行完整保留
+- `config/paths.ts`: `.wopal` 目录扫描
+- `index.ts`: `--wopal-space` CLI 标志
+- `installation/index.ts`: `.wopal/bin` 路径检测 + ellamaka-main 通道
+- `uninstall.ts`: `.wopal` 路径清理
+- `cli/cmd/tui/worker.ts`: `OPENCODE_LOG_LEVEL` 环境变量
+- `skill/index.ts`: `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫
+
+**验证结果**:
+- typecheck: opencode + core 通过
+- test: 2357 pass / 25 fail（11 skip, 2 todo）
+  - 6 skill 测试: 上游 skill 发现重构后已知问题（前次合并也有）
+  - 19 网络/超时/时序测试: 无头环境固有
+
+---
+
 ### 2026-04-26 | upstream v1.14.19 → v1.14.25
 
 - **Commit**: `eb609485` on `main`

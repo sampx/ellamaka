@@ -1,4 +1,5 @@
 import { Config } from "effect"
+import { InstallationChannel } from "../installation/version"
 
 function truthy(key: string) {
   const value = process.env[key]?.toLowerCase()
@@ -9,6 +10,10 @@ function falsy(key: string) {
   const value = process.env[key]?.toLowerCase()
   return value === "false" || value === "0"
 }
+
+// Channels that default to the new effect-httpapi server backend. The legacy
+// hono backend remains the default for stable (`prod`/`latest`) installs.
+const HTTPAPI_DEFAULT_ON_CHANNELS = new Set(["dev", "beta", "local"])
 
 function number(key: string) {
   const value = process.env[key]
@@ -21,8 +26,6 @@ const OPENCODE_EXPERIMENTAL = truthy("OPENCODE_EXPERIMENTAL")
 const OPENCODE_DISABLE_CLAUDE_CODE = truthy("OPENCODE_DISABLE_CLAUDE_CODE")
 const OPENCODE_DISABLE_CLAUDE_CODE_SKILLS =
   OPENCODE_DISABLE_CLAUDE_CODE || truthy("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS")
-// OPENCODE_DISABLE_AGENTS_SKILLS controls .agents directory skills independently
-const OPENCODE_DISABLE_AGENTS_SKILLS = truthy("OPENCODE_DISABLE_AGENTS_SKILLS")
 const copy = process.env["OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
 
 export const Flag = {
@@ -31,6 +34,7 @@ export const Flag = {
 
   OPENCODE_AUTO_SHARE: truthy("OPENCODE_AUTO_SHARE"),
   OPENCODE_AUTO_HEAP_SNAPSHOT: truthy("OPENCODE_AUTO_HEAP_SNAPSHOT"),
+  WOPAL_SPACE: truthy("WOPAL_SPACE"),
   OPENCODE_GIT_BASH_PATH: process.env["OPENCODE_GIT_BASH_PATH"],
   OPENCODE_CONFIG: process.env["OPENCODE_CONFIG"],
   OPENCODE_CONFIG_CONTENT: process.env["OPENCODE_CONFIG_CONTENT"],
@@ -49,8 +53,8 @@ export const Flag = {
   OPENCODE_DISABLE_CLAUDE_CODE,
   OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: OPENCODE_DISABLE_CLAUDE_CODE || truthy("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"),
   OPENCODE_DISABLE_CLAUDE_CODE_SKILLS,
-  OPENCODE_DISABLE_AGENTS_SKILLS,
-  OPENCODE_DISABLE_EXTERNAL_SKILLS: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS || OPENCODE_DISABLE_AGENTS_SKILLS || truthy("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
+  OPENCODE_DISABLE_EXTERNAL_SKILLS: truthy("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
+  OPENCODE_DISABLE_AGENTS_SKILLS: truthy("OPENCODE_DISABLE_AGENTS_SKILLS"),
   OPENCODE_FAKE_VCS: process.env["OPENCODE_FAKE_VCS"],
   OPENCODE_SERVER_PASSWORD: process.env["OPENCODE_SERVER_PASSWORD"],
   OPENCODE_SERVER_USERNAME: process.env["OPENCODE_SERVER_USERNAME"],
@@ -84,8 +88,16 @@ export const Flag = {
   OPENCODE_STRICT_CONFIG_DEPS: truthy("OPENCODE_STRICT_CONFIG_DEPS"),
 
   OPENCODE_WORKSPACE_ID: process.env["OPENCODE_WORKSPACE_ID"],
-  OPENCODE_EXPERIMENTAL_HTTPAPI: truthy("OPENCODE_EXPERIMENTAL_HTTPAPI"),
+  // Defaults to true on dev/beta/local channels so internal users exercise the
+  // new effect-httpapi server backend. Stable (`prod`/`latest`) installs stay
+  // on the legacy hono backend until the rollout is complete. An explicit env
+  // var ("true"/"1" or "false"/"0") always wins, providing an opt-in for
+  // stable users and an escape hatch for dev/beta users.
+  OPENCODE_EXPERIMENTAL_HTTPAPI:
+    truthy("OPENCODE_EXPERIMENTAL_HTTPAPI") ||
+    (!falsy("OPENCODE_EXPERIMENTAL_HTTPAPI") && HTTPAPI_DEFAULT_ON_CHANNELS.has(InstallationChannel)),
   OPENCODE_EXPERIMENTAL_WORKSPACES: OPENCODE_EXPERIMENTAL || truthy("OPENCODE_EXPERIMENTAL_WORKSPACES"),
+  OPENCODE_EXPERIMENTAL_EVENT_SYSTEM: OPENCODE_EXPERIMENTAL || truthy("OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"),
 
   // Evaluated at access time (not module load) because tests, the CLI, and
   // external tooling set these env vars at runtime.
@@ -100,9 +112,6 @@ export const Flag = {
   },
   get OPENCODE_PURE() {
     return truthy("OPENCODE_PURE")
-  },
-  get WOPAL_SPACE() {
-    return truthy("WOPAL_SPACE")
   },
   get OPENCODE_PLUGIN_META_FILE() {
     return process.env["OPENCODE_PLUGIN_META_FILE"]

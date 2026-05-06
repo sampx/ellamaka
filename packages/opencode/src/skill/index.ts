@@ -1,4 +1,3 @@
-import os from "os"
 import path from "path"
 import { pathToFileURL } from "url"
 import z from "zod"
@@ -8,19 +7,20 @@ import { withStatics } from "@/util/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
-import { InstanceState } from "@/effect"
+import { InstanceState } from "@/effect/instance-state"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import { Permission } from "@/permission"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Config } from "../config"
-import { ConfigMarkdown } from "../config"
+import { Config } from "@/config/config"
+import { ConfigMarkdown } from "@/config/markdown"
 import { Glob } from "@opencode-ai/core/util/glob"
-import { Log } from "../util"
+import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
 
 const log = Log.create({ service: "skill" })
-const EXTERNAL_DIRS = [".claude", ".agents"]
+const CLAUDE_EXTERNAL_DIR = ".claude"
+const AGENTS_EXTERNAL_DIR = ".agents"
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const OPENCODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
@@ -83,7 +83,7 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
         const message = ConfigMarkdown.FrontmatterError.isInstance(err)
           ? err.data.message
           : `Failed to parse skill ${match}`
-        const { Session } = yield* Effect.promise(() => import("@/session"))
+        const { Session } = yield* Effect.promise(() => import("@/session/session"))
         yield* bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
         log.error("failed to load skill", { skill: match, err })
         return undefined
@@ -147,28 +147,25 @@ const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
   discovery: Discovery.Interface,
   fsys: AppFileSystem.Interface,
+  global: Global.Interface,
   directory: string,
   worktree: string,
 ) {
   const state: ScanState = { matches: new Set(), dirs: new Set() }
 
+  const externalDirs: string[] = []
   if (!Flag.OPENCODE_DISABLE_EXTERNAL_SKILLS) {
-    for (const dir of EXTERNAL_DIRS) {
-      const disabled =
-        dir === ".claude"
-          ? Flag.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS
-          : dir === ".agents"
-            ? Flag.OPENCODE_DISABLE_AGENTS_SKILLS
-            : false
-      if (disabled) continue
+    if (!Flag.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS) externalDirs.push(CLAUDE_EXTERNAL_DIR)
+    if (!Flag.OPENCODE_DISABLE_AGENTS_SKILLS) externalDirs.push(AGENTS_EXTERNAL_DIR)
 
-      const root = path.join(Global.Path.home, dir)
+    for (const dir of externalDirs) {
+      const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
 
     const upDirs = yield* fsys
-      .up({ targets: EXTERNAL_DIRS, start: directory, stop: worktree })
+      .up({ targets: externalDirs, start: directory, stop: worktree })
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
     for (const root of upDirs) {
@@ -192,7 +189,7 @@ const discoverSkills = Effect.fnUntraced(function* (
 
   const cfg = yield* config.get()
   for (const item of cfg.skills?.paths ?? []) {
-    const expanded = item.startsWith("~/") ? path.join(os.homedir(), item.slice(2)) : item
+    const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
     if (!(yield* fsys.isDir(dir))) {
       log.warn("skill path not found", { path: dir })
@@ -233,13 +230,14 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const bus = yield* Bus.Service
     const fsys = yield* AppFileSystem.Service
+    const global = yield* Global.Service
     const discovered = yield* InstanceState.make(
       Effect.fn("Skill.discovery")(function* (ctx) {
-        return yield* discoverSkills(config, discovery, fsys, ctx.directory, ctx.worktree)
+        return yield* discoverSkills(config, discovery, fsys, global, ctx.directory, ctx.worktree)
       }),
     )
     const state = yield* InstanceState.make(
-      Effect.fn("Skill.state")(function* (ctx) {
+      Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
         yield* loadSkills(s, yield* InstanceState.get(discovered), bus)
         return s
@@ -276,6 +274,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Config.defaultLayer),
   Layer.provide(Bus.layer),
   Layer.provide(AppFileSystem.defaultLayer),
+  Layer.provide(Global.layer),
 )
 
 export function fmt(list: Info[], opts: { verbose: boolean }) {
