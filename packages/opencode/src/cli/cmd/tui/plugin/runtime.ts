@@ -156,8 +156,14 @@ function createThemeInstaller(
     const src = path.isAbsolute(raw) ? raw : path.resolve(root, raw)
     const name = path.basename(src, path.extname(src))
     const source_dir = path.dirname(meta.source)
+    const wopal_dir =
+      path.basename(source_dir) === "config" && path.basename(path.dirname(source_dir)) === ".wopal"
+        ? path.dirname(source_dir)
+        : undefined
     const local_dir =
-      path.basename(source_dir) === ".opencode"
+      wopal_dir
+        ? path.join(wopal_dir, "config", "themes")
+        : path.basename(source_dir) === ".opencode"
         ? path.join(source_dir, "themes")
         : path.join(source_dir, ".opencode", "themes")
     const dest_dir = meta.scope === "local" ? local_dir : path.join(Global.Path.config, "themes")

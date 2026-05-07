@@ -20,6 +20,7 @@ import { Filesystem } from "@/util/filesystem"
 import * as Log from "@opencode-ai/core/util/log"
 import { ConfigVariable } from "@/config/variable"
 import { Npm } from "@opencode-ai/core/npm"
+import { tryLoadWopalSpaceTuiConfig } from "./wopal-space"
 
 const log = Log.create({ service: "tui.config" })
 
@@ -70,6 +71,9 @@ function normalize(raw: Record<string, unknown>) {
 
 const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
   const afs = yield* AppFileSystem.Service
+  const acc: Acc = {
+    result: {},
+  }
 
   const resolvePlugins = (config: Info, configFilepath: string): Effect.Effect<Info> =>
     Effect.gen(function* () {
@@ -103,12 +107,9 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
       ),
     )
 
-  const loadFile = (filepath: string): Effect.Effect<Info> =>
+  const readConfigFile = (filepath: string): Effect.Effect<string | undefined> =>
     Effect.gen(function* () {
-      // Silent-swallow non-NotFound read errors (perms, EISDIR, IO) → log + skip.
-      // Matches how parse/schema/plugin failures in load() are handled — every
-      // broken-config path degrades gracefully rather than crashing TUI startup.
-      const text = yield* afs.readFileStringSafe(filepath).pipe(
+      return yield* afs.readFileStringSafe(filepath).pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {
             log.warn("failed to read tui config", { path: filepath, cause })
@@ -116,23 +117,33 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
           }),
         ),
       )
+    })
+
+  const loadFile = (filepath: string): Effect.Effect<Info> =>
+    Effect.gen(function* () {
+      const text = yield* readConfigFile(filepath)
       if (!text) return {} as Info
       return yield* load(text, filepath)
     })
 
-  const mergeFile = (acc: Acc, file: string) =>
-    Effect.gen(function* () {
-      const data = yield* loadFile(file)
+  const merge = (source: string, data: Info) =>
+    Effect.sync(() => {
       acc.result = mergeDeep(acc.result, data)
       if (!data.plugin?.length) return
 
-      const scope = pluginScope(file, ctx)
+      const scope = pluginScope(source, ctx)
       const plugins = ConfigPlugin.deduplicatePluginOrigins([
         ...(acc.result.plugin_origins ?? []),
-        ...data.plugin.map((spec) => ({ spec, scope, source: file })),
+        ...data.plugin.map((spec) => ({ spec, scope, source })),
       ])
       acc.result.plugin = plugins.map((item) => item.spec)
       acc.result.plugin_origins = plugins
+    })
+
+  const mergeFile = (file: string) =>
+    Effect.gen(function* () {
+      const data = yield* loadFile(file)
+      yield* merge(file, data)
     })
 
   // Every config dir we may read from: global config dir, any `.opencode`
@@ -145,38 +156,50 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   const projectFiles = Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? [] : yield* ConfigPaths.files("tui", ctx.directory)
 
-  const acc: Acc = {
-    result: {},
-  }
-
   // 1. Global tui config (lowest precedence).
   for (const file of ConfigPaths.fileInDirectory(Global.Path.config, "tui")) {
-    yield* mergeFile(acc, file)
+    yield* mergeFile(file)
   }
 
   // 2. Explicit OPENCODE_TUI_CONFIG override, if set.
   if (Flag.OPENCODE_TUI_CONFIG) {
     const configFile = Flag.OPENCODE_TUI_CONFIG
-    yield* mergeFile(acc, configFile)
+    yield* mergeFile(configFile)
     log.debug("loaded custom tui config", { path: configFile })
   }
 
   // 3. Project tui files, applied root-first so the closest file wins.
   for (const file of projectFiles) {
-    yield* mergeFile(acc, file)
+    yield* mergeFile(file)
   }
 
   // 4. `.opencode` directories (and OPENCODE_CONFIG_DIR) discovered while
   // walking up the tree. Also returned below so callers can install plugin
   // dependencies from each location.
-  const dirs = unique(tuiDirectories).filter((dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR)
+  const opencodeDirs = unique(tuiDirectories).filter((dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR)
+  const wopal = Flag.WOPAL_SPACE
+    ? yield* tryLoadWopalSpaceTuiConfig(
+        {
+          findWopalDirs: (start, stop) =>
+            afs.up({ targets: [".wopal"], start, stop }).pipe(Effect.catch(() => Effect.succeed([] as string[]))),
+          readConfigFile,
+          loadConfig: load,
+          merge,
+        },
+        ctx,
+      )
+    : undefined
 
-  for (const dir of dirs) {
-    if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
-    for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
-      yield* mergeFile(acc, file)
+  if (!Flag.WOPAL_SPACE) {
+    for (const dir of opencodeDirs) {
+      if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
+      for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
+        yield* mergeFile(file)
+      }
     }
   }
+
+  const dirs = wopal?.dirs ?? opencodeDirs
 
   const keybinds = { ...(acc.result.keybinds ?? {}) }
   if (process.platform === "win32") {

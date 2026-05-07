@@ -1,5 +1,4 @@
 import path from "path"
-import { existsSync } from "fs"
 import { mergeDeep } from "remeda"
 import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
@@ -9,6 +8,7 @@ import { ConfigParse } from "./parse"
 import { ConfigCommand } from "./command"
 import { ConfigAgent } from "./agent"
 import { ConfigPlugin } from "./plugin"
+import { loadWopalSpaceSettingsFiles } from "./wopal-space-settings"
 import { findPathPluginPackage } from "../plugin/shared"
 import { Effect, Exit, Fiber } from "effect"
 import type { Info } from "./config"
@@ -38,7 +38,7 @@ async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]>
 }
 
 export interface WopalSpaceDeps {
-  findWopalDirs: (start: string, stop: string) => Effect.Effect<string[], never, never>
+  findWopalDirs: (start: string, stop?: string) => Effect.Effect<string[], never, never>
   installPluginDeps: (dir: string, add: InstallDependency[]) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
   loadConfig: (
@@ -76,55 +76,42 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
 
     log.info("wopal-space mode detected", { directory: ctx.directory, worktree: ctx.worktree })
 
-    const wopalFound = yield* deps.findWopalDirs(ctx.directory, ctx.worktree)
-
-    if (wopalFound.length === 0) {
+    const settings = yield* loadWopalSpaceSettingsFiles(deps, { directory: ctx.directory, stop: ctx.worktree })
+    if (!settings || settings.localWopalDirs.length === 0) {
       log.warn("--wopal-space enabled but no .wopal directory found between cwd and worktree")
       return undefined
     }
 
-    const localWopalDirs = wopalFound.toReversed()
-    const homeWopal = path.join(Global.Path.home, ".wopal")
-
-    const seen = new Set<string>()
-    const directories: string[] = []
-    for (const d of [Global.Path.config, ...(existsSync(homeWopal) ? [homeWopal] : []), ...localWopalDirs]) {
-      if (!seen.has(d)) {
-        seen.add(d)
-        directories.push(d)
-      }
-    }
+    const directories = settings.directories
+    const localWopalDirs = settings.localWopalDirs
 
     const global = yield* deps.getGlobal()
     yield* deps.merge(Global.Path.config, global, "global")
 
     for (const dir of localWopalDirs) {
       let loaded = false
-      for (const file of ["settings.jsonc", "settings.json"]) {
-        const settingsPath = path.join(dir, "config", file)
-        const text = yield* deps.readConfigFile(settingsPath)
-        if (text) {
-          const raw = ConfigParse.jsonc(text, settingsPath) as Record<string, unknown>
-          if (raw?.ellamaka && typeof raw.ellamaka === "object") {
-            yield* deps.merge(
-              settingsPath,
-              yield* deps
-                .loadConfig(JSON.stringify(raw.ellamaka), {
-                  dir: path.dirname(settingsPath),
-                  source: settingsPath,
-                })
-                .pipe(
-                  Effect.catchDefect((err: unknown) => {
-                    log.warn("failed to parse ellamaka config, skipping", {
-                      path: settingsPath,
-                      error: err instanceof Error ? err.message : String(err),
-                    })
-                    return Effect.succeed({} as Info)
-                  }),
-                ),
-            )
-            loaded = true
-          }
+      for (const file of settings.files) {
+        if (file.dir !== dir) continue
+        const raw = ConfigParse.jsonc(file.text, file.path) as Record<string, unknown>
+        if (raw?.ellamaka && typeof raw.ellamaka === "object") {
+          yield* deps.merge(
+            file.path,
+            yield* deps
+              .loadConfig(JSON.stringify(raw.ellamaka), {
+                dir: path.dirname(file.path),
+                source: file.path,
+              })
+              .pipe(
+                Effect.catchDefect((err: unknown) => {
+                  log.warn("failed to parse ellamaka config, skipping", {
+                    path: file.path,
+                    error: err instanceof Error ? err.message : String(err),
+                  })
+                  return Effect.succeed({} as Info)
+                }),
+              ),
+          )
+          loaded = true
         }
       }
       if (!loaded) {

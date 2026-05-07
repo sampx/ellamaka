@@ -154,6 +154,12 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 - `core/global.ts` + `core/package.json` + `bun.lock`: 移除 `xdg-basedir` 依赖，继续固定使用 `WOPAL_HOME` / `~/.wopal/ellamaka/*` 路径体系
 - `scripts/build.sh` + `scripts/dev.sh`: 安装脚本改为复制二进制而非 worktree symlink；开发脚本补齐 preload、默认 in-process TUI 与 attach/server 分流
 
+**2026-05-07 后续补丁**:
+- `config/wopal-space-settings.ts`: 提取 `.wopal/config/settings.jsonc|json` 的共享查找逻辑，主配置与 TUI 配置共用同一条 wopal-space settings 发现链
+- `cli/cmd/tui/config/wopal-space.ts` + `cli/cmd/tui/config/tui.ts`: `WOPAL_SPACE` 模式下改为从 `.wopal/config/settings.*` 的 `tui` 字段加载外部 TUI 插件，不再依赖 `.opencode/tui.json`
+- `cli/cmd/tui/plugin/runtime.ts` + `cli/cmd/tui/context/theme.tsx`: 本地 wopal-space 插件 theme 改为持久化到 `.wopal/config/themes/`，并将该目录纳入 TUI 自定义主题扫描链；全局主题目录保持 `Global.Path.config/themes`
+- **验证**: `packages/opencode` 下 `bun typecheck` 通过
+
 ---
 
 ### 2026-04-26 | upstream v1.14.19 → v1.14.25

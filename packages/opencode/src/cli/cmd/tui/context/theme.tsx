@@ -40,6 +40,7 @@ import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
 import { Global } from "@opencode-ai/core/global"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { Filesystem } from "@/util/filesystem"
 import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
@@ -493,11 +494,20 @@ async function getCustomThemes() {
         start: process.cwd(),
       }),
     )),
+    ...(Flag.WOPAL_SPACE
+      ? await Array.fromAsync(
+          Filesystem.up({
+            targets: [".wopal"],
+            start: process.cwd(),
+          }),
+        )
+      : []),
   ]
 
   const result: Record<string, ThemeJson> = {}
   for (const dir of directories) {
-    for (const item of await Glob.scan("themes/*.json", {
+    const pattern = Flag.WOPAL_SPACE && path.basename(dir) === ".wopal" ? "config/themes/*.json" : "themes/*.json"
+    for (const item of await Glob.scan(pattern, {
       cwd: dir,
       absolute: true,
       dot: true,
