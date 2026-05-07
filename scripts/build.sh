@@ -76,19 +76,23 @@ if $INSTALL; then
   mkdir -p "$INSTALL_DIR"
   DST="$INSTALL_DIR/$BINARY_NAME"
   
-  # 检查是否已存在同名文件
-  if [[ -f "$DST" && ! -L "$DST" ]]; then
-    echo "⚠️  Existing binary found at $DST"
-    read -p "   Replace? [y/N] " confirm
+  # 获取版本号并确认覆盖
+  NEW_VER=$("$SRC" --version 2>/dev/null || echo "unknown")
+  if [[ -f "$DST" ]]; then
+    OLD_VER=$("$DST" --version 2>/dev/null || echo "unknown")
+    echo "📦 Installed: $OLD_VER"
+    echo "📦 New build: $NEW_VER"
+    read -p "   Overwrite? [y/N] " confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
       echo "   Skipped installation"
       exit 0
     fi
-    rm -f "$DST"
+  else
+    echo "📦 New build: $NEW_VER"
   fi
-  
-  # 创建 symlink（不复制大文件）
-  ln -sf "$(pwd)/$SRC" "$DST"
-  echo "✅ Installed: $DST -> $(pwd)/$SRC"
+
+  # 直接复制二进制到安装目录（不依赖 worktree 生命周期）
+  cp -f "$SRC" "$DST"
+  echo "✅ Installed: $DST"
   echo "   Run with: $BINARY_NAME"
 fi

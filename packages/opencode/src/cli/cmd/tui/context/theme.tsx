@@ -40,7 +40,8 @@ import { useKV } from "./kv"
 import { useRenderer } from "@opentui/solid"
 import { createStore, produce } from "solid-js/store"
 import { Global } from "@opencode-ai/core/global"
-import { Filesystem } from "@/util"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { Filesystem } from "@/util/filesystem"
 import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui"
@@ -416,12 +417,16 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
 
     const values = createMemo(() => {
       const active = store.themes[store.active]
-      if (active) return resolveTheme(active, store.mode)
+      if (active) {
+        return resolveTheme(active, store.mode)
+      }
 
       const saved = kv.get("theme")
       if (typeof saved === "string") {
         const theme = store.themes[saved]
-        if (theme) return resolveTheme(theme, store.mode)
+        if (theme) {
+          return resolveTheme(theme, store.mode)
+        }
       }
 
       return resolveTheme(store.themes.opencode, store.mode)
@@ -489,18 +494,28 @@ async function getCustomThemes() {
         start: process.cwd(),
       }),
     )),
+    ...(Flag.WOPAL_SPACE
+      ? await Array.fromAsync(
+          Filesystem.up({
+            targets: [".wopal"],
+            start: process.cwd(),
+          }),
+        )
+      : []),
   ]
 
   const result: Record<string, ThemeJson> = {}
   for (const dir of directories) {
-    for (const item of await Glob.scan("themes/*.json", {
+    const pattern = Flag.WOPAL_SPACE && path.basename(dir) === ".wopal" ? "config/themes/*.json" : "themes/*.json"
+    for (const item of await Glob.scan(pattern, {
       cwd: dir,
       absolute: true,
       dot: true,
       symlink: true,
     })) {
       const name = path.basename(item, ".json")
-      result[name] = await Filesystem.readJson(item)
+      const theme = await Filesystem.readJson(item)
+      if (isTheme(theme)) result[name] = theme
     }
   }
   return result

@@ -2,7 +2,7 @@ import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import npa from "npm-package-arg"
 import semver from "semver"
-import { Filesystem } from "@/util"
+import { Filesystem } from "@/util/filesystem"
 import { isRecord } from "@/util/record"
 import { Npm } from "@opencode-ai/core/npm"
 
@@ -219,6 +219,26 @@ export async function readPluginPackage(target: string): Promise<PluginPackage> 
   const pkg = path.join(dir, "package.json")
   const json = await Filesystem.readJson<Record<string, unknown>>(pkg)
   return { dir, pkg, json }
+}
+
+export async function findPathPluginPackage(spec: string): Promise<PluginPackage | undefined> {
+  if (!isPathPluginSpec(spec)) return
+
+  const file = Filesystem.resolve(spec.startsWith("file://") ? fileURLToPath(spec) : spec)
+  const stat = await Filesystem.statAsync(file)
+  let dir = stat?.isDirectory() ? file : path.dirname(file)
+
+  while (true) {
+    const pkg = path.join(dir, "package.json")
+    if (await Filesystem.exists(pkg)) {
+      const json = await Filesystem.readJson<Record<string, unknown>>(pkg)
+      return { dir, pkg, json }
+    }
+
+    const parent = path.dirname(dir)
+    if (parent === dir) return
+    dir = parent
+  }
 }
 
 export async function createPluginEntry(spec: string, target: string, kind: PluginKind): Promise<PluginEntry> {

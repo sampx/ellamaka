@@ -19,6 +19,7 @@ opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 
 LOGDIR="$space/logs"
 PIDFILE="$LOGDIR/ellamaka-dev.pid"
+APP_DEBUG_LOG="$LOGDIR/dev.log"
 
 stop() {
   local pids=()
@@ -99,9 +100,7 @@ esac
 if ! $attach && [ "$cmd" != "server" ]; then
   # ----- default: TUI with in-process backend (no HTTP server) -----
   mkdir -p "$LOGDIR"
-  [ "$debug" = true ] && echo "logs: $LOGDIR"
-
-  tui_args=(--wopal-space --dir "$space")
+  tui_args=(--wopal-space "$space")
   tui_env=(
     OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
     OPENCODE_DISABLE_AGENTS_SKILLS=1
@@ -113,7 +112,14 @@ if ! $attach && [ "$cmd" != "server" ]; then
     tui_env+=(
       WOPAL_PLUGIN_DEBUG="$debug_modules"
       WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+      WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
+    echo "debug enabled (modules: $debug_modules)"
+    echo "  plugin log: $LOGDIR/wopal-plugins-debug.log"
+    echo "  app log:    $APP_DEBUG_LOG"
+    echo ""
+    echo "watch: tail -f $LOGDIR/wopal-plugins-debug.log"
+    sleep 1
   fi
 
   cd "$opencode_dir"
@@ -152,6 +158,7 @@ start_backend() {
     srv_env+=(
       WOPAL_PLUGIN_DEBUG="$debug_modules"
       WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+      WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
   fi
 

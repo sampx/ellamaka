@@ -100,6 +100,68 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 
 ---
 
+### 2026-05-06 | upstream v1.14.28 → v1.14.39
+
+- **Commit**: `0e66df348` on `merge-upstream-opencode-v11439` (待 merge 到 main)
+- **上游范围**: 375 commits (`61eabfc60..6e7c9eb82`), ~400 files changed
+- **Plan**: `docs/products/ellamaka/plans/chore-ellamaka-merge-upstream-opencode-v11439.md`
+- **分叉点**: `61eabfc60` (2026-04-27)
+
+**上游核心变更**:
+- Barrels 全面移除: `src/*/index.ts` 已删除，import 直接从子路径引用
+- CLI `effectCmd` 迁移: 20+ 子命令从 Promise 转为 Effect-native
+- Instance 生命周期重构: `InstanceBootstrap` 提取为 Service，ALS 模式
+- HttpApi 后端默认启用: Hono → Effect native HttpApi（Bun.serve）
+- Schema 迁移: Tool、Session、Provider 域从 Zod → Effect Schema
+- Desktop 包整合: `desktop-electron` → `desktop`，移除 Tauri
+- Shell tool 重命名: `bash` → `shell`
+- `shared` → `core` 重命名（上次合并已跟进）
+
+**冲突文件**（6 个内容冲突）:
+- `config/paths.ts`: `.wopal` 目录扫描路径 + 死代码清理（`readFile`/`substitute` 已移走）
+- `config/managed.ts`: import 路径 barrels 移除
+- `skill/index.ts`: 外部技能目录扫描逻辑适配 + `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫
+- `bus/index.ts`: Payload `id` 字段上游变更
+- `permission/index.ts`: 调试日志注释移除
+- `cli/cmd/tui/worker.ts`: import 路径更新 + `OPENCODE_LOG_LEVEL` 环境变量
+
+**DELETED_PREFIXES 处理**: 310+ 文件（desktop/web/enterprise/slack/console 等），自动 `git rm` 删除
+
+**Flags 注册**: 上游 `Flag` 类型不含 ellamaka 定制，补充注册:
+- `core/flag/flag.ts`: `OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_SPACE`
+
+**保留的 ellamaka 定制**（全部自动合并或手动适配）:
+- `config.ts`: `tryLoadWopalSpaceConfig` 注入
+- `config/wopal-space.ts`: 160 行完整保留
+- `config/paths.ts`: `.wopal` 目录扫描
+- `index.ts`: `--wopal-space` CLI 标志
+- `installation/index.ts`: `.wopal/bin` 路径检测 + ellamaka-main 通道
+- `uninstall.ts`: `.wopal` 路径清理
+- `cli/cmd/tui/worker.ts`: `OPENCODE_LOG_LEVEL` 环境变量
+- `skill/index.ts`: `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫
+
+**验证结果**:
+- typecheck: opencode + core 通过
+- test: 2357 pass / 25 fail（11 skip, 2 todo）
+  - 6 skill 测试: 上游 skill 发现重构后已知问题（前次合并也有）
+  - 19 网络/超时/时序测试: 无头环境固有
+
+**当日后续修复（本次提交）**:
+- `core/flag/flag.ts`: 将 `WOPAL_SPACE` 改为 getter，修复 TUI / worker 双实例下的模式识别时序问题
+- `config/wopal-space.ts` + `config/config.ts` + `plugin/shared.ts`: 为 `.wopal/plugins/*` 指向的本地源码插件自动安装 `file:` 依赖，宿主不再只装 `@opencode-ai/plugin`
+- `cli/cmd/tui/config/tui.ts`: `WOPAL_SPACE` 模式下过滤自动发现的 `.opencode` 目录，避免遗留 TUI 插件继续从 `.opencode/plugins/*` 加载
+- `core/util/log.ts` + `scripts/dev.sh`: 新增 `WOPAL_DEBUG_LOG_DIR`，debug 模式下将 app `dev.log` 与插件调试日志统一落到工作区 `logs/`
+- `core/global.ts` + `core/package.json` + `bun.lock`: 移除 `xdg-basedir` 依赖，继续固定使用 `WOPAL_HOME` / `~/.wopal/ellamaka/*` 路径体系
+- `scripts/build.sh` + `scripts/dev.sh`: 安装脚本改为复制二进制而非 worktree symlink；开发脚本补齐 preload、默认 in-process TUI 与 attach/server 分流
+
+**2026-05-07 后续补丁**:
+- `config/wopal-space-settings.ts`: 提取 `.wopal/config/settings.jsonc|json` 的共享查找逻辑，主配置与 TUI 配置共用同一条 wopal-space settings 发现链
+- `cli/cmd/tui/config/wopal-space.ts` + `cli/cmd/tui/config/tui.ts`: `WOPAL_SPACE` 模式下改为从 `.wopal/config/settings.*` 的 `tui` 字段加载外部 TUI 插件，不再依赖 `.opencode/tui.json`
+- `cli/cmd/tui/plugin/runtime.ts` + `cli/cmd/tui/context/theme.tsx`: 本地 wopal-space 插件 theme 改为持久化到 `.wopal/config/themes/`，并将该目录纳入 TUI 自定义主题扫描链；全局主题目录保持 `Global.Path.config/themes`
+- **验证**: `packages/opencode` 下 `bun typecheck` 通过
+
+---
+
 ### 2026-04-26 | upstream v1.14.19 → v1.14.25
 
 - **Commit**: `eb609485` on `main`
