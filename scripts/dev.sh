@@ -15,6 +15,7 @@ root="$(cd "$(dirname "$(resolve "$0")")/.." && pwd)"
 space="$(cd "$root/../.." && pwd)"
 opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
+opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 
 LOGDIR="$space/logs"
 PIDFILE="$LOGDIR/ellamaka-dev.pid"
@@ -46,18 +47,20 @@ usage() {
   cat <<EOF
 ellamaka - EllaMaka dev launcher
 
-Usage: $self [command] [options]
+Usage: $self [command|option]
 
   Commands:
-  (none)        Start opencode TUI (default)
-  server        Start backend as headless server
-  stop          Stop all dev servers
-  help          Show this help message
+    server        Start backend as headless HTTP server
+    stop          Stop all dev servers
+    help          Show this help message
 
-Options:
-  -h, --help        Show this help message
-  --debug [mods]    Enable debug mode (default: all)
-                    Modules: task, rules, or comma-separated list
+  Options:
+    -a, --attach      Start HTTP server + attach TUI client
+    -h, --help        Show this help message
+    --debug [mods]    Enable debug mode (default: all)
+                      Modules: task, rules, or comma-separated list
+
+  Without args, starts TUI directly (no HTTP server, backend in-process).
 
 Debug logs:
   $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
@@ -67,13 +70,15 @@ Server: http://127.0.0.1:4097 (dev) / http://127.0.0.1:4096 (prod)
 EOF
 }
 
-cmd="tui"
+cmd=""
+attach=false
 debug=false
 debug_modules=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     stop|-h|--help|help|server) cmd="$1"; shift ;;
+    -a|--attach) attach=true; shift ;; 
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -90,6 +95,30 @@ case "$cmd" in
   stop) stop; exit ;;
   -h|--help|help) usage; exit ;;
 esac
+
+if ! $attach && [ "$cmd" != "server" ]; then
+  # ----- default: TUI with in-process backend (no HTTP server) -----
+  mkdir -p "$LOGDIR"
+  [ "$debug" = true ] && echo "logs: $LOGDIR"
+
+  tui_args=(--wopal-space --dir "$space")
+  tui_env=(
+    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
+    OPENCODE_DISABLE_AGENTS_SKILLS=1
+    OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
+  )
+
+  if [ "$debug" = true ]; then
+    tui_args+=(--log-level DEBUG)
+    tui_env+=(
+      WOPAL_PLUGIN_DEBUG="$debug_modules"
+      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+    )
+  fi
+
+  cd "$opencode_dir"
+  exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}"
+fi
 
 mkdir -p "$LOGDIR"
 
@@ -128,14 +157,14 @@ start_backend() {
 
   cd "$space"
   env "${srv_env[@]}" \
-    nohup bun "$opencode_entry" "${srv_args[@]}" > "$LOGDIR/ellamaka-dev-server.log" 2>&1 &
+    nohup bun --preload "$opencode_preload" "$opencode_entry" "${srv_args[@]}" > "$LOGDIR/ellamaka-dev-server.log" 2>&1 &
   local pid=$!
   echo "$pid" > "$PIDFILE"
 }
 
-# ----- tui mode -----
+# ----- attach mode (HTTP server + TUI client) -----
 
-if [ "$cmd" = "tui" ]; then
+if $attach; then
 if ! is_running 4097; then
     [ "$debug" = true ] && echo "logs: $LOGDIR/ellamaka-dev-server.log"
     start_backend
@@ -150,11 +179,12 @@ if ! is_running 4097; then
   fi
   warmup_config
   cd "$opencode_dir"
-  exec bun "$opencode_entry" attach "http://localhost:4097" --dir "$space"
+  exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:4097" --dir "$space"
 fi
 
 # ----- server mode -----
 
+if [ "$cmd" = "server" ]; then
 if [ -f "$PIDFILE" ] || is_running 4097; then
   echo "already running."
   read -p "stop and restart? [Y/n] " yn
@@ -174,3 +204,4 @@ echo "started (backend :4097)"
 wait_backend && warmup_config
 
 echo "run '$self stop' to stop"
+fi
