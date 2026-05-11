@@ -10,6 +10,7 @@ import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
+import type { SystemPromptMetadata } from "@opencode-ai/plugin"
 import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -41,6 +42,7 @@ export type StreamInput = {
   agent: Agent.Info
   permission?: Permission.Ruleset
   system: string[]
+  systemMetadata?: SystemPromptMetadata
   messages: ModelMessage[]
   small?: boolean
   tools: Record<string, Tool>
@@ -117,7 +119,7 @@ const live: Layer.Layer<
       const header = system[0]
       yield* plugin.trigger(
         "experimental.chat.system.transform",
-        { sessionID: input.sessionID, model: input.model },
+        { sessionID: input.sessionID, model: input.model, systemMetadata: input.systemMetadata },
         { system },
       )
       // rejoin to maintain 2-part structure for caching if header unchanged

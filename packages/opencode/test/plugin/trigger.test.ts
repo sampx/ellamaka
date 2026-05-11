@@ -1,4 +1,5 @@
 import { afterAll, describe, expect } from "bun:test"
+import type { SystemPromptMetadata } from "@opencode-ai/plugin"
 import { Effect, Layer } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import path from "path"
@@ -66,6 +67,25 @@ const triggerSystemTransform = Effect.fn("PluginTriggerTest.triggerSystemTransfo
   return out.system
 })
 
+const triggerSystemTransformWithMetadata = Effect.fn(
+  "PluginTriggerTest.triggerSystemTransformWithMetadata",
+)(function* (metadata: SystemPromptMetadata) {
+  const plugin = yield* Plugin.Service
+  const out = { system: [] as string[] }
+  yield* plugin.trigger(
+    systemHook,
+    {
+      model: {
+        providerID: ProviderID.anthropic,
+        modelID: ModelID.make("claude-sonnet-4-6"),
+      },
+      systemMetadata: metadata,
+    },
+    out,
+  )
+  return { system: out.system }
+})
+
 describe("plugin.trigger", () => {
   it.live("runs synchronous hooks without crashing", () =>
     withProject(
@@ -96,6 +116,27 @@ describe("plugin.trigger", () => {
       ].join("\n"),
       Effect.gen(function* () {
         expect(yield* triggerSystemTransform()).toEqual(["async"])
+      }),
+    ),
+  )
+
+  it.live("passes systemMetadata to hook when provided", () =>
+    withProject(
+      [
+        "export default async () => ({",
+        `  ${JSON.stringify(systemHook)}: (input, output) => {`,
+        '    if (input.systemMetadata) output.system.unshift(input.systemMetadata.sections[0].kind)',
+        "  },",
+        "})",
+        "",
+      ].join("\n"),
+      Effect.gen(function* () {
+        const metadata: SystemPromptMetadata = {
+          version: 1,
+          sections: [{ kind: "agent-prompt", content: "test prompt" }],
+        }
+        const result = yield* triggerSystemTransformWithMetadata(metadata)
+        expect(result.system).toEqual(["agent-prompt"])
       }),
     ),
   )

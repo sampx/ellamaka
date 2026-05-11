@@ -4,6 +4,8 @@ import type {
   Plugin as PluginInstance,
   PluginModule,
   WorkspaceAdapter as PluginWorkspaceAdapter,
+  SystemPromptMetadata,
+  SystemPromptSection,
 } from "@opencode-ai/plugin"
 import { Config } from "@/config/config"
 import { Bus } from "../bus"

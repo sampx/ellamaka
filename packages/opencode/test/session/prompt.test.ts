@@ -3,7 +3,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
-import { fileURLToPath } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { Bus } from "../../src/bus"
@@ -2057,5 +2057,65 @@ it.live(
         }),
       { git: true },
     ),
-  30_000,
+)
+
+it.live(
+  "passes systemMetadata to plugin hook via session prompt chain",
+  () =>
+    provideTmpdirServer(
+      Effect.fnUntraced(function* ({ dir, llm }) {
+        // Write a plugin that reads systemMetadata and inserts marker into output.system
+        const pluginFile = path.join(dir, "plugin.mjs")
+        const pluginCode = [
+          "export default async () => ({",
+          '  "experimental.chat.system.transform": (input, output) => {',
+          "    if (input.systemMetadata) {",
+          "      const kinds = input.systemMetadata.sections.map(s => s.kind).join(',')",
+          '      output.system.unshift("KINDS:" + kinds)',
+          "    }",
+          "  }",
+          "})",
+        ].join("\n")
+        yield* Effect.promise(() => Bun.write(pluginFile, pluginCode))
+
+        // Include plugin in config
+        const cfg = providerCfg(llm.url)
+        ;(cfg as any).plugin = [pathToFileURL(pluginFile).href]
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(dir, "opencode.json"),
+            JSON.stringify({ $schema: "https://opencode.ai/config.json", ...cfg }),
+          ),
+        )
+
+        yield* llm.text("done")
+
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({
+          title: "Metadata test",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        yield* prompt.prompt({
+          sessionID: session.id,
+          agent: "build",
+          noReply: true,
+          format: { type: "text" as const },
+          parts: [{ type: "text", text: "hello" }],
+        })
+        yield* prompt.loop({ sessionID: session.id })
+
+        // Plugin inserted "KINDS:<kind1>,<kind2>..." into system[0]
+        const inputs = yield* llm.inputs
+        const lastInput = inputs.at(-1)
+        const messages = lastInput?.messages as any[]
+        const systemMsg = messages?.find((m: any) => m.role === "system")
+        expect(systemMsg).toBeDefined()
+        const systemText = typeof systemMsg.content === "string" ? systemMsg.content : systemMsg.content?.[0]?.text
+        expect(systemText).toContain("KINDS:")
+        expect(systemText).toContain("environment")
+      }),
+      { git: true, config: providerCfg },
+    ),
+  10_000,
 )

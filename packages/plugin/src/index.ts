@@ -18,6 +18,27 @@ import { type ToolDefinition } from "./tool.js"
 
 export * from "./tool.js"
 
+export type SystemPromptSectionKind =
+  | "agent-prompt"
+  | "provider-prompt"
+  | "environment"
+  | "instruction"
+  | "skill"
+  | "structured-output"
+  | "user-system"
+  | "custom"
+
+export type SystemPromptSection = {
+  kind: SystemPromptSectionKind
+  content: string
+  source?: string
+}
+
+export type SystemPromptMetadata = {
+  version: 1
+  sections: SystemPromptSection[]
+}
+
 export type ProviderContext = {
   source: "env" | "config" | "custom" | "api"
   info: Provider
@@ -288,7 +309,7 @@ export interface Hooks {
     },
   ) => Promise<void>
   "experimental.chat.system.transform"?: (
-    input: { sessionID?: string; model: Model },
+    input: { sessionID?: string; model: Model; systemMetadata?: SystemPromptMetadata },
     output: {
       system: string[]
     },

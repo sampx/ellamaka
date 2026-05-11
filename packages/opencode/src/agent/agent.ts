@@ -15,6 +15,7 @@ import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
+import type { SystemPromptMetadata } from "@opencode-ai/plugin"
 import path from "path"
 import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
@@ -341,7 +342,15 @@ export const layer = Layer.effect(
           : undefined
 
         const system = [PROMPT_GENERATE]
-        yield* plugin.trigger("experimental.chat.system.transform", { model: resolved }, { system })
+        const systemMetadata: SystemPromptMetadata = {
+          version: 1,
+          sections: [{ kind: "custom", content: PROMPT_GENERATE }],
+        }
+        yield* plugin.trigger(
+          "experimental.chat.system.transform",
+          { model: resolved, systemMetadata },
+          { system },
+        )
         const existing = yield* InstanceState.useEffect(state, (s) => s.list())
 
         // TODO: clean this up so provider specific logic doesnt bleed over

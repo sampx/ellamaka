@@ -16,6 +16,7 @@ import { Bus } from "../bus"
 import { ProviderTransform } from "@/provider/transform"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
+import type { SystemPromptMetadata, SystemPromptSection } from "@opencode-ai/plugin"
 import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
@@ -1574,6 +1575,27 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+
+            const sections: SystemPromptSection[] = []
+            if (agent.prompt) {
+              sections.push({ kind: "agent-prompt", content: agent.prompt })
+            } else {
+              for (const p of SystemPrompt.provider(model)) {
+                sections.push({ kind: "provider-prompt", content: p })
+              }
+            }
+            for (const e of env) sections.push({ kind: "environment", content: e })
+            for (const inst of instructions) {
+              const match = inst.match(/^Instructions from: (.+)\n/)
+              sections.push({ kind: "instruction", content: inst, source: match?.[1] })
+            }
+            if (skills) sections.push({ kind: "skill", content: skills })
+            if (format.type === "json_schema") {
+              sections.push({ kind: "structured-output", content: STRUCTURED_OUTPUT_SYSTEM_PROMPT })
+            }
+            if (lastUser.system) sections.push({ kind: "user-system", content: lastUser.system })
+            const systemMetadata: SystemPromptMetadata = { version: 1, sections }
+
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1581,6 +1603,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               sessionID,
               parentSessionID: session.parentID,
               system,
+              systemMetadata,
               messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
               tools,
               model,
