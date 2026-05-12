@@ -91,8 +91,8 @@ if $INSTALL; then
     echo "📦 New build: $NEW_VER"
   fi
 
-  # 直接复制二进制到安装目录（不依赖 worktree 生命周期）
-  cp -f "$SRC" "$DST"
+  # 原子替换：先复制到临时文件，再 mv 覆盖（绕过 macOS Launch Services 缓存拦截）
+  cp -f "$SRC" "${DST}.tmp" && mv -f "${DST}.tmp" "$DST"
   echo "✅ Installed: $DST"
   echo "   Run with: $BINARY_NAME"
 fi
