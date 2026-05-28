@@ -160,7 +160,7 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 
 - **Commit**：`7e8f3bba0` on `main`
 - **上游范围**：91 commits（`f2d4d816f..61eabfc60`），155 files changed，+7738/-2560
-- **Plan**：`docs/projects/ellamaka/plans/done/20260427-chore-ellamaka-merge-upstream-dev-v11428.md`
+- **Plan**：`projects/ellamaka/docs/plans/done/20260427-chore-ellamaka-merge-upstream-dev-v11428.md`
 
 **上游核心变更**：
 - HttpApi 桥接端点扩充：session、sync、workspace 读写、TUI/PTY、事件流路由
@@ -188,7 +188,7 @@ WOPAL_HOME 路径系统、`DISABLE_AGENTS_SKILLS` 开关、`WOPAL_SPACE` 模式�
 
 - **Commit**：`eb6094850` on `main`
 - **上游范围**：186 commits（`224548d87..f2d4d816f`），349 files changed
-- **Plan**：`docs/projects/ellamaka/plans/chore-ellamaka-merge-upstream-dev-v11425.md`
+- **Plan**：`projects/ellamaka/docs/plans/chore-ellamaka-merge-upstream-dev-v11425.md`
 
 **上游核心变更**：
 - 包重命名：`@opencode-ai/shared` → `@opencode-ai/core`
@@ -214,7 +214,7 @@ WOPAL_HOME 路径系统、`DISABLE_AGENTS_SKILLS` 开关、`WOPAL_SPACE` 模式�
 - **Commit**：`8312e78` on `main`
 - **上游范围**：813 commits，415 files changed
 - **分叉点**：`500dcfc58`（2026-04-03）
-- **Plan**：`docs/projects/ellamaka/plans/done/20260421-118-chore-config-merge-upstream-opencode-into-ellamaka.md`
+- **Plan**：`projects/ellamaka/docs/plans/done/20260421-118-chore-config-merge-upstream-opencode-into-ellamaka.md`
 
 **上游核心变更**：
 - Effect Schema 重构（config 模块拆分为 15+ 子模块）
