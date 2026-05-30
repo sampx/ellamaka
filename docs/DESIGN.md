@@ -9,6 +9,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-05-30 | Updated | 增加独立分发契约：多平台 standalone binary、release artifacts、checksum、installer 与下游消费接口。 |
 | 2026-05-30 | 创建 | 定义 ellamaka 作为 WopalSpace Engine 的项目职责、边界、架构模块、配置契约、上游跟踪策略与状态模型。 |
 
 ## 1. Project Role
@@ -38,6 +39,7 @@ ellamaka 的目标态能力范围包括：
 | Ontology Runtime Loading | 从 `.wopal/` 加载 commands、agents、plugins、themes 与相关运行配置，让 ontology 成为可执行能力包。 |
 | Plugin Runtime | 运行 `.wopal/plugins/` 中的插件，向 agent 暴露插件工具，并处理本地 path plugin 的依赖安装。 |
 | TUI Configuration | 在 TUI 配置中识别 `.wopal/config/settings.jsonc` 的 `tui` 字段，让空间可以提供 TUI 级外观与行为配置。 |
+| Distribution and Release | 构建、打包、发布和校验 ellamaka 的多平台 standalone binaries，为独立安装入口和下游产品提供标准化 release contract。 |
 | Upstream Compatibility | 保持 OpenCode 原有架构、包结构、命令语义和 runtime 模型，降低 merge upstream 成本。 |
 | Upstream Tracking | 使用固定分支策略、裁剪清单、合并记录和验证契约持续跟踪 upstream/dev。 |
 
@@ -88,7 +90,8 @@ ellamaka 的目标态能力范围包括：
 | Command Loading | 加载 `.wopal/commands/*.md` 与命令定义，支持 ontology command 覆盖 built-in command。 | `packages/opencode/src/config/command.ts` |
 | Permission System | 合并默认权限、全局权限、空间权限与 agent frontmatter 权限，决定工具调用授权。 | `packages/opencode/src/permission/`, `packages/opencode/src/config/agent.ts` |
 | Flag and Global Path | 承载 `WOPAL_SPACE`、`OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_HOME` 与 `~/.wopal/ellamaka/*` 路径体系。 | `packages/core/src/flag/flag.ts`, `packages/core/src/global.ts` |
-| Installation Integration | 识别 `.wopal/bin` 安装路径和 ellamaka 本地安装通道。 | `packages/opencode/src/installation/index.ts` |
+| Installation Integration | 识别独立安装、下游消费安装与 `.wopal/bin` 安装路径，向 runtime 暴露安装来源与升级通道。 | `packages/opencode/src/installation/index.ts` |
+| Release Packaging | 构建多平台 standalone binary、artifact 命名、checksum 与 release manifest。 | `packages/opencode/script/*`, CI workflows |
 | Skill Loading Guard | 维护独立 skill 目录与 `OPENCODE_DISABLE_AGENTS_SKILLS` 等空间相关守卫。 | `packages/opencode/src/skill/` |
 | Upstream Merge Boundary | 记录分支策略、裁剪清单、冲突处理规则、保留定制项与合并后验证要求。 | `UPSTREAM-MERGE-LOG.md` |
 | Storage and Database | 承载 OpenCode runtime 持久化数据、session storage、Drizzle schema 与 migration。 | `packages/opencode/src/storage/`, `packages/opencode/src/**/*.sql.ts`, `packages/opencode/migration/` |
@@ -219,6 +222,139 @@ ellamaka 尽量保留 upstream OpenCode 的 package shape、实现风格和模�
 
 当 upstream 架构变化时，ellamaka 迁移自身定制以适配新的 upstream shape，而不是冻结旧的 upstream 内部结构。例如 upstream 将 shared package 重命名为 core 后，ellamaka 将自定义 global path 和 flag behavior 迁移到 `@opencode-ai/core`；upstream 移除 barrels 并迁移更多 Effect-native services 后，ellamaka 保持直接子路径 import 和 Effect 服务风格。
 
+### 6.8 Distribution and Installation Contract
+
+ellamaka 既是 WopalSpace 的 Engine，也是可独立分发和安装的 runtime。它拥有自己的标准化发布机制，wopal-cli 只是其中一个消费者。
+
+#### Distribution Positioning
+
+ellamaka 的标准分发模型是：
+
+```text
+source repo
+  -> CI matrix build
+  -> platform-specific standalone binaries
+  -> checksums + release manifest
+  -> standalone installers and downstream consumers
+```
+
+ellamaka 可以被两类入口消费：
+
+1. **独立安装入口**
+   - `https://wopal.cn/ellamaka/install.sh`
+   - `https://wopal.cn/ellamaka/install.ps1`
+2. **下游产品入口**
+   - `wopal engine install`
+   - `wopal setup`
+
+无论通过哪种入口安装，最终都应消费同一套标准 release artifacts 和校验机制。
+
+#### Platform Matrix
+
+ellamaka release artifacts 使用稳定命名：
+
+| OS | Arch | Variant | Artifact |
+|---|---|---|---|
+| macOS | arm64 | native | `ellamaka-darwin-arm64.zip` |
+| macOS | x64 | native | `ellamaka-darwin-x64.zip` |
+| macOS | x64 | baseline | `ellamaka-darwin-x64-baseline.zip` |
+| Linux | arm64 | glibc | `ellamaka-linux-arm64.tar.gz` |
+| Linux | x64 | glibc | `ellamaka-linux-x64.tar.gz` |
+| Linux | arm64 | musl | `ellamaka-linux-arm64-musl.tar.gz` |
+| Linux | x64 | musl | `ellamaka-linux-x64-musl.tar.gz` |
+| Linux | x64 | baseline | `ellamaka-linux-x64-baseline.tar.gz` |
+| Linux | x64 | musl baseline | `ellamaka-linux-x64-baseline-musl.tar.gz` |
+| Windows | arm64 | native | `ellamaka-windows-arm64.zip` |
+| Windows | x64 | native | `ellamaka-windows-x64.zip` |
+| Windows | x64 | baseline | `ellamaka-windows-x64-baseline.zip` |
+
+命名原则：
+
+1. artifact 名称与 binary 名称一致体现 `ellamaka` 品牌。
+2. 压缩格式按平台选择：Unix 优先 `.tar.gz`，Windows / macOS 可使用 `.zip`。
+3. baseline / musl 变体在文件名中显式可见。
+4. release consumers 不依赖人工解释文件名。
+
+#### Release Integrity Contract
+
+每个 ellamaka release 都必须附带：
+
+- `checksums.txt`
+- release metadata / manifest（可为 JSON）
+- 对应版本号的完整 artifact 集
+
+校验要求：
+
+1. installer 和 CLI consumer 在解压前必须校验 checksum。
+2. checksum 文件与 artifacts 来自同一 release version。
+3. consumer 在校验失败时必须中止安装，不允许静默继续。
+4. P1 先要求 checksum；代码签名和 notarization 属于后续增强。
+
+#### Standalone Installation Contract
+
+ellamaka 的独立安装入口负责：
+
+1. 检测平台（OS / arch / libc / baseline）。
+2. 选择正确 artifact。
+3. 下载 artifact 和 checksum。
+4. 校验完整性。
+5. 解压到目标安装目录。
+6. 配置用户级 PATH。
+7. 验证 `ellamaka --version`。
+
+默认安装路径：
+
+| Platform | Install root | Binary path |
+|---|---|---|
+| macOS / Linux | `~/.wopal/bin/` | `~/.wopal/bin/ellamaka` |
+| Windows | `%LOCALAPPDATA%\Programs\Wopal\bin\` | `%LOCALAPPDATA%\Programs\Wopal\bin\ellamaka.exe` |
+
+ellamaka 使用与 Wopal 产品一致的用户级 binary directory，便于与 `wopal` 共存，也便于 downstream installer 复用路径语义。
+
+#### Consumer Contract for wopal-cli
+
+wopal-cli 作为 ellamaka release consumer 时，依赖以下稳定接口：
+
+1. stable artifact naming
+2. stable latest-version lookup
+3. stable checksum location
+4. stable binary entry name (`ellamaka` / `ellamaka.exe`)
+5. 明确的 install-path semantics
+
+ellamaka 的发布体系不要求 `wopal-cli` 了解内部构建脚本，只要求 consumer 可以根据公开契约下载、校验和安装。
+
+#### Windows Contract
+
+Windows 平台至少定义以下契约：
+
+1. 独立安装入口使用 `install.ps1`。
+2. binary 名称为 `ellamaka.exe`。
+3. 默认安装目录为 `%LOCALAPPDATA%\Programs\Wopal\bin\`。
+4. PATH 更新使用 User PATH，不要求管理员权限。
+5. x64 平台可根据 CPU 能力选择 native 或 baseline 变体。
+6. downstream consumer 不需要重新定义 Windows artifact 语义。
+
+#### Branding and Fork Attribution
+
+ellamaka 是基于 OpenCode 的 fork，可以使用独立品牌发布，但分发产物必须保留必要的上游许可证归属信息。
+
+要求：
+
+1. 仓库保留 MIT License。
+2. 发布文档明确 ellamaka is a fork of OpenCode。
+3. binary、artifact、安装路径和用户文档使用 `ellamaka` 品牌，而不是 `opencode`。
+4. 不制造与 upstream OpenCode 官方发布的关系混淆。
+
+#### Out of Scope for P1
+
+以下内容不属于 P1 release contract 的必达范围：
+
+- Homebrew、winget、choco、npm、nix 等多包管理器适配
+- 自动后台更新
+- 代码签名、notarization、SmartScreen 声誉优化
+- 企业级镜像站和 CDN 容灾
+- desktop / cloud / non-engine products 的发布恢复
+
 ## 7. Data and State Model
 
 | 状态 | 位置 | Owner | 规则 |
@@ -244,6 +380,7 @@ ellamaka 尽量保留 upstream OpenCode 的 package shape、实现风格和模�
 |------|----------|
 | `../../../docs/products/wopal-space/PRD-wopalspace.md` | WopalSpace 产品定位、核心能力和治理原则。 |
 | `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | WopalSpace 总体架构、ellamaka 在产品分层中的 engine 位置。 |
+| `../../wopal-cli/docs/DESIGN.md` | wopal-cli 作为 ellamaka release consumer 的分发和 setup 契约。 |
 | `AGENTS.md` | ellamaka 仓库级开发规则、测试规则和代码风格约定。 |
 | `packages/opencode/AGENTS.md` | opencode package 内部模块组织、Effect 规则、数据库与 migration 规则。 |
 | `UPSTREAM-MERGE-LOG.md` | upstream OpenCode 跟踪策略、裁剪边界、合并策略、保留定制项与合并验证经验。 |
