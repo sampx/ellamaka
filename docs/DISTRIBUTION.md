@@ -17,9 +17,9 @@
 
 ## 1. Scope
 
-本文件定义 ellamaka 的独立分发：release backbone、artifact naming、固定安装路径与安装入口。
+本文件定义 ellamaka 的 Engine release contract：GitHub Release backbone、artifact naming、固定安装路径与 CLI 消费边界。
 
-ellamaka 的分发是自包含的——可以脱离 wopal-space 独立运行。wopal-cli 的 `setup` 功能可以将其下载并与 wopal-space 配置集成，但这属于 CLI 的安装引导职责。
+ellamaka 的发布是自包含的，但 P1 的自动消费入口是 `wopal ellamaka install`。wopal-cli 的 `setup` 通过该入口完成 engine 安装引导。
 
 项目职责、配置链路与 runtime loading 见 `DESIGN.md`。
 
@@ -36,8 +36,8 @@ P1 的 canonical release source：
 P1 的 canonical consumer：
 
 1. `wopal ellamaka install`
-2. `wopal setup`
-3. ellamaka 独立安装脚本（`install.sh` / `install.ps1`）
+2. `wopal setup`（通过 `wopal ellamaka install`）
+3. 人工从 GitHub Release 页面手动下载
 
 ---
 
@@ -94,6 +94,7 @@ Contract：
 2. consumer 依赖稳定文件名，无需人工解释 release 页面。
 3. baseline 与 musl 变体在文件名中显式可见。
 4. `checksums.txt` 与同版本 artifacts 一起发布。
+5. release build 的 channel 对外固定为 `ellamaka`；本地开发 channel 保持 `ellamaka-main`。
 
 ---
 
@@ -108,10 +109,11 @@ P1 使用固定安装路径。
 
 Install contract：
 
-1. independent installer 与 `wopal ellamaka install` 使用同一套 release artifacts。
-2. consumer 在放置 binary 前必须校验 SHA-256。
-3. 安装成功的标志是 `ellamaka --version` 正常输出。
-4. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
+1. `wopal ellamaka install` 是 P1 唯一的自动安装入口。
+2. consumer 根据 OS / arch / libc 与稳定 artifact naming 计算目标文件名。
+3. consumer 在放置 binary 前必须校验 SHA-256。
+4. 安装成功的标志是 `ellamaka --version` 正常输出。
+5. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
 
 ---
 
@@ -142,6 +144,7 @@ ellamaka 安装完成后，运行时加载链路按 WopalSpace mode 工作：
 3. 自动后台更新
 4. 额外的复杂 release manifest 系统
 5. 在分发阶段替代 wopal-space mode 的配置融合与 runtime loading
+6. 独立 ellamaka installer 脚本
 
 ---
 

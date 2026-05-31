@@ -10,6 +10,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 Canonical references:
 
 - DESIGN: `docs/DESIGN.md`
+- DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge Rules: `UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
