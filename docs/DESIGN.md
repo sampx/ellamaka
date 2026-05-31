@@ -9,6 +9,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-05-31 | Updated | Skill loader 改为确定性覆盖：user/base 先加载，space overlay 同名稳定覆盖。 |
 | 2026-05-30 | Updated | 将详细分发契约下沉到 `docs/DISTRIBUTION.md`，本文件仅保留 release 与安装边界摘要。 |
 | 2026-05-30 | Updated | 增加独立分发契约：多平台 standalone binary、release artifacts、checksum、installer 与下游消费接口。 |
 | 2026-05-30 | 创建 | 定义 ellamaka 作为 WopalSpace Engine 的项目职责、边界、架构模块、配置契约、上游跟踪策略与状态模型。 |
@@ -93,7 +94,7 @@ ellamaka 的目标态能力范围包括：
 | Flag and Global Path | 承载 `WOPAL_SPACE`、`OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_HOME` 与 `~/.wopal/ellamaka/*` 路径体系。 | `packages/core/src/flag/flag.ts`, `packages/core/src/global.ts` |
 | Installation Integration | 识别独立安装、下游消费安装与 `.wopal/bin` 安装路径，向 runtime 暴露安装来源与升级通道。 | `packages/opencode/src/installation/index.ts` |
 | Release Packaging | 构建多平台 standalone binary、artifact 命名、checksum 与 release manifest。 | `packages/opencode/script/*`, CI workflows |
-| Skill Loading Guard | 维护独立 skill 目录与 `OPENCODE_DISABLE_AGENTS_SKILLS` 等空间相关守卫。 | `packages/opencode/src/skill/` |
+| Skill Loading | 按目录优先级确定性加载 skills，user/base 先扫描，space overlay 后扫描；同名 skill 由 space overlay 稳定覆盖。 | `packages/opencode/src/skill/` |
 | Upstream Merge Boundary | 记录分支策略、裁剪清单、冲突处理规则、保留定制项与合并后验证要求。 | `UPSTREAM-MERGE-LOG.md` |
 | Storage and Database | 承载 OpenCode runtime 持久化数据、session storage、Drizzle schema 与 migration。 | `packages/opencode/src/storage/`, `packages/opencode/src/**/*.sql.ts`, `packages/opencode/migration/` |
 | UI and App Packages | 提供 Web/App/TUI 相关界面能力，作为 OpenCode inherited surface 保留。 | `packages/app/`, `packages/ui/`, `packages/storybook/` |
@@ -236,6 +237,20 @@ ellamaka 拥有独立的 Engine 分发机制。P1 延续当前 OpenCode CLI rele
 5. 分发阶段与 wopal-space mode 的配置融合各有分工，各自独立完成。
 
 详细 artifact naming、install contract、runtime handoff 与 P1 out of scope 见 `docs/DISTRIBUTION.md`。
+
+### 6.9 Skill Loading Contract
+
+Skill 按目录优先级顺序发现：user 目录（`~/.agents/skills`、`~/.wopal/skills`）先扫描，space 目录（`<space>/.wopal/skills`）后扫描。加载阶段先并发解析所有 `SKILL.md`，再按发现顺序串行写入 `state.skills`；同名 skill 由后出现的目录稳定覆盖。这保证了 space overlay 可覆盖 user/base skill，同时保留并发解析带来的启动性能。
+
+优先级链：
+
+```text
+~/.agents/skills
+-> ~/.wopal/skills
+-> <space>/.wopal/skills
+```
+
+右侧优先级最高。
 
 ## 7. Data and State Model
 

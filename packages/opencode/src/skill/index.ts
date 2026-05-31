@@ -73,7 +73,7 @@ export interface Interface {
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
 }
 
-const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
+const parseSkill = Effect.fnUntraced(function* (match: string, bus: Bus.Interface) {
   const md = yield* Effect.tryPromise({
     try: () => ConfigMarkdown.parse(match),
     catch: (err) => err,
@@ -91,26 +91,38 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
     ),
   )
 
-  if (!md) return
+  if (!md) return undefined
 
   const parsed = z.object({ name: z.string(), description: z.string() }).safeParse(md.data)
-  if (!parsed.success) return
+  if (!parsed.success) return undefined
 
-  if (state.skills[parsed.data.name]) {
-    log.warn("duplicate skill name", {
-      name: parsed.data.name,
-      existing: state.skills[parsed.data.name].location,
-      duplicate: match,
-    })
-  }
-
-  state.dirs.add(path.dirname(match))
-  state.skills[parsed.data.name] = {
+  return {
     name: parsed.data.name,
     description: parsed.data.description,
     location: match,
     content: md.content,
   }
+})
+
+const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
+  const parsed = yield* Effect.forEach(discovered.matches, (match) => parseSkill(match, bus), {
+    concurrency: "unbounded",
+  })
+
+  for (const info of parsed) {
+    if (!info) continue
+    if (state.skills[info.name]) {
+      log.warn("duplicate skill name", {
+        name: info.name,
+        existing: state.skills[info.name].location,
+        duplicate: info.location,
+      })
+    }
+    state.dirs.add(path.dirname(info.location))
+    state.skills[info.name] = info
+  }
+
+  log.info("init", { count: Object.keys(state.skills).length })
 })
 
 const scan = Effect.fnUntraced(function* (
@@ -210,15 +222,6 @@ const discoverSkills = Effect.fnUntraced(function* (
     matches: Array.from(state.matches),
     dirs: Array.from(state.dirs),
   }
-})
-
-const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
-  yield* Effect.forEach(discovered.matches, (match) => add(state, match, bus), {
-    concurrency: "unbounded",
-    discard: true,
-  })
-
-  log.info("init", { count: Object.keys(state.skills).length })
 })
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}

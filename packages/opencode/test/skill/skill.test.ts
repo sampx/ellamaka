@@ -333,6 +333,107 @@ description: A skill in the .agents/skills directory.
     ),
   )
 
+  it.live("project-level skills override external skills with same name", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Promise.all([
+              Bun.write(
+                path.join(dir, ".claude", "skills", "shared-name", "SKILL.md"),
+                `---
+name: shared-name
+description: External version of skill.
+---
+
+# External Skill
+`,
+              ),
+              Bun.write(
+                path.join(dir, ".opencode", "skill", "shared-name", "SKILL.md"),
+                `---
+name: shared-name
+description: Project-level version of skill.
+---
+
+# Project Skill
+`,
+              ),
+            ]),
+          )
+
+          const skill = yield* Skill.Service
+          const list = yield* skill.all()
+          expect(list.length).toBe(1)
+          const item = list.find((x) => x.name === "shared-name")
+          expect(item).toBeDefined()
+          expect(item!.description).toBe("Project-level version of skill.")
+          expect(item!.location).toContain(path.join(".opencode", "skill", "shared-name", "SKILL.md"))
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live("later config directory overrides earlier for same skill name", () =>
+    Effect.gen(function* () {
+      const overrideTmp = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (t) => Effect.promise(() => t[Symbol.asyncDispose]()),
+      )
+      const projectTmp = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir({ git: true })),
+        (t) => Effect.promise(() => t[Symbol.asyncDispose]()),
+      )
+
+      yield* Effect.promise(() =>
+        Promise.all([
+          fs.mkdir(path.join(projectTmp.path, ".opencode", "skills", "precedence-test"), { recursive: true }).then(() =>
+            Bun.write(
+              path.join(projectTmp.path, ".opencode", "skills", "precedence-test", "SKILL.md"),
+              `---
+name: precedence-test
+description: Base from earlier config directory.
+---
+
+# Base
+`,
+            ),
+          ),
+          fs.mkdir(path.join(overrideTmp.path, "skills", "precedence-test"), { recursive: true }).then(() =>
+            Bun.write(
+              path.join(overrideTmp.path, "skills", "precedence-test", "SKILL.md"),
+              `---
+name: precedence-test
+description: Override from later config directory.
+---
+
+# Override
+`,
+            ),
+          ),
+        ]),
+      )
+
+      const prev = process.env.OPENCODE_CONFIG_DIR
+      process.env.OPENCODE_CONFIG_DIR = overrideTmp.path
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (prev === undefined) delete process.env.OPENCODE_CONFIG_DIR
+          else process.env.OPENCODE_CONFIG_DIR = prev
+        }),
+      )
+
+      yield* Effect.gen(function* () {
+        const skill = yield* Skill.Service
+        const list = yield* skill.all()
+        const item = list.find((x) => x.name === "precedence-test")
+        expect(item).toBeDefined()
+        expect(item!.description).toBe("Override from later config directory.")
+        expect(item!.location).toContain(path.join("skills", "precedence-test", "SKILL.md"))
+      }).pipe(provideInstance(projectTmp.path))
+    }),
+  )
+
   it.live("properly resolves directories that skills live in", () =>
     provideTmpdirInstance(
       (dir) =>
