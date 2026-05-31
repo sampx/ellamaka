@@ -35,7 +35,7 @@ P1 的 canonical release source：
 
 P1 的 canonical consumer：
 
-1. `wopal engine install`
+1. `wopal ellamaka install`
 2. `wopal setup`
 3. ellamaka 独立安装脚本（`install.sh` / `install.ps1`）
 
@@ -108,7 +108,7 @@ P1 使用固定安装路径。
 
 Install contract：
 
-1. independent installer 与 `wopal engine install` 使用同一套 release artifacts。
+1. independent installer 与 `wopal ellamaka install` 使用同一套 release artifacts。
 2. consumer 在放置 binary 前必须校验 SHA-256。
 3. 安装成功的标志是 `ellamaka --version` 正常输出。
 4. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
