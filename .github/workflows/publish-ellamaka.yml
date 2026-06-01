@@ -1,0 +1,140 @@
+name: publish-ellamaka
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (optional)"
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Derive version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            release="true"
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            version="${{ inputs.version }}"
+            release="true"
+            tag="v${version}"
+          else
+            version="0.0.0-dev"
+            release=""
+            tag=""
+          fi
+          {
+            echo "version=${version}"
+            echo "release=${release}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-cli:
+    needs: version
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Build
+        run: ./packages/opencode/script/build.ts --p1
+        env:
+          BINARY_NAME: ellamaka
+          OPENCODE_VERSION: ${{ needs.version.outputs.version }}
+          OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
+
+      - name: Create archives
+        working-directory: packages/opencode
+        run: |
+          for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-linux-x64 ellamaka-windows-x64; do
+            if [ -d "dist/${name}/bin" ]; then
+              if echo "$name" | grep -q "linux"; then
+                tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
+              else
+                (cd "dist/${name}/bin" && zip -r "../../../dist/${name}.zip" .)
+              fi
+            fi
+          done
+
+      - name: Stage release artifacts
+        run: |
+          mkdir -p dist
+          cp packages/opencode/dist/ellamaka-darwin-arm64.zip dist/
+          cp packages/opencode/dist/ellamaka-darwin-x64.zip dist/
+          cp packages/opencode/dist/ellamaka-linux-x64.tar.gz dist/
+          cp packages/opencode/dist/ellamaka-windows-x64.zip dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellamaka-darwin-arm64
+          path: dist/ellamaka-darwin-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellamaka-darwin-x64
+          path: dist/ellamaka-darwin-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellamaka-linux-x64
+          path: dist/ellamaka-linux-x64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ellamaka-windows-x64
+          path: dist/ellamaka-windows-x64.zip
+
+  release:
+    needs: [version, build-cli]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.release != '' && github.repository == 'wopal-cn/ellamaka'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: ellamaka-*
+          merge-multiple: true
+
+      - name: Verify artifacts
+        run: |
+          for f in dist/ellamaka-darwin-arm64.zip dist/ellamaka-darwin-x64.zip dist/ellamaka-linux-x64.tar.gz dist/ellamaka-windows-x64.zip; do
+            test -f "$f" || { echo "MISSING: $f"; exit 1; }
+          done
+
+      - name: Generate checksums
+        run: cd dist && sha256sum ellamaka-*.zip ellamaka-*.tar.gz > checksums.txt
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          if gh release view "v${version}" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
+            gh release upload "v${version}" dist/ellamaka-*.zip dist/ellamaka-*.tar.gz dist/checksums.txt \
+              --repo wopal-cn/ellamaka --clobber
+          else
+            gh release create "v${version}" dist/ellamaka-*.zip dist/ellamaka-*.tar.gz dist/checksums.txt \
+              --repo wopal-cn/ellamaka --title "ellamaka v${version}" --generate-notes
+          fi
