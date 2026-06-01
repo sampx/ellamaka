@@ -117,10 +117,13 @@ N/A — 无业务规则变更
 
 | Component | Files | Operation | Role |
 |-----------|-------|-----------|------|
-| CLI build script | `packages/opencode/script/build.ts` | 修改 | Binary branding, P1 matrix, channel 覆盖 |
-| CLI entry | `packages/opencode/src/index.ts` | 修改 | `--version` 输出格式 |
-| Debug command | `packages/opencode/src/cli/cmd/debug/index.ts` | 修改 | `debug info` 输出品牌名 |
+| CLI build script | `packages/opencode/script/build.ts` | 修改 | 通用化：BINARY_NAME env + --p1 flag + P1 target 过滤 |
+| CLI entry | `packages/opencode/src/index.ts` | 修改 | VERSION_PREFIX import，品牌值不在文件中 |
+| Debug command | `packages/opencode/src/cli/cmd/debug/index.ts` | 修改 | 同上，品牌值不在文件中 |
 | CI workflow | `.github/workflows/publish-ellamaka.yml` | 创建 | ellamaka release 工作流 |
+| Branding constants | `packages/ellamaka/branding.ts` | 创建 | 品牌常量（BINARY_NAME, VERSION_PREFIX, CHANNEL） |
+| Build wrapper | `packages/ellamaka/build.ts` | 创建 | 设置 env 后调用上游 build.ts |
+| Dev build script | `scripts/build.sh` | 修改 | dist path opencode → ellamaka |
 
 ## Acceptance Criteria
 
@@ -369,3 +372,17 @@ bunx actionlint .github/workflows/publish-ellamaka.yml && rg 'workflow_dispatch|
 | 1 | Task 2 | fae | 无 | 独立 workflow 文件创建，与 Task 1 编辑不同文件，可并行 |
 
 Wave 1 两个 Task 文件不交集，可并行执行。完成后 Wopal 运行 AC Verify 命令验证产出。
+
+---
+
+## 补充：品牌化精细化
+
+`complete` 后，基于 BRANDING.md 方案完成了以下增量工作，与 Plan 原有 scope 互补：
+
+**上游产物清理** (BRANDING.md §0 落地): 删除 40+ 上游文件 — Issue 模板、团队文件、旧 CI（`publish.yml`/`deploy.yml`）、`.opencode/` 整个目录、IDE 配置、社区文档（`CONTRIBUTING.md`/`SECURITY.md`/`README.zh.md`）、Nix 构建、上游发布脚本、VSCode SDK、规范文档。
+
+**文档补齐**: 重写 `README.md`，新建 `README.zh-CN.md`；扩展 `BRANDING.md`（§4.3-4.5 CLI 品牌化方案、§9 merge 策略、§10 FS 路径决策）、`DISTRIBUTION.md`（§3 Publish Procedure）、`DESIGN.md`（adapter 表）；`UPSTREAM-MERGE-LOG.md` 移至 `docs/` 并裁剪为纯日志；更新 `AGENTS.md`/`AGENTS.zh-CN.md`（新增 `packages/ellamaka/` 目录 + 6 条命令）。
+
+**工具与代码**: 新建 `scripts/check-cleanup.sh`；`branding.ts` 新增 `BINARY_TITLE = "Ellamaka"`；`publish-ellamaka.yml` 将 LICENSE 纳入归档。
+
+**状态**: ✅ 已完成。
