@@ -6,6 +6,7 @@ import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import open from "open"
 import { networkInterfaces } from "os"
+import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 function getNetworkIPs() {
   const nets = networkInterfaces()
@@ -32,7 +33,7 @@ function getNetworkIPs() {
 export const WebCommand = effectCmd({
   command: "web",
   builder: (yargs) => withNetworkOptions(yargs),
-  describe: "start opencode server and open web interface",
+  describe: `start ${BINARY_NAME} server and open web interface`,
   // Server loads instances per-request via x-opencode-directory header — no
   // ambient project InstanceContext needed at startup.
   instance: false,

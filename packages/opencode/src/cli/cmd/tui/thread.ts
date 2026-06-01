@@ -22,6 +22,7 @@ import {
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
+import { BINARY_NAME } from "../../../../../ellamaka/branding"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -79,12 +80,12 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
 
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
-  describe: "start opencode tui",
+  describe: `start ${BINARY_NAME} tui`,
   builder: (yargs) =>
     withNetworkOptions(yargs)
       .positional("project", {
         type: "string",
-        describe: "path to start opencode in",
+        describe: `path to start ${BINARY_NAME} in`,
       })
       .option("model", {
         type: "string",
