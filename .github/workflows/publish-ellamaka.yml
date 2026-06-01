@@ -61,7 +61,6 @@ jobs:
         env:
           BINARY_NAME: ellamaka
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
-          OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
 
       - name: Create archives
         working-directory: packages/opencode
