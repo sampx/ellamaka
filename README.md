@@ -4,7 +4,7 @@
 <p align="center">Train your agent once. Take it everywhere.</p>
 <p align="center">
   <a href="https://github.com/wopal-cn/ellamaka/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/wopal-cn/ellamaka?style=flat-square&label=release" /></a>
-  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka.yml?style=flat-square&branch=main" /></a>
+  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka.yml?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" /></a>
 </p>
 
