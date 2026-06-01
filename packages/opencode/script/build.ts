@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const dir = path.resolve(__dirname, "..")
 
-const BINARY_NAME = process.env.BINARY_NAME || "ellamaka"
+const BINARY_NAME = process.env.BINARY_NAME || "opencode"
 const p1Flag = process.argv.includes("--p1")
 
 process.chdir(dir)
@@ -233,7 +233,7 @@ for (const item of buildTargets) {
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
-      OPENCODE_CHANNEL: `'${Script.release ? "ellamaka" : "ellamaka-main"}'`,
+      OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
     },
   })

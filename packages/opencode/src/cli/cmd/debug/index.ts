@@ -16,6 +16,7 @@ import { SkillCommand } from "./skill"
 import { SnapshotCommand } from "./snapshot"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
+import { VERSION_PREFIX } from "../../../../../ellamaka/branding"
 
 export const DebugCommand = cmd({
   command: "debug",
@@ -56,7 +57,7 @@ const InfoCommand = effectCmd({
       : undefined
     const terminal = [termProgram, process.env.TERM].filter((item): item is string => Boolean(item)).join(" / ")
 
-    console.log(`ellamaka version: ${InstallationVersion}`)
+    console.log(`${VERSION_PREFIX} version: ${InstallationVersion}`)
     console.log(`os: ${os.type()} ${os.release()} ${os.arch()}`)
     console.log(`terminal: ${terminal || "unknown"}`)
     console.log("plugins:")
