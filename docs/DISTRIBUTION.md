@@ -31,7 +31,7 @@ P1 延续当前 OpenCode CLI release pipeline 作为发布骨架，在现有 `pa
 
 P1 的 canonical release source：
 
-- GitHub Release
+- `wopal-cn/ellamaka` GitHub Releases
 
 P1 的 canonical consumer：
 
@@ -50,10 +50,12 @@ stable release 是 P1 唯一的自动消费通道。
 每个 stable release 至少包含：
 
 1. 版本 tag `v<version>`
-2. 完整平台 artifacts
+2. P1 官方平台 artifacts
 3. `checksums.txt`
 
-P1 的 version discovery 以 release tag 和稳定 artifact naming 为主。
+P1 的默认 version discovery 使用 stable release 的 latest 版本。显式指定版本时，consumer 使用对应的 `v<version>` release tag 和稳定 artifact naming。
+
+P1 的信任边界是 GitHub Release HTTPS 下载与 SHA-256 完整性校验。`checksums.txt` 用于发现下载损坏、传输错误和 artifact 不匹配。签名、attestation、provenance 和独立透明日志属于后续阶段。
 
 ### 3.2 Local development channel
 
@@ -71,30 +73,21 @@ P1 的 version discovery 以 release tag 和稳定 artifact naming 为主。
 
 ellamaka 的发布产物使用 `ellamaka` 品牌。
 
-P1 平台矩阵：
+P1 平台矩阵收缩为 one-click 主路径所需的官方优先平台。ellamaka 单包体积较大，musl、baseline、Linux arm64 和 Windows arm64 变体属于后续扩展。
 
 | OS | Arch | Variant | Artifact |
 |---|---|---|---|
 | macOS | arm64 | native | `ellamaka-darwin-arm64.zip` |
 | macOS | x64 | native | `ellamaka-darwin-x64.zip` |
-| macOS | x64 | baseline | `ellamaka-darwin-x64-baseline.zip` |
-| Linux | arm64 | glibc | `ellamaka-linux-arm64.tar.gz` |
 | Linux | x64 | glibc | `ellamaka-linux-x64.tar.gz` |
-| Linux | arm64 | musl | `ellamaka-linux-arm64-musl.tar.gz` |
-| Linux | x64 | musl | `ellamaka-linux-x64-musl.tar.gz` |
-| Linux | x64 | glibc baseline | `ellamaka-linux-x64-baseline.tar.gz` |
-| Linux | x64 | musl baseline | `ellamaka-linux-x64-baseline-musl.tar.gz` |
-| Windows | arm64 | native | `ellamaka-windows-arm64.zip` |
 | Windows | x64 | native | `ellamaka-windows-x64.zip` |
-| Windows | x64 | baseline | `ellamaka-windows-x64-baseline.zip` |
 
 Contract：
 
 1. archive 内的 binary 名称固定为 `ellamaka` / `ellamaka.exe`。
 2. consumer 依赖稳定文件名，无需人工解释 release 页面。
-3. baseline 与 musl 变体在文件名中显式可见。
-4. `checksums.txt` 与同版本 artifacts 一起发布。
-5. release build 的 channel 对外固定为 `ellamaka`；本地开发 channel 保持 `ellamaka-main`。
+3. `checksums.txt` 与同版本 artifacts 一起发布。
+4. release build 的 channel 对外固定为 `ellamaka`；本地开发 channel 保持 `ellamaka-main`。
 
 ---
 
@@ -102,18 +95,22 @@ Contract：
 
 P1 使用固定安装路径。
 
+所有用户级路径都解析到 `WOPAL_HOME`。默认值：macOS / Linux 为 `~/.wopal`，Windows 为 `%USERPROFILE%\.wopal`。
+
 | Platform | Binary path | Runtime roots |
 |---|---|---|
-| macOS / Linux | `~/.wopal/bin/ellamaka` | `~/.wopal/ellamaka/{config,data,cache,state}` |
-| Windows | 用户级等价目录中的 `ellamaka.exe` | 用户级等价目录中的 `Wopal/ellamaka/*` |
+| macOS / Linux | `$WOPAL_HOME/bin/ellamaka` | `$WOPAL_HOME/ellamaka/{config,data,cache,state}` |
+| Windows | `$WOPAL_HOME/bin/ellamaka.exe` | `$WOPAL_HOME/ellamaka/{config,data,cache,state}` |
 
 Install contract：
 
 1. `wopal ellamaka install` 是 P1 唯一的自动安装入口。
-2. consumer 根据 OS / arch / libc 与稳定 artifact naming 计算目标文件名。
-3. consumer 在放置 binary 前必须校验 SHA-256。
-4. 安装成功的标志是 `ellamaka --version` 正常输出。
-5. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
+2. 不指定版本时，consumer 安装 stable release 的 latest 版本。
+3. 显式指定版本时，consumer 安装对应 `v<version>` release。
+4. consumer 根据 OS / arch / libc 与稳定 artifact naming 计算目标文件名。
+5. consumer 在放置 binary 前必须校验 SHA-256。
+6. 安装成功的标志是 `ellamaka --version` 正常输出。
+7. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
 
 ---
 
