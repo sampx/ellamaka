@@ -39,9 +39,12 @@ ellamaka 对上游 opencode 源码的品牌化改造清单。每条记录：改�
 | `.github/ISSUE_TEMPLATE/` | 上游 issue 模板（bug-report、feature-request、question） | ellamaka 用自己的模板 |
 | `.github/workflows/publish.yml` | 上游发布 CI（npm + Desktop） | ellamaka 用 `publish-ellamaka.yml` |
 | `.github/workflows/deploy.yml` | 上游部署 CI | ellamaka 无云端部署 |
-| `.github/TEAM_MEMBERS` | 上游团队成员列表 | 不属于 ellamaka |
 
 ### 保留说明
+
+| 路径 | 原因 |
+|------|------|
+| `.github/TEAM_MEMBERS` | `@opencode-ai/script` 模块初始化时读取，运行时依赖，不可删除 |
 
 | 路径 | 保留原因 |
 |---|---|

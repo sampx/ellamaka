@@ -66,9 +66,8 @@ CLEANUP_PATHS=(
   "CONTRIBUTING.md"
   "README.zh.md"
   "SECURITY.md"
-  # GitHub — partial: keep publish-ellamaka.yml
+  # GitHub — partial: keep publish-ellamaka.yml, TEAM_MEMBERS (runtime dep)
   ".github/ISSUE_TEMPLATE"
-  ".github/TEAM_MEMBERS"
   ".github/workflows/publish.yml"
   ".github/workflows/deploy.yml"
 )
