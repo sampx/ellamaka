@@ -51,8 +51,6 @@ jobs:
     if: github.repository == 'wopal-cn/ellamaka'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
 
       - uses: oven-sh/setup-bun@v2
 
