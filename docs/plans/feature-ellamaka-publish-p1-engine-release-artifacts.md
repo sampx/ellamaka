@@ -9,7 +9,7 @@
 - **Product**: wopal-space
 - **Phase**: P1
 - **Created**: 2026-06-01
-- **Status**: verifying
+- **Status**: done
 - **Worktree**:
   - enabled: true
   - project_type: standard
@@ -159,7 +159,7 @@ N/A — 无业务规则变更
   - 解压后 binary 名为 `ellamaka`（macOS/Linux）或 `ellamaka.exe`（Windows）
   - `ellamaka --version` 输出 `ellamaka/{version}` 格式
 
-- [ ] 用户已完成上述功能验证并确认结果符合预期
+- [x] 用户已完成上述功能验证并确认结果符合预期
 
 ## Implementation
 
