@@ -132,13 +132,13 @@ N/A — 无业务规则变更。纯字符串替换，不影响系统行为。
 
 ### Agent Verification
 
-1. [ ] `scriptName` 不再硬编码 `"opencode"` — `rg 'scriptName\("opencode"\)' packages/opencode/src/ -c` = 0
-2. [ ] `scriptName` 使用品牌常量 — `rg 'scriptName\(BINARY_NAME\)' packages/opencode/src/index.ts packages/opencode/src/temporary.ts -c` = 2
-3. [ ] `BINARY_TITLE` 常量存在 — `rg 'BINARY_TITLE' packages/ellamaka/branding.ts -c` ≥ 1
-4. [ ] CLI 命令 describe 中无 `"opencode"` 硬编码 — `rg '"opencode' packages/opencode/src/cli/cmd/upgrade.ts packages/opencode/src/cli/cmd/uninstall.ts packages/opencode/src/cli/cmd/web.ts packages/opencode/src/cli/cmd/tui/thread.ts packages/opencode/src/cli/cmd/serve.ts packages/opencode/src/cli/cmd/run.ts packages/opencode/src/cli/cmd/tui/attach.ts packages/opencode/src/cli/cmd/pr.ts -c` = 0
-5. [ ] 错误提示中 `opencode` 已替换 — `rg '"[^"]*opencode does not' packages/opencode/src/cli/error.ts -c` = 0 AND `rg 'opencode models' packages/opencode/src/cli/error.ts -c` = 0
-6. [ ] mcp.ts outro 已替换 — `rg '"Add servers with: opencode' packages/opencode/src/cli/cmd/mcp.ts -c` = 0
-7. [ ] `bun typecheck` exit 0（从 `packages/opencode` 执行）
+1. [x] `scriptName` 不再硬编码 `"opencode"` — `rg 'scriptName\("opencode"\)' packages/opencode/src/ -c` = 0
+2. [x] `scriptName` 使用品牌常量 — `rg 'scriptName\(BINARY_NAME\)' packages/opencode/src/index.ts packages/opencode/src/temporary.ts -c` = 2
+3. [x] `BINARY_TITLE` 常量存在 — `rg 'BINARY_TITLE' packages/ellamaka/branding.ts -c` ≥ 1
+4. [x] CLI 命令 describe 中无 `"opencode"` 硬编码 — `rg '"opencode' packages/opencode/src/cli/cmd/upgrade.ts packages/opencode/src/cli/cmd/uninstall.ts packages/opencode/src/cli/cmd/web.ts packages/opencode/src/cli/cmd/tui/thread.ts packages/opencode/src/cli/cmd/serve.ts packages/opencode/src/cli/cmd/run.ts packages/opencode/src/cli/cmd/tui/attach.ts packages/opencode/src/cli/cmd/pr.ts -c` = 0
+5. [x] 错误提示中 `opencode` 已替换 — `rg '"[^"]*opencode does not' packages/opencode/src/cli/error.ts -c` = 0 AND `rg 'opencode models' packages/opencode/src/cli/error.ts -c` = 0
+6. [x] mcp.ts outro 已替换 — `rg '"Add servers with: opencode' packages/opencode/src/cli/cmd/mcp.ts -c` = 0
+7. [x] `bun typecheck` exit 0（从 `packages/opencode` 执行）
 
 ### User Validation
 
@@ -198,7 +198,7 @@ N/A — 无业务规则变更。纯字符串替换，不影响系统行为。
 
 **Done**:
 任务产出：index.ts 和 temporary.ts 使用 BINARY_NAME 常量控制 CLI 命令名
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
@@ -262,7 +262,7 @@ rg '"Add servers with: opencode' packages/opencode/src/cli/cmd/mcp.ts -c  # → 
 
 **Done**:
 任务产出：10 个 CLI 命令文件的 describe/prompts/spawn 全部使用品牌常量
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
@@ -290,7 +290,7 @@ rg '"Add servers with: opencode' packages/opencode/src/cli/cmd/mcp.ts -c  # → 
 
 **Done**:
 任务产出：类型检查通过，所有品牌常量 import 路径和模板字面量类型正确
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
