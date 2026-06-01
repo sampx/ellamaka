@@ -11,7 +11,7 @@ Canonical references:
 
 - DESIGN: `docs/DESIGN.md`
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
-- Upstream Merge Rules: `UPSTREAM-MERGE-LOG.md`
+- Upstream Merge Rules: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
 
@@ -28,6 +28,7 @@ ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands,
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | Inherited UI surfaces; change only when engine/TUI work requires it |
 | `packages/plugin/`, `packages/script/`, `packages/shared/`, `packages/util/` | Workspace support packages |
 | `packages/sdk/` | SDK workspace; use the existing script for JS SDK regeneration |
+| `packages/ellamaka/` | ellamaka branding constants and env-driven build wrapper |
 | `docs/` | Project DESIGN, references, research, and plans |
 
 ## 3. Development Commands (build format test)
@@ -43,6 +44,11 @@ ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands,
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | After changing main engine behavior |
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
 | JS SDK regeneration | `./packages/sdk/js/script/build.ts` | When SDK output needs regeneration |
+| ellamaka build | `bun packages/ellamaka/build.ts` | When building ellamaka-branded CLI locally |
+| Local build (darwin) | `./scripts/build.sh` | Compile CLI binary on macOS |
+| Local dev environment | `./scripts/dev.sh` | Start dev environment (in-process TUI, attach/server modes) |
+| API docs | `bun ./scripts/scalar-doc.ts` | Start Scalar API reference documentation UI |
+| Post-merge cleanup check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode, check for files/dirs that should have been deleted |
 
 Tests must not run from the repo root; the root `test` script is a guard.
 
@@ -73,7 +79,7 @@ Tests must not run from the repo root; the root `test` script is a guard.
 - Do not apply unrelated formatting churn, import reordering, dependency reordering, or object key reordering to upstream files.
 - `main` is the stable line for ellamaka customization; `dev` only tracks upstream OpenCode `dev`, so do not develop ellamaka customizations on `dev`.
 - Use `main` or `origin/main` as the diff base; do not use `dev` as the ellamaka customization diff base.
-- During upstream merges, follow the deleted-prefix boundary, preserved customization list, and verification gates in `UPSTREAM-MERGE-LOG.md`.
+- During upstream merges, follow the cleanup list, preserved customization list, and verification gates in `docs/UPSTREAM-MERGE-LOG.md`.
 - After changes involving load paths, plugins, agents, config, or runtime startup flow, remind the user to restart ellamaka for verification; Wopal must not restart ellamaka itself.
 - Prefer automation for explicit requests; ask first when critical information is missing, safety is at risk, or the operation is irreversible.
 - Use parallel tools whenever reads or checks can run independently.

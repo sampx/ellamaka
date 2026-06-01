@@ -8,7 +8,9 @@
 | `dev` | 上游跟踪 | 与 upstream/dev 保持同步，作为合并基准 |
 
 **合并流程**：从 `upstream/dev` 拉取 → 在 `main` 上执行 `git merge upstream/dev` →
-解决冲突 → 验证 → 提交。复杂合并可在 worktree 隔离分支进行，完成后 fast-forward 到 `main`。
+解决冲突 → `./scripts/check-cleanup.sh` 检查 → 若发现则 `--clean` 清理 → 验证 → 提交。
+
+合并策略（精简清单、保护文件、最小侵入原则、验证清单）统一维护在 `docs/BRANDING.md` §9，此处不再重复。
 
 ## Remotes
 
@@ -16,52 +18,6 @@
 |--------|-----|------|
 | `origin` | `sampx/ellamaka` | fork 仓库 |
 | `upstream` | `anomalyco/opencode` | 上游官方仓库 |
-
-## 已精简的组件（DELETED_PREFIXES）
-
-每次合并时，命中以下前缀的 modify/delete 冲突自动选择保持删除（`git rm`）：
-
-| 前缀 | 说明 |
-|------|------|
-| `packages/desktop/`、`desktop-electron/` | 桌面端（Electron + Tauri） |
-| `packages/enterprise/`、`console/`、`function/` | SaaS/Cloud 后台 |
-| `packages/containers/` | Docker 构建 |
-| `packages/web/`、`docs/` | 网站、文档站点 |
-| `packages/extensions/`、`identity/` | VS Code 扩展、品牌素材 |
-| `packages/slack/`、`zen/` | Slack bot、API 代理 |
-| `sdks/` | Python SDK |
-| `github/` | GitHub Action |
-| `infra/` | SST 基础设施（AWS/Cloudflare） |
-| `nix/`、`flake.nix`、`flake.lock` | Nix 构建 |
-| `install` | Shell 安装脚本 |
-| `script/`（仅上游） | 上游发布/CI 脚本 |
-| `specs/`、`sst.config.ts`、`sst-env.d.ts` | 上游 spec 和 SST 配置 |
-| `.github/`（仅上游 workflow） | 上游 CI/CD |
-
-首次 fork 时共移除 1830 文件（-396k 行，`77585fa19`）。后续合并每次自动删除 100~310+ 命中文件。
-
-## 定制代码合并策略
-
-> 来源：`AGENTS.md` → "Upstream Merge Conflict Minimization"
-
-ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并的冲突面：
-
-1. **新文件优先**：定制逻辑放在独立新文件（如 `wopal-space.ts`），不嵌入上游源文件。
-   上游文件只保留最小注入点（一个 `import` + 一个 `yield*` 调用）。
-
-2. **闭包注入代替 Service 传递**：新模块需要访问上游内部（闭包、Effect Service）时，
-   通过回调接口注入——不直接传递 Service 对象。避免上游类型变更泄漏到新模块。
-
-3. **提前返回门卫**：定制分支用 `if (flag) { ... return result }` 在上游主流程之前执行，
-   确保上游对主流程的变更永不与定制代码同区域冲突。
-
-4. **提取共享辅助函数**：当上游逻辑需被定制分支复用时（如 `applyPostMerge()`），
-   提取为命名辅助函数在上游文件中，两路径共用——不复制逻辑。
-
-5. **禁止格式化重排**：不对上游文件的 import 顺序、依赖项、对象 key 做任何重排。
-   这些噪音 diff 会成倍放大合并冲突窗口。
-
----
 
 ## 合并历史（按时间倒序）
 
@@ -104,7 +60,7 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 | `permission/index.ts` | 调试日志注释移除 | 手动适配 |
 | `cli/cmd/tui/worker.ts` | import 路径 + `OPENCODE_LOG_LEVEL` | 手动适配 |
 
-**DELETED_PREFIXES**：310+ 文件自动 `git rm`（桌面端/web/enterprise/slack/console 等）
+**精简清单**：310+ 文件自动 `git rm`（桌面端/web/enterprise/slack/console 等）
 
 **Flags 注册**：上游 `Flag` 类型不含 ellamaka 定制，手动补充注册：
 `OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_SPACE`
@@ -172,7 +128,7 @@ ellamaka 所有定制必须遵循以下规则，以最小化每次上游合并�
 **冲突解决**：
 - `bun.lock`：接受上游版本
 - `installation/index.ts`：手动将 ellamaka 定制移植到上游新 Interface 结构
-- 71 个 modify/delete 冲突：DELETED_PREFIXES 自动处理
+- 71 个 modify/delete 冲突：精简清单 自动处理
 - `config/wopal-space.ts`：从 `config.ts` 中提取为独立模块，减少后续冲突面
 
 **保留的 ellamaka 定制（9 项）**：
@@ -197,7 +153,7 @@ WOPAL_HOME 路径系统、`DISABLE_AGENTS_SKILLS` 开关、`WOPAL_SPACE` 模式�
 - 14+ HTTP API 桥接端点
 
 **冲突解决**：
-- DELETED_PREFIXES 自动删除 140+ 文件
+- 精简清单 自动删除 140+ 文件
 - 定制逻辑从旧位置（opencode 包）移植到新位置（core 包）：
   - `core/global.ts`：WOPAL_HOME + `~/.wopal/ellamaka/*` 路径
   - `core/flag/flag.ts`：`DISABLE_AGENTS_SKILLS` 开关

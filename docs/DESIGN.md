@@ -8,6 +8,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-06-01 | Updated | 新增 branding/build wrapper 适配点；§6 补充构建入口说明。 |
 | 2026-05-31 | Updated | 精简为设计事实与契约；移除上游继承描述和 fork delta 管理哲学。 |
 | 2026-05-31 | Updated | 明确 P1 不改 runtime loading 模型；skill loader 改为确定性覆盖。 |
 | 2026-05-30 | Created | 初始创建。 |
@@ -32,6 +33,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | 权限合并 | defaults → global → space settings → agent frontmatter，最后匹配生效 | `packages/opencode/src/permission/` |
 | 引擎安装识别 | 识别 `~/.wopal/bin/` 安装路径与升级通道 | `packages/opencode/src/installation/index.ts` |
 | 确定性 skill 加载 | base/user 先并发解析，space overlay 后按序稳定覆盖 | `packages/opencode/src/skill/index.ts` |
+| Branding & build wrapper | `BINARY_NAME=ellamaka` + channel env 注入，品牌常量集中管理；本地构建包装脚本 | `packages/ellamaka/branding.ts`、`packages/ellamaka/build.ts` |
 | TUI 空间配置 | 识别 `settings.jsonc` 的 `tui` 字段和空间主题目录 | `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts` |
 
 上游文件改动遵循：新文件优先、提前返回 guard、回调注入、禁止格式化重排。详细策略见 `UPSTREAM-MERGE-LOG.md`。
@@ -72,6 +74,8 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 ## 6. Distribution
 
 ellamaka 构建为多平台 standalone binary，提供 stable release artifacts + checksums。`wopal-cli` 通过 `wopal ellamaka install` 消费。P1 使用固定安装路径 `~/.wopal/bin/ellamaka`。
+
+构建入口：CI 中 `publish-ellamaka.yml` 直接调用 `packages/opencode/script/build.ts --p1` 并注入 env；本地开发使用 `packages/ellamaka/build.ts` 包装脚本。
 
 P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化到 `~/.wopal/` 后，ellamaka 按现有 user/base + space overlay 链路加载。
 

@@ -10,6 +10,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const dir = path.resolve(__dirname, "..")
 
+const BINARY_NAME = process.env.BINARY_NAME || "opencode"
+const p1Flag = process.argv.includes("--p1")
+
 process.chdir(dir)
 
 await import("./generate.ts")
@@ -164,6 +167,16 @@ const targets = singleFlag
     })
   : allTargets
 
+const p1Targets = allTargets.filter((item) => {
+  if (item.os === "darwin" && item.arch === "arm64") return true
+  if (item.os === "darwin" && item.arch === "x64") return true
+  if (item.os === "linux" && item.arch === "x64" && item.abi === undefined && item.avx2 !== false) return true
+  if (item.os === "win32" && item.arch === "x64" && item.avx2 !== false) return true
+  return false
+})
+
+const buildTargets = p1Flag ? p1Targets : targets
+
 await $`rm -rf dist`
 
 const binaries: Record<string, string> = {}
@@ -171,9 +184,9 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
-for (const item of targets) {
+for (const item of buildTargets) {
   const name = [
-    pkg.name,
+    BINARY_NAME,
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
     item.arch,
@@ -208,9 +221,9 @@ for (const item of targets) {
       autoloadDotenv: false,
       autoloadTsconfig: true,
       autoloadPackageJson: true,
-      target: name.replace(pkg.name, "bun") as any,
-      outfile: `dist/${name}/bin/opencode`,
-      execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
+      target: name.replace(BINARY_NAME, "bun") as any,
+      outfile: `dist/${name}/bin/${BINARY_NAME}`,
+      execArgv: [`--user-agent=${BINARY_NAME}/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
     files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
@@ -227,7 +240,7 @@ for (const item of targets) {
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/opencode`
+    const binaryPath = `dist/${name}/bin/${BINARY_NAME}`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()

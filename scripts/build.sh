@@ -65,7 +65,7 @@ bun run script/build-darwin.ts --arch "$ARCH" "${EXTRA_ARGS[@]}"
 # 安装（可选）
 if $INSTALL; then
   BINARY_NAME="ellamaka"
-  DIST_DIR="dist/opencode-darwin-$ARCH/bin"
+  DIST_DIR="dist/ellamaka-darwin-$ARCH/bin"
   SRC="$DIST_DIR/$BINARY_NAME"
   
   if [[ ! -f "$SRC" ]]; then
