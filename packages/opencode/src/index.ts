@@ -28,7 +28,7 @@ import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
 import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
-import { VERSION_PREFIX } from "../../ellamaka/branding"
+import { BINARY_NAME, VERSION_PREFIX } from "../../ellamaka/branding"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import path from "path"
@@ -59,7 +59,7 @@ const args = hideBin(process.argv)
 
 function show(out: string) {
   const text = out.trimStart()
-  if (!text.startsWith("opencode ")) {
+  if (!text.startsWith(BINARY_NAME + " ")) {
     process.stderr.write(UI.logo() + EOL + EOL)
     process.stderr.write(text)
     return
@@ -69,7 +69,7 @@ function show(out: string) {
 
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName(BINARY_NAME)
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
