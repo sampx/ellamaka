@@ -1,141 +1,91 @@
 <p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
+  <h1 align="center">Ellamaka</h1>
 </p>
-<p align="center">The open source AI coding agent.</p>
+<p align="center">Train your agent once. Take it everywhere.</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://github.com/wopal-cn/ellamaka/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/wopal-cn/ellamaka?style=flat-square&label=release" /></a>
+  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka.yml?style=flat-square&branch=main" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" /></a>
 </p>
-
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
-
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
 
 ---
 
-### Installation
+You spent weeks dialing in an AI agent. It learned your code style. It understood your project structure. It knew when to ask and when to just get things done.
 
-```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+Then you started a new project.
 
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+Back to zero. Rewrite the rules. Redefine the agents. Rebuild every workflow. Everything you taught it was trapped in the old directory.
+
+Ellamaka fixes exactly this: **your agent setup becomes an asset you can carry.**
+
+## How
+
+Ellamaka is the execution engine for [WopalSpace](https://github.com/wopal-cn/wopal-space-ontology), built on [OpenCode](https://github.com/anomalyco/opencode). Its core innovation: upgrading agent configuration from scattered files to a structured ontology.
+
+An ontology is everything you've defined for your agent — personality, commands, skills, permissions — organized in `.wopal/`, versioned like code. Then:
+
+```text
+Project A: you build a great agent setup
+   │
+   │  Fork the ontology
+   ▼
+Project B: your agent shows up fully trained. You focus on the project,
+           not on retraining.
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+The ontology travels. Your memories stay. Your workflows get cloned. Your private context stays private.
 
-### Desktop App (BETA)
+## vs OpenCode
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
+OpenCode is a powerful general-purpose AI coding agent. Ellamaka takes that foundation and adds one thing: **agent configuration as a first-class asset.**
 
-| Platform              | Download                              |
-| --------------------- | ------------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-darwin-aarch64.dmg` |
-| macOS (Intel)         | `opencode-desktop-darwin-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe`    |
-| Linux                 | `.deb`, `.rpm`, or AppImage           |
+| | OpenCode | Ellamaka |
+|---|---|---|
+| Configuration model | Per-project, starts fresh every time | Ontology-level, reusable across projects |
+| Release cadence | Continuous, APIs shift frequently | Curated upstream merges, predictable behavior |
+| Runtime | CLI + Web UI + Desktop | CLI + Web UI, focused on what matters |
+| Data isolation | Shares system paths | Separate data directory, zero interference |
+| Extension model | In-project plugins | Ontology-level plugins + skills, fork and carry |
 
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
+## Try It
 
-#### Installation Directory
-
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+Ellamaka works standalone or as part of WopalSpace:
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+# Install
+wopal ellamaka install
+
+# Or download directly: https://github.com/wopal-cn/ellamaka/releases
+
+# Launch anywhere — it's your AI partner
+ellamaka
+
+# Launch in WopalSpace — loads your space ontology
+ellamaka --wopal-space
 ```
 
-### Agents
+## Development
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+| I want to | Command |
+|---|---|
+| Start dev environment | `./scripts/dev.sh` |
+| Build a local binary | `./scripts/build.sh` |
+| Build with branding | `bun packages/ellamaka/build.ts` |
+| Typecheck | `bun typecheck` |
+| Clean up after upstream merge | `./scripts/check-cleanup.sh --clean` |
+| Browse API docs | `bun ./scripts/scalar-doc.ts` |
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+See `AGENTS.md` for the full picture.
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+## More
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+| Document | Content |
+|---|---|
+| `docs/DESIGN.md` | Architecture and WopalSpace adaptations |
+| `docs/DISTRIBUTION.md` | Release workflow and artifact specs |
+| `docs/BRANDING.md` | Branding changes |
+| `docs/UPSTREAM-MERGE-LOG.md` | Upstream merge history |
 
-### Documentation
+## License
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
-
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
-
-### FAQ
-
-#### How is this different from Claude Code?
-
-It's very similar to Claude Code in terms of capability. Here are the key differences:
-
-- 100% open source
-- Not coupled to any provider. Although we recommend the models we provide through [OpenCode Zen](https://opencode.ai/zen), OpenCode can be used with Claude, OpenAI, Google, or even local models. As models evolve, the gaps between them will close and pricing will drop, so being provider-agnostic is important.
-- Built-in opt-in LSP support
-- A focus on TUI. OpenCode is built by neovim users and the creators of [terminal.shop](https://terminal.shop); we are going to push the limits of what's possible in the terminal.
-- A client/server architecture. This, for example, can allow OpenCode to run on your computer while you drive it remotely from a mobile app, meaning that the TUI frontend is just one of the possible clients.
-
----
-
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+Forked from OpenCode. MIT. See `LICENSE`.

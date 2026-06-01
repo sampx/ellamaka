@@ -10,7 +10,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 权威引用：
 
 - DESIGN: `docs/DESIGN.md`
-- Upstream Merge Rules: `UPSTREAM-MERGE-LOG.md`
+- Upstream Merge Rules: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
 
@@ -27,6 +27,7 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | inherited UI surfaces；只在 engine/TUI 需要时改动 |
 | `packages/plugin/`, `packages/script/`, `packages/shared/`, `packages/util/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
+| `packages/ellamaka/` | ellamaka 品牌常量与 env 驱动构建包装 |
 | `docs/` | project DESIGN、references、research 和 plans |
 
 ## 3. Development Commands (build format test)
@@ -42,6 +43,11 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | 修改 engine 主包行为后 |
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | JS SDK regeneration | `./packages/sdk/js/script/build.ts` | SDK 输出需要重新生成时 |
+| ellamaka build | `bun packages/ellamaka/build.ts` | 本地构建 ellamaka 品牌 CLI 时 |
+| 本地构建（darwin） | `./scripts/build.sh` | macOS 本地编译 CLI 二进制 |
+| 本地开发环境 | `./scripts/dev.sh` | 启动开发环境（支持 in-process TUI、attach/server 分流） |
+| API 文档 | `bun ./scripts/scalar-doc.ts` | 启动 Scalar API 参考文档 UI |
+| 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 
 测试不能从 repo root 运行；root `test` script 是 guard。
 
@@ -72,7 +78,7 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 - 禁止对 upstream 文件做无关格式化重排、import 重排、dependency 重排或 object key 重排。
 - `main` 是 ellamaka 定制稳定主线；`dev` 只跟踪 upstream OpenCode `dev`，不要在 `dev` 上做 ellamaka 定制开发。
 - diff 基准使用 `main` 或 `origin/main`；不要用 `dev` 作为 ellamaka 定制差异基准。
-- 上游合并时遵循 `UPSTREAM-MERGE-LOG.md` 的 deleted-prefix boundary、保留定制项和验证门槛。
+- 上游合并时遵循 `docs/UPSTREAM-MERGE-LOG.md` 的精简清单、保留定制项和验证门槛。
 - 涉及 load path、plugin、agent、config 或 runtime 启动链路的修改完成后，提醒用户重启 ellamaka 验证；Wopal 不自行重启 ellamaka。
 - 优先自动执行明确请求；遇到缺少关键信息、安全风险或不可逆操作时先确认。
 - 可并行读取或检查时使用并行工具。

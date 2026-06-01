@@ -70,6 +70,7 @@ jobs:
         run: |
           for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-linux-x64 ellamaka-windows-x64; do
             if [ -d "dist/${name}/bin" ]; then
+              cp ../../LICENSE "dist/${name}/bin/LICENSE"
               if echo "$name" | grep -q "linux"; then
                 tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
               else
