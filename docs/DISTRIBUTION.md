@@ -1,7 +1,7 @@
 # Ellamaka — Distribution
 
 > **状态**: Active
-> **更新时间**: 2026-05-30
+> **更新时间**: 2026-06-01
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **项目设计**: `./DESIGN.md`
 
@@ -9,6 +9,7 @@
 
 | Date | Type | Summary |
 |---|---|---|
+| 2026-06-01 | Updated | 明确 P1 publish workflow 必须脱离 upstream repository guard 并产出 ellamaka 品牌 artifacts。 |
 | 2026-05-30 | Updated | 优化语言表达，明确独立分发定位。 |
 | 2026-05-30 | Updated | 精简为分发特有内容，避免与 `DESIGN.md` 重复。 |
 | 2026-05-30 | Created | 定义 ellamaka 的 release backbone、artifact contract、固定安装路径与 runtime handoff。 |
@@ -32,6 +33,8 @@ P1 延续当前 OpenCode CLI release pipeline 作为发布骨架，在现有 `pa
 P1 的 canonical release source：
 
 - `wopal-cn/ellamaka` GitHub Releases
+
+P1 release workflow 必须以 `wopal-cn/ellamaka` 为可执行发布仓库。继承自 upstream 的 `anomalyco/opencode` repository guard、`opencode-*` artifact path、`bin/opencode` binary name 和 upstream release upload target 都属于需要收敛的 release surface。P1 保留 runtime loading 模型，只收敛 build、naming、checksums 和 GitHub Release 上传边界。
 
 P1 的 canonical consumer：
 
@@ -88,6 +91,8 @@ Contract：
 2. consumer 依赖稳定文件名，无需人工解释 release 页面。
 3. `checksums.txt` 与同版本 artifacts 一起发布。
 4. release build 的 channel 对外固定为 `ellamaka`；本地开发 channel 保持 `ellamaka-main`。
+5. release workflow 的上传目标固定为 `wopal-cn/ellamaka`。
+6. Windows signing、repack 和 upload 步骤使用 `ellamaka-*` 文件路径。
 
 ---
 
