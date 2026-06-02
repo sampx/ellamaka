@@ -26,7 +26,7 @@ ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands,
 | `packages/opencode/` | Main inherited OpenCode engine package; follow `packages/opencode/AGENTS.md` for internal rules |
 | `packages/core/` | Shared core, flags, global paths, and installation/runtime foundations |
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | Inherited UI surfaces; change only when engine/TUI work requires it |
-| `packages/plugin/`, `packages/script/`, `packages/shared/`, `packages/util/` | Workspace support packages |
+| `packages/plugin/`, `packages/script/`, `packages/util/` | Workspace support packages |
 | `packages/sdk/` | SDK workspace; use the existing script for JS SDK regeneration |
 | `packages/ellamaka/` | ellamaka branding constants and env-driven build wrapper |
 | `docs/` | Project DESIGN, references, research, and plans |

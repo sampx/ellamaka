@@ -15,6 +15,7 @@ ellamaka 对上游 opencode 源码的品牌化改造清单。每条记录：改�
 | `packages/desktop/`、`desktop-electron/` | 桌面端（Electron + Tauri） | ellamaka 仅发布 CLI |
 | `packages/enterprise/`、`console/`、`function/` | SaaS/Cloud 后台 | ellamaka 无云端服务 |
 | `packages/containers/` | Docker 构建 | 不通过 Docker 分发 |
+| `packages/shared/` | 旧共享包（上游 v1.14.25 重命名为 `packages/core/`） | 上游 rename 后残留，合并时清理 |
 | `packages/web/` | 网站 | 不在本仓库维护 |
 | `packages/extensions/`、`identity/` | VS Code 扩展、品牌素材 | 无 VS Code 插件计划 |
 | `packages/slack/`、`zen/` | Slack bot、API 代理 | 无 Slack 集成计划 |
@@ -156,7 +157,11 @@ export const CHANNEL_DEV = "ellamaka-main"
 | `src/cli/cmd/uninstall.ts` | describe + intro + goodbye | 3 处 |
 | `src/cli/cmd/web.ts` | describe | 1 处 |
 | `src/cli/cmd/tui/thread.ts` | describe ×2 | 2 处 |
-| `src/cli/error.ts` | 3 处错误提示文字 | 3 处 |
+| `src/cli/error.ts` | 错误提示文字 | 3 处 |
+| `src/cli/cmd/serve.ts` | describe + console.log | 2 处 |
+| `src/cli/cmd/run.ts` | describe ×2 | 2 处 |
+| `src/cli/cmd/tui/attach.ts` | describe | 1 处 |
+| `src/cli/cmd/pr.ts` | describe + println + spawn ×2 + die | 5 处 |
 | `src/cli/cmd/providers.ts` | config 引导文字 | 2 处 |
 | `src/cli/cmd/mcp.ts` | config 引导文字 | 1 处 |
 
@@ -170,6 +175,37 @@ export const CHANNEL_DEV = "ellamaka-main"
 ### 4.5 上游 URL 保留
 
 `opencode.ai` 及其子域名（`api.opencode.ai`、`app.opencode.ai`）出现在 providers.ts、github.ts、server/shared/ui.ts 中。ellamaka 目前没有替代域名，保留不变。待 ellamaka 自有网站上线后批量替换。
+
+### 4.6 CLI/TUI Logo 品牌
+
+CLI 启动时的 ASCII art logo 和 TUI 首页动画 logo 使用 ELLAMAKA 字模。
+
+#### 4.6.1 字模数据
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/cli/logo.ts` | `logo.left` / `logo.right` glyph 数据替换为 ELLAMAKA 块字符画（4 行 × 19 列，每半部 3 行实际内容），`go` 变体、`marks` 标记字符同步更新 | **核心替换**：完全改写字模数据，通过 `_` `^` `~` `,` 标记字符控制 OpenTUI 着色器渲染 |
+
+`logo.left` 拼写 "ELLA"，`logo.right` 拼写 "MAKA"。TUI 的 `<Logo />` 组件（`tui/component/logo.tsx`）直接读取此数据驱动 shimmer 动画——**零侵入**，组件代码不改。
+
+#### 4.6.2 非 TTY 降级
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/cli/ui.ts` | `wordmark` 常量替换为 ELLAMAKA 纯块字符降级版（无着色器效果） | **核心替换**：非 TTY 环境（pipe/redirect）使用此字模 |
+
+### 4.7 TUI 品牌插件
+
+WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `.wopal/plugins/tui-ellamaka.tsx` | TUI 品牌插件：3 个注册 slot（`home_logo` 块字符画 + 阴影、`home_prompt_right` 紧凑 logo、`session_prompt_right` logo + session ID 截取）。无 demo 代码，RGBA 颜色类型 | **独立文件**（ontology worktree）：零侵入上游源码 |
+| `.wopal/plugins/ellamaka-theme.json` | Nord 系 TUI 主题 | **独立文件** |
+| `.wopal/config/themes/ellamaka-theme.json` | 主题副本（WOPAL_SPACE 主题扫描用） | **独立文件** |
+| `.wopal/config/settings.jsonc` | TUI 插件配置：`enabled: true`、`label: "ELLAMAKA"` | **独立文件** |
+
+> **注意**：上述 4 个文件位于 `.wopal/` ontology worktree（`wopal-space-ontology` 仓库），不属于 `projects/ellamaka/` 仓库。列在此处以完整记录品牌化版图。
 
 ---
 
@@ -219,12 +255,11 @@ export const CHANNEL_DEV = "ellamaka-main"
 
 | 模式 | 侵入程度 | 适用场景 | 本项目中采用的文件 |
 |------|----------|----------|-------------------|
-| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh` |
+| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh`、`.wopal/plugins/tui-ellamaka.tsx`、`.wopal/plugins/ellamaka-theme.json` |
 | **独立 copy** | 零（上游 untouched） | 需要深度定制的上游文件 | `packages/ellamaka/build.ts`（基于 `packages/opencode/script/build.ts` 的 branded copy） |
-| **env 驱动** | 最小（1-4 行） | 构建时参数、运行时 flag | （当前项目中已无此模式——build.ts 改为独立 copy 后不再需要 env 注入） |
-| **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts` |
-| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统） |
-| **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`、`tips-view.tsx` |
+| **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts`、12 个 CLI cmd 文件（§4.4） |
+| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`ui.ts`（wordmark 降级） |
+| **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`、`tips-view.tsx`、`.wopal/config/settings.jsonc` |
 
 ---
 

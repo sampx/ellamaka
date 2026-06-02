@@ -25,7 +25,7 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 | `packages/opencode/` | OpenCode inherited engine 主包；其内部规则见 `packages/opencode/AGENTS.md` |
 | `packages/core/` | shared core、flags、global paths、installation/runtime 基础能力 |
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | inherited UI surfaces；只在 engine/TUI 需要时改动 |
-| `packages/plugin/`, `packages/script/`, `packages/shared/`, `packages/util/` | workspace support packages |
+| `packages/plugin/`, `packages/script/`, `packages/util/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
 | `packages/ellamaka/` | ellamaka 品牌常量与 env 驱动构建包装 |
 | `docs/` | project DESIGN、references、research 和 plans |
