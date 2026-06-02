@@ -113,11 +113,7 @@ if ! $attach && [ "$cmd" != "server" ]; then
   if $wopal_space; then
     tui_args+=(--wopal-space "$space")
   fi
-  tui_env=(
-    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
-    OPENCODE_DISABLE_AGENTS_SKILLS=1
-    OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
-  )
+  tui_env=()
 
   if [ "$debug" = true ]; then
     tui_args+=(--log-level DEBUG)
@@ -134,7 +130,7 @@ if ! $attach && [ "$cmd" != "server" ]; then
     sleep 1
   fi
 
-  cd "$opencode_dir"
+  cd "$space"
   exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}" "${passthrough[@]}"
 fi
 
@@ -158,11 +154,7 @@ warmup_config() {
 }
 
 start_backend() {
-  local srv_env=(
-    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
-    OPENCODE_DISABLE_AGENTS_SKILLS=1
-    OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
-  )
+  local srv_env=()
   local srv_args=(serve --port 4097 --print-logs)
   if $wopal_space; then
     srv_args+=(--wopal-space)

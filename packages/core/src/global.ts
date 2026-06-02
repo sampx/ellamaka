@@ -1,19 +1,47 @@
 import path from "path"
 import fs from "fs/promises"
+import { existsSync, readFileSync } from "fs"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 
-// WOPAL_HOME: ellamaka customization — use ~/.wopal/ellamaka/* paths
-// tilde is a shell construct — Node.js does not expand it, resolve manually
+{
+  let dir = process.cwd()
+  while (true) {
+    const wopalDir = path.join(dir, ".wopal")
+    if (existsSync(wopalDir)) {
+      const envFile = path.join(wopalDir, ".env")
+      if (existsSync(envFile)) {
+        for (const line of readFileSync(envFile, "utf-8").split("\n")) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith("#")) continue
+          const eq = trimmed.indexOf("=")
+          if (eq < 1) continue
+          const key = trimmed.slice(0, eq).trim()
+          if (key in process.env) continue
+          let value = trimmed.slice(eq + 1).trim()
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1)
+          }
+          process.env[key] = value
+        }
+      }
+      break
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+}
+
 const wopalHomeRaw = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
 const wopalRoot = wopalHomeRaw.startsWith("~/")
   ? path.join(os.homedir(), wopalHomeRaw.slice(2))
   : wopalHomeRaw
 const data = path.join(wopalRoot, "ellamaka", "data")
 const cache = path.join(wopalRoot, "ellamaka", "cache")
-const config = path.join(wopalRoot, "ellamaka", "config")
+const config = path.join(wopalRoot, "config")
 const state = path.join(wopalRoot, "ellamaka", "state")
 const tmp = path.join(os.tmpdir(), "ellamaka")
 

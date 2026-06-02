@@ -128,6 +128,7 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
     }
 
     for (const dir of directories) {
+      if (dir === Global.Path.config) continue
       yield* deps.merge(dir, {
         command: yield* Effect.promise(() => ConfigCommand.load(dir)),
         agent: mergeDeep(
