@@ -1,5 +1,5 @@
 import { Player } from "cli-sound"
-import { mkdirSync, copyFileSync, statSync } from "node:fs"
+import { mkdirSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { Process } from "@/util/process"
@@ -68,7 +68,7 @@ async function file(path: string) {
     const stat = statSync(next)
     if (stat.size > 0) return next
   } catch {}
-  copyFileSync(path, next)
+  await Bun.write(next, Bun.file(path))
   return next
 }
 
