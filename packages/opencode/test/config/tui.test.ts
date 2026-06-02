@@ -120,6 +120,30 @@ test("loads tui config with the same precedence order as server config paths", a
   expect(config.diff_style).toBe("stacked")
 })
 
+test("loads global tui settings from settings.jsonc tui section", async () => {
+  await using tmp = await tmpdir({
+    init: async () => {
+      await writeGlobalSettings({ ellamaka: { model: "test/model" }, tui: { theme: "global", diff_style: "stacked" } })
+    },
+  })
+
+  const config = await getTuiConfig(tmp.path)
+  expect(config.theme).toBe("global")
+  expect(config.diff_style).toBe("stacked")
+})
+
+test("skips settings.jsonc without tui section", async () => {
+  await using tmp = await tmpdir({
+    init: async () => {
+      await writeGlobalSettings({ ellamaka: { model: "test/model" } })
+    },
+  })
+
+  const config = await getTuiConfig(tmp.path)
+  expect(config.theme).toBeUndefined()
+  expect(config.diff_style).toBeUndefined()
+})
+
 test("migrates tui-specific keys from opencode.json when tui.json does not exist", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

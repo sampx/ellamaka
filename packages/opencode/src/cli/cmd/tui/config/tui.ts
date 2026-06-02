@@ -136,6 +136,22 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
       return yield* load(text, filepath)
     })
 
+  const loadSettingsFile = (filepath: string): Effect.Effect<Info> =>
+    Effect.gen(function* () {
+      const text = yield* readConfigFile(filepath)
+      if (!text) return {} as Info
+      const raw = ConfigParse.jsonc(text, filepath)
+      if (!isRecord(raw) || !isRecord(raw.tui)) return {} as Info
+      return yield* load(JSON.stringify(raw.tui), filepath)
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          log.warn("invalid tui settings", { path: filepath, cause })
+          return {} as Info
+        }),
+      ),
+    )
+
   const merge = (source: string, data: Info) =>
     Effect.sync(() => {
       acc.result = mergeDeep(acc.result, stripUndefined(data) as Info) as Info
@@ -172,7 +188,7 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   // 1. Global tui config (lowest precedence).
   for (const file of [path.join(Global.Path.config, "settings.jsonc")]) {
-    yield* mergeFile(file)
+    yield* merge(file, yield* loadSettingsFile(file))
   }
 
   // 2. Explicit OPENCODE_TUI_CONFIG override, if set.
