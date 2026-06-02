@@ -58,6 +58,7 @@ Usage: $self [command|option]
   Options:
     -a, --attach      Start HTTP server + attach TUI client
     -h, --help        Show this help message
+    -w, --wopal-space Enable wopal-space mode
     --debug [mods]    Enable debug mode (default: all)
                       Modules: task, rules, or comma-separated list
 
@@ -77,6 +78,7 @@ EOF
 
 cmd=""
 attach=false
+wopal_space=false
 debug=false
 debug_modules=""
 passthrough=()
@@ -85,7 +87,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --) shift; passthrough+=("$@"); break ;;
     stop|-h|--help|help|server) cmd="$1"; shift ;;
-    -a|--attach) attach=true; shift ;; 
+    -a|--attach) attach=true; shift ;;
+    -w|--wopal-space) wopal_space=true; shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -106,7 +109,10 @@ esac
 if ! $attach && [ "$cmd" != "server" ]; then
   # ----- default: TUI with in-process backend (no HTTP server) -----
   mkdir -p "$LOGDIR"
-  tui_args=(--wopal-space "$space")
+  tui_args=()
+  if $wopal_space; then
+    tui_args+=(--wopal-space "$space")
+  fi
   tui_env=(
     OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
     OPENCODE_DISABLE_AGENTS_SKILLS=1
@@ -157,7 +163,10 @@ start_backend() {
     OPENCODE_DISABLE_AGENTS_SKILLS=1
     OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1
   )
-  local srv_args=(serve --wopal-space --port 4097 --print-logs)
+  local srv_args=(serve --port 4097 --print-logs)
+  if $wopal_space; then
+    srv_args+=(--wopal-space)
+  fi
 
   if [ "$debug" = true ]; then
     srv_args+=(--log-level DEBUG)

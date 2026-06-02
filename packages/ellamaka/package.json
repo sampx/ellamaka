@@ -2,6 +2,9 @@
   "name": "@ellamaka/build",
   "private": true,
   "type": "module",
+  "exports": {
+    "./*": "./*.ts"
+  },
   "devDependencies": {
     "@opencode-ai/script": "workspace:*",
     "@opentui/solid": "catalog:",
