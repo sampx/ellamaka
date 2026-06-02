@@ -34,6 +34,8 @@ CLEANUP_PATHS=(
   "function"
   # Docker
   "packages/containers"
+  # Stale upstream renamed packages (merge leftovers)
+  "packages/shared"
   # Web
   "packages/web"
   # Extensions & branding assets

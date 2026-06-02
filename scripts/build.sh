@@ -18,10 +18,8 @@ Options:
   -h, --help              Show this help message
   --all                   Build all 12 platform targets
   --arch <value>          Filter targets: "primary", "x64", "x64,arm64", etc.
-  --single                Explicit current platform + host arch (default)
   --install               Install binary after build
   --install-dir <dir>     Custom install directory (default: ~/.wopal/bin)
-  --skip-install          Skip cross-platform dependency installation
   --skip-embed-web-ui     Skip embedding web UI
   --sourcemaps            Generate sourcemaps
 EOF
@@ -55,7 +53,10 @@ while [[ $# -gt 0 ]]; do
       INSTALL_DIR="$2"
       shift 2
       ;;
-    --skip-install|--skip-embed-web-ui|--sourcemaps)
+    --single|--skip-deps|--skip-install)
+      shift  # no-op (build.ts drives this via --single)
+      ;;
+    --skip-embed-web-ui|--sourcemaps)
       BUILD_ARGS+=("$1")
       shift
       ;;
@@ -81,6 +82,12 @@ case "$MODE" in
     ;;
 esac
 
+if [[ -z "${OPENCODE_VERSION:-}" ]]; then
+  VERSION=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 2>/dev/null)
+  if [[ -n "$VERSION" ]]; then
+    export OPENCODE_VERSION="$VERSION"
+  fi
+fi
 BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka/build.ts" "${BUILD_ARGS[@]}"
 
 if $INSTALL; then
@@ -101,18 +108,8 @@ if $INSTALL; then
   DST="$INSTALL_DIR/$BINARY_NAME"
 
   NEW_VER=$("$SRC" --version 2>/dev/null || echo "unknown")
-  if [[ -f "$DST" ]]; then
-    OLD_VER=$("$DST" --version 2>/dev/null || echo "unknown")
-    echo "📦 Installed: $OLD_VER"
-    echo "📦 New build: $NEW_VER"
-    read -p "   Overwrite? [y/N] " confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-      echo "   Skipped installation"
-      exit 0
-    fi
-  else
-    echo "📦 New build: $NEW_VER"
-  fi
+  OLD_VER=$([[ -f "$DST" ]] && "$DST" --version 2>/dev/null || echo "none")
+  echo "📦 $OLD_VER → $NEW_VER"
 
   cp -f "$SRC" "${DST}.tmp" && mv -f "${DST}.tmp" "$DST"
   echo "✅ Installed: $DST"

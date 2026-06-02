@@ -57,7 +57,6 @@ const archArg = archIndex !== -1 ? process.argv[archIndex + 1] : null
 
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
-const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
@@ -182,7 +181,7 @@ if (singleFlag) {
 await $`rm -rf ${distDir}`
 
 const binaries: Record<string, string> = {}
-if (!skipInstall) {
+if (!singleFlag) {
   await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
 }
@@ -240,7 +239,7 @@ for (const item of targets) {
     },
   })
 
-  // Smoke test: only run if binary is for current platform
+  // Smoke test: verify version output for targets matching current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `${distDir}/${name}/bin/${BINARY_NAME}`
     console.log(`Running smoke test: ${binaryPath} --version`)

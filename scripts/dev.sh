@@ -63,6 +63,10 @@ Usage: $self [command|option]
 
   Without args, starts TUI directly (no HTTP server, backend in-process).
 
+  Pass-through:
+    After --, all args are forwarded to ellamaka verbatim.
+    Example: $self -- --help
+
 Debug logs:
   $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
   $LOGDIR/wopal-plugins-debug.log   Plugin debug output
@@ -75,9 +79,11 @@ cmd=""
 attach=false
 debug=false
 debug_modules=""
+passthrough=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --) shift; passthrough+=("$@"); break ;;
     stop|-h|--help|help|server) cmd="$1"; shift ;;
     -a|--attach) attach=true; shift ;; 
     --debug)
@@ -123,7 +129,7 @@ if ! $attach && [ "$cmd" != "server" ]; then
   fi
 
   cd "$opencode_dir"
-  exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}"
+  exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}" "${passthrough[@]}"
 fi
 
 mkdir -p "$LOGDIR"
