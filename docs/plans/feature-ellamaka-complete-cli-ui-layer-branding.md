@@ -7,7 +7,7 @@
 - **Project Path**: projects/ellamaka/
 - **Project Type**: standard
 - **Created**: 2026-06-01
-- **Status**: verifying
+- **Status**: done
 
 ## Scope Assessment
 
@@ -167,7 +167,7 @@ N/A — 无业务规则变更。纯字符串替换，不影响系统行为。
   2. 观察错误输出
 - Expected Result: 提示 `Try: \`ellamaka models\` to list available models`（非 `opencode`）
 
-- [ ] 用户已完成上述功能验证并确认结果符合预期
+- [x] 用户已完成上述功能验证并确认结果符合预期
 
 ## Implementation
 
