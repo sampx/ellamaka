@@ -213,7 +213,19 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/core/src/global.ts` | **完全替换** xdg 路径系统：`~/.config/opencode/` → `~/.wopal/ellamaka/data/`、`cache/`、`config/`、`state/`，临时目录 `/tmp/opencode` → `/tmp/ellamaka` | **核心身份变更**：这不是附加功能，而是 ellamaka 的根基——所有持久化数据、配置、缓存的存储位置。上游永远不会修改 xdg 路径逻辑 |
+| `packages/core/src/global.ts` | **完全替换** xdg 路径系统：所有持久化目录统一在 `WOPAL_HOME`（默认 `~/.wopal`）下，`config/`、`ellamaka/data/`、`ellamaka/cache/`、`ellamaka/state/`，临时目录 `/tmp/ellamaka` | **核心身份变更**：所有持久化数据、配置、缓存的存储位置。上游永远不会修改 xdg 路径逻辑 |
+
+### 路径映射
+
+| 用途 | 上游 opencode | ellamaka |
+|------|-------------|----------|
+| data | `~/.local/share/opencode` | `~/.wopal/ellamaka/data` |
+| cache | `~/.cache/opencode` | `~/.wopal/ellamaka/cache` |
+| **config** | `~/.config/opencode` | `~/.wopal/config` |
+| state | `~/.local/state/opencode` | `~/.wopal/ellamaka/state` |
+| tmp | `/tmp/opencode` | `/tmp/ellamaka` |
+
+`WOPAL_HOME` 可通过环境变量或 `.wopal/.env` 覆盖（默认 `~/.wopal`）。
 
 **上游侵入**：18 行。冲突风险极低（上游不改路径系统）。
 
@@ -243,11 +255,56 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 |------|------|------|
 | `packages/opencode/src/config/wopal-space.ts` | 读取 `settings.jsonc` 中的 `ellamaka` 字段 | **独立文件**（零侵入） |
 
-### 7.2 TUI 配置路径提示
+### 7.2 全局配置文件
+
+ellamaka 的全局配置文件是 `WOPAL_HOME/config/settings.jsonc`，这是唯一的全局配置入口。不使用 opencode 的 `config.json`/`opencode.json`/`opencode.jsonc` 文件名，不执行 TOML legacy 迁移。
+
+`Global.Path.config`（`~/.wopal/config/`）是纯配置目录——两种模式下都不在该目录安装插件或扫描能力（agents/commands/plugins）。
+
+### 7.3 配置加载策略
+
+ellamaka 有两种运行模式，配置加载链路完全不同：
+
+#### 普通模式（opencode 兼容）
+
+用户未启用 `--wopal-space` 时，ellamaka 兼容 opencode 的配置和能力体系，让 opencode 老用户无缝迁移。
+
+```
+优先级从低到高：
+
+① opencode 全局配置（XDG 兼容层）
+   ~/.config/opencode/config.json
+   ~/.config/opencode/opencode.json[c]
+   ↓ merge
+② ellamaka 全局配置（覆盖）
+   WOPAL_HOME/config/settings.jsonc
+   ↓ merge
+③ 项目级配置
+   opencode.jsonc（项目根向上 findUp）
+   .opencode/opencode.json[c]（项目级 + ~/.opencode/）
+   ↓ merge
+④ 能力加载
+   ~/.opencode/ → agents/plugins/commands（全局能力）
+   .opencode/   → agents/plugins/commands（项目级能力）
+   ~/.config/opencode/ → agents/plugins/commands（XDG 全局能力）
+   WOPAL_HOME/config/  → ✗ 跳过（纯配置目录）
+```
+
+#### wopal-space 模式（短路）
+
+启用 `--wopal-space` 后，直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。
+
+```
+① ~/.wopal/ 全局配置 + 能力（agents/plugins/commands）
+② 空间 .wopal/ 配置（settings.jsonc 中的 ellamaka 字段）+ 能力
+③ ~/.wopal/config/ → ✗ 跳过能力加载（纯配置目录）
+```
+
+### 7.4 TUI 配置路径提示
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` | `~/.wopal/ellamaka/config/tui.json` 路径提示 | **嵌入**：TUI 提示文案，与 global.ts 路径对齐 |
+| `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` | `~/.wopal/config/settings.jsonc` 路径提示 | **嵌入**：TUI 提示文案，与 global.ts 路径对齐 |
 
 ---
 
@@ -328,4 +385,19 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 | `"# opencode"`（shell PATH 标记） | 安装产物 | 历史兼容，已安装用户 |
 | `"opencode.local"`（mDNS 域名） | 网络标识 | 本地网络服务名 |
 
-**设计原则**：ellamaka 的设计目标是——在非 wopal-space 模式下，表现与上游 opencode **完全一致**。这意味着 `.opencode/` 配置目录、`opencode.json` 配置文件名、数据路径等文件系统约定必须与 opencode 保持兼容。改变这些路径 = 破坏所有现有 opencode 用户的配置迁移路径。文件系统路径是**兼容性约定**，不是品牌声明。
+**设计原则**：ellamaka 的设计目标是——在非 wopal-space 模式下，兼容 opencode 的配置和能力体系。这意味着 `.opencode/` 配置目录、`opencode.json` 配置文件名等文件系统约定必须与 opencode 保持兼容。改变这些路径 = 破坏所有现有 opencode 用户的配置迁移路径。文件系统路径是**兼容性约定**，不是品牌声明。
+
+### 10.1 opencode 兼容层
+
+普通模式下，ellamaka 通过兼容层让 opencode 老用户零迁移使用：
+
+| 兼容项 | opencode 原始路径 | ellamaka 行为 |
+|--------|-------------------|--------------|
+| 全局配置 | `~/.config/opencode/`（XDG） | 加载 `config.json`/`opencode.json[c]`，作为底配置被 `settings.jsonc` 覆盖 |
+| 全局能力 | `~/.opencode/` | 正常扫描 agents/plugins/commands |
+| 全局能力 | `~/.config/opencode/`（XDG） | 正常扫描 agents/plugins/commands |
+| 项目级配置 | `opencode.jsonc` / `.opencode/opencode.json[c]` | 保持不变 |
+| 项目级能力 | `.opencode/` | 保持不变 |
+| 状态/数据 | `~/.local/share/opencode` 等 | **不兼容** — ellamaka 状态数据在 `~/.wopal/ellamaka/` 下 |
+
+**不兼容项**：状态数据（数据库、缓存、session）无法迁移，两类路径格式和 schema 可能随版本变化。

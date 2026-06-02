@@ -68,8 +68,9 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 - Drizzle schema 字段使用 snake_case，避免通过字符串重定义 column name。
 - 修改 `packages/opencode/` 内部模块、Effect、database、migration 或 Instance lifecycle 时，遵循 `packages/opencode/AGENTS.md`。
 - 涉及 WopalSpace、`.wopal/*`、plugin、自定义工具或 agent 配置时，验证对象必须是 ellamaka runtime，不要用 upstream opencode 替代。
-- ellamaka 全局配置根是 `~/.wopal/ellamaka/config/`，不要按 upstream OpenCode 的默认 config root 设计 WopalSpace 行为。
-- wopal-space mode 使用 `.wopal/config/settings.jsonc` 的 `ellamaka` 和 `tui` 分区；不要让 project-level `opencode.jsonc` 污染 space mode。
+- ellamaka 全局配置文件是 `~/.wopal/config/settings.jsonc`（可由 `WOPAL_HOME` 改写），`~/.wopal/config/` 是纯配置目录，不加载 agents、commands、plugins 或执行依赖安装。
+- 普通模式先加载 opencode 兼容层（`~/.config/opencode/` 与 `.opencode/` 的配置和能力），再用 ellamaka 全局配置覆盖；runtime data/cache/state 仍归属 `~/.wopal/ellamaka/`。
+- wopal-space mode 短路到 `~/.wopal/` 与空间 `.wopal/`，使用 `.wopal/config/settings.jsonc` 的 `ellamaka` 和 `tui` 分区；不要加载 project-level `opencode.jsonc` 或任何 opencode 全局路径。
 - wopal-space permission 合并顺序是 defaults → global config → `.wopal/config/settings.*` → `.wopal/agents/{name}.md` frontmatter；最后匹配项生效。
 - WopalSpace 定制优先放在新文件；上游文件只保留最小 import 和调用注入点。
 - 定制分支使用提前返回 guard，避免与 upstream 主流程改动重叠。

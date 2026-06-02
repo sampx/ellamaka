@@ -18,6 +18,8 @@ const clear = async (wait = false) => {
   if (wait) await InstanceRuntime.disposeAllInstances()
 }
 const load = () => AppRuntime.runPromise(Config.Service.use((svc) => svc.get()))
+const globalSettings = () => path.join(Global.Path.config, "settings.jsonc")
+const writeGlobalSettings = (settings: object) => Bun.write(globalSettings(), JSON.stringify(settings, null, 2))
 
 beforeEach(async () => {
   await clear(true)
@@ -37,6 +39,7 @@ afterEach(async () => {
   await fs.rm(path.join(Global.Path.config, "opencode.jsonc"), { force: true }).catch(() => {})
   await fs.rm(path.join(Global.Path.config, "tui.json"), { force: true }).catch(() => {})
   await fs.rm(path.join(Global.Path.config, "tui.jsonc"), { force: true }).catch(() => {})
+  await fs.rm(globalSettings(), { force: true }).catch(() => {})
   await clear(true)
 })
 
@@ -46,26 +49,14 @@ test("keeps server and tui plugin merge semantics aligned", async () => {
       const local = path.join(dir, ".opencode")
       await fs.mkdir(local, { recursive: true })
 
-      await Bun.write(
-        path.join(Global.Path.config, "opencode.json"),
-        JSON.stringify(
-          {
-            plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-          },
-          null,
-          2,
-        ),
-      )
-      await Bun.write(
-        path.join(Global.Path.config, "tui.json"),
-        JSON.stringify(
-          {
-            plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-          },
-          null,
-          2,
-        ),
-      )
+      await writeGlobalSettings({
+        ellamaka: {
+          plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
+        },
+        tui: {
+          plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
+        },
+      })
 
       await Bun.write(
         path.join(local, "opencode.json"),
@@ -114,7 +105,7 @@ test("keeps server and tui plugin merge semantics aligned", async () => {
 test("loads tui config with the same precedence order as server config paths", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ theme: "global" }, null, 2))
+      await writeGlobalSettings({ tui: { theme: "global" } })
       await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ theme: "project" }, null, 2))
       await fs.mkdir(path.join(dir, ".opencode"), { recursive: true })
       await Bun.write(
@@ -167,7 +158,7 @@ test("migrates tui-specific keys from opencode.json when tui.json does not exist
 test("migrates project legacy tui keys even when global tui.json already exists", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ theme: "global" }, null, 2))
+      await writeGlobalSettings({ tui: { theme: "global" } })
       await Bun.write(
         path.join(dir, "opencode.json"),
         JSON.stringify(
@@ -380,7 +371,7 @@ test("project config takes precedence over OPENCODE_TUI_CONFIG (matches OPENCODE
 test("merges keybind overrides across precedence layers", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(path.join(Global.Path.config, "tui.json"), JSON.stringify({ keybinds: { app_exit: "ctrl+q" } }))
+      await writeGlobalSettings({ tui: { keybinds: { app_exit: "ctrl+q" } } })
       await Bun.write(path.join(dir, "tui.json"), JSON.stringify({ keybinds: { theme_list: "ctrl+k" } }))
     },
   })
@@ -525,12 +516,7 @@ test("supports tuple plugin specs with options in tui.json", async () => {
 test("deduplicates tuple plugin specs by name with higher precedence winning", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(
-        path.join(Global.Path.config, "tui.json"),
-        JSON.stringify({
-          plugin: [["acme-plugin@1.0.0", { source: "global" }]],
-        }),
-      )
+      await writeGlobalSettings({ tui: { plugin: [["acme-plugin@1.0.0", { source: "global" }]] } })
       await Bun.write(
         path.join(dir, "tui.json"),
         JSON.stringify({
@@ -565,12 +551,7 @@ test("deduplicates tuple plugin specs by name with higher precedence winning", a
 test("tracks global and local plugin metadata in merged tui config", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(
-        path.join(Global.Path.config, "tui.json"),
-        JSON.stringify({
-          plugin: ["global-plugin@1.0.0"],
-        }),
-      )
+      await writeGlobalSettings({ tui: { plugin: ["global-plugin@1.0.0"] } })
       await Bun.write(
         path.join(dir, "tui.json"),
         JSON.stringify({
@@ -586,7 +567,7 @@ test("tracks global and local plugin metadata in merged tui config", async () =>
     {
       spec: "global-plugin@1.0.0",
       scope: "global",
-      source: path.join(Global.Path.config, "tui.json"),
+      source: globalSettings(),
     },
     {
       spec: "local-plugin@2.0.0",
@@ -599,15 +580,14 @@ test("tracks global and local plugin metadata in merged tui config", async () =>
 test("merges plugin_enabled flags across config layers", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await Bun.write(
-        path.join(Global.Path.config, "tui.json"),
-        JSON.stringify({
+      await writeGlobalSettings({
+        tui: {
           plugin_enabled: {
             "internal:sidebar-context": false,
             "demo.plugin": true,
           },
-        }),
-      )
+        },
+      })
       await Bun.write(
         path.join(dir, "tui.json"),
         JSON.stringify({

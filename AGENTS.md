@@ -69,8 +69,9 @@ Tests must not run from the repo root; the root `test` script is a guard.
 - Drizzle schema fields use snake_case; avoid redefining column names with strings.
 - When changing internal modules, Effect, database, migrations, or Instance lifecycle under `packages/opencode/`, follow `packages/opencode/AGENTS.md`.
 - For WopalSpace, `.wopal/*`, plugins, custom tools, or agent configuration, verify against the ellamaka runtime; do not use upstream opencode as a substitute.
-- ellamaka's global config root is `~/.wopal/ellamaka/config/`; do not design WopalSpace behavior around upstream OpenCode's default config root.
-- wopal-space mode uses the `ellamaka` and `tui` sections in `.wopal/config/settings.jsonc`; do not let project-level `opencode.jsonc` pollute space mode.
+- ellamaka's global config file is `~/.wopal/config/settings.jsonc` (overridable through `WOPAL_HOME`); `~/.wopal/config/` is a config-only directory and does not load agents, commands, plugins, or install dependencies.
+- Normal mode loads the opencode compatibility layer (`~/.config/opencode/` and `.opencode/` config and capabilities) before overlaying ellamaka global config; runtime data/cache/state still belong under `~/.wopal/ellamaka/`.
+- wopal-space mode short-circuits to `~/.wopal/` and the space `.wopal/`, using the `ellamaka` and `tui` sections in `.wopal/config/settings.jsonc`; do not load project-level `opencode.jsonc` or any opencode global path.
 - wopal-space permission merge order is defaults → global config → `.wopal/config/settings.*` → `.wopal/agents/{name}.md` frontmatter; the last matching rule wins.
 - Put WopalSpace customization in new files first; upstream files should keep only minimal imports and invocation points.
 - Use early-return guards for customized branches to avoid overlapping upstream main-flow changes.

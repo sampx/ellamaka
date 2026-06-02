@@ -26,7 +26,8 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | 适配点 | 实现方式 | 载体 |
 |--------|---------|------|
 | `--wopal-space` flag | `WOPAL_SPACE` 环境变量，worker + TUI 双实例可读 | `packages/core/src/flag/flag.ts` |
-| 全局路径分离 | `~/.wopal/ellamaka/{config,data,cache,state}` | `packages/core/src/global.ts` |
+| 全局路径分离 | `~/.wopal/config` + `~/.wopal/ellamaka/{data,cache,state}` | `packages/core/src/global.ts` |
+| 普通模式兼容层 | 加载 opencode XDG 全局配置和能力，再用 ellamaka 全局配置覆盖 | `packages/opencode/src/config/config.ts`、`config/paths.ts` |
 | 空间配置加载 | 发现 `.wopal/`，加载 `settings.jsonc` → `ellamaka` 字段，合并 agents/commands/plugins | `packages/opencode/src/config/wopal-space.ts`、`wopal-space-settings.ts` |
 | 空间模式跳过项目配置 | `Flag.WOPAL_SPACE` guard → 不加载项目级 `opencode.jsonc` | `packages/opencode/src/config/config.ts:570` |
 | Agent/Command/Plugin 加载 | 从 `.wopal/{agents,commands,plugins}/` 加载同名可覆盖内置 | `packages/opencode/src/config/{agent,command,plugin}.ts` |
@@ -45,12 +46,12 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | 层级 | 来源 |
 |------|------|
 | Built-in defaults | ellamaka 内置 |
-| Global config | `~/.wopal/ellamaka/config/opencode.json[c]` |
+| Global config | `~/.wopal/config/settings.jsonc` |
 | Space settings | `<space>/.wopal/config/settings.jsonc` → `ellamaka` 字段 |
 | Agent frontmatter | `<space>/.wopal/agents/*.md` |
 | Environment override | `OPENCODE_CONFIG_CONTENT` |
 
-权限合并同此优先链，按最后匹配项生效。
+权限合并同此优先链，按最后匹配项生效。普通模式先加载 opencode 的 XDG 全局配置和 `.opencode/` 能力，再加载 `~/.wopal/config/settings.jsonc`。
 
 ## 4. Ontology Loading Contract
 
@@ -85,7 +86,7 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 
 | 状态 | 位置 | Owner |
 |------|------|-------|
-| Global config | `~/.wopal/ellamaka/config/` | ellamaka |
+| Global config | `~/.wopal/config/` | ellamaka |
 | Runtime data | `~/.wopal/ellamaka/data/` | ellamaka |
 | Cache | `~/.wopal/ellamaka/cache/` | ellamaka |
 | Process state | `~/.wopal/ellamaka/state/` | ellamaka |

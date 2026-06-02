@@ -1,6 +1,7 @@
 export * as ConfigPaths from "./paths"
 
 import path from "path"
+import { existsSync } from "fs"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import { unique } from "remeda"
@@ -24,6 +25,7 @@ export const directories = Effect.fn("ConfigPaths.directories")(function* (direc
   const afs = yield* AppFileSystem.Service
   return unique([
     Global.Path.config,
+    ...(!Flag.WOPAL_SPACE && existsSync(Global.Path.opencodeConfig) ? [Global.Path.opencodeConfig] : []),
     ...(!Flag.OPENCODE_DISABLE_PROJECT_CONFIG
       ? yield* afs.up({
           targets: [".opencode"],
@@ -43,4 +45,3 @@ export const directories = Effect.fn("ConfigPaths.directories")(function* (direc
 export function fileInDirectory(dir: string, name: string) {
   return [path.join(dir, `${name}.json`), path.join(dir, `${name}.jsonc`)]
 }
-

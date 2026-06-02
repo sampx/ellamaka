@@ -141,6 +141,52 @@ test("loads config with defaults when no files exist", async () => {
   })
 })
 
+test("loads opencode XDG global config before ellamaka settings", async () => {
+  await using project = await tmpdir()
+  await using opencodeGlobal = await tmpdir({
+    init: async (dir) => {
+      await writeConfig(
+        dir,
+        {
+          $schema: "https://opencode.ai/config.json",
+          model: "opencode/model",
+          shell: "bash",
+        },
+        "config.json",
+      )
+    },
+  })
+  await using ellamakaGlobal = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "settings.jsonc"),
+        JSON.stringify({ ellamaka: { model: "ellamaka/model" } }),
+      )
+    },
+  })
+
+  const prevConfig = Global.Path.config
+  const prevOpencodeConfig = Global.Path.opencodeConfig
+  ;(Global.Path as typeof Global.Path & { config: string; opencodeConfig: string }).config = ellamakaGlobal.path
+  ;(Global.Path as typeof Global.Path & { config: string; opencodeConfig: string }).opencodeConfig = opencodeGlobal.path
+  await clear(true)
+
+  try {
+    await WithInstance.provide({
+      directory: project.path,
+      fn: async () => {
+        const config = await load()
+        expect(config.model).toBe("ellamaka/model")
+        expect(config.shell).toBe("bash")
+      },
+    })
+  } finally {
+    ;(Global.Path as typeof Global.Path & { config: string; opencodeConfig: string }).config = prevConfig
+    ;(Global.Path as typeof Global.Path & { config: string; opencodeConfig: string }).opencodeConfig = prevOpencodeConfig
+    await clear(true)
+  }
+})
+
 test("loads JSON config file", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -206,10 +252,7 @@ test("updates config and preserves empty shell sentinel", async () => {
 test("updates global config and omits empty shell key in json", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
-      await writeConfig(dir, {
-        $schema: "https://opencode.ai/config.json",
-        shell: "bash",
-      })
+      await Filesystem.write(path.join(dir, "settings.jsonc"), JSON.stringify({ shell: "bash", model: "test/model" }))
     },
   })
 
@@ -220,8 +263,9 @@ test("updates global config and omits empty shell key in json", async () => {
   try {
     await saveGlobal({ shell: "" })
 
-    const writtenConfig = await Filesystem.readJson<{ shell?: string }>(path.join(tmp.path, "opencode.json"))
+    const writtenConfig = await Filesystem.readJson<{ shell?: string; model?: string }>(path.join(tmp.path, "settings.jsonc"))
     expect("shell" in writtenConfig).toBe(false)
+    expect(writtenConfig.model).toBe("test/model")
   } finally {
     ;(Global.Path as { config: string }).config = prev
     await clear(true)
@@ -232,7 +276,7 @@ test("updates global config and omits empty shell key in jsonc", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
       await Filesystem.write(
-        path.join(dir, "opencode.jsonc"),
+        path.join(dir, "settings.jsonc"),
         JSON.stringify({
           $schema: "https://opencode.ai/config.json",
           shell: "bash",
@@ -249,7 +293,7 @@ test("updates global config and omits empty shell key in jsonc", async () => {
   try {
     await saveGlobal({ shell: "" })
 
-    const file = path.join(tmp.path, "opencode.jsonc")
+    const file = path.join(tmp.path, "settings.jsonc")
     const writtenConfig = await Filesystem.readText(file)
     const parsed = ConfigParse.schema(Config.Info.zod, ConfigParse.jsonc(writtenConfig, file), file)
     expect(writtenConfig).not.toContain('"shell"')

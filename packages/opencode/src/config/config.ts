@@ -1,11 +1,9 @@
 import * as Log from "@opencode-ai/core/util/log"
 import path from "path"
-import { pathToFileURL } from "url"
 import os from "os"
 import z from "zod"
 import { mergeDeep } from "remeda"
 import { Global } from "@opencode-ai/core/global"
-import fsNode from "fs/promises"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Auth } from "../auth"
@@ -48,7 +46,15 @@ const log = Log.create({ service: "config" })
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
 function mergeConfig(target: Info, source: Info): Info {
-  return mergeDeep(target, source) as Info
+  return mergeDeep(target, stripUndefined(source) as Info) as Info
+}
+
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined)
+  if (!isRecord(value)) return value
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => (item === undefined ? [] : [[key, stripUndefined(item)]])),
+  )
 }
 
 function mergeConfigConcatArrays(target: Info, source: Info): Info {
@@ -303,13 +309,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@opencode/Config") {}
 
 function globalConfigFile() {
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
-    path.join(Global.Path.config, file),
-  )
-  for (const file of candidates) {
-    if (existsSync(file)) return file
-  }
-  return candidates[0]
+  return path.join(Global.Path.config, "settings.jsonc")
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
@@ -388,27 +388,25 @@ export const layer = Layer.effect(
       return yield* loadConfig(text, { path: filepath })
     })
 
+    const loadSettingsFile = Effect.fnUntraced(function* (filepath: string) {
+      log.info("loading", { path: filepath })
+      const text = yield* readConfigFile(filepath)
+      if (!text) return {} as Info
+      const raw = ConfigParse.jsonc(text, filepath)
+      if (isRecord(raw) && isRecord(raw.ellamaka)) {
+        return yield* loadConfig(JSON.stringify(raw.ellamaka), { dir: path.dirname(filepath), source: filepath })
+      }
+      return yield* loadConfig(text, { dir: path.dirname(filepath), source: filepath })
+    })
+
     const loadGlobal = Effect.fnUntraced(function* () {
       let result: Info = {}
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json")))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json")))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc")))
-
-      const legacy = path.join(Global.Path.config, "config")
-      if (existsSync(legacy)) {
-        yield* Effect.promise(() =>
-          import(pathToFileURL(legacy).href, { with: { type: "toml" } })
-            .then(async (mod) => {
-              const { provider, model, ...rest } = mod.default
-              if (provider && model) result.model = `${provider}/${model}`
-              result["$schema"] = "https://opencode.ai/config.json"
-              result = mergeConfig(result, rest)
-              await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
-              await fsNode.unlink(legacy)
-            })
-            .catch(() => {}),
-        )
+      if (!Flag.WOPAL_SPACE) {
+        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "config.json")))
+        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "opencode.json")))
+        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "opencode.jsonc")))
       }
+      result = mergeConfig(result, yield* loadSettingsFile(globalConfigFile()))
 
       return result
     })
@@ -618,7 +616,7 @@ export const layer = Layer.effect(
         const deps: Fiber.Fiber<void, never>[] = []
 
         for (const dir of directories) {
-          if (Flag.WOPAL_SPACE && dir === Global.Path.config) continue
+          if (dir === Global.Path.config) continue
 
           if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
             for (const file of ["opencode.json", "opencode.jsonc"]) {

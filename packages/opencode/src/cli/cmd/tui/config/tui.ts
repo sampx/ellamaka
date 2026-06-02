@@ -1,5 +1,6 @@
 export * as TuiConfig from "./tui"
 
+import path from "path"
 import z from "zod"
 import { mergeDeep, unique } from "remeda"
 import { Context, Effect, Fiber, Layer } from "effect"
@@ -35,6 +36,14 @@ type State = {
   deps: Array<Fiber.Fiber<void, AppFileSystem.Error>>
 }
 
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined)
+  if (!isRecord(value)) return value
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => (item === undefined ? [] : [[key, stripUndefined(item)]])),
+  )
+}
+
 export type Info = z.output<typeof Info> & {
   // Internal resolved plugin list used by runtime loading.
   plugin_origins?: ConfigPlugin.Origin[]
@@ -63,9 +72,10 @@ function normalize(raw: Record<string, unknown>) {
 
   const tui = data.tui
   delete data.tui
+  const known = Object.fromEntries(Object.entries(data).filter(([key]) => key in Info.shape))
   return {
     ...tui,
-    ...data,
+    ...known,
   }
 }
 
@@ -128,7 +138,7 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   const merge = (source: string, data: Info) =>
     Effect.sync(() => {
-      acc.result = mergeDeep(acc.result, data)
+      acc.result = mergeDeep(acc.result, stripUndefined(data) as Info) as Info
       if (!data.plugin?.length) return
 
       const scope = pluginScope(source, ctx)
@@ -149,15 +159,19 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   // Every config dir we may read from: global config dir, any `.opencode`
   // folders between cwd and home, and OPENCODE_CONFIG_DIR.
   const directories = yield* ConfigPaths.directories(ctx.directory)
-  const tuiDirectories = Flag.WOPAL_SPACE
-    ? directories.filter((dir) => !dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR)
-    : directories
+  const tuiDirectories = Flag.WOPAL_SPACE ? directories.filter((dir) => dir === Global.Path.config) : directories
   yield* Effect.promise(() => migrateTuiConfig({ directories: tuiDirectories, cwd: ctx.directory }))
 
   const projectFiles = Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? [] : yield* ConfigPaths.files("tui", ctx.directory)
 
+  if (!Flag.WOPAL_SPACE) {
+    for (const file of ConfigPaths.fileInDirectory(Global.Path.opencodeConfig, "tui")) {
+      yield* mergeFile(file)
+    }
+  }
+
   // 1. Global tui config (lowest precedence).
-  for (const file of ConfigPaths.fileInDirectory(Global.Path.config, "tui")) {
+  for (const file of [path.join(Global.Path.config, "settings.jsonc")]) {
     yield* mergeFile(file)
   }
 
@@ -176,7 +190,9 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   // 4. `.opencode` directories (and OPENCODE_CONFIG_DIR) discovered while
   // walking up the tree. Also returned below so callers can install plugin
   // dependencies from each location.
-  const opencodeDirs = unique(tuiDirectories).filter((dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR)
+  const opencodeDirs = unique(tuiDirectories).filter(
+    (dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR || dir === Global.Path.opencodeConfig,
+  )
   const wopal = Flag.WOPAL_SPACE
     ? yield* tryLoadWopalSpaceTuiConfig(
         {
@@ -192,6 +208,7 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   if (!Flag.WOPAL_SPACE) {
     for (const dir of opencodeDirs) {
+      if (dir === Global.Path.opencodeConfig) continue
       if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
       for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
         yield* mergeFile(file)

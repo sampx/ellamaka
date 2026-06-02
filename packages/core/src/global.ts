@@ -36,9 +36,12 @@ import { Flag } from "./flag/flag"
 }
 
 const wopalHomeRaw = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
-const wopalRoot = wopalHomeRaw.startsWith("~/")
-  ? path.join(os.homedir(), wopalHomeRaw.slice(2))
-  : wopalHomeRaw
+const expandHome = (value: string) => (value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value)
+const wopalRoot = expandHome(wopalHomeRaw)
+const opencodeConfig = path.join(
+  expandHome(process.env.XDG_CONFIG_HOME || path.join(process.env.OPENCODE_TEST_HOME ?? os.homedir(), ".config")),
+  "opencode",
+)
 const data = path.join(wopalRoot, "ellamaka", "data")
 const cache = path.join(wopalRoot, "ellamaka", "cache")
 const config = path.join(wopalRoot, "config")
@@ -54,6 +57,7 @@ const paths = {
   log: path.join(data, "log"),
   cache,
   config,
+  opencodeConfig,
   state,
   tmp,
 }
@@ -78,6 +82,7 @@ export interface Interface {
   readonly data: string
   readonly cache: string
   readonly config: string
+  readonly opencodeConfig: string
   readonly state: string
   readonly tmp: string
   readonly bin: string
@@ -90,6 +95,7 @@ export function make(input: Partial<Interface> = {}): Interface {
     data: Path.data,
     cache: Path.cache,
     config: Flag.OPENCODE_CONFIG_DIR ?? Path.config,
+    opencodeConfig: Path.opencodeConfig,
     state: Path.state,
     tmp: Path.tmp,
     bin: Path.bin,
