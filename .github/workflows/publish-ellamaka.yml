@@ -60,32 +60,22 @@ jobs:
       - run: bun install
 
       - name: Build
-        run: ./packages/opencode/script/build.ts --p1
+        run: bun packages/ellamaka/build.ts --arch primary
         env:
-          BINARY_NAME: ellamaka
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
 
       - name: Create archives
-        working-directory: packages/opencode
         run: |
           for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-linux-x64 ellamaka-windows-x64; do
             if [ -d "dist/${name}/bin" ]; then
-              cp ../../LICENSE "dist/${name}/bin/LICENSE"
+              cp LICENSE "dist/${name}/bin/LICENSE"
               if echo "$name" | grep -q "linux"; then
                 tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
               else
-                (cd "dist/${name}/bin" && zip -r "../../../dist/${name}.zip" .)
+                (cd "dist/${name}/bin" && zip -r "../../${name}.zip" .)
               fi
             fi
           done
-
-      - name: Stage release artifacts
-        run: |
-          mkdir -p dist
-          cp packages/opencode/dist/ellamaka-darwin-arm64.zip dist/
-          cp packages/opencode/dist/ellamaka-darwin-x64.zip dist/
-          cp packages/opencode/dist/ellamaka-linux-x64.tar.gz dist/
-          cp packages/opencode/dist/ellamaka-windows-x64.zip dist/
 
       - uses: actions/upload-artifact@v4
         with:

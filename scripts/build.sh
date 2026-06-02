@@ -1,45 +1,51 @@
 #!/bin/bash
-# darwin 编译脚本入口
-# 自动切换到 packages/opencode 目录执行编译
+# ellamaka 编译脚本入口
+# 基于 packages/ellamaka/build.ts，默认构建本机架构目标
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BINARY_NAME="ellamaka"
 
 show_help() {
   cat <<'EOF'
 Usage: build.sh [options]
 
-Build ellamaka binary for macOS (darwin).
+Build ellamaka binary via build.ts. Default: current platform + host arch.
 
 Options:
   -h, --help              Show this help message
-  --x64                   Build for x86_64 (default)
-  --arm64                 Build for Apple Silicon
-  --install               Create symlink to install directory
+  --all                   Build all 12 platform targets
+  --arch <value>          Filter targets: "primary", "x64", "x64,arm64", etc.
+  --single                Explicit current platform + host arch (default)
+  --install               Install binary after build
   --install-dir <dir>     Custom install directory (default: ~/.wopal/bin)
+  --skip-install          Skip cross-platform dependency installation
   --skip-embed-web-ui     Skip embedding web UI
-  --skip-smoke-test       Skip smoke test after build
+  --sourcemaps            Generate sourcemaps
 EOF
   exit 0
 }
 
-set -e
-cd "$(dirname "$0")/../packages/opencode"
-
-ARCH="x64"
+MODE="single"
 INSTALL=false
 INSTALL_DIR="$HOME/.wopal/bin"
-EXTRA_ARGS=()
+BUILD_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       show_help
       ;;
-    --x64|--arch=x64)
-      ARCH="x64"
+    --all)
+      MODE="all"
       shift
       ;;
-    --arm64|--arch=arm64)
-      ARCH="arm64"
-      shift
+    --arch)
+      MODE="arch"
+      BUILD_ARGS+=("--arch" "$2")
+      shift 2
       ;;
     --install)
       INSTALL=true
@@ -49,34 +55,51 @@ while [[ $# -gt 0 ]]; do
       INSTALL_DIR="$2"
       shift 2
       ;;
-    --skip-embed-web-ui|--skip-smoke-test)
-      EXTRA_ARGS+=("$1")
+    --skip-install|--skip-embed-web-ui|--sourcemaps)
+      BUILD_ARGS+=("$1")
       shift
       ;;
     *)
+      BUILD_ARGS+=("$1")
       shift
       ;;
   esac
 done
 
-# 执行编译
-bun run script/build-darwin.ts --arch "$ARCH" "${EXTRA_ARGS[@]}"
+cd "$PROJECT_ROOT/packages/opencode"
 
-# 安装（可选）
+case "$MODE" in
+  single)
+    echo "🔨 Building for current platform..."
+    BUILD_ARGS+=("--single")
+    ;;
+  arch)
+    echo "🔨 Building with --arch filter..."
+    ;;
+  all)
+    echo "🔨 Building all platforms..."
+    ;;
+esac
+
+BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka/build.ts" "${BUILD_ARGS[@]}"
+
 if $INSTALL; then
-  BINARY_NAME="ellamaka"
-  DIST_DIR="dist/ellamaka-darwin-$ARCH/bin"
+  PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  ARCH="$(uname -m)"
+  [[ "$ARCH" == "x86_64" ]] && ARCH="x64"
+
+  DIST_DIR="$PROJECT_ROOT/dist/${BINARY_NAME}-${PLATFORM}-${ARCH}/bin"
   SRC="$DIST_DIR/$BINARY_NAME"
-  
+
   if [[ ! -f "$SRC" ]]; then
     echo "❌ Binary not found: $SRC"
+    echo "   (install requires --single or matching platform target)"
     exit 1
   fi
-  
+
   mkdir -p "$INSTALL_DIR"
   DST="$INSTALL_DIR/$BINARY_NAME"
-  
-  # 获取版本号并确认覆盖
+
   NEW_VER=$("$SRC" --version 2>/dev/null || echo "unknown")
   if [[ -f "$DST" ]]; then
     OLD_VER=$("$DST" --version 2>/dev/null || echo "unknown")
@@ -91,8 +114,6 @@ if $INSTALL; then
     echo "📦 New build: $NEW_VER"
   fi
 
-  # 原子替换：先复制到临时文件，再 mv 覆盖（绕过 macOS Launch Services 缓存拦截）
   cp -f "$SRC" "${DST}.tmp" && mv -f "${DST}.tmp" "$DST"
   echo "✅ Installed: $DST"
-  echo "   Run with: $BINARY_NAME"
 fi

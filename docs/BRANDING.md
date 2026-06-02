@@ -23,7 +23,7 @@ ellamaka 对上游 opencode 源码的品牌化改造清单。每条记录：改�
 | `infra/` | SST 基础设施（AWS/Cloudflare） | 无云端部署 |
 | `nix/` | Nix 构建文件 | ellamaka 不使用 Nix |
 | `specs/` | 上游设计 spec 文档 | 不参与构建 |
-| `script/` | 上游发布/变更日志脚本（`publish.ts`、`raw-changelog.ts`） | ellamaka 用 `publish-ellamaka.yml` + `build.ts --p1` |
+| `script/` | 上游发布/变更日志脚本（`publish.ts`、`raw-changelog.ts`） | ellamaka 用 `publish-ellamaka.yml` + `packages/ellamaka/build.ts --arch primary` |
 | `.opencode/` | opencode 项目级开发配置（agent、plugin、theme 等） | 上游 IDE 配置，ellamaka 开发不依赖 |
 
 ### 已删除文件
@@ -78,29 +78,40 @@ export const CHANNEL_DEV = "ellamaka-main"
 
 ## 3. 构建产物品牌
 
-### 3.1 Binary 名称
+### 3.1 Binary 名称与构建脚本
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/script/build.ts` | `const BINARY_NAME = process.env.BINARY_NAME \|\| "opencode"` → 构建循环中所有硬编码 `"opencode"` 替换为 `BINARY_NAME` | **env 驱动**：默认保持上游行为 `"opencode"`，打包时 `BINARY_NAME=ellamaka` |
-| `packages/ellamaka/build.ts` | 包装脚本：设置 `BINARY_NAME=ellamaka` 环境变量后调用上游 build.ts | **独立文件** |
+| `packages/opencode/script/build.ts` | **零侵入**：保持上游原样，不做任何修改 | **上游 untouched** |
+| `packages/ellamaka/build.ts` | 基于 `packages/opencode/script/build.ts` 的独立 copy，应用品牌定制（见下方 4 类定制） | **独立 copy** |
+| `packages/opencode/script/build-darwin.ts` | 已删除：原 darwin 专用构建脚本，功能已被 `packages/ellamaka/build.ts` 完全覆盖 | **已删除** |
 
-**上游侵入**：build.ts 中 4 行（BINARY_NAME 常量 + outfile/name/execArgv/smoke test 中的替换）。文件中不包含 `"ellamaka"` 硬编码。
+`packages/ellamaka/build.ts` 的 4 类定制（与上游 build.ts 的唯一差异）：
+
+1. **路径调整**：`dir` → `../opencode`，import 路径加 `../opencode/` 前缀
+2. **品牌注入**：从 `./branding` import `BINARY_NAME`/`CHANNEL_*`，替换 `pkg.name` 和硬编码 `"opencode"`
+3. **`--arch` 参数**：支持 `--arch primary`（4 个主流目标）或 `--arch x64,arm64`（按 arch 过滤），与 `--single` 组合
+4. **Channel**：使用 `CHANNEL_RELEASE`/`CHANNEL_DEV` 替代 `Script.channel`
+
+**上游侵入**：`packages/opencode/script/build.ts` 零行改动。所有定制在 `packages/ellamaka/build.ts` 中完成，两文件可 `diff` 比对追踪上游变更。
 
 ### 3.2 Release channel
 
-| 文件 | 变更 | 模式 |
-|------|------|------|
-| `packages/opencode/script/build.ts` | 定义 `OPENCODE_CHANNEL` 时使用 `Script.channel`（上游原生行为） | **无侵入**：`Script` 类已支持 `OPENCODE_CHANNEL` env |
-| `packages/ellamaka/build.ts` | 设置 `OPENCODE_CHANNEL=${CHANNEL_RELEASE\|CHANNEL_DEV}` | **独立文件** |
+`packages/ellamaka/build.ts` 使用 `CHANNEL_RELEASE` / `CHANNEL_DEV`（来自 `branding.ts`）替代上游 `Script.channel`。无需 env 变量或上游文件修改。
 
-### 3.3 P1 平台矩阵
+### 3.3 --arch 平台矩阵
 
-| 文件 | 变更 | 模式 |
-|------|------|------|
-| `packages/opencode/script/build.ts` | `--p1` flag + `p1Targets` 过滤逻辑 | **argv 驱动**：只添加 flag 和通用 filter，不包含品牌特定值 |
+`packages/ellamaka/build.ts` 提供 `--arch` 参数替代上游的 `--p1`：
 
-**上游侵入**：build.ts 中约 10 行（flag 定义 + filter 逻辑）。
+| 参数组合 | 行为 |
+|----------|------|
+| `--arch primary` | 构建预设 4 个主流目标（darwin-arm64/x64, linux-x64, win32-x64） |
+| `--arch x64` | 按指定 arch 过滤所有目标 |
+| `--arch x64,arm64` | 按多个 arch 过滤 |
+| `--single` | 仅构建当前平台 + host arch |
+| `--single --arch x64` | 当前平台 + 指定 arch（交叉编译） |
+
+上游 `packages/opencode/script/build.ts` 无 `--arch` 参数，零侵入。
 
 ### 3.4 本地构建脚本
 
@@ -208,8 +219,9 @@ export const CHANNEL_DEV = "ellamaka-main"
 
 | 模式 | 侵入程度 | 适用场景 | 本项目中采用的文件 |
 |------|----------|----------|-------------------|
-| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`build.ts`、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh` |
-| **env 驱动** | 最小（1-4 行） | 构建时参数、运行时 flag | `build.ts`（BINARY_NAME）、`build.ts`（OPENCODE_CHANNEL） |
+| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh` |
+| **独立 copy** | 零（上游 untouched） | 需要深度定制的上游文件 | `packages/ellamaka/build.ts`（基于 `packages/opencode/script/build.ts` 的 branded copy） |
+| **env 驱动** | 最小（1-4 行） | 构建时参数、运行时 flag | （当前项目中已无此模式——build.ts 改为独立 copy 后不再需要 env 注入） |
 | **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts` |
 | **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统） |
 | **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`、`tips-view.tsx` |
@@ -252,7 +264,6 @@ export const CHANNEL_DEV = "ellamaka-main"
 
 以下文件在上游改动频繁，注入点应尽可能小（1-2 行）：
 
-- `packages/opencode/script/build.ts`（构建流程）
 - `packages/opencode/src/index.ts`（CLI 入口）
 - `packages/opencode/src/cli/cmd/debug/index.ts`（debug 信息）
 - `packages/core/src/global.ts`（路径系统）
@@ -260,7 +271,7 @@ export const CHANNEL_DEV = "ellamaka-main"
 ### 9.5 合并后验证清单
 
 1. `bun typecheck`
-2. `BINARY_NAME=ellamaka bun run build -- --p1`
+2. `bun packages/ellamaka/build.ts --arch primary`
 3. `./dist/ellamaka-darwin-*/bin/ellamaka --version` 输出 `ellamaka/x.y.z`
 4. `./scripts/check-cleanup.sh` 通过
 

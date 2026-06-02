@@ -1,0 +1,10 @@
+{
+  "name": "@ellamaka/build",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@opencode-ai/script": "workspace:*",
+    "@opentui/solid": "catalog:",
+    "bun-types": "latest"
+  }
+}
