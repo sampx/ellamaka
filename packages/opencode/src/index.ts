@@ -31,8 +31,8 @@ import { PrCommand } from "./cli/cmd/pr"
 import { BINARY_NAME, VERSION_PREFIX } from "../../ellamaka/branding"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
-import path from "path"
 import { Global } from "@opencode-ai/core/global"
+import { detectWopalSpace } from "../../ellamaka/detect"
 import { JsonMigration } from "@/storage/json-migration"
 import { Database } from "@/storage/db"
 import { errorMessage } from "./util/error"
@@ -98,6 +98,10 @@ const cli = yargs(args)
     }
     if (opts.wopalSpace) {
       process.env.WOPAL_SPACE = "1"
+    } else if (!process.argv.includes("--wopal-space") && !process.argv.includes("--no-wopal-space")) {
+      if (detectWopalSpace(process.cwd())) {
+        process.env.WOPAL_SPACE = "1"
+      }
     }
     if (opts.logLevel) {
       process.env.OPENCODE_LOG_LEVEL = opts.logLevel

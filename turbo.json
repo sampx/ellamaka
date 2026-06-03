@@ -13,6 +13,9 @@
       "outputs": [],
       "passThroughEnv": ["*"]
     },
+    "@ellamaka/build#test": {
+      "outputs": []
+    },
     "opencode#test:ci": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],
