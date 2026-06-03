@@ -278,7 +278,7 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 #### 普通模式（opencode 兼容）
 
-用户未启用 `--wopal-space` 时，ellamaka 兼容 opencode 的配置和能力体系，让 opencode 老用户无缝迁移。
+wopal-space 模式未激活时，ellamaka 兼容 opencode 的配置和能力体系，让 opencode 老用户无缝迁移。
 
 ```
 优先级从低到高：
@@ -314,9 +314,11 @@ wopal-space 模式的激活方式：
 启用后直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。
 
 ```
-① ~/.wopal/ 全局配置 + 能力（agents/plugins/commands）
-② 空间 .wopal/ 配置（settings.jsonc 中的 ellamaka 字段）+ 能力
-③ ~/.wopal/config/ → ✗ 跳过能力加载（纯配置目录）
+① ~/.wopal/config/settings.jsonc（全局配置，ellamaka 字段）
+② ~/.wopal/（全局能力：agents/commands/plugins/skills）
+③ .wopal/config/settings.json[c]（空间配置，ellamaka + tui 字段）
+④ .wopal/（空间能力：agents/commands/plugins/skills）
+⑤ .wopal/agents/{name}.md（agent frontmatter，permission 最高优先级）
 ```
 
 #### 自动检测实现

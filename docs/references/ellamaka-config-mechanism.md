@@ -33,7 +33,8 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 4 | `.opencode/` 目录 | 从 cwd 向上逐级查找 `.opencode/`，加载其中的 `opencode.json` / `opencode.jsonc` |
 | 5 | 项目级 `opencode.json` / `opencode.jsonc` | 从 cwd 向上找至 worktree 边界 |
 | 6 | 全局配置 | `~/.wopal/config/settings.jsonc`（`ellamaka` 字段，通过 `WOPAL_HOME` 定制） |
-| 7 | 远程 `.well-known/opencode` | 若设 `OPENCODE_AUTO_SHARE`，从共享 URL 拉取 |
+| 7 | opencode XDG 全局配置 | `~/.config/opencode/config.json` / `opencode.json[c]`（兼容层底配置） |
+| 8 | 远程 `.well-known/opencode` | 若设 `OPENCODE_AUTO_SHARE`，从共享 URL 拉取 |
 
 **合并规则**：高优先级配置通过 `mergeDeep` 覆盖低优先级的同名键，`agent`、`mode`、`plugin`、`command` 等特殊键做深度合并。
 
@@ -46,10 +47,13 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
 | 1 | `OPENCODE_CONFIG_CONTENT` | 同普通模式 |
-| 2 | `~/.wopal/config/` | 全局配置 + 能力（agents/plugins/commands） |
-| 3 | 空间 `.wopal/config/settings.json[c]` | `ellamaka` 字段作为配置源，`tui` 字段作为 TUI 配置 |
-| 4 | 空间 `.wopal/` | 能力扫描（agents/plugins/commands） |
-| 5 | 空间 `.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
+| 2 | `~/.wopal/config/settings.jsonc` | 全局配置（`ellamaka` 字段） |
+| 3 | `~/.wopal/` | 全局能力扫描（agents/commands/plugins/skills） |
+| 4 | 空间 `.wopal/config/settings.json[c]` | 空间配置（`ellamaka` + `tui` 字段） |
+| 5 | 空间 `.wopal/` | 空间能力扫描（agents/commands/plugins/skills） |
+| 6 | 空间 `.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
+
+> `~/.wopal/config/` 是纯配置目录，不扫描能力。能力来自 `~/.wopal/`（全局）和 `.wopal/`（空间）。
 
 wopal-space 模式**不加载**：
 - 项目级 `opencode.jsonc` / `.opencode/`
@@ -88,6 +92,7 @@ wopal-space 模式**不加载**：
 
 | 变量 | 说明 |
 |------|------|
+| `WOPAL_SPACE` | 激活 wopal-space 模式（自动检测或 `--wopal-space` 设置） |
 | `WOPAL_HOME` | 覆盖 `~/.wopal/` 根路径 |
 | `OPENCODE_MODELS_URL` | 自定义模型发现 URL |
 | `OPENCODE_MODELS_PATH` | 自定义模型发现文件路径 |
@@ -256,7 +261,7 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 | `Global.Path.log` | `~/.wopal/ellamaka/data/log` | 日志目录 |
 | `Global.Path.bin` | `~/.wopal/ellamaka/cache/bin` | 二进制下载目录 |
 
-设置 `WOPAL_HOME=/custom/path` → 所有路径前缀变为 `/custom/path/ellamaka/`。
+设置 `WOPAL_HOME=/custom/path` → `config` 前缀变为 `/custom/path/config/`，`data`/`cache`/`state` 前缀变为 `/custom/path/ellamaka/`。
 
 > **注意**：`Global.Path.config`（`~/.wopal/config/`）是**纯配置目录**，仅存放 `settings.jsonc` 等配置文件。两种模式下都不在该目录加载 agents、commands、plugins 或执行依赖安装。
 
@@ -268,12 +273,12 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 
 | 场景 | 命令 |
 |------|------|
-| 指定配置文件 | `OPENCODE_CONFIG=/path/to/opencode.json opencode run "prompt"` |
-| 内联配置 | `OPENCODE_CONFIG_CONTENT='{"provider":{"openai":{"options":{"apiKey":"sk-xxx"}}}}' opencode run "prompt"` |
-| 指定配置目录 | `OPENCODE_CONFIG_DIR=/path/to/config-dir opencode run "prompt"` |
-| 连接远程 server | `opencode run "prompt" --attach http://remote:4096 --password secret` |
-| 跳过权限询问 | `opencode run "prompt" --dangerously-skip-permissions` |
-| 指定模型 | `opencode run "prompt" --model openai/gpt-4o` |
+| 指定配置文件 | `OPENCODE_CONFIG=/path/to/opencode.json ellamaka run "prompt"` |
+| 内联配置 | `OPENCODE_CONFIG_CONTENT='{"provider":{"openai":{"options":{"apiKey":"sk-xxx"}}}}' ellamaka run "prompt"` |
+| 指定配置目录 | `OPENCODE_CONFIG_DIR=/path/to/config-dir ellamaka run "prompt"` |
+| 连接远程 server | `ellamaka run "prompt" --attach http://remote:4096 --password secret` |
+| 跳过权限询问 | `ellamaka run "prompt" --dangerously-skip-permissions` |
+| 指定模型 | `ellamaka run "prompt" --model openai/gpt-4o` |
 
 ### run 命令完整参数
 
@@ -306,7 +311,7 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 |------|---------|------|
 | 环境变量 | provider 级别 | 如 `OPENAI_API_KEY`，provider `env` 字段声明 |
 | `opencode.json` `options.apiKey` | provider 级别 | 配置文件中直接指定 |
-| `opencode auth login <provider>` | OAuth provider | 交互式登录，凭证存入本地数据库 |
+| `ellamaka auth login <provider>` | OAuth provider | 交互式登录，凭证存入本地数据库 |
 | `--password` + `--attach` | 远程 server | HTTP Basic Auth 连接已有 server |
 | `OPENCODE_SERVER_PASSWORD` | 远程 server | 环境变量替代 `--password` |
 
@@ -318,13 +323,13 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 
 ```bash
 # 查看已配置的 providers
-opencode providers list
+ellamaka providers list
 
 # 查看已登录的 provider 认证状态
-opencode providers login
+ellamaka providers login
 
 # 查看可用模型
-opencode models list
+ellamaka models list
 ```
 
 ### 日志输出
@@ -346,7 +351,7 @@ opencode models list
 
 ## 九、Agent Permission 与 Skill 可见性
 
-###_PERMISSION 评估机制
+### _PERMISSION 评估机制
 
 Permission 系统通过规则列表（ruleset）评估，核心是 `findLast` — 遍历全部规则，**返回最后一个匹配的规则**。
 
@@ -420,19 +425,15 @@ Agent permission 有两种配置入口：
 
 ### Wopal-Space 模式下的 Skill 加载
 
-在 wopal-space 模式下，配合以下环境变量：
-
-```bash
-OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1   # 禁用 ~/.claude/skills 扫描
-OPENCODE_DISABLE_AGENTS_SKILLS=1         # 禁用 .agents/skills 扫描
-OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1    # 禁用 Claude Code 提示词
-```
+wopal-space 模式下，`Flag.WOPAL_SPACE` 会自动禁用 opencode 兼容路径（`~/.claude/skills`、`.agents/skills`、Claude Code 提示词），无需手动设置环境变量。
 
 Skill 来源仅剩：
-1. 全局 config 目录（`~/.wopal/ellamaka/config` 下的 `skill/` 或 `skills/`）
-2. `.wopal/` 目录（向上搜索）下的 `skills/`
+1. `~/.wopal/skills/`（全局能力目录）
+2. 空间 `.wopal/skills/`（向上搜索）
 3. 配置中 `skills.paths` 指定的额外路径
 4. 配置中 `skills.urls` 拉取的远程技能
+
+> `~/.wopal/config/` 是纯配置目录，不扫描 skills/agents/commands 等能力。
 
 ### 子代理 Skill 白名单配置实践
 
