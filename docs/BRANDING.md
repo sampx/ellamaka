@@ -188,11 +188,22 @@ CLI 启动时的 ASCII art logo 和 TUI 首页动画 logo 使用 ELLAMAKA 字模
 
 `logo.left` 拼写 "ELLA"，`logo.right` 拼写 "MAKA"。TUI 的 `<Logo />` 组件（`tui/component/logo.tsx`）直接读取此数据驱动 shimmer 动画——**零侵入**，组件代码不改。
 
-#### 4.6.2 非 TTY 降级
+#### 4.6.2 非 TTY 降级与模式守卫
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/src/cli/ui.ts` | `wordmark` 常量替换为 ELLAMAKA 纯块字符降级版（无着色器效果） | **核心替换**：非 TTY 环境（pipe/redirect）使用此字模 |
+| `packages/opencode/src/cli/ui.ts` | `UI.logo()` 增加 `Flag.WOPAL_SPACE` 守卫：wopal-space 模式使用 `packages/ellamaka/logo.ts` 的 `ellamaka` 字模和 `wordmark`，普通模式使用上游 opencode 字模 | **注入守卫**：不替换上游常量，通过条件分支切换品牌 |
+| `packages/ellamaka/logo.ts` | 导出 `ellamaka`（字模数据）和 `wordmark`（`left[i] + " " + right[i]` 拼接），供 `ui.ts` 模式守卫引用 | **独立文件** |
+
+#### 4.6.3 Logo 音效兼容 compile 模式
+
+TUI logo 交互音效（4 个 `.wav` 文件）在 bun compile 后不再存在于真实文件系统，而是以 bunfs 虚拟路径（`/$bunfs/root/xxx.wav`）存在。外部音频播放器（afplay/mpv/ffplay）无法读取 bunfs 路径。
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/cli/cmd/tui/util/sound.ts` | `copyFileSync(path, next)` → `await Bun.write(next, Bun.file(path))`；移除无用 `copyFileSync` import | **核心替换**：`Bun.file()` 可以读取 bunfs 虚拟路径，`Bun.write()` 写出到真实文件系统供外部播放器使用 |
+
+**设计原则**：编译后二进制内嵌的静态资源（`.wav` 通过 `import ... with { type: "file" }`）只能通过 Bun 原生 API 读取，不能使用 Node.js `fs` API。
 
 ### 4.7 TUI 品牌插件
 
@@ -292,13 +303,34 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 #### wopal-space 模式（短路）
 
-启用 `--wopal-space` 后，直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。
+wopal-space 模式的激活方式：
+
+| 方式 | 行为 |
+|------|------|
+| `--wopal-space` 显式传入 | 直接启用（最高优先级） |
+| `--no-wopal-space` 显式传入 | 强制禁用，跳过自动检测（逃逸阀） |
+| 未传参（默认） | **自动检测**：从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键则自动启用 |
+
+启用后直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。
 
 ```
 ① ~/.wopal/ 全局配置 + 能力（agents/plugins/commands）
 ② 空间 .wopal/ 配置（settings.jsonc 中的 ellamaka 字段）+ 能力
 ③ ~/.wopal/config/ → ✗ 跳过能力加载（纯配置目录）
 ```
+
+#### 自动检测实现
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/ellamaka/detect.ts` | 导出 `detectWopalSpace(cwd)` — 从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键名返回 true | **独立文件** |
+| `packages/opencode/src/index.ts` | yargs 中间件调用 `detectWopalSpace(process.cwd())`，检测到则设置 `WOPAL_SPACE=1` | **注入**：几行调用，逻辑在独立文件中 |
+
+检测算法：
+1. 从 cwd 向上逐级查找 `.wopal` 目录
+2. 找到后检查 `config/settings.jsonc`（优先）或 `settings.json`
+3. 用正则 `/"ellamaka"\s*:/` 匹配键名，无需完整解析 JSONC（避免 URL 中 `//` 被误当注释）
+4. 匹配成功 → 启用 wopal-space；不匹配或无文件 → 返回 false（普通模式）
 
 ### 7.4 TUI 配置路径提示
 
@@ -312,10 +344,10 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 | 模式 | 侵入程度 | 适用场景 | 本项目中采用的文件 |
 |------|----------|----------|-------------------|
-| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh`、`.wopal/plugins/tui-ellamaka.tsx`、`.wopal/plugins/ellamaka-theme.json` |
+| **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`logo.ts`、`detect.ts`、`test/branding.test.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh`、`.wopal/plugins/tui-ellamaka.tsx`、`.wopal/plugins/ellamaka-theme.json` |
 | **独立 copy** | 零（上游 untouched） | 需要深度定制的上游文件 | `packages/ellamaka/build.ts`（基于 `packages/opencode/script/build.ts` 的 branded copy） |
 | **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts`、12 个 CLI cmd 文件（§4.4） |
-| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`ui.ts`（wordmark 降级） |
+| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`sound.ts`（bunfs 音效兼容）、`ui.ts`（mode guard） |
 | **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`、`tips-view.tsx`、`.wopal/config/settings.jsonc` |
 
 ---

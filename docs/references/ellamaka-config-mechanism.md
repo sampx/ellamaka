@@ -1,15 +1,29 @@
-# Ellamaka (OpenCode Fork) 配置机制研究
-
+# Ellamaka 配置机制
 > **日期**: 2026-04-26
-> **源码位置**: `projects/ellamaka/`
-> **版本**: dev 分支（OpenCode fork，`WOPAL_HOME` 定制）
-> **研究目标**: 理解 Ellamaka 配置加载链路、provider auth 配置方式、环境变量覆盖机制
+> **文档目标**: 理解 Ellamaka 配置加载链路、provider auth 配置方式、环境变量覆盖机制
 
 ---
 
-## 一、配置加载链路（优先级从高到低）
+## 一、配置加载链路
 
-配置通过 `packages/opencode/src/config/config.ts` 中的 `init()` 加载，多层合并。优先级顺序：
+### 运行模式
+
+ellamaka 有两种运行模式，配置加载链路完全不同：
+
+| 模式 | 激活方式 | 行为 |
+|------|---------|------|
+| 普通模式（opencode 兼容） | 默认（非 wopal-space 目录） | 加载 opencode 兼容层 + ellamaka 全局配置 |
+| wopal-space 模式 | 自动检测或 `--wopal-space` | 短路到 wopal-space 配置体系 |
+
+#### wopal-space 自动检测
+
+从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键则自动启用 wopal-space 模式。用户可显式传入 `--no-wopal-space` 强制禁用自动检测。
+
+实现位于 `packages/ellamaka/detect.ts` 的 `detectWopalSpace(cwd)` 函数，在 `packages/opencode/src/index.ts` 的 yargs 中间件中调用。
+
+### 普通模式链路
+
+配置通过 `packages/opencode/src/config/config.ts` 中的 `init()` 加载，多层合并。
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
@@ -24,6 +38,23 @@
 **合并规则**：高优先级配置通过 `mergeDeep` 覆盖低优先级的同名键，`agent`、`mode`、`plugin`、`command` 等特殊键做深度合并。
 
 **禁用项目配置**：`OPENCODE_DISABLE_PROJECT_CONFIG=true` 跳过第 4、5 步。
+
+### wopal-space 模式链路
+
+启用 wopal-space 模式后，直接短路到 wopal-space 配置体系，不碰任何 opencode 路径：
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| 1 | `OPENCODE_CONFIG_CONTENT` | 同普通模式 |
+| 2 | `~/.wopal/config/` | 全局配置 + 能力（agents/plugins/commands） |
+| 3 | 空间 `.wopal/config/settings.json[c]` | `ellamaka` 字段作为配置源，`tui` 字段作为 TUI 配置 |
+| 4 | 空间 `.wopal/` | 能力扫描（agents/plugins/commands） |
+| 5 | 空间 `.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
+
+wopal-space 模式**不加载**：
+- 项目级 `opencode.jsonc` / `.opencode/`
+- `~/.config/opencode/` 下的 opencode 全局配置
+- `~/.opencode/` 下的 opencode 全局能力
 
 ---
 
@@ -219,13 +250,15 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 |------|--------|------|
 | `Global.Path.home` | `os.homedir()` | 用户 home（可被 `OPENCODE_TEST_HOME` 覆盖） |
 | `Global.Path.data` | `~/.wopal/ellamaka/data` | 数据目录 |
-| `Global.Path.config` | `~/.wopal/ellamaka/config` | **全局配置目录**（含全局 `opencode.json`） |
+| `Global.Path.config` | `~/.wopal/config` | **全局配置目录**（含全局 `settings.jsonc`） |
 | `Global.Path.cache` | `~/.wopal/ellamaka/cache` | 缓存目录 |
 | `Global.Path.state` | `~/.wopal/ellamaka/state` | 状态目录（含 flock） |
 | `Global.Path.log` | `~/.wopal/ellamaka/data/log` | 日志目录 |
 | `Global.Path.bin` | `~/.wopal/ellamaka/cache/bin` | 二进制下载目录 |
 
 设置 `WOPAL_HOME=/custom/path` → 所有路径前缀变为 `/custom/path/ellamaka/`。
+
+> **注意**：`Global.Path.config`（`~/.wopal/config/`）是**纯配置目录**，仅存放 `settings.jsonc` 等配置文件。两种模式下都不在该目录加载 agents、commands、plugins 或执行依赖安装。
 
 ---
 
@@ -358,6 +391,19 @@ Agent 的 permission 在配置中支持两种写法：
 
 ### 配置方式与优先级
 
+##### wopal-space 模式下的完整合并链
+
+wopal-space 模式下 permission 按以下层级逐层合并（优先级从低到高）：
+
+| 层级 | 来源 | 说明 |
+|------|------|------|
+| 1 | 内置默认 | 硬编码的 allow/ask 规则 |
+| 2 | `WOPAL_HOME/config/settings.jsonc` | 全局配置中的 `ellamaka.permission` |
+| 3 | `.wopal/config/settings.json[c]` | 空间配置中的 `ellamaka.permission` / `ellamaka.agent.<name>.permission` |
+| 4 | `.wopal/agents/{name}.md` | agent frontmatter 中的 `permission` 字段（**最高优先级**） |
+
+合并规则：`Permission.merge` 数组扁平，`findLast` 最后一条匹配生效。
+
 Agent permission 有两种配置入口：
 
 1. **JSON 配置**（`settings.jsonc` 的 `ellamaka.agent.<name>.permission`）
@@ -374,7 +420,7 @@ Agent permission 有两种配置入口：
 
 ### Wopal-Space 模式下的 Skill 加载
 
-在 `--wopal-space` 模式下，配合以下环境变量：
+在 wopal-space 模式下，配合以下环境变量：
 
 ```bash
 OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1   # 禁用 ~/.claude/skills 扫描
