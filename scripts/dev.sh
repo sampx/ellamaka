@@ -17,7 +17,7 @@ opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 
-LOGDIR="$space/logs"
+LOGDIR="$space/.wopal-space/logs"
 PIDFILE="$LOGDIR/ellamaka-dev.pid"
 APP_DEBUG_LOG="$LOGDIR/dev.log"
 
