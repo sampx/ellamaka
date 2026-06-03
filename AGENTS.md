@@ -11,15 +11,14 @@ Canonical references:
 
 - DESIGN: `docs/DESIGN.md`
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
-- Upstream Merge Rules: `docs/UPSTREAM-MERGE-LOG.md`
+- BRANDING: `docs/BRANDING.md`
+- Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
 
 ## 2. Architecture and Directories
 
 Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.wopal/` ontology → `.wopal-space/` runtime.
-
-ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands, plugins, configuration, and TUI behavior; do not maintain ontology content, space runtime state, wopal-cli deterministic orchestration, or the WopalSpace product roadmap in this repository.
 
 | Directory | Responsibility |
 |---|---|
@@ -28,8 +27,8 @@ ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands,
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | Inherited UI surfaces; change only when engine/TUI work requires it |
 | `packages/plugin/`, `packages/script/`, `packages/util/` | Workspace support packages |
 | `packages/sdk/` | SDK workspace; use the existing script for JS SDK regeneration |
-| `packages/ellamaka/` | ellamaka branding constants and env-driven build wrapper |
-| `docs/` | Project DESIGN, references, research, and plans |
+| `packages/ellamaka/` | Branding constants (branding.ts), brand glyphs (logo.ts), build wrapper (build.ts), WopalSpace auto-detection (detect.ts), and package-level tests |
+| `docs/` | Project DESIGN, BRANDING, DISTRIBUTION, references, research, and plans |
 
 ## 3. Development Commands (build format test)
 
@@ -43,11 +42,12 @@ ellamaka is the WopalSpace engine runtime. It runs space-aware agents, commands,
 | opencode typecheck | `bun typecheck` from `packages/opencode` | After changing the main engine package; do not run `tsc` directly |
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | After changing main engine behavior |
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
+| ellamaka package tests | `bun test` from `packages/ellamaka` | After changing branding, logo, or detection logic |
 | JS SDK regeneration | `./packages/sdk/js/script/build.ts` | When SDK output needs regeneration |
 | ellamaka build | `bun packages/ellamaka/build.ts` | When building ellamaka-branded CLI locally |
 | Local build (darwin) | `./scripts/build.sh` | Compile CLI binary on macOS |
 | Local dev environment | `./scripts/dev.sh` | Start dev environment (in-process TUI, attach/server modes) |
-| API docs | `bun ./scripts/scalar-doc.ts` | Start Scalar API reference documentation UI |
+| Release tag push | `./scripts/tag-push.sh <tag> [remote]` | Tag and push main to trigger publish-ellamaka CI |
 | Post-merge cleanup check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode, check for files/dirs that should have been deleted |
 
 Tests must not run from the repo root; the root `test` script is a guard.
@@ -68,11 +68,6 @@ Tests must not run from the repo root; the root `test` script is a guard.
 - When adding modules under `src/config`, follow the existing self-export pattern, such as `export * as ConfigAgent from "./agent"`.
 - Drizzle schema fields use snake_case; avoid redefining column names with strings.
 - When changing internal modules, Effect, database, migrations, or Instance lifecycle under `packages/opencode/`, follow `packages/opencode/AGENTS.md`.
-- For WopalSpace, `.wopal/*`, plugins, custom tools, or agent configuration, verify against the ellamaka runtime; do not use upstream opencode as a substitute.
-- ellamaka's global config file is `~/.wopal/config/settings.jsonc` (overridable through `WOPAL_HOME`); `~/.wopal/config/` is a config-only directory and does not load agents, commands, plugins, or install dependencies.
-- Normal mode loads the opencode compatibility layer (`~/.config/opencode/` and `.opencode/` config and capabilities) before overlaying ellamaka global config; runtime data/cache/state still belong under `~/.wopal/ellamaka/`.
-- wopal-space mode short-circuits to `~/.wopal/` and the space `.wopal/`, using the `ellamaka` and `tui` sections in `.wopal/config/settings.jsonc`; do not load project-level `opencode.jsonc` or any opencode global path.
-- wopal-space permission merge order is defaults → global config → `.wopal/config/settings.*` → `.wopal/agents/{name}.md` frontmatter; the last matching rule wins.
 - Put WopalSpace customization in new files first; upstream files should keep only minimal imports and invocation points.
 - Use early-return guards for customized branches to avoid overlapping upstream main-flow changes.
 - When new modules need upstream internals, prefer callback/closure injection instead of exposing upstream Service type boundaries directly.
@@ -81,16 +76,14 @@ Tests must not run from the repo root; the root `test` script is a guard.
 - `main` is the stable line for ellamaka customization; `dev` only tracks upstream OpenCode `dev`, so do not develop ellamaka customizations on `dev`.
 - Use `main` or `origin/main` as the diff base; do not use `dev` as the ellamaka customization diff base.
 - During upstream merges, follow the cleanup list, preserved customization list, and verification gates in `docs/UPSTREAM-MERGE-LOG.md`.
-- After changes involving load paths, plugins, agents, config, or runtime startup flow, remind the user to restart ellamaka for verification; Wopal must not restart ellamaka itself.
-- Prefer automation for explicit requests; ask first when critical information is missing, safety is at risk, or the operation is irreversible.
-- Use parallel tools whenever reads or checks can run independently.
 
 ## 5. Testing
 
 - Code changes follow TDD: write a failing test first, then implement code to make it pass.
 - Avoid mocks as much as possible; test the real implementation and do not duplicate implementation logic into tests.
-- Tests must run from package directories, such as `packages/opencode`; do not run tests from the repo root.
+- Tests must run from package directories, such as `packages/opencode` or `packages/ellamaka`; do not run tests from the repo root.
 - After changing the main engine package, run the relevant `bun test --timeout 30000` from `packages/opencode` or explain why it was not run.
+- After changing branding, logo, or detection logic, run `bun test` from `packages/ellamaka`.
 - After changing TypeScript, run `bun typecheck` from the relevant package; do not run `tsc` directly.
 - After changing CLI/runtime/config/plugin/agent/TUI space mode, verify or report these surfaces: `WOPAL_SPACE` flag, `.wopal/config/settings.*`, TUI settings, plugin loading, and theme loading.
 - After upstream merges, separate upstream known failures, environment issues, and newly introduced ellamaka issues.

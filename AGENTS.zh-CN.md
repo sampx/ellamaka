@@ -10,15 +10,15 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 权威引用：
 
 - DESIGN: `docs/DESIGN.md`
-- Upstream Merge Rules: `docs/UPSTREAM-MERGE-LOG.md`
+- DISTRIBUTION: `docs/DISTRIBUTION.md`
+- BRANDING: `docs/BRANDING.md`
+- Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
 
 ## 2. Architecture and Directories
 
 执行链：OpenCode upstream → ellamaka fork → `--wopal-space` → `.wopal/` ontology → `.wopal-space/` runtime。
-
-ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents、commands、plugins、configuration 和 TUI behavior；不要在本仓库维护 ontology 内容、space runtime state、wopal-cli 确定性编排或 WopalSpace 产品路线。
 
 | 目录 | 职责 |
 |---|---|
@@ -27,8 +27,8 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | inherited UI surfaces；只在 engine/TUI 需要时改动 |
 | `packages/plugin/`, `packages/script/`, `packages/util/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
-| `packages/ellamaka/` | ellamaka 品牌常量与 env 驱动构建包装 |
-| `docs/` | project DESIGN、references、research 和 plans |
+| `packages/ellamaka/` | 品牌常量（branding.ts）、品牌字模（logo.ts）、构建包装（build.ts）、WopalSpace 自动检测（detect.ts）及包级测试 |
+| `docs/` | project DESIGN、BRANDING、DISTRIBUTION、references、research 和 plans |
 
 ## 3. Development Commands (build format test)
 
@@ -42,11 +42,12 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 | opencode typecheck | `bun typecheck` from `packages/opencode` | 修改 engine 主包后；不要直接运行 `tsc` |
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | 修改 engine 主包行为后 |
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
+| ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
 | JS SDK regeneration | `./packages/sdk/js/script/build.ts` | SDK 输出需要重新生成时 |
 | ellamaka build | `bun packages/ellamaka/build.ts` | 本地构建 ellamaka 品牌 CLI 时 |
 | 本地构建（darwin） | `./scripts/build.sh` | macOS 本地编译 CLI 二进制 |
 | 本地开发环境 | `./scripts/dev.sh` | 启动开发环境（支持 in-process TUI、attach/server 分流） |
-| API 文档 | `bun ./scripts/scalar-doc.ts` | 启动 Scalar API 参考文档 UI |
+| 发布 tag 推送 | `./scripts/tag-push.sh <tag> [remote]` | 打 tag 并推送 main，触发 publish-ellamaka CI |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 
 测试不能从 repo root 运行；root `test` script 是 guard。
@@ -67,11 +68,6 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 - `src/config` 新增模块时遵循现有 self-export pattern，例如 `export * as ConfigAgent from "./agent"`。
 - Drizzle schema 字段使用 snake_case，避免通过字符串重定义 column name。
 - 修改 `packages/opencode/` 内部模块、Effect、database、migration 或 Instance lifecycle 时，遵循 `packages/opencode/AGENTS.md`。
-- 涉及 WopalSpace、`.wopal/*`、plugin、自定义工具或 agent 配置时，验证对象必须是 ellamaka runtime，不要用 upstream opencode 替代。
-- ellamaka 全局配置文件是 `~/.wopal/config/settings.jsonc`（可由 `WOPAL_HOME` 改写），`~/.wopal/config/` 是纯配置目录，不加载 agents、commands、plugins 或执行依赖安装。
-- 普通模式先加载 opencode 兼容层（`~/.config/opencode/` 与 `.opencode/` 的配置和能力），再用 ellamaka 全局配置覆盖；runtime data/cache/state 仍归属 `~/.wopal/ellamaka/`。
-- wopal-space mode 短路到 `~/.wopal/` 与空间 `.wopal/`，使用 `.wopal/config/settings.jsonc` 的 `ellamaka` 和 `tui` 分区；不要加载 project-level `opencode.jsonc` 或任何 opencode 全局路径。
-- wopal-space permission 合并顺序是 defaults → global config → `.wopal/config/settings.*` → `.wopal/agents/{name}.md` frontmatter；最后匹配项生效。
 - WopalSpace 定制优先放在新文件；上游文件只保留最小 import 和调用注入点。
 - 定制分支使用提前返回 guard，避免与 upstream 主流程改动重叠。
 - 新模块需要访问 upstream 内部能力时优先用回调/闭包注入，不直接暴露 upstream Service 类型边界。
@@ -80,16 +76,14 @@ ellamaka 是 WopalSpace 的 engine runtime。它负责运行 space-aware agents�
 - `main` 是 ellamaka 定制稳定主线；`dev` 只跟踪 upstream OpenCode `dev`，不要在 `dev` 上做 ellamaka 定制开发。
 - diff 基准使用 `main` 或 `origin/main`；不要用 `dev` 作为 ellamaka 定制差异基准。
 - 上游合并时遵循 `docs/UPSTREAM-MERGE-LOG.md` 的精简清单、保留定制项和验证门槛。
-- 涉及 load path、plugin、agent、config 或 runtime 启动链路的修改完成后，提醒用户重启 ellamaka 验证；Wopal 不自行重启 ellamaka。
-- 优先自动执行明确请求；遇到缺少关键信息、安全风险或不可逆操作时先确认。
-- 可并行读取或检查时使用并行工具。
 
 ## 5. Testing
 
 - 代码类变更遵循 TDD：先写能失败的测试，再实现代码使其通过。
 - 尽量避免 mocks；测试真实实现，不要把实现逻辑复制进测试。
-- 测试必须从 package 目录运行，例如 `packages/opencode`；不要从 repo root 运行测试。
+- 测试必须从 package 目录运行，例如 `packages/opencode` 或 `packages/ellamaka`；不要从 repo root 运行测试。
 - 修改 engine 主包后，至少从 `packages/opencode` 运行相关 `bun test --timeout 30000` 或说明未运行原因。
+- 修改 branding、logo 或 detection 逻辑后，从 `packages/ellamaka` 运行 `bun test`。
 - 修改 TypeScript 后，从对应 package 运行 `bun typecheck`；不要直接运行 `tsc`。
 - 修改 CLI/runtime/config/plugin/agent/TUI space mode 后，验证或说明以下面向：`WOPAL_SPACE` flag、`.wopal/config/settings.*`、TUI settings、plugin loading、theme loading。
 - 上游合并后区分 upstream known failures、环境问题和 ellamaka 新引入问题。
