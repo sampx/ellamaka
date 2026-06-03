@@ -32,7 +32,7 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 3 | `OPENCODE_CONFIG_DIR` | 环境变量指定配置目录，扫描其下 `opencode.json` / `opencode.jsonc` |
 | 4 | `.opencode/` 目录 | 从 cwd 向上逐级查找 `.opencode/`，加载其中的 `opencode.json` / `opencode.jsonc` |
 | 5 | 项目级 `opencode.json` / `opencode.jsonc` | 从 cwd 向上找至 worktree 边界 |
-| 6 | 全局配置 | `~/.wopal/ellamaka/config/opencode.json`（WOPAL_HOME 定制） |
+| 6 | 全局配置 | `~/.wopal/config/settings.jsonc`（`ellamaka` 字段，通过 `WOPAL_HOME` 定制） |
 | 7 | 远程 `.well-known/opencode` | 若设 `OPENCODE_AUTO_SHARE`，从共享 URL 拉取 |
 
 **合并规则**：高优先级配置通过 `mergeDeep` 覆盖低优先级的同名键，`agent`、`mode`、`plugin`、`command` 等特殊键做深度合并。
