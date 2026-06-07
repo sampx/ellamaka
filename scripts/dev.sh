@@ -109,6 +109,7 @@ esac
 if ! $attach && [ "$cmd" != "server" ]; then
   # ----- default: TUI with in-process backend (no HTTP server) -----
   mkdir -p "$LOGDIR"
+  caller_pwd="$(pwd)"
   tui_args=()
   if $wopal_space; then
     tui_args+=(--wopal-space "$space")
@@ -130,7 +131,8 @@ if ! $attach && [ "$cmd" != "server" ]; then
     sleep 1
   fi
 
-  cd "$space"
+  # TUI 在用户调用目录下启动，识别项目上下文
+  cd "$caller_pwd"
   exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}" "${passthrough[@]}"
 fi
 
