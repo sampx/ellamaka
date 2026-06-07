@@ -4,6 +4,7 @@ import { CliError, effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as Prompt from "../effect/prompt"
 import { ModelsDev } from "@/provider/models"
+import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 import { map, pipe, sortBy, values } from "remeda"
 import path from "path"
@@ -298,7 +299,7 @@ export const ProvidersLoginCommand = effectCmd({
   builder: (yargs) =>
     yargs
       .positional("url", {
-        describe: "opencode auth provider",
+        describe: `${BINARY_NAME} auth provider`,
         type: "string",
       })
       .option("provider", {

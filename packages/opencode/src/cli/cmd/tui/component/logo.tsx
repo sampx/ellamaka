@@ -3,8 +3,6 @@ import { useRenderer } from "@opentui/solid"
 import { For, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTheme, tint } from "@tui/context/theme"
 import * as Sound from "@tui/util/sound"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { ellamaka } from "@ellamaka/build/logo"
 import { go, logo } from "@/cli/logo"
 
 export type LogoShape = {
@@ -305,8 +303,7 @@ function build(shape: LogoShape): LogoContext {
   return { LEFT, FULL, SPAN, MAP: mapGlyphs(FULL), shape }
 }
 
-const OPENCODE = build(logo)
-const ELLAMAKA = build(ellamaka)
+const DEFAULT = build(logo)
 const GO = build(go)
 
 function shimmer(x: number, y: number, frame: Frame, ctx: LogoContext) {
@@ -556,7 +553,7 @@ function buildIdleState(t: number, ctx: LogoContext): IdleState {
 }
 
 export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = {}) {
-  const ctx = props.shape ? build(props.shape) : (Flag.WOPAL_SPACE ? ELLAMAKA : OPENCODE)
+  const ctx = props.shape ? build(props.shape) : DEFAULT
   const { theme } = useTheme()
   const renderer = useRenderer()
   const [rings, setRings] = createSignal<Ring[]>([])

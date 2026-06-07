@@ -12,6 +12,7 @@ import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { NpmConfig } from "@opencode-ai/core/npm-config"
+import { BINARY_NAME } from "../../../ellamaka/branding"
 
 const log = Log.create({ service: "installation" })
 
@@ -55,7 +56,7 @@ export const Info = z
   })
 export type Info = z.infer<typeof Info>
 
-export const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
+export const USER_AGENT = `${BINARY_NAME}/${InstallationChannel}/${InstallationVersion}/${Flag.OPENCODE_CLIENT}`
 
 export function isPreview() {
   return InstallationChannel !== "latest"
@@ -205,7 +206,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           return "unknown" as Method
         }),
         latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
-          if (InstallationChannel === "ellamaka-main") {
+          if (InstallationChannel.startsWith("ellamaka")) {
             return InstallationVersion
           }
 
@@ -266,9 +267,9 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           return data.tag_name.replace(/^v/, "")
         }, Effect.orDie),
         upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
-          if (InstallationChannel === "ellamaka-main") {
+          if (InstallationChannel.startsWith("ellamaka")) {
             return yield* new UpgradeFailedError({
-              stderr: "ellamaka-main requires manual rebuild. Run: git pull && bun run script/build-darwin.ts",
+              stderr: `${BINARY_NAME} is updated via wopal-cli. Run: wopal ellamaka update`,
             })
           }
 

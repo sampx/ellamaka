@@ -18,6 +18,7 @@ import {
 } from "solid-js"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { BINARY_NAME, BINARY_TITLE } from "../../../../../ellamaka/branding"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"
 import { DialogProvider as DialogProviderList } from "@tui/component/dialog-provider"
@@ -316,24 +317,24 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle(BINARY_TITLE)
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle(BINARY_TITLE)
         return
       }
 
       const title = session.title.length > 40 ? session.title.slice(0, 37) + "..." : session.title
-      renderer.setTerminalTitle(`OC | ${title}`)
+      renderer.setTerminalTitle(`${BINARY_NAME} | ${title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      renderer.setTerminalTitle(`OC | ${route.data.id}`)
+      renderer.setTerminalTitle(`${BINARY_NAME} | ${route.data.id}`)
     }
   })
 
@@ -865,7 +866,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await DialogAlert.show(
       dialog,
       "Update Complete",
-      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+      `Successfully updated to ${BINARY_TITLE} v${result.data.version}. Please restart the application.`,
     )
 
     void exit()

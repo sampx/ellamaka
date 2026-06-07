@@ -186,14 +186,14 @@ CLI 启动时的 ASCII art logo 和 TUI 首页动画 logo 使用 ELLAMAKA 字模
 |------|------|------|
 | `packages/opencode/src/cli/logo.ts` | `logo.left` / `logo.right` glyph 数据替换为 ELLAMAKA 块字符画（4 行 × 19 列，每半部 3 行实际内容），`go` 变体、`marks` 标记字符同步更新 | **核心替换**：完全改写字模数据，通过 `_` `^` `~` `,` 标记字符控制 OpenTUI 着色器渲染 |
 
-`logo.left` 拼写 "ELLA"，`logo.right` 拼写 "MAKA"。TUI 的 `<Logo />` 组件（`tui/component/logo.tsx`）直接读取此数据驱动 shimmer 动画——**零侵入**，组件代码不改。
+`logo.left` 拼写 "ELLA"，`logo.right` 拼写 "MAKA"。TUI 的 `<Logo />` 组件（`tui/component/logo.tsx`）直接读取此数据驱动 shimmer 动画——**零侵入**，组件代码不改。字模数据在数据层直接替换，不依赖运行时模式守卫。
 
-#### 4.6.2 非 TTY 降级与模式守卫
+#### 4.6.2 非 TTY 降级与 wordmark 来源
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/src/cli/ui.ts` | `UI.logo()` 增加 `Flag.WOPAL_SPACE` 守卫：wopal-space 模式使用 `packages/ellamaka/logo.ts` 的 `ellamaka` 字模和 `wordmark`，普通模式使用上游 opencode 字模 | **注入守卫**：不替换上游常量，通过条件分支切换品牌 |
-| `packages/ellamaka/logo.ts` | 导出 `ellamaka`（字模数据）和 `wordmark`（`left[i] + " " + right[i]` 拼接），供 `ui.ts` 模式守卫引用 | **独立文件** |
+| `packages/opencode/src/cli/ui.ts` | `UI.logo()` 函数体与上游保持一致，仅 wordmark 来源通过 1 行 `import { wordmark } from "../../ellamaka/logo"` 注入 ellamaka 字模拼接结果 | **import 注入**：1 行，函数体零改动 |
+| `packages/ellamaka/logo.ts` | 导出 `ellamaka`（字模数据）和 `wordmark`（`left[i] + " " + right[i]` 拼接），供 `ui.ts` 引用 | **独立文件** |
 
 #### 4.6.3 Logo 音效兼容 compile 模式
 
@@ -217,6 +217,24 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 | `.wopal/config/settings.jsonc` | TUI 插件配置：`enabled: true`、`label: "ELLAMAKA"` | **独立文件** |
 
 > **注意**：上述 4 个文件位于 `.wopal/` ontology worktree（`wopal-space-ontology` 仓库），不属于 `projects/ellamaka/` 仓库。列在此处以完整记录品牌化版图。
+
+### 4.8 自动更新禁用
+
+ellamaka 的自动更新机制（TUI worker → `checkUpgrade` RPC → `upgrade()` 网络请求）仍指向 opencode 基础设施（npm/brew/GitHub releases），若用户触发更新会安装 opencode 而非 ellamaka。通过前置守卫 + channel 守卫扩展禁用。
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/cli/upgrade.ts` | `InstallationChannel` import 扩展 + `if (InstallationChannel.startsWith("ellamaka")) return` 前置返回，阻止自动更新事件触发 | **前置返回守卫**：2 行 |
+| `packages/opencode/src/installation/index.ts` | `USER_AGENT` 品牌化（`opencode/` → `${BINARY_NAME}/`）；`latest()` 守卫从 `=== "ellamaka-main"` 扩展为 `.startsWith("ellamaka")`；`upgrade()` 守卫同步扩展 + 错误提示更新为 `wopal ellamaka update` | **已有守卫扩展 + import 注入**：4 行 |
+| `packages/opencode/src/cli/cmd/upgrade.ts` | `InstallationChannel` import + ellamaka channel 前置返回块，引导用户使用 `wopal ellamaka update` | **前置返回守卫**：6 行 |
+
+**设计决策**：采用最小侵入方案（前置守卫 + 已有 channel 守卫扩展），不删除上游代码。上游合并时守卫逻辑是追加式，不改动上游控制流。
+
+### 4.9 错误上报 URL 品牌化
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/cli/cmd/tui/component/error-component.tsx` | GitHub issue URL 从 `anomalyco/opencode` 替换为 `wopal-cn/${BINARY_NAME}`；搜索参数名从 `opencode-version` 改为 `ellamaka-version` | **import 注入**：3 行 |
 
 ---
 
@@ -248,7 +266,7 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/src/installation/index.ts` | `"ellamaka-main"` channel 检测，提示用户手动重建 | **嵌入**：channel 名是运行时概念，需要与 build.ts 的 channel 逻辑对齐 |
+| `packages/opencode/src/installation/index.ts` | `ellamaka` release channel 守卫：`InstallationChannel.startsWith("ellamaka")` 覆盖 `ellamaka`（release）和 `ellamaka-main`（dev）两个 channel，`latest()` 直接返回当前版本跳过网络查询，`upgrade()` 给出 `wopal ellamaka update` 引导并阻止上游更新流程 | **嵌入**：channel 前缀匹配是运行时概念，需要与 build.ts 的 channel 逻辑对齐 |
 
 ### 6.2 Release 工作流
 
@@ -348,9 +366,9 @@ wopal-space 模式的激活方式：
 |------|----------|----------|-------------------|
 | **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`logo.ts`、`detect.ts`、`test/branding.test.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh`、`.wopal/plugins/tui-ellamaka.tsx`、`.wopal/plugins/ellamaka-theme.json` |
 | **独立 copy** | 零（上游 untouched） | 需要深度定制的上游文件 | `packages/ellamaka/build.ts`（基于 `packages/opencode/script/build.ts` 的 branded copy） |
-| **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts`、12 个 CLI cmd 文件（§4.4） |
-| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`sound.ts`（bunfs 音效兼容）、`ui.ts`（mode guard） |
-| **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`、`tips-view.tsx`、`.wopal/config/settings.jsonc` |
+| **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts`、12 个 CLI cmd 文件（§4.4）、`error-component.tsx`（§4.9）、`app.tsx`（§4.8 TUI 更新通知） |
+| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`sound.ts`（bunfs 音效兼容）、`ui.ts`（wordmark import） |
+| **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`（channel 守卫 + USER_AGENT）、`cli/upgrade.ts`（自动更新前置守卫）、`cli/cmd/upgrade.ts`（手动命令重定向）、`tips-view.tsx`、`.wopal/config/settings.jsonc` |
 
 ---
 

@@ -1,6 +1,7 @@
 import type { Argv, InferredOptionTypes } from "yargs"
 import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
+import { BINARY_NAME } from "../../../ellamaka/branding"
 
 const options = {
   port: {
@@ -20,8 +21,8 @@ const options = {
   },
   "mdns-domain": {
     type: "string" as const,
-    describe: "custom domain name for mDNS service (default: opencode.local)",
-    default: "opencode.local",
+    describe: `custom domain name for mDNS service (default: ${BINARY_NAME}.local)`,
+    default: `${BINARY_NAME}.local`,
   },
   cors: {
     type: "string" as const,

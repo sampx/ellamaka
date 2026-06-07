@@ -2,15 +2,7 @@ import z from "zod"
 import { EOL } from "os"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { logo as glyphs } from "./logo"
-import { ellamaka, wordmark as ellamakaWordmark } from "@ellamaka/build/logo"
-import { Flag } from "@opencode-ai/core/flag/flag"
-
-const wordmark = [
-  `⠀                                ▄     `,
-  `█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█`,
-  `█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀`,
-  `▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀`,
-]
+import { wordmark } from "@ellamaka/build/logo"
 
 export const CancelledError = NamedError.create("UICancelledError", z.void())
 
@@ -49,11 +41,9 @@ export function empty() {
 }
 
 export function logo(pad?: string) {
-  const g = Flag.WOPAL_SPACE ? ellamaka : glyphs
-  const wm = Flag.WOPAL_SPACE ? ellamakaWordmark : wordmark
   if (!process.stdout.isTTY && !process.stderr.isTTY) {
     const result = []
-    for (const row of wm) {
+    for (const row of wordmark) {
       if (pad) result.push(pad)
       result.push(row)
       result.push(EOL)
@@ -97,11 +87,11 @@ export function logo(pad?: string) {
     }
     return parts.join("")
   }
-  g.left.forEach((row, index) => {
+  glyphs.left.forEach((row, index) => {
     if (pad) result.push(pad)
     result.push(draw(row, left.fg, left.shadow, left.bg))
     result.push(gap)
-    const other = g.right[index] ?? ""
+    const other = glyphs.right[index] ?? ""
     result.push(draw(other, right.fg, right.shadow, right.bg))
     result.push(EOL)
   })
