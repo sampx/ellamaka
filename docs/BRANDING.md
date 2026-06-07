@@ -41,18 +41,15 @@ ellamaka 对上游 opencode 源码的品牌化改造清单。每条记录：改�
 | `.github/workflows/publish.yml` | 上游发布 CI（npm + Desktop） | ellamaka 用 `publish-ellamaka.yml` |
 | `.github/workflows/deploy.yml` | 上游部署 CI | ellamaka 无云端部署 |
 
-### 保留说明
-
-| 路径 | 原因 |
-|------|------|
-| `.github/TEAM_MEMBERS` | `@opencode-ai/script` 模块初始化时读取，运行时依赖，不可删除 |
+### 保留文件
 
 | 路径 | 保留原因 |
-|---|---|
+|------|----------|
 | `README.md`、`README.zh-CN.md` | ellamaka 自己的项目 README（已替换上游版本） |
 | `AGENTS.md`、`AGENTS.zh-CN.md` | ellamaka 开发规范 |
 | `scripts/` | ellamaka 自己的脚本（`build.sh`、`dev.sh`、`check-cleanup.sh`），与上游 `script/` 是两个不同目录 |
 | `.github/workflows/publish-ellamaka.yml` | ellamaka 发布流程 |
+| `.github/TEAM_MEMBERS` | `@opencode-ai/script` 模块初始化时读取，运行时依赖，不可删除 |
 | `package.json` | 构建入口，`"name": "opencode"` 不影响用户可见品牌（非产品表面） |
 | `patches/` | npm 补丁，构建需要 |
 | `LICENSE` | MIT 许可证 |
@@ -218,15 +215,17 @@ WopalSpace 模式下，通过 TUI 插件系统注入额外的品牌元素。
 
 > **注意**：上述 4 个文件位于 `.wopal/` ontology worktree（`wopal-space-ontology` 仓库），不属于 `projects/ellamaka/` 仓库。列在此处以完整记录品牌化版图。
 
-### 4.8 自动更新禁用
+### 4.8 自动更新与 channel 守卫
 
-ellamaka 的自动更新机制（TUI worker → `checkUpgrade` RPC → `upgrade()` 网络请求）仍指向 opencode 基础设施（npm/brew/GitHub releases），若用户触发更新会安装 opencode 而非 ellamaka。通过前置守卫 + channel 守卫扩展禁用。
+ellamaka 的自动更新机制（TUI worker → `checkUpgrade` RPC → `upgrade()` 网络请求）仍指向 opencode 基础设施（npm/brew/GitHub releases），若用户触发更新会安装 opencode 而非 ellamaka。通过前置守卫 + channel 守卫扩展，在三个层面拦截：
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
 | `packages/opencode/src/cli/upgrade.ts` | `InstallationChannel` import 扩展 + `if (InstallationChannel.startsWith("ellamaka")) return` 前置返回，阻止自动更新事件触发 | **前置返回守卫**：2 行 |
-| `packages/opencode/src/installation/index.ts` | `USER_AGENT` 品牌化（`opencode/` → `${BINARY_NAME}/`）；`latest()` 守卫从 `=== "ellamaka-main"` 扩展为 `.startsWith("ellamaka")`；`upgrade()` 守卫同步扩展 + 错误提示更新为 `wopal ellamaka update` | **已有守卫扩展 + import 注入**：4 行 |
+| `packages/opencode/src/installation/index.ts` | `USER_AGENT` 品牌化（`opencode/` → `${BINARY_NAME}/`）；`latest()` 守卫从 `=== "ellamaka-main"` 扩展为 `.startsWith("ellamaka")`，直接返回当前版本跳过网络查询；`upgrade()` 守卫同步扩展 + 错误提示 `wopal ellamaka update` | **已有守卫扩展 + import 注入**：4 行 |
 | `packages/opencode/src/cli/cmd/upgrade.ts` | `InstallationChannel` import + ellamaka channel 前置返回块，引导用户使用 `wopal ellamaka update` | **前置返回守卫**：6 行 |
+
+**Channel 覆盖**：`.startsWith("ellamaka")` 前缀匹配覆盖 `ellamaka`（release）和 `ellamaka-main`（dev）两个 channel，与 `build.ts` 的 `CHANNEL_RELEASE`/`CHANNEL_DEV` 对齐。
 
 **设计决策**：采用最小侵入方案（前置守卫 + 已有 channel 守卫扩展），不删除上游代码。上游合并时守卫逻辑是追加式，不改动上游控制流。
 
@@ -260,25 +259,9 @@ ellamaka 的自动更新机制（TUI worker → `checkUpgrade` RPC → `upgrade(
 
 ---
 
-## 6. 安装与分发品牌
+## 5. 配置系统品牌
 
-### 6.1 安装 channel
-
-| 文件 | 变更 | 模式 |
-|------|------|------|
-| `packages/opencode/src/installation/index.ts` | `ellamaka` release channel 守卫：`InstallationChannel.startsWith("ellamaka")` 覆盖 `ellamaka`（release）和 `ellamaka-main`（dev）两个 channel，`latest()` 直接返回当前版本跳过网络查询，`upgrade()` 给出 `wopal ellamaka update` 引导并阻止上游更新流程 | **嵌入**：channel 前缀匹配是运行时概念，需要与 build.ts 的 channel 逻辑对齐 |
-
-### 6.2 Release 工作流
-
-| 文件 | 变更 | 模式 |
-|------|------|------|
-| `.github/workflows/publish-ellamaka.yml` | 独立于上游 `publish.yml`，只构建 CLI、4 平台矩阵、`checksums.txt`、GitHub Release | **独立文件**（零侵入） |
-
----
-
-## 7. 配置系统品牌
-
-### 7.1 WopalSpace 配置层
+### 5.1 WopalSpace 配置层
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
