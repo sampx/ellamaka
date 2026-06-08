@@ -154,8 +154,8 @@ let targets: typeof allTargets
 
 if (archArg === "primary") {
   targets = allTargets.filter((item) => {
-    if (item.os === "darwin" && item.arch === "arm64") return true
-    if (item.os === "darwin" && item.arch === "x64") return true
+    if (item.os === "darwin" && item.arch === "arm64" && item.avx2 !== false) return true
+    if (item.os === "darwin" && item.arch === "x64" && item.avx2 !== false) return true
     if (item.os === "linux" && item.arch === "x64" && item.abi === undefined && item.avx2 !== false) return true
     if (item.os === "win32" && item.arch === "x64" && item.avx2 !== false) return true
     return false
@@ -266,17 +266,6 @@ for (const item of targets) {
     ),
   )
   binaries[name] = Script.version
-}
-
-if (Script.release) {
-  for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
-      await $`tar -czf ${distDir}/${key}.tar.gz *`.cwd(`${distDir}/${key}/bin`)
-    } else {
-      await $`zip -r ${distDir}/${key}.zip *`.cwd(`${distDir}/${key}/bin`)
-    }
-  }
-  await $`gh release upload v${Script.version} ${distDir}/*.zip ${distDir}/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
 }
 
 export { binaries }

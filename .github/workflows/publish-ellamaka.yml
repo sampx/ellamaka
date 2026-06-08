@@ -63,29 +63,29 @@ jobs:
         run: bun packages/ellamaka/build.ts --arch primary
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
+          OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
 
       - name: Create archives
         run: |
           for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-linux-x64 ellamaka-windows-x64; do
-            if [ -d "dist/${name}/bin" ]; then
-              cp LICENSE "dist/${name}/bin/LICENSE"
-              if echo "$name" | grep -q "linux"; then
-                tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
-              else
-                (cd "dist/${name}/bin" && zip -r "../../${name}.zip" .)
-              fi
+            test -d "dist/${name}/bin" || { echo "MISSING: dist/${name}/bin"; exit 1; }
+            cp LICENSE "dist/${name}/bin/LICENSE"
+            if [[ "$name" == *"windows"* ]]; then
+              (cd "dist/${name}/bin" && zip -r "../../${name}.zip" .)
+            else
+              tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
             fi
           done
 
       - uses: actions/upload-artifact@v4
         with:
           name: ellamaka-darwin-arm64
-          path: dist/ellamaka-darwin-arm64.zip
+          path: dist/ellamaka-darwin-arm64.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
           name: ellamaka-darwin-x64
-          path: dist/ellamaka-darwin-x64.zip
+          path: dist/ellamaka-darwin-x64.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
@@ -102,30 +102,140 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.version.outputs.release != '' && github.repository == 'wopal-cn/ellamaka'
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: release-artifacts
           pattern: ellamaka-*
           merge-multiple: true
 
       - name: Verify artifacts
         run: |
-          for f in dist/ellamaka-darwin-arm64.zip dist/ellamaka-darwin-x64.zip dist/ellamaka-linux-x64.tar.gz dist/ellamaka-windows-x64.zip; do
+          for f in release-artifacts/ellamaka-darwin-arm64.tar.gz release-artifacts/ellamaka-darwin-x64.tar.gz release-artifacts/ellamaka-linux-x64.tar.gz release-artifacts/ellamaka-windows-x64.zip; do
             test -f "$f" || { echo "MISSING: $f"; exit 1; }
           done
 
-      - name: Generate checksums
-        run: cd dist && sha256sum ellamaka-*.zip ellamaka-*.tar.gz > checksums.txt
+      - name: Generate manifest, checksums, and release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node scripts/package-release.mjs manifest \
+            --archives-dir release-artifacts \
+            --version "$VERSION" \
+            --output-dir release-output \
+            --tag v"$VERSION"
 
-      - name: Create or update release
+      - name: Upload binaries and metadata to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          R2_URL="https://${R2_ENDPOINT}"
+          VERSION_KEY="s3://wopal-release/ellamaka/v${VERSION}"
+          LATEST_KEY="s3://wopal-release/ellamaka/latest"
+
+          aws s3 cp release-artifacts ${VERSION_KEY}/ \
+            --recursive \
+            --endpoint-url ${R2_URL} \
+            --cache-control "public, max-age=604800" \
+            --exclude "*" \
+            --include "ellamaka-*.tar.gz" \
+            --include "ellamaka-*.zip"
+
+          aws s3 cp release-output/manifest.json ${VERSION_KEY}/manifest.json \
+            --endpoint-url ${R2_URL} \
+            --cache-control "public, max-age=604800"
+          aws s3 cp release-output/checksums.txt ${VERSION_KEY}/checksums.txt \
+            --endpoint-url ${R2_URL} \
+            --cache-control "public, max-age=604800"
+          aws s3 cp release-output/release-notes.md ${VERSION_KEY}/release-notes.md \
+            --endpoint-url ${R2_URL} \
+            --cache-control "public, max-age=604800"
+
+          aws s3 cp release-output/manifest.json ${LATEST_KEY}/manifest.json \
+            --endpoint-url ${R2_URL} \
+            --cache-control "public, max-age=300"
+
+          echo "R2 upload complete for ellamaka v${VERSION}"
+
+      - name: Create or update ellamaka GitHub release (no binary assets)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          version="${{ needs.version.outputs.version }}"
-          if gh release view "v${version}" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
-            gh release upload "v${version}" dist/ellamaka-*.zip dist/ellamaka-*.tar.gz dist/checksums.txt \
-              --repo wopal-cn/ellamaka --clobber
+          version="$VERSION"
+          tag="v${version}"
+          if gh release view "$tag" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --repo wopal-cn/ellamaka \
+              --notes-file release-output/release-notes.md
+            echo "Updated ellamaka release $tag"
           else
-            gh release create "v${version}" dist/ellamaka-*.zip dist/ellamaka-*.tar.gz dist/checksums.txt \
-              --repo wopal-cn/ellamaka --title "ellamaka v${version}" --generate-notes
+            gh release create "$tag" \
+              --repo wopal-cn/ellamaka \
+              --title "ellamaka v${version}" \
+              --notes-file release-output/release-notes.md
+            echo "Created ellamaka release $tag"
           fi
+
+      - name: Create or update ontology GitHub release (no binary assets)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          version="$VERSION"
+          tag="v${version}"
+          if gh release view "$tag" --repo wopal-cn/wopal-space-ontology >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --repo wopal-cn/wopal-space-ontology \
+              --notes-file release-output/release-notes.md
+            echo "Updated ontology release $tag"
+          else
+            gh release create "$tag" \
+              --repo wopal-cn/wopal-space-ontology \
+              --title "ellamaka v${version}" \
+              --notes-file release-output/release-notes.md
+            echo "Created ontology release $tag"
+          fi
+
+      - name: Create or update ellamaka Gitee release (no binary assets)
+        continue-on-error: true
+        env:
+          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node scripts/create-gitee-release.mjs \
+            --version "$VERSION" \
+            --repo wopal-cn/ellamaka \
+            --tag v"$VERSION" \
+            --notes-file release-output/release-notes.md
+
+      - name: Create or update ontology Gitee release (no binary assets)
+        continue-on-error: true
+        env:
+          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node scripts/create-gitee-release.mjs \
+            --version "$VERSION" \
+            --repo wopal-cn/wopal-space-ontology \
+            --tag v"$VERSION" \
+            --notes-file release-output/release-notes.md
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            echo "## Ellamaka Release Distribution"
+            echo ""
+            echo "- R2 (CDN): https://download.coursedao.com/ellamaka/v${VERSION}/"
+            echo "- GitHub (ellamaka): https://github.com/wopal-cn/ellamaka/releases/tag/v${VERSION}"
+            echo "- GitHub (ontology): https://github.com/wopal-cn/wopal-space-ontology/releases/tag/v${VERSION}"
+            echo "- Gitee (ellamaka): https://gitee.com/wopal-cn/ellamaka/releases/tag/v${VERSION}"
+            echo "- Gitee (ontology): https://gitee.com/wopal-cn/wopal-space-ontology/releases/tag/v${VERSION}"
+          } >> $GITHUB_STEP_SUMMARY
