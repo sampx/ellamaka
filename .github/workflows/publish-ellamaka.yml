@@ -163,7 +163,7 @@ jobs:
 
       - name: Create or update ellamaka GitHub release (no binary assets)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           version="$VERSION"
@@ -186,6 +186,11 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RELEASE_TOKEN secret is required to publish the ontology GitHub release."
+            exit 1
+          fi
+
           version="$VERSION"
           tag="v${version}"
           if gh release view "$tag" --repo wopal-cn/wopal-space-ontology >/dev/null 2>&1; then

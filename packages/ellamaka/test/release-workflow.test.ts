@@ -37,6 +37,8 @@ describe("publish-ellamaka workflow", () => {
   test("creates 4 markdown-only release entries", () => {
     expect(workflow).toContain("wopal-cn/ellamaka")
     expect(workflow).toContain("wopal-cn/wopal-space-ontology")
+    expect(workflow).toContain("GH_TOKEN: ${{ github.token }}")
+    expect(workflow).toContain("RELEASE_TOKEN secret is required to publish the ontology GitHub release.")
     expect(workflow).toContain("--notes-file release-output/release-notes.md")
     expect(count(workflow, "node scripts/create-gitee-release.mjs")).toBe(2)
     expect(count(workflow, "--repo wopal-cn/ellamaka")).toBeGreaterThanOrEqual(2)
