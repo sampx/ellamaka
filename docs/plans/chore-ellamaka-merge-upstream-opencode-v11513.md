@@ -8,7 +8,7 @@
 - **Project Type**: standard
 - **Created**: 2026-06-08
 - **Updated**: 2026-06-09（dry-run 验证版，tag `385cb69441`）
-- **Status**: executing
+- **Status**: verifying
 - **Worktree**:
   - branch: merge-upstream-opencode-v11513
   - path: /Users/sam/coding/wopal/wopal-workspace/.worktrees/ellamaka-merge-upstream-opencode-v11513
