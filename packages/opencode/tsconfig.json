@@ -11,7 +11,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@tui/*": ["./src/cli/cmd/tui/*"],
-      "@test/*": ["./test/*"]
+      "@test/*": ["./test/*"],
+      "@ellamaka/build/*": ["../ellamaka/build/*"]
     }
   }
 }
