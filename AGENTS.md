@@ -1,104 +1,27 @@
----
-name: Ellamaka AGENT RULES
-description: WopalSpace engine fork of OpenCode for running space-aware agents, commands, plugins, configuration, and TUI behavior
----
-
-# Agent Development Rules
-
-## 1. Canonical References
-
-Canonical references:
-
-- DESIGN: `docs/DESIGN.md`
-- DISTRIBUTION: `docs/DISTRIBUTION.md`
-- BRANDING: `docs/BRANDING.md`
-- Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
-- Config Reference: `docs/references/ellamaka-config-mechanism.md`
-- opencode package rules: `packages/opencode/AGENTS.md`
-
-## 2. Architecture and Directories
-
-Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.wopal/` ontology → `.wopal-space/` runtime.
-
-| Directory | Responsibility |
-|---|---|
-| `packages/opencode/` | Main inherited OpenCode engine package; follow `packages/opencode/AGENTS.md` for internal rules |
-| `packages/core/` | Shared core, flags, global paths, and installation/runtime foundations |
-| `packages/app/`, `packages/ui/`, `packages/storybook/` | Inherited UI surfaces; change only when engine/TUI work requires it |
-| `packages/plugin/`, `packages/script/`, `packages/util/` | Workspace support packages |
-| `packages/sdk/` | SDK workspace; use the existing script for JS SDK regeneration |
-| `packages/ellamaka/` | Branding constants (branding.ts), brand glyphs (logo.ts), build wrapper (build.ts), WopalSpace auto-detection (detect.ts), and package-level tests |
-| `docs/` | Project DESIGN, BRANDING, DISTRIBUTION, references, research, and plans |
-
-## 3. Development Commands (build format test)
-
-| Scenario | Command | When |
-|---|---|---|
-| Root dev | `bun run dev` | Start the opencode package dev entry locally |
-| Web dev | `bun run dev:web` | Debug the app/web surface |
-| Storybook | `bun run dev:storybook` | Debug the storybook surface |
-| Lint | `bun run lint` | After TypeScript / config changes |
-| Root typecheck | `bun run typecheck` | When a full-repo typecheck is needed |
-| opencode typecheck | `bun typecheck` from `packages/opencode` | After changing the main engine package; do not run `tsc` directly |
-| opencode tests | `bun test --timeout 30000` from `packages/opencode` | After changing main engine behavior |
-| opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
-| ellamaka package tests | `bun test` from `packages/ellamaka` | After changing branding, logo, or detection logic |
-| JS SDK regeneration | `./packages/sdk/js/script/build.ts` | When SDK output needs regeneration |
-| ellamaka build | `bun packages/ellamaka/build.ts` | When building ellamaka-branded CLI locally |
-| Local build (darwin) | `./scripts/build.sh` | Compile CLI binary on macOS |
-| Local dev environment | `./scripts/dev.sh` | Start dev environment (in-process TUI, attach/server modes) |
-| Release tag push | `./scripts/tag-push.sh <tag> [remote]` | Tag and push main to trigger publish-ellamaka CI |
-| Post-merge cleanup check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode, check for files/dirs that should have been deleted |
-
-Tests must not run from the repo root; the root `test` script is a guard.
-
-## 4. Implementation Rules
-
-- Prefer Bun APIs, such as `Bun.file()`.
-- Keep code in one function unless logic must be reused or composed.
-- Avoid `try` / `catch`; follow the existing Effect error-handling patterns.
-- Avoid `any`; when defect-like errors are needed, follow the Effect Schema rules in `packages/opencode/AGENTS.md`.
-- Rely on type inference; avoid explicit types and interfaces unless needed for exported boundaries or clarity.
-- Prefer functional array methods such as `flatMap`, `filter`, and `map`; use type guards in `filter` to preserve downstream inference.
-- Avoid unnecessary destructuring; use dot notation to preserve context.
-- Prefer `const`; use ternaries or early returns instead of variable reassignment.
-- Avoid `else`; prefer early returns.
-- Use `let` only for true mutable state.
-- Create intermediate variables only when a value is reused or improves readability; inline one-off values.
-- When adding modules under `src/config`, follow the existing self-export pattern, such as `export * as ConfigAgent from "./agent"`.
-- Drizzle schema fields use snake_case; avoid redefining column names with strings.
-- When changing internal modules, Effect, database, migrations, or Instance lifecycle under `packages/opencode/`, follow `packages/opencode/AGENTS.md`.
-- Put WopalSpace customization in new files first; upstream files should keep only minimal imports and invocation points.
-- Use early-return guards for customized branches to avoid overlapping upstream main-flow changes.
-- When new modules need upstream internals, prefer callback/closure injection instead of exposing upstream Service type boundaries directly.
-- When reusing upstream logic, extract shared helpers instead of copying large upstream flows.
-- Do not apply unrelated formatting churn, import reordering, dependency reordering, or object key reordering to upstream files.
-- `main` is the stable line for ellamaka customization; `dev` only tracks upstream OpenCode `dev`, so do not develop ellamaka customizations on `dev`.
-- Use `main` or `origin/main` as the diff base; do not use `dev` as the ellamaka customization diff base.
-- During upstream merges, follow the cleanup list, preserved customization list, and verification gates in `docs/UPSTREAM-MERGE-LOG.md`.
-
-## 5. Testing
-
-- Code changes follow TDD: write a failing test first, then implement code to make it pass.
-- Avoid mocks as much as possible; test the real implementation and do not duplicate implementation logic into tests.
-- Tests must run from package directories, such as `packages/opencode` or `packages/ellamaka`; do not run tests from the repo root.
-- After changing the main engine package, run the relevant `bun test --timeout 30000` from `packages/opencode` or explain why it was not run.
-- After changing branding, logo, or detection logic, run `bun test` from `packages/ellamaka`.
-- After changing TypeScript, run `bun typecheck` from the relevant package; do not run `tsc` directly.
-- After changing CLI/runtime/config/plugin/agent/TUI space mode, verify or report these surfaces: `WOPAL_SPACE` flag, `.wopal/config/settings.*`, TUI settings, plugin loading, and theme loading.
-- After upstream merges, separate upstream known failures, environment issues, and newly introduced ellamaka issues.
-
-## 6. User-Supplied Rules
-
 - To regenerate the JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
-- ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-- The default branch in this repo is `main`. The `dev` branch tracks upstream opencode `dev` for merge integration.
-- Use `main` or `origin/main` for diffs; `dev` is upstream-tracking only.
-- Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
+- The default branch in this repo is `dev`.
+- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 
-### Style Guide — Code Examples
+## Commits and PR Titles
 
-#### Inlining
+Use conventional commit-style messages and PR titles: `type(scope): summary`.
+
+Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+
+Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
+
+## Style Guide
+
+### General Principles
+
+- Keep things in one function unless composable or reusable
+- Do not extract single-use helpers preemptively. Inline the logic at the call site unless the helper is reused, hides a genuinely complex boundary, or has a clear independent name that improves the caller.
+- Avoid `try`/`catch` where possible
+- Avoid using the `any` type
+- Use Bun APIs when possible, like `Bun.file()`
+- Rely on type inference when possible; avoid explicit type annotations or interfaces unless necessary for exports or clarity
+- Prefer functional array methods (flatMap, filter, map) over for loops; use type guards on filter to maintain type inference downstream
+- In `src/config`, follow the existing self-export pattern at the top of the file (for example `export * as ConfigAgent from "./agent"`) when adding a new config module.
 
 Reduce total variable count by inlining when a value is only used once.
 
@@ -111,7 +34,7 @@ const journalPath = path.join(dir, "journal.json")
 const journal = await Bun.file(journalPath).json()
 ```
 
-#### Destructuring
+### Destructuring
 
 Avoid unnecessary destructuring. Use dot notation to preserve context.
 
@@ -124,7 +47,7 @@ obj.b
 const { a, b } = obj
 ```
 
-#### Variables
+### Variables
 
 Prefer `const` over `let`. Use ternaries or early returns instead of reassignment.
 
@@ -138,7 +61,7 @@ if (condition) foo = 1
 else foo = 2
 ```
 
-#### Control Flow
+### Control Flow
 
 Avoid `else` statements. Prefer early returns.
 
@@ -156,7 +79,30 @@ function foo() {
 }
 ```
 
-#### Schema Definitions (Drizzle)
+### Complex Logic
+
+When a function has several validation branches or supporting details, make the main function read as the happy path and move supporting details into small helpers below it.
+
+```ts
+// Good
+export function loadThing(input: unknown) {
+  const config = requireConfig(input)
+  const metadata = readMetadata(input)
+  return createThing({ config, metadata })
+}
+
+function requireConfig(input: unknown) {
+  ...
+}
+```
+
+- Keep helpers close to the code they support, below the main export when that improves readability.
+- Do not over-abstract simple expressions into many single-use helpers; extract only when it names a real concept like `requireConfig` or `readMetadata`.
+- Do not return `Effect` from helpers unless they actually perform effectful work. Synchronous parsing, validation, and option building should stay synchronous.
+- Prefer Effect schema helpers such as `Schema.UnknownFromJsonString` and `Schema.decodeUnknownOption` over manual `JSON.parse` wrapped in `Effect.try` when parsing untrusted JSON strings.
+- Add comments for non-obvious constraints and surprising behavior, not for obvious assignments or control flow.
+
+### Schema Definitions (Drizzle)
 
 Use snake_case for field names so column names don't need to be redefined as strings.
 
@@ -175,3 +121,13 @@ const table = sqliteTable("session", {
   createdAt: integer("created_at").notNull(),
 })
 ```
+
+## Testing
+
+- Avoid mocks as much as possible
+- Test actual implementation, do not duplicate logic into tests
+- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+
+## Type Checking
+
+- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.

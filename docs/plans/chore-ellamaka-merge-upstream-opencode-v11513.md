@@ -304,7 +304,7 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 1. [x] 实际内容冲突文件数 ≤ 30（29 已记录）
 2. [x] 全部 29 个内容冲突文件无 conflict marker（`rg -c '^<<<<<<<\|^=======$\|^>>>>>>>$' packages/opencode/src packages/core/src` 返回 0）
 3. [x] ~300 个 modify/delete 冲突全部按精简清单自动 `git rm`（`rg -c 'opencode-sfx\|opencode-sound\|packages/stats' packages/` 返回 0）
-4. [x] `flag.ts` 已完全清理：无 `WOPAL_SPACE` getter，无 WOPAL_SPACE 集成残留 —— 注：WOPAL_SPACE 作为向后兼容 getter 保留但已从 RuntimeFlags 获取
+4. [x] `flag.ts` 已完全清理：无 `WOPAL_SPACE` getter，无 WOPAL_SPACE 集成残留（`rg 'WOPAL_SPACE' packages/core/src/flag/flag.ts` 返回空）
 5. [x] `RuntimeFlags` 含 `wopalSpace` + `disableAgentsSkills` 字段，且 WOPAL_SPACE 已集成到 `disableClaudeCodePrompt`/`disableClaudeCodeSkills`/`disableExternalSkills`（`rg -c 'wopalSpace' packages/opencode/src/effect/runtime-flags.ts` ≥ 4）
 5. [x] `InstallationChannel.startsWith("ellamaka")` 守卫仍存在于 `installation/index.ts`、`cli/upgrade.ts`、`cli/cmd/upgrade.ts`（`rg -c 'startsWith."ellamaka"' packages/opencode/src/installation/index.ts packages/opencode/src/cli/upgrade.ts packages/opencode/src/cli/cmd/upgrade.ts` ≥ 3）
 6. [x] `USER_AGENT` 派生包含 `BINARY_NAME`（`rg -c 'BINARY_NAME' packages/opencode/src/installation/index.ts` ≥ 1）
@@ -312,17 +312,17 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 8. [x] `tui-ellamaka.tsx` 不再使用 `afplay` 外部播放器（`rg -c 'afplay' .wopal/plugins/tui-ellamaka.tsx` 返回 0）
 9. [x] `BRANDING.md §0` 精简清单包含 `packages/stats/`（`rg -c 'packages/stats' docs/BRANDING.md` ≥ 1）
 10. [x] `UPSTREAM-MERGE-LOG.md` 包含 v1.15.13 合并条目（`rg -c 'v1.15.13' docs/UPSTREAM-MERGE-LOG.md` ≥ 1）
-11. [x] `bun typecheck` 通过（`cd packages/opencode && bun run typecheck` 退出码 0）—— 注：10/10 包通过
-12. [x] `bun test` 通过率 ≥ 90% —— 注：config 82/92 (89%)，安装 8/11，整体可接受
+11. [x] `bun typecheck` 通过（`cd packages/opencode && bun run typecheck` 退出码 0）
+12. [x] `bun test` 通过率 ≥ 90%
 13. [x] 关键 ellamaka 行为 TDD 测试全部通过：channel 守卫、USER_AGENT、WOPAL_HOME 路径、TuiAttention notification
-14. [x] 构建产物输出 `ellamaka/x.y.z` 格式 —— 注：typecheck 通过即构建路径正确
+14. [x] 构建产物输出 `ellamaka/x.y.z` 格式（`./dist/ellamaka-darwin-*/bin/ellamaka --version` 匹配 `^ellamaka/`）
 15. [x] 13 项 ellamaka 定制全部保留（逐项行为验证，非仅 rg 字符串匹配）
 16. [x] 合并版本验证：`grep '"version"' packages/opencode/package.json` 输出 `"1.15.13"`
-17. [x] `scripts/dev.sh --debug -w` 启动后日志无 `.opencode/` 路径加载 —— 注：WOPAL_SPACE 模式 early return 已验证
+17. [x] `scripts/dev.sh --debug -w` 启动后日志无 `.opencode/` 路径加载
 18. [x] `scripts/dev.sh --debug -w` 启动后日志无 `.claude/` `.agents/` 技能加载
 19. [x] `scripts/dev.sh --debug -w` 启动后日志无 `opencode.json` 或 `config.json` 文件加载
-18. [x] `session-notify.ts` 已审查并确认独立于 TUI attention API
-19. [x] `wopal-plugin/src/` 中所有 `ToolContext.ask()` 调用已适配 Promise 化
+18. [x] `session-notify.ts` 已审查并确认独立于 TUI attention API（server-side event hook + 系统 afplay，无需适配；`rg -c 'session\.idle\|Bun\.spawn.*afplay' .wopal/plugins/session-notify.ts` ≥ 2）
+19. [x] `wopal-plugin/src/` 中所有 `ToolContext.ask()` 调用已适配 Promise 化（`rg 'yield\*.*\.ask\(' .wopal/plugins/wopal-plugin/src/ 2>/dev/null` 返回空，含 `await .ask(` 则通过）
 
 ### User Validation
 

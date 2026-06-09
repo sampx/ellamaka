@@ -51,14 +51,13 @@ ellamaka - EllaMaka dev launcher
 Usage: $self [command|option]
 
   Commands:
-    server        Start backend as headless HTTP server
+    serve        Start backend as headless HTTP server
     stop          Stop all dev servers
     help          Show this help message
 
   Options:
     -a, --attach      Start HTTP server + attach TUI client
     -h, --help        Show this help message
-    -w, --wopal-space Enable wopal-space mode
     --debug [mods]    Enable debug mode (default: all)
                       Modules: task, rules, or comma-separated list
 
@@ -78,7 +77,6 @@ EOF
 
 cmd=""
 attach=false
-wopal_space=false
 debug=false
 debug_modules=""
 passthrough=()
@@ -86,9 +84,8 @@ passthrough=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --) shift; passthrough+=("$@"); break ;;
-    stop|-h|--help|help|server) cmd="$1"; shift ;;
+    stop|-h|--help|help|serve) cmd="$1"; shift ;;
     -a|--attach) attach=true; shift ;;
-    -w|--wopal-space) wopal_space=true; shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -106,14 +103,11 @@ case "$cmd" in
   -h|--help|help) usage; exit ;;
 esac
 
-if ! $attach && [ "$cmd" != "server" ]; then
+if ! $attach && [ "$cmd" != "serve" ]; then
   # ----- default: TUI with in-process backend (no HTTP server) -----
   mkdir -p "$LOGDIR"
   caller_pwd="$(pwd)"
   tui_args=()
-  if $wopal_space; then
-    tui_args+=(--wopal-space "$space")
-  fi
   tui_env=()
 
   if [ "$debug" = true ]; then
@@ -158,9 +152,6 @@ warmup_config() {
 start_backend() {
   local srv_env=()
   local srv_args=(serve --port 4097 --print-logs)
-  if $wopal_space; then
-    srv_args+=(--wopal-space)
-  fi
 
   if [ "$debug" = true ]; then
     srv_args+=(--log-level DEBUG)
@@ -198,9 +189,9 @@ if ! is_running 4097; then
   exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:4097" --dir "$space"
 fi
 
-# ----- server mode -----
+# ----- serve mode -----
 
-if [ "$cmd" = "server" ]; then
+if [ "$cmd" = "serve" ]; then
 if [ -f "$PIDFILE" ] || is_running 4097; then
   echo "already running."
   read -p "stop and restart? [Y/n] " yn
