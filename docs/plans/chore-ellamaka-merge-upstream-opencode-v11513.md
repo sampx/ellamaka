@@ -7,8 +7,8 @@
 - **Project Path**: projects/ellamaka/
 - **Project Type**: standard
 - **Created**: 2026-06-08
-- **Updated**: 2026-06-09（v1.15.13 tag 精准合并版）
-- **Status**: planning
+- **Updated**: 2026-06-09（dry-run 验证版，tag `385cb69441`）
+- **Status**: reviewing
 
 
 ## Scope Assessment
@@ -20,7 +20,7 @@
 
 ## Goal
 
-合并 opencode 上游 **tag v1.15.13**（commit `74ce1a1edf`）到 ellamaka，保留全部 13 项 ellamaka 定制。
+合并 opencode 上游 **tag v1.15.13**（commit `385cb69441`）到 ellamaka，保留全部 13 项 ellamaka 定制。
 
 ⚠️ **Merge 约束**：使用 `git merge v1.15.13`（锁定 git tag），严禁 `git merge upstream/dev`（移动目标）。
 
@@ -46,73 +46,30 @@ ellamaka 是 OpenCode 的 WopalSpace 引擎 fork，承载 `--wopal-space` 模式
    - `TuiCommandApi` 废弃，建议用 `api.keymap.registerLayer`
    - 音效系统用 `@opentui/core` 的 `Audio.create()` + `Bun.file().bytes()` 内存加载，自动兼容 bunfs 虚拟路径
 
-ellamaka 当前共有 **13 项定制**（详见 `BRANDING.md` §0-§10 与 `AGENTS.md`）。`WOPAL_SPACE` flag 保留 backward-compat getter 在 `flag.ts`，不迁移。
+ellamaka 当前共有 **13 项定制**（详见 `BRANDING.md` §0-§10 与 `AGENTS.md`）。
 
 ### Research Findings
 
-**冲突面调研结果**（基于 `git merge v1.15.13 --no-commit --no-ff` dry-run 实测）：
+**冲突面调研结果**（基于 `git merge v1.15.13 --no-commit --no-ff` dry-run 实测，2026-06-09 验证）：
 
-- **总冲突数**：357 个
-- **内容冲突**（双方都修改，31 个）：含 5 个高风险、10 个中风险、16 个低风险
-- **modify/delete 冲突**（326 个）：覆盖 `.github/`、`packages/desktop/`、`script/`、`sdks/`、`specs/`、`packages/web/`、`packages/enterprise/`、`packages/console/`、`packages/function/`、`packages/containers/`、`packages/slack/`、`packages/zen/`、`packages/extensions/`、`packages/identity/` 等精简目录
+- **总冲突数**：329 个
+- **内容冲突**（双方都修改，29 个）：含 5 个高风险、9 个中风险、15 个低风险
+- **modify/delete 冲突**（~300 个）：覆盖 `.github/`、`packages/desktop/`、`script/`、`sdks/`、`specs/`、`packages/web/`、`packages/enterprise/`、`packages/console/`、`packages/function/`、`packages/containers/`、`packages/slack/`、`packages/zen/`、`packages/extensions/`、`packages/identity/` 等精简目录
 - **新增 package**（v1.15.x 引入）：`packages/cli/`、`packages/docs/`、`packages/effect-drizzle-sqlite/`、`packages/llm/`、`packages/http-recorder/`、`packages/stats/`
 - **删除的文件**（v1.15.x 上游删除）：`packages/opencode/src/cli/cmd/tui/util/sound.ts`、`packages/opencode/src/util/keybind.ts`、`packages/opencode/src/util/lock.ts`、`packages/opencode/src/util/scrap.ts`、`packages/opencode/src/util/network.ts`、`packages/opencode/src/util/abort.ts`、`packages/opencode/src/util/color.ts`、`packages/opencode/src/util/effect-zod.ts`、`packages/opencode/src/util/fn.ts`、`packages/opencode/src/util/named-schema-error.ts`、`packages/opencode/src/util/update-schema.ts`、`packages/opencode/src/server/adapter.{bun,node,ts}`、`packages/opencode/src/server/proxy.ts`、`packages/opencode/src/server/middleware.ts`、`packages/opencode/src/server/error.ts`、`packages/opencode/src/server/workspace.ts`、`packages/opencode/src/server/routes/instance/{config,event,experimental,file,index,mcp,middleware,permission,project,provider,pty,question,session,sync,trace,tui}.ts`
 
-**ellamaka 13 项定制的当前状态**（基于 `git log main --oneline -- <file>` 与 `git show main:<file>` 实地验证）：
+**13 项定制**：详见 `BRANDING.md` §0-§10。关键位置：`flag.ts`（WOPAL_SPACE）、`global.ts`（WOPAL_HOME）、`installation/index.ts`（channel 守卫/USER_AGENT/`.wopal/bin` 检测）、`config/config.ts`（wopal-space 注入点）、`skill/index.ts`（DISABLE_AGENTS_SKILLS/`.agents` 目录）、12 个 CLI cmd 文件（BINARY_NAME 字符串）、`logo.ts`（字模）、`ui.ts`（wordmark）、`error-component.tsx`（错误上报 URL）、`tips-view.tsx`（settings 路径提示）。
 
-| 定制项 | 位置 | 当前形态 |
-|--------|------|---------|
-| WOPAL_HOME 路径体系 | `packages/core/src/global.ts` | ellamaka 自有，`WOPAL_HOME` env 覆盖，路径在 `~/.wopal/` 下 |
-| `WOPAL_SPACE` flag | `packages/core/src/flag/flag.ts` | ellamaka 自有（commit `6877c14537`） |
-| `OPENCODE_DISABLE_AGENTS_SKILLS` | `packages/opencode/src/skill/index.ts` 运行时 | ellamaka 自有，commit `24f95f2040`，`flag.ts` 中无对应 flag（运行时读取） |
-| `BINARY_NAME`/`VERSION_PREFIX` 注入 | `packages/opencode/src/index.ts`、`packages/ellamaka/branding.ts` | ellamaka 自有，commit `c136da4b28`、`838973027d`、`64c4131002` |
-| `.wopal/bin` 路径检测 | `packages/opencode/src/installation/index.ts` | ellamaka 自有，commit `29e688bcbc`，line 175 |
-| channel 守卫 `startsWith("ellamaka")` | `installation/index.ts`（line 209, 270）、`cli/upgrade.ts`、`cli/cmd/upgrade.ts` | ellamaka 自有，commit `29e688bcbc` |
-| `USER_AGENT` 品牌化 | `packages/opencode/src/installation/index.ts` | ellamaka 自有，commit `29e688bcbc`（`${BINARY_NAME}/${InstallationChannel}/...`） |
-| wopal-space 配置加载 | `packages/opencode/src/config/wopal-space.ts`、`wopal-space-settings.ts`、`cli/cmd/tui/config/wopal-space.ts` | ellamaka 自有，commit `b6e72de64a`、`fb8b9030bb` |
-| 12 个 CLI cmd 文件的 BINARY_NAME 字符串 | `cli/cmd/{upgrade,uninstall,web,tui/thread,serve,run,tui/attach,pr,providers,mcp,error,debug/index}.ts` | ellamaka 自有，commit `64c4131002`、`29e688bcbc` |
-| TUI logo 字模 | `packages/opencode/src/cli/logo.ts` | ellamaka 自有，commit `29e688bcbc`、`9deafc82f`，数据为 "ELLA"+"MAKA" 块字符画 |
-| wordmark 注入 | `packages/opencode/src/cli/ui.ts` | ellamaka 自有，commit `29e688bcbc`，`import { wordmark } from "../../ellamaka/logo"` |
-| 错误上报 URL 品牌化 | `packages/opencode/src/cli/cmd/tui/component/error-component.tsx` | ellamaka 自有，commit `29e688bcbc`，URL `wopal-cn/ellamaka` |
-| tips 提示文案 | `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` | ellamaka 自有，commit `b40ffa0c94`（如有），`~/.wopal/config/settings.jsonc` 路径提示 |
+**自动合并验证**（dry-run 确认，以下文件 git 自动合并且 ellamaka 定制完整保留）：
+`index.ts`、`logo.ts`、`ui.ts`、`global.ts`、`log.ts`、`upgrade.ts`、`cli/cmd/upgrade.ts`、`mcp.ts`、`serve.ts`、`web.ts`、`tui/thread.ts`、`tui/attach.ts`、`pr.ts`、`uninstall.ts`、`tips-view.tsx`。这些文件无需手动解决冲突，仅需 Task Verify 时 grep 验证定制存在。
 
-**Plugin API 调研**（基于 `git diff 6e7c9eb82..74ce1a1edf -- packages/plugin/src/`）：
-
-- `ToolContext.ask`：`Effect.Effect<void>` → `Promise<void>`（`#28217`）
-- `ToolResult`：新增 `title` 字段和 `attachments: ToolAttachment[]` 数组
-- `Hooks`：新增 `dispose?: () => Promise<void>`
-- `AuthHook.success` 和 `{ key: string }` 结果：新增 `metadata?: Record<string, string>`
-- `TuiCommandApi`：标记 `@deprecated`，改用 `api.keymap.registerLayer` + `api.keymap.dispatchCommand`
-- `TuiKeybind/TuiKeybindMap/TuiKeybindSet`：标记 `@deprecated`，改用 `@opentui/keymap` 的 `Binding<Renderable, KeyEvent>`
-- `TuiConfigView.keybinds`：`TuiKeybindMap` → `TuiBindingLookupView`
-- `TuiHostSlotMap.home_prompt_right`：移除 `workspace_id` 字段
-- `TuiPluginApi` 新增 `attention: TuiAttention`、`keymap: TuiKeymap`、`mode: TuiModeApi`、`keys: TuiKeys`
-- `TuiState.session`：新增 `get(sessionID: string) => Session | undefined`
-- `TuiAttentionSoundName` 等音效相关类型新增
-
-**音效兼容原理核实**（基于 `git show 74ce1a1edf:packages/opencode/src/cli/cmd/tui/util/audio.ts`）：
-
-上游 v1.15.13 的音效系统**不是**沿用 ellamaka 之前的 `Bun.write()` 写出真实文件 + 外部播放器方式，而是采用：
-
-- `Audio.create()` 来自 `@opentui/core`（第三方库）
-- 加载音频用 `Bun.file(file).bytes()`（line 35-37），自动支持 bunfs 虚拟路径
-- 播放由 `@opentui/core` 内部处理（不调用 afplay/mpv 等外部播放器）
-
-这意味着：
-- ellamaka 之前在 `BRANDING.md §4.6.3` 中记录的 "Bun.file() 可以读取 bunfs 虚拟路径" 原则**确实被上游采用**，但**实现方式不同**（上游用内存加载到 `@opentui/core` Audio，ellamaka 是写出真实文件给外部播放器）
-- 迁移到 `TuiAttention` 后，bunfs 兼容问题**自动解决**，无需 ellamaka 手动处理
-- ellamaka `tui-ellamaka.tsx` 现有 `afplay` + 真实文件路径的独立实现（line 70-80）需在迁移到 `TuiAttention` 后**废弃**
-
-**参考资料**：
-- `projects/ellamaka/docs/BRANDING.md` — ellamaka 品牌化定制总览
-- `projects/ellamaka/docs/UPSTREAM-MERGE-LOG.md` — 历史上 5 次合并记录与策略
-- `projects/ellamaka/docs/DESIGN.md` — ellamaka 设计文档
+**参考资料**：`BRANDING.md`、`UPSTREAM-MERGE-LOG.md`、`DESIGN.md`。
 - `projects/ellamaka/docs/plans/done/20260507-chore-ellamaka-merge-upstream-opencode-v11439.md` — 上次合并 Plan（参考实施模式）
 
 ### Key Decisions
 
-- **D-01**：`WOPAL_SPACE` flag 保留 backward-compat getter 在 `flag.ts`，**不迁移**到 RuntimeFlags
-  - **理由**：`Flag.WOPAL_SPACE` 作为 `process.env.WOPAL_SPACE` 的同步 getter 在启动链中全程可用（yargs middleware → env var → config loading）。RuntimeFlags 是 Effect service layer，在 config 初始化时未就绪，迁移会导致时序断裂。本次合并不改动 WOPAL_SPACE 存储位置。
+- **D-01**：`WOPAL_SPACE` 从 `flag.ts` 移入 `RuntimeFlags`（`wopalSpace: bool("WOPAL_SPACE")`），`flag.ts` 中删除全部 WOPAL_SPACE 相关代码
+  - **理由**：v1.15.13 已将运行时 flag 统一迁入 RuntimeFlags。`loadInstanceState` 在 Effect 上下文中执行，可直接访问 RuntimeFlags service；`paths.ts` 的 `directories()` 在 wopal-space early-return 之后不会被调用，无需 WOPAL_SPACE guard。WOPAL_SPACE 集成到 `disableClaudeCodePrompt`/`disableClaudeCodeSkills`/`disableExternalSkills` 等关联 flag 使用 upstream 已有的 `Config.all()` + `||` 模式，最小侵入。
 
 - **D-02**：接受上游删除 `packages/opencode/src/cli/cmd/tui/util/sound.ts`
   - **理由**：上游音效系统迁移到 `cli/cmd/tui/util/audio.ts` + `cli/cmd/tui/attention.ts`，通过 `@opentui/core` 的 `Audio.create()` + `Bun.file().bytes()` 自动兼容 bunfs 虚拟路径；ellamaka 之前在 `BRANDING.md §4.6.3` 的"通过 Bun.write 写出真实文件给外部播放器"方案已被上游新方案替代（无需写出真实文件）；`tui-ellamaka.tsx` 现有独立 `afplay` 实现需在 Task 6 迁移到 TuiAttention 时废弃
@@ -140,63 +97,16 @@ ellamaka 当前共有 **13 项定制**（详见 `BRANDING.md` §0-§10 与 `AGEN
 
 ### Key Interfaces
 
-**`RuntimeFlags.Info` 扩展**（v1.15.x 上游接口 + ellamaka 扩展）：
-
-```ts
-// packages/core/src/effect/runtime-flags.ts（上游 v1.15.13）
-export const Info = Schema.Struct({
-  // ... 上游现有字段
-  disableAgentsSkills: Schema.Boolean,  // D-01：ellamaka 新增
-  wopalSpace: Schema.Boolean,            // D-01：ellamaka 新增
-})
-```
-
-**`TuiAttention` API**（上游 v1.15.13 plugin API）：
-
-```ts
-// packages/plugin/src/tui.ts（上游 v1.15.13）
-export interface TuiAttention {
-  notify(input: TuiAttentionNotifyInput): Promise<TuiAttentionNotifyResult>
-  soundboard: TuiAttentionSoundboard
-}
-```
-
-**`User-Agent` 派生函数**（上游 v1.15.13 installation/index.ts）：
-
-```ts
-// 上游已将 const USER_AGENT 改为函数
-export function userAgent(client = "cli") {
-  return `opencode/${InstallationChannel}/${InstallationVersion}/${client}`
-}
-// ellamaka 需将硬编码的 "opencode" 替换为 BINARY_NAME
-```
+- `TuiAttention.notify()`: 上游 v1.15.13 新增通知 API，`tui-ellamaka.tsx` 需迁移到此外废弃独立 afplay
+- `userAgent(client)`: 上游将 `USER_AGENT` 常量改为函数，ellamaka 需将 `opencode/` 替换为 `BINARY_NAME/`
 
 ## In Scope
 
-- 合并上游 tag `v1.15.13`（v1.14.39 `6e7c9eb82` → v1.15.13 `74ce1a1edf`）
-- 解决 **31 个内容冲突文件**（详见 Affected Files 表）
-- 自动清理 **326 个 modify/delete 冲突**（精简清单内的目录）
+- 合并上游 tag `v1.15.13`（`6e7c9eb82` → `385cb69441`）
+- 解决 **29 个内容冲突文件**（详见 Affected Files 表）
+- 自动清理 **~300 个 modify/delete 冲突**（精简清单内 `git rm`）
 - 扩展精简清单：`docs/BRANDING.md §0` 新增 `packages/stats/`
-- 迁移 `tui-ellamaka.tsx` 的 notification 实现到 `api.attention.notify`，废弃独立 afplay 音效
-- 适配 `cli/upgrade.ts` 的 `Bus.publish` → `GlobalBus.emit`
-- 适配 `installation/index.ts` 的 Service 化重构（`AppProcess` 替代 `ChildProcessSpawner`、`EventV2` + `GlobalBus` 替代 `Bus.publish`、`userAgent()` 函数化）
-- 适配 `config/config.ts` 的 Zod → Effect Schema 迁移（`serviceUse` 模式、`wellKnownRemoteConfig`）
-- 适配 `skill/index.ts` 的 Schema 迁移 + RuntimeFlags 接入
-- 适配 `db.ts` 的 RuntimeFlags 接入（`disableChannelDb`/`skipMigrations`）
-- 适配 `permission/index.ts` 的 `PermissionV2` 拆分（`@opencode-ai/core/permission`）
-- 适配 `tui/cmd/tui.ts`、`tui/config/tui.ts`（v1.15.x 新增结构）中的 wopal-space 注入
-- 适配 `config/tui.ts`（v1.15.x 新增结构）中的 `tryLoadWopalSpaceTuiConfig`
-- Plugin API 同步改造：
-  - 审查 `wopal-plugin` 中 `ToolContext.ask` 调用并适配 Promise 化
-  - 审查 `tui-ellamaka.tsx` 中 `home_prompt_right` slot 使用（已确认不使用 `workspace_id`）
-- 13 项 ellamaka 定制全部保留（详见 Research Findings 表格）
-- TDD 测试覆盖关键行为：
-  - RuntimeFlags 接入（`disableAgentsSkills`、`wopalSpace`、`disableChannelDb`、`skipMigrations`）
-  - channel 守卫（`InstallationChannel.startsWith("ellamaka")`）
-  - USER_AGENT 品牌化（`ellamaka/<channel>/<version>/<client>`）
-  - WOPAL_HOME 路径解析
-  - TuiAttention notification 迁移后功能
-- typecheck + test 验证
+- 迁移 `tui-ellamaka.tsx` notification 到 `api.attention.notify`
 - 更新 `docs/UPSTREAM-MERGE-LOG.md` 新增 v1.15.13 条目
 - 更新 `docs/BRANDING.md`：
   - §0 精简清单加入 `packages/stats/`
@@ -222,43 +132,40 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ## Affected Files
 
-### 内容冲突文件（31 个，需手动解决）
+### 内容冲突（29 个，需手动解决）
 
-| Component | Files | Operation | ellamaka 定制 | 上游 v1.15.x 变更 | Risk |
-|-----------|-------|-----------|--------------|-------------------|------|
-| Installation | `packages/opencode/src/installation/index.ts` | 修改 | channel 守卫（line 209, 270）、`.wopal/bin` 检测（line 175）、`USER_AGENT = BINARY_NAME/...` | 全面重写：Service 化、`AppProcess`、`EventV2` + `GlobalBus`、`userAgent()` 函数化（235+/232-） | **高** |
-| Config | `packages/opencode/src/config/config.ts` | 修改 | `tryLoadWopalSpaceConfig` 注入点、WOPAL_HOME、wopal-space 配置加载链 | Zod→Effect Schema、`serviceUse`、`wellKnownRemoteConfig`、`ConfigAttachment`/`ConfigReference`（164+/64-） | **高** |
-| Skill | `packages/opencode/src/skill/index.ts` | 修改 | `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫（commit `24f95f2040`）、`.agents` 独立技能目录、确定性 skill 加载 | Zod→Effect Schema、`RuntimeFlags` 接入、CUSTOMIZE_OPENCODE_SKILL 内置（92+/36-） | **高** |
-| CLI run | `packages/opencode/src/cli/cmd/run.ts` | 修改 | `BINARY_NAME` 字符串替换 | 大幅重构：demo、footer、keymap、prompt、runtime、scrollback、splash、stream、subagent、theme、tool、trace、types、variant、permission、question、entry.body、session-replay、session-data、session.shared（512+/308-） | **高** |
-| Session LLM | `packages/opencode/src/session/llm.ts` | 修改 | 1 处小改（plugin systemMetadata hook 增强） | session/llm 重构为 ai-sdk + native-runtime + request + native-request（165+/244-） | **高** |
-| Flag | `packages/core/src/flag/flag.ts` | 修改 | `WOPAL_SPACE` flag | 清理 20+ flag 迁出到 RuntimeFlags（9+/54-） | **中** |
-| CLI entry | `packages/opencode/src/index.ts` | 修改 | `BINARY_NAME`/`VERSION_PREFIX` 注入、wopal-space 检测、yargs `.scriptName(BINARY_NAME)` | 错误处理逻辑重排（11+/7-） | **中** |
-| Upgrade guard | `packages/opencode/src/cli/upgrade.ts` | 修改 | channel 守卫（`startsWith("ellamaka")`） | `Bus.publish` → `GlobalBus.emit`、`Installation.Event` 改 `EventV2`（24+/4-） | **中** |
-| Permission | `packages/opencode/src/permission/index.ts` | 修改 | 权限合并 | `PermissionV2` 拆分（`@opencode-ai/core/permission`）、location-based permission 引入（40+/52-） | **中** |
-| CLI error | `packages/opencode/src/cli/error.ts` | 修改 | 3 处 BINARY_NAME 字符串替换 | 错误格式化逻辑扩展（65+/36-） | **中** |
-| CLI logo | `packages/opencode/src/cli/logo.ts` | 修改 | ellamaka 定制字模（"ELLA"+"MAKA"） | 上游未变（v1.15.13 保留原 opencode 字模） | **中** |
-| CLI network | `packages/opencode/src/cli/network.ts` | 修改 | 1 处 BINARY_NAME 改动 | 4 行变更 | **中** |
-| CLI providers | `packages/opencode/src/cli/cmd/providers.ts` | 修改 | BINARY_NAME 字符串 | 5 行变更 | **中** |
-| CLI debug | `packages/opencode/src/cli/cmd/debug/index.ts` | 修改 | BINARY_NAME 字符串 | 2 行变更 | **中** |
-| CLI tui（新增） | `packages/opencode/src/cli/cmd/tui.ts` | 自动接受上游新增 | ellamaka 不存在 | 上游 v1.15.x 新增（commit `f8588a959f`、`106f8e94d6`）——`tui` 拆包入口 | **中** |
-| Config tui（新增） | `packages/opencode/src/config/tui.ts` | 自动接受上游新增 | ellamaka 不存在 | 上游 v1.15.x 新增——tui config 加载新结构 | **中** |
-| Tests | `packages/opencode/test/config/config.test.ts` | 修改 | ellamaka 配置行为测试 | 1412+/1917-（Zod→Effect Schema 测试同步） | 中 |
-| Tests | `packages/opencode/test/config/tui.test.ts` | 修改 | TUI 配置测试 | 819+/610- | 中 |
-| Tests | `packages/opencode/test/session/prompt.test.ts` | 修改 | session prompt 测试 | 1662+/1378- | 中 |
-| Tests | `packages/opencode/test/skill/skill.test.ts` | 修改 | 技能测试 | 187 行变更 | 低 |
-| Tests | `packages/opencode/test/plugin/trigger.test.ts` | 修改 | plugin trigger 测试 | 31 行变更 | 低 |
-| CLI tui（新增） | `packages/opencode/src/cli/cmd/tui/app.tsx` | modify/delete | ellamaka 当前 TUI 入口 | 上游删除（重构为 `cli/cmd/tui.ts`） | 中 |
-| CLI tui（删除） | `packages/opencode/src/cli/cmd/tui/util/sound.ts` | modify/delete | ellamaka 自有 sound.ts | 上游删除（迁移到 `attention.ts`） | 中 |
-| CLI tui（删除） | `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` | modify/delete | ellamaka 自有提示文案 | 上游删除 | 中 |
-| bun.lock | `bun.lock` | 修改 | ellamaka 自有依赖 | 上游依赖升级（508+/580-） | 低 |
-| package.json | `package.json`、`packages/core/package.json`、`packages/opencode/package.json` | 修改 | 依赖引用 | 上游版本升级 | 低 |
-| turbo.json | `turbo.json` | 修改 | turbo 配置 | 4 行变更 | 低 |
-| AGENTS | `AGENTS.md`、`packages/opencode/AGENTS.md` | 修改 | ellamaka 规范 | 上游规范演进 | 低 |
-| README | `README.md` | 修改 | ellamaka README | 6 行变更 | 低 |
-| 元数据 | `.github/TEAM_MEMBERS` | 修改 | ellamaka 团队成员 | 2 行变更 | 低 |
-| 新增 | `packages/tui/src/component/error-component.tsx`、`packages/tui/src/theme/index.ts` | 自动接受上游新增 | ellamaka 不存在 | 上游 v1.15.x 提取 `tui` 包时新增 | 低 |
+| File | Task | Risk | Note |
+|------|------|------|------|
+| `packages/opencode/src/installation/index.ts` | T3 | **高** | 4 块冲突：USER_AGENT、`.wopal/bin`、channel 守卫×2 |
+| `packages/opencode/src/config/config.ts` | T4 | **高** | 3 块冲突：wopal-space 注入点位置迁移 |
+| `packages/opencode/src/skill/index.ts` | T4 | **高** | 2 块冲突：`.agents` 守卫改为 `disableAgentsSkills` 参数 |
+| `packages/opencode/src/effect/runtime-flags.ts` | T2 | **中** | v1.15.13 新文件，事后追加 `disableAgentsSkills` 字段 |
+| `packages/opencode/src/cli/cmd/run.ts` | T5 | **高** | 1 块冲突（imports），其余自动合并 BINARY_NAME 完整 |
+| `packages/opencode/src/session/llm.ts` | T5 | **高** | 1 块冲突：plugin systemMetadata hook |
+| `packages/core/src/flag/flag.ts` | T2 | **中** | 2 块冲突：WOPAL_SPACE getter 保留 |
+| `packages/opencode/src/cli/upgrade.ts` | T3 | **中** | channel 守卫 + GlobalBus.emit 适配 |
+| `packages/opencode/src/permission/index.ts` | T4 | **中** | PermissionV2 拆分 |
+| `packages/opencode/src/cli/error.ts` | T5 | **中** | 3 处 BINARY_NAME |
+| `packages/opencode/src/cli/network.ts` | T5 | **中** | 1 处 BINARY_NAME |
+| `packages/opencode/src/cli/cmd/providers.ts` | T5 | **中** | BINARY_NAME |
+| `packages/opencode/src/cli/cmd/debug/index.ts` | T5 | **中** | BINARY_NAME |
+| `packages/opencode/src/cli/cmd/tui/app.tsx` | T5 | **中** | modify/delete，保留 ellamaka HEAD |
+| `packages/opencode/src/cli/cmd/tui/component/error-component.tsx` | T5 | **中** | BINARY_NAME + 错误上报 URL |
+| `packages/opencode/src/cli/cmd/tui/config/tui.ts` | T5 | **中** | wopal-space 注入 |
+| `packages/opencode/src/cli/cmd/tui/util/sound.ts` | T7 | **低** | modify/delete，接受上游删除 |
+| 5× test files (`config.test`, `tui.test`, `prompt.test`, `skill.test`, `trigger.test`) | T7 | **低** | 接受上游版本 |
+| `bun.lock` | T7 | **低** | 依赖同步 |
+| `package.json` + `packages/core/package.json` + `packages/opencode/package.json` | T7 | **低** | 版本同步 |
+| `turbo.json` | T7 | **低** | 配置同步 |
+| `AGENTS.md` + `packages/opencode/AGENTS.md` | T7 | **低** | 规范同步 |
+| `README.md` | T7 | **低** | 接受上游 |
+| `.github/TEAM_MEMBERS` | T7 | **低** | 保留 ellamaka |
 
-### modify/delete 冲突（326 个，自动 git rm）
+### 自动合并验证清单（无需手动解决，Task 5 内 grep 验证定制存在）
+
+`index.ts`、`logo.ts`、`ui.ts`、`global.ts`、`log.ts`、`cli/cmd/upgrade.ts`、`mcp.ts`、`serve.ts`、`web.ts`、`tui/thread.ts`、`tui/attach.ts`、`pr.ts`、`uninstall.ts`、`tips-view.tsx`
+
+### modify/delete 冲突（~300 个，自动 `git rm`）
 
 按 `docs/BRANDING.md §0` 精简清单 + 扩展 `packages/stats/`：
 - `.github/CODEOWNERS`、`ISSUE_TEMPLATE/`、`actions/`、`workflows/`（除 `publish-ellamaka.yml`）
@@ -391,10 +298,11 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ### Agent Verification
 
-1. [ ] 实际内容冲突文件数 ≤ 35（差异已记录）
-2. [ ] 全部 31 个内容冲突文件无 conflict marker（`rg -c '^<<<<<<<\|^=======$\|^>>>>>>>$' packages/opencode/src packages/core/src` 返回 0）
-3. [ ] 326 个 modify/delete 冲突全部按精简清单自动 `git rm`（`rg -c 'opencode-sfx\|opencode-sound\|packages/stats' packages/` 返回 0）
-4. [ ] `flag.ts` 保留 `WOPAL_SPACE` backward-compat getter（`rg -c 'WOPAL_SPACE' packages/core/src/flag/flag.ts` ≥ 1）
+1. [ ] 实际内容冲突文件数 ≤ 30（29 已记录）
+2. [ ] 全部 29 个内容冲突文件无 conflict marker（`rg -c '^<<<<<<<\|^=======$\|^>>>>>>>$' packages/opencode/src packages/core/src` 返回 0）
+3. [ ] ~300 个 modify/delete 冲突全部按精简清单自动 `git rm`（`rg -c 'opencode-sfx\|opencode-sound\|packages/stats' packages/` 返回 0）
+4. [ ] `flag.ts` 已完全清理：无 `WOPAL_SPACE` getter，无 WOPAL_SPACE 集成残留（`rg 'WOPAL_SPACE' packages/core/src/flag/flag.ts` 返回空）
+5. [ ] `RuntimeFlags` 含 `wopalSpace` + `disableAgentsSkills` 字段，且 WOPAL_SPACE 已集成到 `disableClaudeCodePrompt`/`disableClaudeCodeSkills`/`disableExternalSkills`（`rg -c 'wopalSpace' packages/opencode/src/effect/runtime-flags.ts` ≥ 4）
 5. [ ] `InstallationChannel.startsWith("ellamaka")` 守卫仍存在于 `installation/index.ts`、`cli/upgrade.ts`、`cli/cmd/upgrade.ts`（`rg -c 'startsWith."ellamaka"' packages/opencode/src/installation/index.ts packages/opencode/src/cli/upgrade.ts packages/opencode/src/cli/cmd/upgrade.ts` ≥ 3）
 6. [ ] `USER_AGENT` 派生包含 `BINARY_NAME`（`rg -c 'BINARY_NAME' packages/opencode/src/installation/index.ts` ≥ 1）
 7. [ ] `tui-ellamaka.tsx` 包含 `api.attention.notify` 调用（`rg -c 'attention\.notify' .wopal/plugins/tui-ellamaka.tsx` ≥ 1）
@@ -459,7 +367,7 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 **Verification Intent**: AC#1, AC#2, AC#3, AC#17
 
-**Behavior**: 工作树处于合并状态，31 个内容冲突文件已识别，326 个 modify/delete 冲突已记录
+**Behavior**: 工作树处于合并状态，29 个内容冲突文件已识别，~300 个 modify/delete 冲突已记录
 
 **Files**: 全部（checkpoint — 全局预演任务，非文件级变更）
 
@@ -472,7 +380,7 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 2. 执行 `git merge v1.15.13 --no-commit --no-ff` 预演合并（**锁定 tag，非 upstream/dev**）
  3. **验证版本**：`grep '"version"' packages/opencode/package.json` 确认输出 `"1.15.13"`
 3. 提取所有冲突文件列表，按"内容冲突 / modify/delete / auto-merged"分类
-4. 对比方案预期（31 + 326），记录差异
+4. 对比方案预期（29 + ~300），记录差异
 5. 自动 `git rm` 精简清单内所有 modify/delete 冲突文件
 6. 扩展 `DELETED_PREFIXES` 包含 `packages/stats/`
 7. 验证 `.worktrees/ellamaka-chore-ellamaka-merge-upstream-opencode-v11513/` 路径存在
@@ -499,39 +407,42 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ---
 
-### Task 2: 解决 core 层冲突（flag.ts + global.ts）
+### Task 2: core 层：flag.ts 冲突 + RuntimeFlags 扩展
 
-**Verification Intent**: AC#2, AC#3
+**Verification Intent**: AC#2, AC#5
 
-**Behavior**: `flag.ts` 保留 `WOPAL_SPACE` backward-compat getter；`global.ts` 的 `repos` 路径追加保留 ellamaka 现有 `WOPAL_HOME` 路径系统
+**Behavior**: `flag.ts` 接受 v1.15.13 版本，**不添加**任何 ellamaka 定制；`RuntimeFlags` 新增 `wopalSpace` 和 `disableAgentsSkills`，并集成 WOPAL_SPACE 到关联 flag。
 
-**Files**: 
-- `packages/core/src/flag/flag.ts`
-- `packages/core/src/global.ts`
+**清理原则**：v1.15.13 已将运行时 flag 统一迁入 RuntimeFlags。`WOPAL_SPACE` 不再存在于 `flag.ts`。`loadInstanceState` 在 Effect 上下文执行，可直接通过 RuntimeFlags service 访问 `flags.wopalSpace`。
 
-**Pre-read**:
-- `docs/BRANDING.md §2` 核心品牌常量
+**Files**:
+- `packages/core/src/flag/flag.ts`（内容冲突，接受上游版本）
+- `packages/opencode/src/effect/runtime-flags.ts`（新文件，事后修改）
+- `packages/core/src/global.ts`（自动合并，grep 验证）
 
 **Design**:
-- `flag.ts`：保留 ellamaka 添加的 `WOPAL_SPACE` backward-compat getter（`get WOPAL_SPACE() { return truthy("WOPAL_SPACE") }`），接受上游其他 flag 变更
-- `global.ts`：接受上游版本，保留 ellamaka 已有 WOPAL_HOME 路径系统（`WOPAL_HOME` env → `~/.wopal/` 默认值 + `repos` 路径追加）
-- **不迁移** WOPAL_SPACE 到 RuntimeFlags（D-01）
+- `flag.ts`：接受 v1.15.13 版本（无 ellamaka 定制）
+- `runtime-flags.ts`：追加 2 个新字段，修改 3 个现有字段集成 WOPAL_SPACE（沿用 upstream `Config.all` + `||` 模式）：
+  ```ts
+  wopalSpace: bool("WOPAL_SPACE"),
+  disableAgentsSkills: bool("OPENCODE_DISABLE_AGENTS_SKILLS"),
+  // 修改现有字段，追加 wopal 分支：
+  disableClaudeCodePrompt: Config.all({
+    broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
+    direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"),
+    wopal: bool("WOPAL_SPACE"),  // ← 新增
+  }).pipe(Config.map((f) => f.broad || f.direct || f.wopal)),
+  // disableClaudeCodeSkills, disableExternalSkills 同理
+  ```
 
 **TDD**: true
 
-**Changes**:
-1. **RED**：编写 `test/core/flag.test.ts` 测试 `Flag.WOPAL_SPACE` getter 存在且工作
-2. **GREEN**：接受 `flag.ts` 上游版本，手动保留 `WOPAL_SPACE` getter（1 个 getter，~5 行）
-3. **GREEN**：接受 `global.ts` 上游版本，手动保留 WOPAL_HOME 路径系统（~15 行）
-4. **REFACTOR**：验证 `Flag.WOPAL_SPACE` 在 `wopal-space.ts:74`、`config.ts`、`paths.ts`、`skill/index.ts` 中正常工作
-
 **Verify**:
-- `bun test packages/core/test/effect/runtime-flags.test.ts --timeout 30000` 通过
-- `rg -c 'WOPAL_SPACE' packages/core/src/flag/flag.ts` ≥ 1
-- `rg -c 'repos' packages/core/src/global.ts` ≥ 1
-
-**Done**:
-任务产出：`flag.ts` 保留 `WOPAL_SPACE` getter，`global.ts` 保留 WOPAL_HOME 路径系统
+- `rg 'WOPAL_SPACE' packages/core/src/flag/flag.ts` 返回空（flag.ts 完全清理）
+- `rg -c 'wopalSpace' packages/opencode/src/effect/runtime-flags.ts` ≥ 4（定义 + 3 处集成）
+- `rg -c 'disableAgentsSkills' packages/opencode/src/effect/runtime-flags.ts` ≥ 1
+- `rg -c 'WOPAL_HOME' packages/core/src/global.ts` ≥ 1（路径体系保留）
+- `rg -c 'loadEnvFile' packages/core/src/global.ts` ≥ 1（.env 加载保留）
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
@@ -612,34 +523,48 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 - `@opencode-ai/core/permission`（v1.15.13 拆分）
 
 **Design**:
-- `config/config.ts`（高风险，Wopal 亲自）：
-  - 接受上游版本（Zod→Effect Schema 已迁移）
-  - 验证 `tryLoadWopalSpaceConfig` 注入点仍存在并在新 Schema 模式下工作
-  - 检查 ellamaka 的 `wopal-space.ts` import 路径适配（barrels 移除后）
-- `skill/index.ts`（高风险，Wopal 亲自）：
-  - 接受上游版本（Zod→Effect Schema 已迁移）
-  - 将运行时 `Flag.OPENCODE_DISABLE_AGENTS_SKILLS` 读取改为 `RuntimeFlags.Service.useSync((f) => f.disableAgentsSkills)`
-  - 保留 ellamaka 的 `.agents` 独立技能目录扫描逻辑
-  - 保留确定性 skill 加载顺序
-- `permission/index.ts`（中风险，可委派）：
-  - 接受上游版本（`PermissionV2` 已拆分到 `@opencode-ai/core/permission`）
-  - 验证 location-based permission 不破坏 ellamaka 权限合并逻辑
+基于 v1.15.13 实测架构
+- `config/config.ts`：v1.15.13 版本在 `loadGlobal` merge（line ~599）后加载 OPENCODE_CONFIG。wopal-space 注入点放在此 merge 之后、OPENCODE_CONFIG 之前：
+  ```ts
+  yield* merge(Global.Path.config, global, "global")  // line ~599
+  // ⬇️ wopal-space 注入点
+  if (Flag.WOPAL_SPACE && ctx.worktree) {
+    const wopalResult = yield* tryLoadWopalSpaceConfig(...)
+    if (wopalResult) return wopalResult
+  }
+  ```
+  额外两处非冲突区修改（自动合并，事后追加）：
+  1. **`loadGlobal`**：v1.15.13 读 `config.json`/`opencode.json`/`opencode.jsonc` + TOML legacy → 替换为 `loadSettingsFile(globalConfigFile())` 读 `settings.jsonc`；删除 `$schema` seed 和 TOML 块
+  2. **for-loop 迭代目录**（`loadInstanceState` 中）：v1.15.13 对所有目录做 npm install + 能力扫描 → 添加 `if (dir === Global.Path.config) continue`，`WOPAL_HOME/config/` 是纯配置目录，不装插件不扫描能力
+- `skill/index.ts`：v1.15.13 `discoverSkills` 签名：
+  ```ts
+  function*(config, discovery, fsys, global,
+    disableExternalSkills: boolean,   // ← RuntimeFlags 传入
+    disableClaudeCodeSkills: boolean, // ← RuntimeFlags 传入
+    directory, worktree)
+  ```
+  需新增 `disableAgentsSkills: boolean` 参数（由 Task 2 中 RuntimeFlags 提供），并在 `.agents` push 处加 guard。调用方 line ~262 需传入 `flags.disableAgentsSkills`。WOPAL_SPACE 守卫（跳过 `.claude/` `.agents/` 扫描）使用 `Flag.WOPAL_SPACE` 在外层控制 `disableExternalSkills=true`。
+- `permission/index.ts`：接受 v1.15.13 `PermissionV2` 结构，验证不破坏 ellamaka 权限合并
 
 **TDD**: true
 
 **Changes**:
 1. **RED**：编写 `test/skill/discovery.test.ts` 测试 `disableAgentsSkills=true/false` 下技能目录扫描
 2. **RED**：编写 `test/permission/next.test.ts` 测试权限合并
-3. **GREEN**：接受 `config.ts` 上游版本
-4. **GREEN**：接受 `skill/index.ts` 上游版本，替换 `Flag` 读取为 `RuntimeFlags` 读取
-5. **GREEN**：接受 `permission/index.ts` 上游版本
-6. **REFACTOR**：将 `tryLoadWopalSpaceConfig` 与上游 `loadConfig` 适配
+3. **GREEN**：解决 `config.ts` 冲突——wopal-space early return + `tryLoadWopalSpaceConfig` import
+4. **GREEN**：`config.ts` 非冲突区修改：`loadGlobal` 替换为 `loadSettingsFile(globalConfigFile())`，删除 TOML legacy 和 `$schema` seed
+5. **GREEN**：`config.ts` 非冲突区修改：for-loop 中添加 `if (dir === Global.Path.config) continue`
+6. **GREEN**：解决 `skill/index.ts` 冲突——新增 `disableAgentsSkills` 参数 + 调用方传入
+7. **GREEN**：解决 `permission/index.ts` 冲突——保留权限合并
 
 **Verify**:
 - `bun test packages/opencode/test/skill/discovery.test.ts packages/opencode/test/permission/next.test.ts --timeout 30000` 全部通过
 - `rg -c 'tryLoadWopalSpaceConfig' packages/opencode/src/config/config.ts` ≥ 1
+- `rg -c 'globalConfigFile' packages/opencode/src/config/config.ts` ≥ 1
+- `rg -c 'settings\.jsonc' packages/opencode/src/config/config.ts` ≥ 1
+- `rg 'config\.json.*opencode\.json|toml.*legacy' packages/opencode/src/config/config.ts` 返回空（已清理）
+- `rg -c 'Global\.Path\.config.*continue' packages/opencode/src/config/config.ts` ≥ 1
 - `rg -c 'disableAgentsSkills' packages/opencode/src/skill/index.ts` ≥ 1
-- `rg -c '.agents' packages/opencode/src/skill/index.ts` ≥ 1（独立技能目录）
 - `rg -c 'RuntimeFlags' packages/opencode/src/skill/index.ts` ≥ 1
 
 **Done**:
@@ -648,74 +573,46 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ---
 
-### Task 5: 解决 CLI / TUI 冲突
+### Task 5: 解决 CLI / TUI / Session 冲突
 
-**Verification Intent**: AC#7（部分））
+**Verification Intent**: AC#6, AC#7, AC#8
 
-**Behavior**: 12 个 CLI cmd 文件的 BINARY_NAME 字符串保留；`index.ts` 的 BINARY_NAME/VERSION_PREFIX 注入和 wopal-space 检测保留；`logo.ts` 自有字模保留；`error-component.tsx` 错误上报 URL 品牌化保留；`tui.ts`、`config/tui.ts` 上游新增结构中适配 wopal-space 注入；`session/llm.ts` 的 plugin systemMetadata hook 增强保留
-
-**Files**:
-- `packages/opencode/src/index.ts`
-- `packages/opencode/src/cli/logo.ts`
-- `packages/opencode/src/cli/ui.ts`
-- `packages/opencode/src/cli/error.ts`
-- `packages/opencode/src/cli/network.ts`
-- `packages/opencode/src/cli/cmd/{debug/index,providers,run,upgrade,uninstall,web,tui/thread,serve,tui/attach,pr,mcp}.ts`
-- `packages/opencode/src/cli/cmd/tui.ts`（v1.15.13 新增，wopal-space 注入）
-- `packages/opencode/src/config/tui.ts`（v1.15.13 新增，wopal-space 注入）
-- `packages/opencode/src/cli/cmd/tui/component/error-component.tsx`
-- `packages/opencode/src/cli/cmd/tui/config/tui.ts`
-- `packages/opencode/src/cli/cmd/tui/plugin/runtime.ts`
-- `packages/opencode/src/session/llm.ts`
-- `packages/opencode/src/cli/cmd/tui/app.tsx`（modify/delete）
-
-**Pre-read**:
-- `packages/ellamaka/branding.ts`（5 个常量）
-- `packages/ellamaka/logo.ts`（wordmark 数据）
-- `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`（ellamaka 自有）
-- `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx`（ellamaka 自有，modify/delete）
+**Behavior**: 解法冲突文件，保留 BINARY_NAME 字符串和 ellamaka 品牌注入；grep 验证自动合并文件的定制完整。
 
 **Design**:
-- `index.ts`：接受上游版本（错误处理重排），保留 `import { BINARY_NAME, VERSION_PREFIX } from "../../ellamaka/branding"`，适配 `.version(\`${VERSION_PREFIX}/${InstallationVersion}\`)` 和 `.scriptName(BINARY_NAME)` 在重排后位置
-- `logo.ts`：接受上游版本但**保留 ellamaka 字模**（手动编辑字模数据）
-- `ui.ts`：接受上游版本，保留 `import { wordmark } from "../../ellamaka/logo"`，适配 wordmark 在新 UI 函数中的位置
-- 12 个 CLI cmd 文件：分别接受上游版本，**保留 BINARY_NAME 字符串替换**（手动编辑每个文件）
-- `error.ts`：接受上游版本，保留 3 处 BINARY_NAME 字符串替换
-- `tui.ts`（新增）：在 v1.15.13 新结构中重新植入 ellamaka 现有 `tryLoadWopalSpaceTuiConfig` 注入点
-- `config/tui.ts`（新增）：在 v1.15.13 新结构中重新植入 wopal-space 配置加载
-- `error-component.tsx`：在 v1.15.13 新结构中重新植入 `BINARY_NAME` import + `wopal-cn/ellamaka` 错误上报 URL
-- `tui/config/tui.ts` 和 `tui/plugin/runtime.ts`：在 v1.15.13 新结构中适配 wopal-space 注入
-- `session/llm.ts`：接受上游版本（session/llm 重构为 ai-sdk + native-runtime + request），保留 1 处 plugin systemMetadata hook 增强
+9 个冲突文件逐一接受 v1.15.13 版本，保留 ellamaka 字符串差异。15 个自动合并文件 grep 验证即可。
+
+**冲突文件**（7 个内容冲突 + 1 个 mod/del）：
+- `cli/error.ts`：接受上游版本，保留 3 处 BINARY_NAME 
+- `cli/network.ts`：接受上游版本，保留 1 处 BINARY_NAME
+- `cli/cmd/run.ts`：接受上游版本，解决 imports 冲突块（BINARY_NAME 已自动保留）
+- `cli/cmd/providers.ts`：接受上游版本，保留 BINARY_NAME
+- `cli/cmd/debug/index.ts`：接受上游版本，保留 BINARY_NAME
+- `cli/cmd/tui/component/error-component.tsx`：接受上游版本，保留 `BINARY_NAME` + `wopal-cn/ellamaka` 错误上报 URL
+- `cli/cmd/tui/config/tui.ts`：接受上游版本，保留 wopal-space 注入
+- `session/llm.ts`：接受上游版本，保留 plugin systemMetadata hook
+- `cli/cmd/tui/app.tsx`（mod/del）：**保留 ellamaka HEAD 版本**
+
+**自动合并验证**（grep 确认，无需编辑）：
+`index.ts`、`logo.ts`、`ui.ts`、`cli/cmd/{upgrade,uninstall,web,tui/thread,serve,tui/attach,pr,mcp}.ts` — BINARY_NAME/ellamaka 字符串存在
 
 **TDD**: true
 
 **Changes**:
-1. **RED**：编写 `test/cli/help/help-snapshots.test.ts` 确保 CLI help 不含 "opencode" 字样
-2. **RED**：编写 `test/cli/error.test.ts` 测试 MCP 错误、model 错误信息含 BINARY_NAME
-3. **GREEN**：接受 `index.ts` 上游版本，保留 BINARY_NAME/VERSION_PREFIX 注入
-4. **GREEN**：接受 `logo.ts` 上游版本，**手动替换字模数据为 ellamaka 版本**
-5. **GREEN**：接受 `ui.ts` 上游版本，保留 wordmark 注入
-6. **GREEN**：接受 12 个 CLI cmd 文件上游版本，**每个文件保留 BINARY_NAME 字符串替换**
-7. **GREEN**：接受 `error.ts` 上游版本，保留 3 处 BINARY_NAME 字符串
-8. **GREEN**：接受 `tui.ts` 新增版本，植入 wopal-space TUI 配置加载
-9. **GREEN**：接受 `config/tui.ts` 新增版本，植入 wopal-space 注入
-10. **GREEN**：接受 `error-component.tsx` 新增版本，植入 BINARY_NAME 和错误上报 URL
-11. **REFACTOR**：抽取 `binaryNameOrFallback()` 辅助函数
-12. **GREEN**：接受 `session/llm.ts` 上游版本，保留 plugin systemMetadata hook 增强（1 行改动）
+1. **RED**：编写 `test/cli/help/help-snapshots.test.ts` 确保 CLI help 不含 "opencode"
+2. **GREEN**：逐一解决 9 个冲突文件（接受 v1.15.13，保留 ellamaka 字符串差异）
+3. **VERIFY**：grep 自动合并文件确认 BINARY_NAME/ellamaka 定制存在
 
 **Verify**:
-- `bun test packages/opencode/test/cli/help/help-snapshots.test.ts packages/opencode/test/cli/error.test.ts --timeout 30000` 全部通过
-- `rg -c 'BINARY_NAME' packages/opencode/src/index.ts` ≥ 1
-- `rg -c 'VERSION_PREFIX' packages/opencode/src/index.ts` ≥ 1
-- `rg -c 'BINARY_NAME' packages/opencode/src/cli/cmd/{upgrade,uninstall,web,tui/thread,serve,run,tui/attach,pr,providers,mcp,debug/index}.ts` 总和 ≥ 12
+- `bun test packages/opencode/test/cli/help/help-snapshots.test.ts --timeout 30000` 通过
 - `rg -c 'BINARY_NAME' packages/opencode/src/cli/error.ts` ≥ 3
-- `rg -c 'ellamaka' packages/opencode/src/cli/logo.ts` ≥ 1（字模数据）
+- `rg -c 'BINARY_NAME' packages/opencode/src/cli/network.ts` ≥ 1
+- `rg -c 'BINARY_NAME' packages/opencode/src/cli/cmd/{upgrade,uninstall,web,tui/thread,serve,run,tui/attach,pr,providers,mcp,debug/index}.ts` 总和 ≥ 12
 - `rg -c 'wopal-cn/ellamaka' packages/opencode/src/cli/cmd/tui/component/error-component.tsx` ≥ 1
-- `rg -c 'tryLoadWopalSpaceTuiConfig\|wopal-space' packages/opencode/src/cli/cmd/tui.ts packages/opencode/src/config/tui.ts` ≥ 2
-- `rg -c 'systemMetadata\|plugin.*hook' packages/opencode/src/session/llm.ts` ≥ 1
+- `rg -c 'systemMetadata' packages/opencode/src/session/llm.ts` ≥ 1
+- 自动合并文件 grep 验证通过（参考 Auto-merge Verification Checklist）
 
 **Done**:
-任务产出：12 个 CLI cmd 文件 + index.ts + logo.ts + ui.ts + error.ts + tui.ts + config/tui.ts + error-component.tsx 全部解决，13 项 ellamaka 定制全部保留
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
@@ -768,53 +665,27 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ---
 
-### Task 7: 接受 12 个低风险冲突文件
+### Task 7: 接受低风险冲突文件
 
 **Verification Intent**: AC#1, AC#2
 
-**Behavior**: 测试文件、配置文件、AGENTS.md、README.md 接受上游版本，ellamaka 已有演进被吸收
-
-**Files**:
-- `bun.lock`、`package.json`、`packages/core/package.json`、`packages/opencode/package.json`
-- `turbo.json`、`.github/TEAM_MEMBERS`
-- `AGENTS.md`、`packages/opencode/AGENTS.md`、`README.md`
-- `packages/opencode/test/config/config.test.ts`、`packages/opencode/test/config/tui.test.ts`、`packages/opencode/test/session/prompt.test.ts`、`packages/opencode/test/skill/skill.test.ts`、`packages/opencode/test/plugin/trigger.test.ts`
-- `packages/tui/src/component/error-component.tsx`、`packages/tui/src/theme/index.ts`（v1.15.13 新增，自动接受）
-- `packages/opencode/src/cli/cmd/tui/app.tsx`
-- `packages/opencode/src/cli/cmd/tui/util/sound.ts`
-- `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx`
-
-**Pre-read**:
-- 上次合并 Plan `20260507-chore-ellamaka-merge-upstream-opencode-v11439.md` 了解 ellamaka 哪些测试已演进
+**Behavior**: 剩余 14 个低风险内容冲突 + mod/del 文件，接受上游版本。
 
 **Design**:
-- `bun.lock`：接受上游版本（如 ellamaka 引入 `WOPAL_SPACE` 相关的 `process.env` 读取可保留）
-- `package.json`：接受上游版本
-- 测试文件：接受上游版本（Zod→Effect Schema 测试同步），验证 ellamaka 关键行为测试不丢失
-- `AGENTS.md`、`README.md`：接受上游版本（ellamaka 已有演进被吸收）
-- 配置文件：接受上游版本
+内容冲突文件全部接受 v1.15.13。mod/del 文件按 §1 精简清单 `git rm`。
 
-**TDD**: false — 配置/测试同步任务
+**内容冲突**（接受 v1.15.13）：
+`bun.lock`、`package.json`（×3）、`turbo.json`、`.github/TEAM_MEMBERS`、`AGENTS.md`（×2）、`README.md`、5× test files
 
-**Changes**:
-1. 接受 `bun.lock` 上游版本
-2. 接受 `package.json` 三个版本
-3. 接受 `turbo.json` 上游版本
-4. 接受 `.github/TEAM_MEMBERS` 上游版本
-5. 接受 `AGENTS.md` 两个版本
-6. 接受 `README.md` 上游版本
-7. 接受 5 个测试文件上游版本
-8. 接受 2 个 v1.15.13 新增文件（`packages/tui/src/...`）
-9. 接受 `packages/opencode/src/cli/cmd/tui/app.tsx` modify/delete（**保留 ellamaka HEAD 版本**，与 Task 5 一致——Task 5 将此文件纳入 CLI/TUI 改造范围，Task 7 仅执行保留操作不重复处理）
-10. 接受 `packages/opencode/src/cli/cmd/tui/util/sound.ts` modify/delete（**接受上游删除**，D-02 决定此文件无需保留——上游音效已迁移到 `attention.ts` + `@opentui/core` Audio）
-11. 接受 `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` modify/delete（保留 ellamaka HEAD 版本）
+**mod/del**：`sound.ts`（接受上游删除）、~300 个精简目录 `git rm`
+
+**TDD**: false
 
 **Verify**:
-- 所有 12 个文件无 conflict marker
-- `rg -c '^<<<<<<<\|^=======$\|^>>>>>>>$' bun.lock package.json packages/core/package.json packages/opencode/package.json turbo.json .github/TEAM_MEMBERS AGENTS.md packages/opencode/AGENTS.md README.md packages/opencode/test/config/config.test.ts packages/opencode/test/config/tui.test.ts packages/opencode/test/session/prompt.test.ts packages/opencode/test/skill/skill.test.ts packages/opencode/test/plugin/trigger.test.ts packages/tui/src/component/error-component.tsx packages/tui/src/theme/index.ts` 返回 0
+- 以上文件无 conflict marker
+- `git ls-files packages/stats/` 为空（精简）
 
 **Done**:
-任务产出：12 个低风险冲突文件全部接受上游版本或保留 ellamaka HEAD 版本
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
@@ -1001,28 +872,19 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
 
 ## Delegation Strategy
 
-| Wave | Task | 执行者 | 依赖 | 委派理由 |
-|------|------|--------|------|---------|
-| 1 | Task 1: 预演合并 | **Wopal** | 无 | 涉及 flow.sh 状态管理、冲突预演、worktree 创建 |
-| 2 | Task 2: core 层冲突 | **Wopal** | Task 1 | 涉及 RuntimeFlags service 扩展（核心架构决策） |
-| 3 | Task 3: storage/installation | **Wopal** | Task 2 | 高风险，5 项 ellamaka 定制重新集成 |
-| 4 | Task 4: config/skill/permission | **Wopal** | Task 2 | 高风险，wopal-space 注入点 + skill 守卫迁移 |
-| 5 | Task 5: CLI/TUI | **Wopal** | Tasks 3, 4 | 涉及 12+ 文件 BINARY_NAME 字符串保留，跨多个 cmd 文件需统一协调 |
-| 6 | Task 6: 插件同步 | **Wopal** | Task 5 | TuiAttention 迁移是 ellamaka 特有改造 |
-| 7 | Task 7: 12 个低风险文件 | **fae** | Tasks 3, 4, 5 | 机械性接受上游版本 |
-| 8 | Task 8: typecheck | **Wopal** | Task 7 | typecheck 失败需 Wopal 协调 |
-| 9 | Task 9: 测试回归 | **fae** | Task 8 | 测试运行和统计 |
-| 10 | Task 10: 构建验证 | **Wopal** | Task 9 | 构建是合并成功的最终验证 |
+| Wave | Task | 执行者 | 依赖 | 说明 |
+|------|------|--------|------|------|
+| 1 | Task 1: 预演合并 | **Wopal** | 无 | worktree 创建、冲突预演、mod/del 清理 |
+| 2 | Task 2: core 层冲突 | **Wopal** | Task 1 | flag.ts WOPAL_SPACE getter 保留 |
+| 3 | Task 3: storage/installation | **Wopal** | Task 2 | 高风险，4 项定制重新植入 |
+| 4 | Task 4: config/skill/permission | **Wopal** | Task 2 | wopal-space 注入点 + skill 守卫迁移 |
+| 5 | Task 5: CLI/TUI/Session | **Wopal** | Tasks 3, 4 | 7 个内容冲突 + mod/del + 自动合并验证 |
+| 6 | Task 6: 插件同步 | **Wopal** | Task 5 | TuiAttention 迁移，`.wopal/` 目录 |
+| 7 | Task 7: 低风险文件 | **fae** | Tasks 3-5 | 机械接受上游版本 + git rm mod/del |
+| 8 | Task 8: typecheck | **Wopal** | Task 7 | 类型错误修复 |
+| 9 | Task 9: 测试回归 | **fae** | Task 8 | 运行测试，统计通过率 |
+| 10 | Task 10: 构建验证 | **Wopal** | Task 9 | 构建 + version 验证 |
 | 11 | Task 11: 更新记录 | **fae** | Task 10 | 文档更新 |
-| 12 | Task 12: 提交 | **Wopal** | Task 11 | 最终提交由 Wopal 执行（commit 到 feature 分支，用户验证在 dev-flow `verifying` 阶段执行，不在本 Plan Task 范围内） |
+| 12 | Task 12: 提交合并 | **Wopal** | Task 11 | 最终 commit（实施产物）|
 
-**强依赖说明**：
-- Task 2、3、4 强依赖（都是核心层 + RuntimeFlags 接入），整组委派给单个 Wopal 流程
-- Task 5、6 强依赖（CLI/TUI/Plugin 一致性），Wopal 亲自处理
-- Task 7 可独立委派（fae 接受上游版本）
-- Task 8-11 顺序依赖（Task 12 后进入 dev-flow `verifying` 阶段，用户验证在 `flow.sh complete` 之后执行）
-
-**Wopal 直接执行的理由**：
-- 所有核心冲突（Task 2、3、4、5、6）由 Wopal 亲自处理（用户决策 D-07）
-- Task 1、10、12 是流程节点和验证
-- Task 8 是失败回退点（typecheck 不过需要 Wopal 协调修改）
+**依赖说明**：Task 2/3/4 强依赖核心层，Wopal 串行处理。Task 7 可并行委派 fae。Task 8-11 严格顺序。Task 12 后进入 dev-flow `verifying` 阶段。
