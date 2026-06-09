@@ -299,6 +299,94 @@ N/A — 无业务规则变更。本次合并是代码级同步，不引入新业
   - §8 品牌注入模式表新增 RuntimeFlags service 模式
 - `docs/DESIGN.md`：如有 RuntimeFlags 集成描述更新
 
+## Conflict Resolution Strategy
+
+> 以下是 5 个高风险冲突文件的逐文件解决策略。实施时按此策略执行，不可自由发挥。
+
+### installation/index.ts（高风险）
+
+**当前 ellamaka**：4 项定制嵌入在函数式代码中——
+1. `USER_AGENT` = `${BINARY_NAME}/${InstallationChannel}/...`（line ~170）
+2. `.wopal/bin` 检测：`process.execPath.includes(".wopal/bin")` 分支（line ~175）
+3. `latest()` channel 守卫：`InstallationChannel.startsWith("ellamaka")` 直接返回当前版本（line ~209）
+4. `upgrade()` channel 守卫：`startsWith("ellamaka")` 返回 `wopal ellamaka update` 错误提示（line ~270）
+
+**v1.15.13 变化**：全面重写为 Service 模式——
+- `AppProcess` service 替代 `ChildProcessSpawner`
+- `EventV2` + `GlobalBus` 替代 `Bus.publish`
+- `USER_AGENT` 改为 `userAgent()` 函数（接受 `client` 参数）
+- `latest()` 和 `upgrade()` 仍在但接口可能变化
+
+**解决策略**（接受上游 Service 结构，重新植入 4 项定制）：
+1. 接受上游 v1.15.13 完整版本
+2. `userAgent()` 函数中：将 `opencode/` 替换为 `${BINARY_NAME}/`（1 行改动）
+3. 在 `method()` 函数中（v1.15.13 重构后）：恢复 `process.execPath.includes(".wopal/bin")` 分支（~5 行）
+4. `latest()` 中：在函数开头加 `if (InstallationChannel.startsWith("ellamaka")) return Effect.succeed(currentVersion)`（~3 行）
+5. `upgrade()` 中：同样前置守卫，错误信息改为 `wopal ellamaka update`（~5 行）
+6. `Event` 定义：适配 `EventV2.define`（上游已处理，检查即可）
+
+### config/config.ts（高风险）
+
+**当前 ellamaka**：`tryLoadWopalSpaceConfig` 注入点位于 `loadInstanceState` 中特定行，wopal-space 模式调用后直接 return
+
+**v1.15.13 变化**：Zod → Effect.Schema 迁移——
+- `loadInstanceState` 改为 `Effect.fn` + `serviceUse` 模式
+- `loadFile`/`loadConfig` 签名可能变化
+- 新增 `wellKnownRemoteConfig`、`ConfigAttachment`/`ConfigReference`
+
+**解决策略**（在 Effect 流程中找到正确的提前返回位置）：
+1. 接受上游 v1.15.13 完整版本
+2. 确认 `tryLoadWopalSpaceConfig` import 仍在（barrels 移除后可能需调整路径）
+3. 在 `loadInstanceState` 内全局 config merge 之后、OPENCODE_CONFIG 加载之前，植入 wopal-space 早期返回：
+   ```ts
+   if (Flag.WOPAL_SPACE && ctx.worktree) {
+     const wopalResult = yield* tryLoadWopalSpaceConfig(deps, ctx)
+     if (wopalResult) return wopalResult
+   }
+   ```
+4. 所有 opencode 加载路径（OPENCODE_CONFIG、project opencode.json[c]、.opencode/、OPENCODE_CONFIG_CONTENT、account/org、managed、MDM）在早期 return 之后，wopal-space 模式不会走到
+5. `loadGlobal` 中：wopal-space 模式只加载 `settings.jsonc` 的 `ellamaka` 字段，不加载 `opencode.json[c]`
+
+### skill/index.ts（高风险）
+
+**当前 ellamaka**：3 项定制——
+1. `OPENCODE_DISABLE_AGENTS_SKILLS` 运行时 flag 守卫（commit `24f95f2040`）
+2. `.agents` 独立技能目录扫描
+3. 确定性 skill 加载顺序
+
+**v1.15.13 变化**：Zod → Effect.Schema 迁移、RuntimeFlags 接入、CUSTOMIZE_OPENCODE_SKILL 内置
+
+**解决策略**（接受上游，保留定制）：
+1. 接受上游 v1.15.13 完整版本
+2. RuntimeFlags 已包含 `disableAgentsSkills`（上游 v1.15.13 自带），验证 `discoverSkills` 中 `disableAgentsSkills` 参数正确传递
+3. 确认 `.agents` 目录扫描仍在 `externalDirs` 列表中（`AGENTS_EXTERNAL_DIR = ".agents"`）
+4. wopal-space 模式守卫：在外部目录扫描块加 `!Flag.WOPAL_SPACE` 条件（`.claude/` 和 `.agents/` 技能不加载）
+5. 确定性加载顺序：base/user 并发解析 + space overlay 按序覆盖，上游已支持此模式，验证即可
+
+### cli/cmd/run.ts（高风险）
+
+**当前 ellamaka**：BINARY_NAME 字符串替换（多处 describe/prompt 输出）
+
+**v1.15.13 变化**：大幅重构——demo、footer、keymap、prompt 等子模块拆分
+
+**解决策略**（接受上游重构，逐处替换 BINARY_NAME）：
+1. 接受上游 v1.15.13 完整版本
+2. `import { BINARY_NAME } from "../../../ellamaka/branding"` 
+3. 全文搜索 `"opencode"` 硬编码字符串（describe、console.log、spawn 参数等），替换为 `${BINARY_NAME}` 或 `BINARY_NAME`
+4. 不替换：npm 包名（`"opencode-ai"`）、URL（`opencode.ai`）、provider ID、数据库文件名
+
+### session/llm.ts（高风险）
+
+**当前 ellamaka**：1 处改动——plugin systemMetadata hook 增强
+
+**v1.15.13 变化**：session/llm 重构为 ai-sdk + native-runtime + request + native-request
+
+**解决策略**（接受上游新结构，找对应位置重新注入 hook）：
+1. 接受上游 v1.15.13 完整版本
+2. 找到上游 v1.15.13 中 plugin systemMetadata 调用位置（可能在 ai-sdk 或 native-runtime 路径中）
+3. 如果新架构中不存在对应 hook 点：检查是否为上游已内建此功能，若没有则在 plugin context 初始化位置追加 ellamaka hook
+4. 若上游 v1.15.13 已有等效功能：不重复添加
+
 ## Acceptance Criteria
 
 ### Agent Verification
