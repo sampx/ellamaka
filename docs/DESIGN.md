@@ -25,11 +25,11 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 
 | 适配点 | 实现方式 | 载体 |
 |--------|---------|------|
-| `--wopal-space` flag | `WOPAL_SPACE` 环境变量，worker + TUI 双实例可读 | `packages/core/src/flag/flag.ts` |
+| `--wopal-space` flag | `WOPAL_SPACE` 环境变量，worker + TUI 双实例可读 | `packages/opencode/src/effect/runtime-flags.ts` |
 | 全局路径分离 | `~/.wopal/config` + `~/.wopal/ellamaka/{data,cache,state}` | `packages/core/src/global.ts` |
 | 普通模式兼容层 | 加载 opencode XDG 全局配置和能力，再用 ellamaka 全局配置覆盖 | `packages/opencode/src/config/config.ts`、`config/paths.ts` |
 | 空间配置加载 | 发现 `.wopal/`，加载 `settings.jsonc` → `ellamaka` 字段，合并 agents/commands/plugins | `packages/opencode/src/config/wopal-space.ts`、`wopal-space-settings.ts` |
-| 空间模式跳过项目配置 | `Flag.WOPAL_SPACE` guard → 不加载项目级 `opencode.jsonc` | `packages/opencode/src/config/config.ts:570` |
+| 空间模式跳过项目配置 | `RuntimeFlags.wopalSpace` guard → 不加载项目级 `opencode.jsonc` | `packages/opencode/src/config/config.ts` |
 | Agent/Command/Plugin 加载 | 从 `.wopal/{agents,commands,plugins}/` 加载同名可覆盖内置 | `packages/opencode/src/config/{agent,command,plugin}.ts` |
 | 权限合并 | defaults → global → space settings → agent frontmatter，最后匹配生效 | `packages/opencode/src/permission/` |
 | 引擎安装识别 | 识别 `~/.wopal/bin/` 安装路径与升级通道 | `packages/opencode/src/installation/index.ts` |
