@@ -4,10 +4,10 @@
 
 - **Type**: chore
 - **Target Project**: ellamaka
-- **Project Path**: `projects/ellamaka/`
+- **Project Path**: projects/ellamaka/
 - **Project Type**: standard
 - **Created**: 2026-06-08
-- **Status**: planning
+- **Status**: reviewing
 
 
 ## Scope Assessment
