@@ -26,6 +26,7 @@ ellamaka 对上游 opencode 源码的品牌化改造清单。每条记录：改�
 | `specs/` | 上游设计 spec 文档 | 不参与构建 |
 | `script/` | 上游发布/变更日志脚本（`publish.ts`、`raw-changelog.ts`） | ellamaka 用 `publish-ellamaka.yml` + `packages/ellamaka/build.ts --arch primary` |
 | `.opencode/` | opencode 项目级开发配置（agent、plugin、theme 等） | 上游 IDE 配置，ellamaka 开发不依赖 |
+| `packages/stats/` | 云监控面板（athena + honeycomb + Vercel） | v1.15.x 新增，ellamaka CLI 分发无云监控需求 |
 
 ### 已删除文件
 
@@ -192,15 +193,11 @@ CLI 启动时的 ASCII art logo 和 TUI 首页动画 logo 使用 ELLAMAKA 字模
 | `packages/opencode/src/cli/ui.ts` | `UI.logo()` 函数体与上游保持一致，仅 wordmark 来源通过 1 行 `import { wordmark } from "../../ellamaka/logo"` 注入 ellamaka 字模拼接结果 | **import 注入**：1 行，函数体零改动 |
 | `packages/ellamaka/logo.ts` | 导出 `ellamaka`（字模数据）和 `wordmark`（`left[i] + " " + right[i]` 拼接），供 `ui.ts` 引用 | **独立文件** |
 
-#### 4.6.3 Logo 音效兼容 compile 模式
+#### 4.6.3 Logo 音效（已由上游 TuiAttention 替代）
 
-TUI logo 交互音效（4 个 `.wav` 文件）在 bun compile 后不再存在于真实文件系统，而是以 bunfs 虚拟路径（`/$bunfs/root/xxx.wav`）存在。外部音频播放器（afplay/mpv/ffplay）无法读取 bunfs 路径。
+> **v1.15.13 更新**：上游已删除 `sound.ts`，音效系统迁移到 `@opentui/core` 的 `Audio.create()` + `Bun.file().bytes()` 内存加载。ellamaka 的 `tui-ellamaka.tsx` 已迁移到 `api.attention.notify()` 和 `api.attention.soundboard` API，废弃独立 `afplay` 调用。
 
-| 文件 | 变更 | 模式 |
-|------|------|------|
-| `packages/opencode/src/cli/cmd/tui/util/sound.ts` | `copyFileSync(path, next)` → `await Bun.write(next, Bun.file(path))`；移除无用 `copyFileSync` import | **核心替换**：`Bun.file()` 可以读取 bunfs 虚拟路径，`Bun.write()` 写出到真实文件系统供外部播放器使用 |
-
-**设计原则**：编译后二进制内嵌的静态资源（`.wav` 通过 `import ... with { type: "file" }`）只能通过 Bun 原生 API 读取，不能使用 Node.js `fs` API。
+原 `sound.ts` 的 bunfs 兼容改造（`Bun.write` 写出真实文件）已被上游新方案替代，无需保留。
 
 ### 4.7 TUI 品牌插件
 
@@ -350,8 +347,10 @@ wopal-space 模式的激活方式：
 | **新文件** | 零 | 完整独立的逻辑模块 | `packages/ellamaka/branding.ts`、`logo.ts`、`detect.ts`、`test/branding.test.ts`、`build.ts`（上游 copy + 4 类定制）、`wopal-space.ts`、`publish-ellamaka.yml`、`scripts/build.sh`、`.wopal/plugins/tui-ellamaka.tsx`、`.wopal/plugins/ellamaka-theme.json` |
 | **独立 copy** | 零（上游 untouched） | 需要深度定制的上游文件 | `packages/ellamaka/build.ts`（基于 `packages/opencode/script/build.ts` 的 branded copy） |
 | **import 注入** | 极小（2 行） | 需要类型/常量引用的场景 | `src/index.ts`、`debug/index.ts`、12 个 CLI cmd 文件（§4.4）、`error-component.tsx`（§4.9）、`app.tsx`（§4.8 TUI 更新通知） |
-| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`sound.ts`（bunfs 音效兼容）、`ui.ts`（wordmark import） |
+| **核心替换** | 中等（~18 行） | 不可回避的系统级身份变更 | `global.ts`（路径系统）、`logo.ts`（字模数据）、`ui.ts`（wordmark import） |
+| **RuntimeFlags** | 极小（字段追加） | v1.15.13 新增的运行时 flag 系统 | `runtime-flags.ts`（`wopalSpace` + `disableAgentsSkills` + 3 处 WOPAL_SPACE 集成）、`Flag.WOPAL_SPACE`（向后兼容 getter） |
 | **嵌入** | 不定 | 运行时概念或文案 | `installation/index.ts`（channel 守卫 + USER_AGENT）、`cli/upgrade.ts`（自动更新前置守卫）、`cli/cmd/upgrade.ts`（手动命令重定向）、`tips-view.tsx`、`.wopal/config/settings.jsonc` |
+| **TuiAttention** | 极小（API 调用） | v1.15.13 新增通知/音效 API | `tui-ellamaka.tsx`（`api.attention.notify` + `api.attention.soundboard` 替代独立 afplay） |
 
 ---
 

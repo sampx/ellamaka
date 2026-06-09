@@ -1,20 +1,20 @@
 export * as TuiConfig from "./tui"
 
 import path from "path"
-import z from "zod"
+import { createBindingLookup } from "@opentui/keymap/extras"
 import { mergeDeep, unique } from "remeda"
-import { Context, Effect, Fiber, Layer } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Schema } from "effect"
 import { ConfigParse } from "@/config/parse"
 import * as ConfigPaths from "@/config/paths"
 import { migrateTuiConfig } from "./tui-migrate"
-import { TuiInfo } from "./tui-schema"
+import { KeymapLeaderTimeoutDefault, resolveAttentionSoundPaths, TuiInfo } from "./tui-schema"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { isRecord } from "@/util/record"
 import { Global } from "@opencode-ai/core/global"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CurrentWorkingDirectory } from "./cwd"
 import { ConfigPlugin } from "@/config/plugin"
-import { ConfigKeybinds } from "@/config/keybinds"
+import { TuiKeybind } from "./keybind"
 import { InstallationLocal, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { makeRuntime } from "@opencode-ai/core/effect/runtime"
 import { Filesystem } from "@/util/filesystem"
@@ -22,35 +22,37 @@ import * as Log from "@opencode-ai/core/util/log"
 import { ConfigVariable } from "@/config/variable"
 import { Npm } from "@opencode-ai/core/npm"
 import { tryLoadWopalSpaceTuiConfig } from "./wopal-space"
+import type { DeepMutable } from "@opencode-ai/core/schema"
+import type { TuiAttentionSoundName } from "@opencode-ai/plugin/tui"
+import { FormatError, FormatUnknownError } from "@/cli/error"
 
 const log = Log.create({ service: "tui.config" })
 
 export const Info = TuiInfo
+export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
 type Acc = {
   result: Info
+  plugin_origins: ConfigPlugin.Origin[]
 }
 
-type State = {
-  config: Info
-  deps: Array<Fiber.Fiber<void, AppFileSystem.Error>>
-}
-
-function stripUndefined(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripUndefined)
-  if (!isRecord(value)) return value
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, item]) => (item === undefined ? [] : [[key, stripUndefined(item)]])),
-  )
-}
-
-export type Info = z.output<typeof Info> & {
+export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout"> & {
+  attention: {
+    enabled: boolean
+    notifications: boolean
+    sound: boolean
+    volume: number
+    sound_pack: string
+    sounds: Partial<Record<TuiAttentionSoundName, string>>
+  }
+  keybinds: TuiKeybind.BindingLookupView
+  leader_timeout: number
   // Internal resolved plugin list used by runtime loading.
   plugin_origins?: ConfigPlugin.Origin[]
 }
 
 export interface Interface {
-  readonly get: () => Effect.Effect<Info>
+  readonly get: () => Effect.Effect<Resolved>
   readonly waitForDependencies: () => Effect.Effect<void>
 }
 
@@ -72,18 +74,33 @@ function normalize(raw: Record<string, unknown>) {
 
   const tui = data.tui
   delete data.tui
-  const known = Object.fromEntries(Object.entries(data).filter(([key]) => key in Info.shape))
+  const known = Object.fromEntries(Object.entries(data).filter(([key]) => key in Info.fields))
   return {
     ...tui,
     ...known,
   }
 }
 
+function dropUnknownKeybinds(input: Record<string, unknown>, configFilepath: string) {
+  if (!isRecord(input.keybinds)) return input
+
+  const invalid = TuiKeybind.unknownKeys(input.keybinds)
+  if (!invalid.length) return input
+
+  log.warn("ignored unknown tui keybinds", {
+    path: configFilepath,
+    keybinds: invalid,
+    hint: "Remove these entries or rename them to keys from the tui.json schema.",
+  })
+  return {
+    ...input,
+    keybinds: Object.fromEntries(Object.entries(input.keybinds).filter(([key]) => !invalid.includes(key))),
+  }
+}
+
 const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
   const afs = yield* AppFileSystem.Service
-  const acc: Acc = {
-    result: {},
-  }
+  let appliedOrder = 0
 
   const resolvePlugins = (config: Info, configFilepath: string): Effect.Effect<Info> =>
     Effect.gen(function* () {
@@ -104,14 +121,29 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
       if (!isRecord(data)) return {} as Info
       // Flatten a nested "tui" key so users who wrote `{ "tui": { ... } }` inside tui.json
       // (mirroring the old opencode.json shape) still get their settings applied.
-      const validated = ConfigParse.schema(Info, normalize(data), configFilepath)
+      const normalized = dropUnknownKeybinds(normalize(data), configFilepath)
+      const parsed = ConfigParse.schema(Info, normalized, configFilepath)
+      const validated = parsed.attention?.sounds
+        ? {
+            ...parsed,
+            attention: {
+              ...parsed.attention,
+              sounds: resolveAttentionSoundPaths(path.dirname(configFilepath), parsed.attention.sounds),
+            },
+          }
+        : parsed
       return yield* resolvePlugins(validated, configFilepath)
     }).pipe(
-      // catchCause (not tapErrorCause + orElseSucceed) because ConfigParse.jsonc/.schema
+      // catchCause (not tapErrorCause + orElseSucceed) because JSONC parsing and validation
       // can sync-throw — those become defects, which orElseSucceed wouldn't catch.
       Effect.catchCause((cause) =>
         Effect.sync(() => {
-          log.warn("invalid tui config", { path: configFilepath, cause })
+          const error = Cause.squash(cause)
+          const reason = FormatError(error) ?? FormatUnknownError(error)
+          log.warn("skipping invalid tui config", {
+            path: configFilepath,
+            reason,
+          })
           return {} as Info
         }),
       ),
@@ -122,7 +154,12 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
       return yield* afs.readFileStringSafe(filepath).pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {
-            log.warn("failed to read tui config", { path: filepath, cause })
+            const error = Cause.squash(cause)
+            const reason = FormatError(error) ?? FormatUnknownError(error)
+            log.warn("failed to read tui config", {
+              path: filepath,
+              reason,
+            })
             return undefined
           }),
         ),
@@ -133,37 +170,32 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
     Effect.gen(function* () {
       const text = yield* readConfigFile(filepath)
       if (!text) return {} as Info
+      log.info("loading tui config", { path: filepath })
       return yield* load(text, filepath)
     })
 
   const loadSettingsFile = (filepath: string): Effect.Effect<Info> =>
     Effect.gen(function* () {
-      const text = yield* readConfigFile(filepath)
-      if (!text) return {} as Info
-      const raw = ConfigParse.jsonc(text, filepath)
-      if (!isRecord(raw) || !isRecord(raw.tui)) return {} as Info
-      return yield* load(JSON.stringify(raw.tui), filepath)
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          log.warn("invalid tui settings", { path: filepath, cause })
-          return {} as Info
-        }),
-      ),
-    )
+      const data = yield* loadFile(filepath)
+      if (Object.keys(data).length) {
+        appliedOrder += 1
+        log.info("applying tui config", { path: filepath, order: appliedOrder })
+      }
+      return data
+    })
 
   const merge = (source: string, data: Info) =>
     Effect.sync(() => {
-      acc.result = mergeDeep(acc.result, stripUndefined(data) as Info) as Info
+      acc.result = mergeDeep(acc.result, data)
       if (!data.plugin?.length) return
 
       const scope = pluginScope(source, ctx)
       const plugins = ConfigPlugin.deduplicatePluginOrigins([
-        ...(acc.result.plugin_origins ?? []),
+        ...acc.plugin_origins,
         ...data.plugin.map((spec) => ({ spec, scope, source })),
       ])
       acc.result.plugin = plugins.map((item) => item.spec)
-      acc.result.plugin_origins = plugins
+      acc.plugin_origins = plugins
     })
 
   const mergeFile = (file: string) =>
@@ -179,6 +211,11 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   yield* Effect.promise(() => migrateTuiConfig({ directories: tuiDirectories, cwd: ctx.directory }))
 
   const projectFiles = Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? [] : yield* ConfigPaths.files("tui", ctx.directory)
+
+  const acc: Acc = {
+    result: {},
+    plugin_origins: [],
+  }
 
   if (!Flag.WOPAL_SPACE) {
     for (const file of ConfigPaths.fileInDirectory(Global.Path.opencodeConfig, "tui")) {
@@ -204,8 +241,7 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   }
 
   // 4. `.opencode` directories (and OPENCODE_CONFIG_DIR) discovered while
-  // walking up the tree. Also returned below so callers can install plugin
-  // dependencies from each location.
+  // walking up the tree.
   const opencodeDirs = unique(tuiDirectories).filter(
     (dir) => dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR || dir === Global.Path.opencodeConfig,
   )
@@ -234,20 +270,35 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
 
   const dirs = wopal?.dirs ?? opencodeDirs
 
-  const keybinds = { ...(acc.result.keybinds ?? {}) }
+  const keybinds = { ...acc.result.keybinds }
   if (process.platform === "win32") {
     // Native Windows terminals do not support POSIX suspend, so prefer prompt undo.
     keybinds.terminal_suspend = "none"
-    keybinds.input_undo ??= unique([
-      "ctrl+z",
-      ...ConfigKeybinds.Keybinds.shape.input_undo.parse(undefined).split(","),
-    ]).join(",")
+    const inputUndo = TuiKeybind.defaultValue("input_undo")
+    keybinds.input_undo ??= unique(["ctrl+z", ...(typeof inputUndo === "string" ? inputUndo.split(",") : [])]).join(",")
   }
-  acc.result.keybinds = ConfigKeybinds.Keybinds.parse(keybinds)
+  const parsedKeybinds = TuiKeybind.parse(keybinds)
+  const result: Resolved = {
+    ...acc.result,
+    attention: {
+      enabled: acc.result.attention?.enabled ?? false,
+      notifications: acc.result.attention?.notifications ?? true,
+      sound: acc.result.attention?.sound ?? true,
+      volume: acc.result.attention?.volume ?? 0.4,
+      sound_pack: acc.result.attention?.sound_pack ?? "opencode.default",
+      sounds: acc.result.attention?.sounds ?? {},
+    },
+    keybinds: createBindingLookup(TuiKeybind.toBindingConfig(parsedKeybinds), {
+      commandMap: TuiKeybind.CommandMap,
+      bindingDefaults: TuiKeybind.bindingDefaults(),
+    }),
+    leader_timeout: acc.result.leader_timeout ?? KeymapLeaderTimeoutDefault,
+    plugin_origins: acc.plugin_origins.length ? acc.plugin_origins : undefined,
+  }
 
   return {
-    config: acc.result,
-    dirs: acc.result.plugin?.length ? dirs : [],
+    config: result,
+    dirs: result.plugin?.length ? dirs : [],
   }
 })
 

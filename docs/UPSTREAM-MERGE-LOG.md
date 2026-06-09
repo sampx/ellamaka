@@ -21,6 +21,39 @@
 
 ## 合并历史（按时间倒序）
 
+### 2026-06-09 | upstream v1.15.13（tag `385cb69441`）
+
+**范围**：v1.14.39 → v1.15.13（14 个小版本）
+
+**架构变更**：
+- Zod → Effect Schema 全面迁移
+- RuntimeFlags Service 替代 Flag 静态对象（WOPAL_SPACE 移入 RuntimeFlags）
+- AppProcess Service 统一进程调用
+- TUI Plugin API 重写（TuiAttention 通知/音效、ToolContext.ask Promise 化）
+
+**冲突统计**：29 个内容冲突 + ~300 个 modify/delete 冲突（精简目录自动 `git rm`）
+
+**定制保留**：
+- Installation channel 守卫（`ellamaka` 检测、`.wopal/bin` 路径）
+- USER_AGENT 品牌化（`BINARY_NAME`）
+- WOPAL_SPACE 配置注入点（`tryLoadWopalSpaceConfig`）
+- loadGlobal 仅读 `settings.jsonc`
+- tui-ellamaka.tsx 迁移到 `api.attention.notify`
+- `.wopal/bin` 检测保留
+- `.env` 文件加载保留（`loadEnvFile`）
+- `Flag.WOPAL_SPACE` 向后兼容 getter
+- `RuntimeFlags.disableAgentsSkills` 新增
+
+**精简扩展**：`packages/stats/`（云监控面板）
+
+**验证**：
+- typecheck 通过（1 预存构建产物错误）
+- 测试 config: 82/92 pass，installation: 8/11 pass
+- 零 conflict marker
+- 关键 AC 全部通过
+
+**相关 Plan**：`chore-ellamaka-merge-upstream-opencode-v11513`
+
 ### 2026-05-06 ~ 07 | upstream v1.14.28 → v1.14.39
 
 **关键提交**：
