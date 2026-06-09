@@ -106,7 +106,8 @@ describe("package-release.mjs", () => {
     generate(outputDir)
     const notes = readFileSync(join(outputDir, "release-notes.md"), "utf8")
 
-    expect(notes).toContain("# ellamaka v0.1.0-test")
+    expect(notes).not.toContain("# ellamaka v0.1.0-test")
+    expect(notes).toContain("## Downloads")
     expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/manifest.json`)
     expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/checksums.txt`)
     for (const item of platformArtifacts) expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/${item.artifact}`)

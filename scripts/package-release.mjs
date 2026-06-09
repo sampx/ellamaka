@@ -75,8 +75,6 @@ function archLabel(arch) {
 
 export function buildReleaseNotes(version, artifacts, manifestUrl, checksumsUrl) {
   const lines = [
-    `# ellamaka v${version}`,
-    "",
     "## Downloads",
     "",
     "| OS | Arch | Download |",
