@@ -338,6 +338,17 @@ wopal-space 模式的激活方式：
 |------|------|------|
 | `packages/opencode/src/cli/cmd/tui/feature-plugins/home/tips-view.tsx` | `~/.wopal/config/settings.jsonc` 路径提示 | **嵌入**：TUI 提示文案，与 global.ts 路径对齐 |
 
+### 5.2 插件加载去重
+
+wopal-space 模式下，全局 ontology（`~/.wopal/`）和 workspace worktree（`.wopal/`）两个目录都包含同一插件（如 `wopal-plugin.ts`）。配置层按 file URL 去重无法识别（两个不同路径指向不同文件），导致插件被加载两次、运行两份 server hook。
+
+| 文件 | 变更 | 模式 |
+|------|------|------|
+| `packages/opencode/src/plugin/index.ts` | 新增 `deduplicateLoadedPluginsByRuntimeId()`：插件模块加载后、执行 `server()` 前，按 runtime `id` 去重，同 id 保留后加载（高优先级）的插件 | **运行时守卫**：纯追加，不改动上游加载链 |
+| `packages/opencode/test/plugin/loader-shared.test.ts` | 回归测试：两个不同 file path 插件共享同一 `id`，断言只执行高优先级 | **测试追加** |
+
+去重时机：模块加载完毕 → `deduplicateLoadedPluginsByRuntimeId()` → 执行 `server()`/`tui()`。对 config 层无侵入。
+
 ---
 
 ## 8. 品牌注入模式总结

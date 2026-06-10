@@ -170,6 +170,41 @@ describe("plugin.loader.shared", () => {
     ),
   )
 
+  it.live("runs only the higher priority v1 server plugin when two plugins share an id", () =>
+    withTmp(
+      async (dir) => {
+        const low = path.join(dir, "low-priority-plugin.ts")
+        const high = path.join(dir, "high-priority-plugin.ts")
+        const mark = path.join(dir, "called.txt")
+        const source = (label: string) => [
+          "export default {",
+          '  id: "demo.same-runtime-id",',
+          "  server: async () => {",
+          `    const text = await Bun.file(${JSON.stringify(mark)}).text().catch(() => "")`,
+          `    await Bun.write(${JSON.stringify(mark)}, text + ${JSON.stringify(`${label}\n`)})`,
+          "    return {}",
+          "  },",
+          "}",
+          "",
+        ].join("\n")
+
+        await Bun.write(low, source("low"))
+        await Bun.write(high, source("high"))
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({ plugin: [pathToFileURL(low).href, pathToFileURL(high).href] }, null, 2),
+        )
+
+        return { mark }
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* load(tmp.path)
+          expect(yield* Effect.promise(() => Bun.file(tmp.extra.mark).text())).toBe("high\n")
+        }),
+    ),
+  )
+
   it.live("rejects v1 file server plugin without id", () =>
     withTmp(
       async (dir) => {

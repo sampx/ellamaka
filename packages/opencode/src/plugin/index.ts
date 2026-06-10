@@ -122,6 +122,32 @@ async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks:
   }
 }
 
+async function resolveLoadedV1PluginId(load: PluginLoader.Loaded) {
+  try {
+    const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
+    if (!plugin) return
+    return await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
+  } catch {
+    return
+  }
+}
+
+async function deduplicateLoadedPluginsByRuntimeId(loaded: PluginLoader.Loaded[]) {
+  const seen = new Set<string>()
+  const result: PluginLoader.Loaded[] = []
+
+  for (const load of loaded.toReversed()) {
+    const id = await resolveLoadedV1PluginId(load)
+    if (id) {
+      if (seen.has(id)) continue
+      seen.add(id)
+    }
+    result.push(load)
+  }
+
+  return result.toReversed()
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -222,7 +248,8 @@ export const layer = Layer.effect(
             },
           }),
         )
-        for (const load of loaded) {
+        const active = yield* Effect.promise(() => deduplicateLoadedPluginsByRuntimeId(loaded))
+        for (const load of active) {
           if (!load) continue
 
           // Keep plugin execution sequential so hook registration and execution
