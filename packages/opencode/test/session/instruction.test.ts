@@ -33,6 +33,13 @@ const provideInstruction =
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     self.pipe(Effect.provide(instructionLayer(global, flags)))
 
+const provideInstructionWopalSpace =
+  (global: Partial<Global.Interface>) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    self.pipe(
+      Effect.provide(instructionLayer(global, { wopalSpace: true, disableClaudeCodePrompt: true })),
+    )
+
 const write = (filepath: string, content: string) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
@@ -233,6 +240,21 @@ describe("Instruction.system", () => {
         provideInstance(projectTmp),
         provideInstruction({ home: globalTmp, config: globalTmp }, { disableClaudeCodePrompt: true }),
       )
+    }),
+  )
+
+  it.live("skips project and global CLAUDE.md when WopalSpace mode is active", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ ".claude/CLAUDE.md": "# Global Claude" })
+      const projectTmp = yield* tmpWithFiles({ "CLAUDE.md": "# Project Claude" })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(globalTmp, ".claude", "CLAUDE.md"))).toBe(false)
+        expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
+        expect(yield* svc.system()).toEqual([])
+      }).pipe(provideInstance(projectTmp), provideInstructionWopalSpace({ home: globalTmp, config: globalTmp }))
     }),
   )
 })

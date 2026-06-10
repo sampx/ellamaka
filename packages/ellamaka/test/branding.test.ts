@@ -17,73 +17,47 @@ function makeTmpdir(): string {
   return dir
 }
 
-function setupWopalSpace(dir: string, settingsContent: string | null) {
+function setupOntologyWorktree(dir: string) {
   const wopalDir = join(dir, ".wopal")
-  mkdirSync(join(wopalDir, "config"), { recursive: true })
-  if (settingsContent !== null) {
-    writeFileSync(join(wopalDir, "config", "settings.jsonc"), settingsContent)
-  }
+  mkdirSync(wopalDir, { recursive: true })
+  // Ontology worktree marker: .wopal/.git is a FILE
+  writeFileSync(join(wopalDir, ".git"), "")
 }
 
 describe("detectWopalSpace", () => {
-  test("returns true when settings.jsonc contains ellamaka key", () => {
+  test("detects space root when .wopal/.git is a file", () => {
     const dir = makeTmpdir()
-    setupWopalSpace(dir, `{ "ellamaka": { "model": "test" } }`)
-    expect(detectWopalSpace(dir)).toBe(true)
+    setupOntologyWorktree(dir)
+    const result = detectWopalSpace(dir)
+    expect(result).toBeDefined()
+    expect(result!.root).toBe(dir)
+    expect(result!.wopalDir).toBe(join(dir, ".wopal"))
   })
 
-  test("returns true when ellamaka key has whitespace around colon", () => {
-    const dir = makeTmpdir()
-    setupWopalSpace(dir, `{
-  "ellamaka" : { "default_agent": "wopal" }
-}`)
-    expect(detectWopalSpace(dir)).toBe(true)
-  })
-
-  test("returns true with settings.json (no c)", () => {
+  test("returns undefined when .wopal/.git is a directory (regular git repo)", () => {
     const dir = makeTmpdir()
     const wopalDir = join(dir, ".wopal")
-    mkdirSync(join(wopalDir, "config"), { recursive: true })
-    writeFileSync(join(wopalDir, "config", "settings.json"), `{ "ellamaka": {} }`)
-    expect(detectWopalSpace(dir)).toBe(true)
+    mkdirSync(join(wopalDir, ".git"), { recursive: true })
+    expect(detectWopalSpace(dir)).toBeUndefined()
   })
 
-  test("returns false when settings.jsonc exists but has no ellamaka key", () => {
+  test("returns undefined when no .wopal directory exists", () => {
     const dir = makeTmpdir()
-    setupWopalSpace(dir, `{ "other": { "key": "value" } }`)
-    expect(detectWopalSpace(dir)).toBe(false)
+    expect(detectWopalSpace(dir)).toBeUndefined()
   })
 
-  test("returns false when .wopal exists but no config directory", () => {
-    const dir = makeTmpdir()
-    mkdirSync(join(dir, ".wopal"), { recursive: true })
-    expect(detectWopalSpace(dir)).toBe(false)
-  })
-
-  test("returns false when no .wopal directory exists", () => {
-    const dir = makeTmpdir()
-    expect(detectWopalSpace(dir)).toBe(false)
-  })
-
-  test("returns false at filesystem root", () => {
-    expect(detectWopalSpace("/")).toBe(false)
+  test("returns undefined at filesystem root", () => {
+    expect(detectWopalSpace("/")).toBeUndefined()
   })
 
   test("walks up from nested subdirectory", () => {
     const dir = makeTmpdir()
-    setupWopalSpace(dir, `{ "ellamaka": {} }`)
+    setupOntologyWorktree(dir)
     const nested = join(dir, "projects", "my-app", "src", "components")
     mkdirSync(nested, { recursive: true })
-    expect(detectWopalSpace(nested)).toBe(true)
-  })
-
-  test("prefers settings.jsonc over settings.json", () => {
-    const dir = makeTmpdir()
-    const wopalDir = join(dir, ".wopal")
-    mkdirSync(join(wopalDir, "config"), { recursive: true })
-    writeFileSync(join(wopalDir, "config", "settings.json"), `{ "ellamaka": {} }`)
-    writeFileSync(join(wopalDir, "config", "settings.jsonc"), `{ "ellamaka": { "model": "jsonc-wins" } }`)
-    expect(detectWopalSpace(dir)).toBe(true)
+    const result = detectWopalSpace(nested)
+    expect(result).toBeDefined()
+    expect(result!.root).toBe(dir)
   })
 })
 

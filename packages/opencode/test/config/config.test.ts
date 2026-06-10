@@ -1986,3 +1986,124 @@ test("parseManagedPlist handles empty config", async () => {
   )
   expect(config.$schema).toBe("https://opencode.ai/config.json")
 })
+
+// ---------------------------------------------------------------------------
+// WopalSpace config loading — WOPAL_SPACE_ROOT based
+// ---------------------------------------------------------------------------
+
+describe("loadWopalSpaceSettingsFiles", () => {
+  type WopalSpaceSettingsResult = import("../../src/config/wopal-space-settings").WopalSpaceSettingsResult
+  const { loadWopalSpaceSettingsFiles } = require("../../src/config/wopal-space-settings") as {
+    loadWopalSpaceSettingsFiles: (
+      deps: { readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never> },
+      ctx: { directory: string },
+    ) => Effect.Effect<WopalSpaceSettingsResult | undefined, never, never>
+  }
+
+  const originalWopalSpace = process.env.WOPAL_SPACE
+  const originalWopalSpaceRoot = process.env.WOPAL_SPACE_ROOT
+  const originalDisableProjectConfig = process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+
+  afterEach(() => {
+    if (originalWopalSpace === undefined) delete process.env.WOPAL_SPACE
+    else process.env.WOPAL_SPACE = originalWopalSpace
+    if (originalWopalSpaceRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
+    else process.env.WOPAL_SPACE_ROOT = originalWopalSpaceRoot
+    if (originalDisableProjectConfig === undefined) delete process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+    else process.env.OPENCODE_DISABLE_PROJECT_CONFIG = originalDisableProjectConfig
+  })
+
+  test("loads settings from WOPAL_SPACE_ROOT/.wopal/config/settings.jsonc", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/tmp/test-space-root"
+
+    const readFile = (_filepath: string) => Effect.succeed(undefined)
+    const deps = { readConfigFile: readFile }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual(["/tmp/test-space-root/.wopal"])
+    expect((result as WopalSpaceSettingsResult).files).toHaveLength(0)
+  })
+
+  test("loads settings file when present", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/tmp/test-space-root"
+
+    const settingsJsonc = JSON.stringify({ ellamaka: { model: "space/model" } })
+    const readFile = (filepath: string) => {
+      if (filepath.includes("settings.jsonc")) return Effect.succeed(settingsJsonc)
+      return Effect.succeed(undefined)
+    }
+    const deps = { readConfigFile: readFile }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual(["/tmp/test-space-root/.wopal"])
+    expect((result as WopalSpaceSettingsResult).files).toHaveLength(1)
+    expect((result as WopalSpaceSettingsResult).files[0].text).toBe(settingsJsonc)
+    expect((result as WopalSpaceSettingsResult).files[0].path).toContain("settings.jsonc")
+  })
+
+  test("returns undefined when WOPAL_SPACE is not set", async () => {
+    process.env.WOPAL_SPACE = ""
+
+    const deps = { readConfigFile: (_filepath: string) => Effect.succeed(undefined) }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeUndefined()
+  })
+
+  test("uses WOPAL_SPACE_ROOT even when cwd is in nested repo", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/outer/workspace"
+
+    const readFile = (_filepath: string) => Effect.succeed(undefined)
+    const deps = { readConfigFile: readFile }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/outer/workspace/projects/nested/.git" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual(["/outer/workspace/.wopal"])
+  })
+
+  test("returns empty localWopalDirs when WOPAL_SPACE_ROOT is not set", async () => {
+    process.env.WOPAL_SPACE = "1"
+    delete process.env.WOPAL_SPACE_ROOT
+
+    const deps = { readConfigFile: (_filepath: string) => Effect.succeed(undefined) }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual([])
+    expect((result as WopalSpaceSettingsResult).files).toHaveLength(0)
+  })
+
+  test("returns undefined when OPENCODE_DISABLE_PROJECT_CONFIG is set", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/tmp/test-space-root"
+    process.env.OPENCODE_DISABLE_PROJECT_CONFIG = "true"
+
+    const deps = { readConfigFile: (_filepath: string) => Effect.succeed(undefined) }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeUndefined()
+  })
+})

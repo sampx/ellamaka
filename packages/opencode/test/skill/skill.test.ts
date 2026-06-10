@@ -42,6 +42,25 @@ const itWithoutExternalSkills = testEffect(
     node,
   ),
 )
+const itWopalSpace = testEffect(
+  Layer.mergeAll(
+    Skill.layer.pipe(
+      Layer.provide(Discovery.defaultLayer),
+      Layer.provide(Config.defaultLayer),
+      Layer.provide(Bus.layer),
+      Layer.provide(AppFileSystem.defaultLayer),
+      Layer.provide(Global.layer),
+      Layer.provide(
+        RuntimeFlags.layer({
+          wopalSpace: true,
+          disableClaudeCodeSkills: true,
+          disableClaudeCodePrompt: true,
+        }),
+      ),
+    ),
+    node,
+  ),
+)
 
 async function createGlobalSkill(homeDir: string) {
   const skillDir = path.join(homeDir, ".claude", "skills", "global-test-skill")
@@ -71,6 +90,25 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
     (prev) =>
       Effect.sync(() => {
         process.env.OPENCODE_TEST_HOME = prev
+      }),
+  )
+
+const withWopalSpace = <A, E, R>(spaceRoot: string, self: Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const prevWopal = process.env.WOPAL_SPACE
+      const prevRoot = process.env.WOPAL_SPACE_ROOT
+      process.env.WOPAL_SPACE = "1"
+      process.env.WOPAL_SPACE_ROOT = spaceRoot
+      return { prevWopal, prevRoot }
+    }),
+    () => self,
+    (prev) =>
+      Effect.sync(() => {
+        if (prev.prevWopal === undefined) delete process.env.WOPAL_SPACE
+        else process.env.WOPAL_SPACE = prev.prevWopal
+        if (prev.prevRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
+        else process.env.WOPAL_SPACE_ROOT = prev.prevRoot
       }),
   )
 
@@ -563,6 +601,133 @@ description: A skill in the .opencode/skills directory.
           const skill = yield* Skill.Service
           expect((yield* skill.dirs()).length).toBe(4)
         }),
+      { git: true },
+    ),
+  )
+
+  itWopalSpace.live("WopalSpace mode discovers skills from .agents/skills/ directory", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(dir, ".agents", "skills", "agent-skill", "SKILL.md"),
+              `---
+name: agent-skill
+description: A skill in the .agents/skills directory.
+---
+
+# Agent Skill
+`,
+            ),
+          )
+
+          const skill = yield* Skill.Service
+          const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
+          expect(list.length).toBe(1)
+          const item = list.find((x) => x.name === "agent-skill")
+          expect(item).toBeDefined()
+          expect(item!.location).toContain(path.join(".agents", "skills", "agent-skill", "SKILL.md"))
+        }),
+      { git: true },
+    ),
+  )
+
+  itWopalSpace.live("WopalSpace mode skips skills from .claude/skills/ directory", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(dir, ".claude", "skills", "claude-skill", "SKILL.md"),
+              `---
+name: claude-skill
+description: A skill in the .claude/skills directory.
+---
+
+# Claude Skill
+`,
+            ),
+          )
+
+          const skill = yield* Skill.Service
+          const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
+          expect(list.length).toBe(0)
+        }),
+      { git: true },
+    ),
+  )
+
+  itWopalSpace.live("WopalSpace mode discovers skills from .wopal/skills/ directory", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        withWopalSpace(
+          dir,
+          Effect.gen(function* () {
+            yield* Effect.promise(() =>
+              Bun.write(
+                path.join(dir, ".wopal", "skills", "wopal-skill", "SKILL.md"),
+                `---
+name: wopal-skill
+description: A skill in the .wopal/skills directory.
+---
+
+# Wopal Skill
+`,
+              ),
+            )
+
+            const skill = yield* Skill.Service
+            const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
+            expect(list.length).toBe(1)
+            const item = list.find((x) => x.name === "wopal-skill")
+            expect(item).toBeDefined()
+            expect(item!.location).toContain(path.join(".wopal", "skills", "wopal-skill", "SKILL.md"))
+          }),
+        ),
+      { git: true },
+    ),
+  )
+
+  itWopalSpace.live("WopalSpace mode loads .agents/skills/ but .wopal/skills/ overrides same-named skill", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        withWopalSpace(
+          dir,
+          Effect.gen(function* () {
+            yield* Effect.promise(() =>
+              Promise.all([
+                Bun.write(
+                  path.join(dir, ".agents", "skills", "shared-skill", "SKILL.md"),
+                  `---
+name: shared-skill
+description: from agents
+---
+
+# Shared Skill
+`,
+                ),
+                Bun.write(
+                  path.join(dir, ".wopal", "skills", "shared-skill", "SKILL.md"),
+                  `---
+name: shared-skill
+description: from wopal
+---
+
+# Shared Skill
+`,
+                ),
+              ]),
+            )
+
+            const skill = yield* Skill.Service
+            const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
+            expect(list.length).toBe(1)
+            const item = list.find((x) => x.name === "shared-skill")
+            expect(item).toBeDefined()
+            expect(item!.description).toBe("from wopal")
+          }),
+        ),
       { git: true },
     ),
   )

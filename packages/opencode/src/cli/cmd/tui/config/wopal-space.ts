@@ -9,7 +9,6 @@ import type { Info } from "./tui"
 const log = Log.create({ service: "tui.config" })
 
 export interface WopalSpaceDeps {
-  findWopalDirs: (start: string, stop?: string) => Effect.Effect<string[], never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
   loadConfig: (text: string, configFilepath: string) => Effect.Effect<Info>
   merge: (source: string, next: Info) => Effect.Effect<void>
@@ -22,7 +21,7 @@ export interface WopalSpaceResult {
 export function tryLoadWopalSpaceTuiConfig(deps: WopalSpaceDeps, ctx: { directory: string }) {
   return Effect.gen(function* () {
     const loaded = yield* loadWopalSpaceSettingsFiles(deps, ctx)
-    if (!loaded || loaded.localWopalDirs.length === 0) {
+    if (!loaded) {
       return undefined
     }
 

@@ -7,7 +7,6 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 
 export interface WopalSpaceSettingsDeps {
-  findWopalDirs: (start: string, stop?: string) => Effect.Effect<string[], never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
 }
 
@@ -35,13 +34,15 @@ export function wopalSpaceDirectories(localWopalDirs: string[]) {
   return directories
 }
 
-export function loadWopalSpaceSettingsFiles(deps: WopalSpaceSettingsDeps, ctx: { directory: string; stop?: string }) {
+export function loadWopalSpaceSettingsFiles(deps: WopalSpaceSettingsDeps, ctx: { directory: string }) {
   return Effect.gen(function* () {
     if (!Flag.WOPAL_SPACE || Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
       return undefined
     }
 
-    const localWopalDirs = (yield* deps.findWopalDirs(ctx.directory, ctx.stop)).toReversed()
+    const spaceRoot = process.env.WOPAL_SPACE_ROOT
+    const localWopalDirs = spaceRoot ? [path.join(spaceRoot, ".wopal")] : []
+
     const files: WopalSpaceSettingsFile[] = []
     for (const dir of localWopalDirs) {
       for (const file of ["settings.jsonc", "settings.json"]) {

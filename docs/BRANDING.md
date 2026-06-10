@@ -262,7 +262,7 @@ ellamaka 的自动更新机制（TUI worker → `checkUpgrade` RPC → `upgrade(
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/opencode/src/config/wopal-space.ts` | 读取 `settings.jsonc` 中的 `ellamaka` 字段 | **独立文件**（零侵入） |
+| `packages/opencode/src/config/wopal-space.ts` | 从 `WOPAL_SPACE_ROOT/.wopal/` 加载空间级配置（agents/commands/plugins），合并 `settings.jsonc` 中的 `ellamaka` 字段 | **独立文件**（零侵入） |
 
 ### 7.2 全局配置文件
 
@@ -301,36 +301,40 @@ wopal-space 模式未激活时，ellamaka 兼容 opencode 的配置和能力体�
 
 #### wopal-space 模式（短路）
 
-wopal-space 模式的激活方式：
+wopal-space 模式通过自动检测激活，无需用户显式传参：
 
 | 方式 | 行为 |
 |------|------|
-| `--wopal-space` 显式传入 | 直接启用（最高优先级） |
-| `--no-wopal-space` 显式传入 | 强制禁用，跳过自动检测（逃逸阀） |
-| 未传参（默认） | **自动检测**：从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键则自动启用 |
+| 未传参（默认） | **自动检测**：从 cwd 向上查找 `.wopal/.git` 为文件的最近祖先目录，以此作为空间根。上界为用户 home 目录。 |
+| `--no-wopal-space` 显式传入 | 强制禁用，跳过自动检测（逃生舱），恢复原生 opencode 行为 |
 
 启用后直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。
 
 ```
 ① ~/.wopal/config/settings.jsonc（全局配置，ellamaka 字段）
 ② ~/.wopal/（全局能力：agents/commands/plugins/skills）
-③ .wopal/config/settings.json[c]（空间配置，ellamaka + tui 字段）
-④ .wopal/（空间能力：agents/commands/plugins/skills）
-⑤ .wopal/agents/{name}.md（agent frontmatter，permission 最高优先级）
+③ <WOPAL_SPACE_ROOT>/.wopal/config/settings.json[c]（空间配置，ellamaka + tui 字段）
+④ <WOPAL_SPACE_ROOT>/.wopal/（空间能力：agents/commands/plugins/skills，最高优先级）
+⑤ <WOPAL_SPACE_ROOT>/.wopal/agents/{name}.md（agent frontmatter，permission 最高优先级）
 ```
 
 #### 自动检测实现
 
 | 文件 | 变更 | 模式 |
 |------|------|------|
-| `packages/ellamaka/detect.ts` | 导出 `detectWopalSpace(cwd)` — 从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键名返回 true | **独立文件** |
-| `packages/opencode/src/index.ts` | yargs 中间件调用 `detectWopalSpace(process.cwd())`，检测到则设置 `WOPAL_SPACE=1` | **注入**：几行调用，逻辑在独立文件中 |
+| `packages/ellamaka/detect.ts` | 导出 `detectWopalSpace(cwd)` — 从 cwd 向上查找 `.wopal/.git` 为**文件**的最近祖先目录（ontology worktree 标记），返回 `{ root, wopalDir }` 或 undefined。上界为用户 home 目录。 | **独立文件** |
+| `packages/opencode/src/index.ts` | yargs 中间件调用 `detectWopalSpace(process.cwd())`，检测到则设置 `WOPAL_SPACE=1` 和 `WOPAL_SPACE_ROOT=<空间根>`。启动前清除用户环境变量注入。 | **注入**：几行调用，逻辑在独立文件中 |
 
 检测算法：
-1. 从 cwd 向上逐级查找 `.wopal` 目录
-2. 找到后检查 `config/settings.jsonc`（优先）或 `settings.json`
-3. 用正则 `/"ellamaka"\s*:/` 匹配键名，无需完整解析 JSONC（避免 URL 中 `//` 被误当注释）
-4. 匹配成功 → 启用 wopal-space；不匹配或无文件 → 返回 false（普通模式）
+1. 从 cwd 向上逐级查找 `.wopal/.git` 文件（ontology worktree 标记）
+2. `.wopal/.git` 是**文件**（非目录）= 有效空间根，返回根路径
+3. `.wopal/.git` 不存在或是目录（普通 git 仓库）= 跳过，继续向上
+4. 到达用户 home 目录 = 停止，返回 undefined（普通模式）
+
+内部运行时契约：
+- `WOPAL_SPACE_ROOT`：检测到的空间根绝对路径，配置和能力加载器直接消费
+- `WOPAL_SPACE`：仅保留为内部兼容状态，供已有 `Flag.WOPAL_SPACE` 消费者使用
+- `--no-wopal-space`：清除两个内部值，恢复原生 opencode 行为
 
 ### 7.4 TUI 配置路径提示
 

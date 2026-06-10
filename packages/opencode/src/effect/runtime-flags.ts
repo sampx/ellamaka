@@ -21,10 +21,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   disableAgentsSkills: bool("OPENCODE_DISABLE_AGENTS_SKILLS"),
   wopalSpace: bool("WOPAL_SPACE"),
   disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
-  disableExternalSkills: Config.all({
-    env: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
-    wopal: bool("WOPAL_SPACE"),
-  }).pipe(Config.map((flags) => flags.env || flags.wopal)),
+  disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
   disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
   skipMigrations: bool("OPENCODE_SKIP_MIGRATIONS"),
   disableClaudeCodePrompt: Config.all({

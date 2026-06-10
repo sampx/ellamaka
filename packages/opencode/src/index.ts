@@ -90,18 +90,24 @@ const cli = yargs(args)
     type: "boolean",
   })
   .option("wopal-space", {
-    describe: "enable wopal space configuration mode",
+    describe: "enable wopal space mode (use --no-wopal-space to disable)",
     type: "boolean",
   })
   .middleware(async (opts) => {
+    // Always clear any inherited WOPAL_SPACE / WOPAL_SPACE_ROOT from user env
+    delete process.env.WOPAL_SPACE
+    delete process.env.WOPAL_SPACE_ROOT
+
     if (opts.pure) {
       process.env.OPENCODE_PURE = "1"
     }
-    if (opts.wopalSpace) {
-      process.env.WOPAL_SPACE = "1"
-    } else if (!process.argv.includes("--wopal-space") && !process.argv.includes("--no-wopal-space")) {
-      if (detectWopalSpace(process.cwd())) {
+
+    // opts.wopalSpace is undefined when flag not passed; --no-wopal-space makes it false
+    if (opts.wopalSpace !== false) {
+      const detection = detectWopalSpace(process.cwd())
+      if (detection) {
         process.env.WOPAL_SPACE = "1"
+        process.env.WOPAL_SPACE_ROOT = detection.root
       }
     }
     if (opts.logLevel) {

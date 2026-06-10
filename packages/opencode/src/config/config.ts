@@ -584,8 +584,6 @@ export const layer = Layer.effect(
         }
 
         const wopalResult = yield* tryLoadWopalSpaceConfig({
-          findWopalDirs: (start, stop) =>
-            fs.up({ targets: [".wopal"], start, stop }).pipe(Effect.catch(() => Effect.succeed([] as string[]))),
           installPluginDeps: (dir, add) =>
             npmSvc
               .install(dir, {

@@ -248,8 +248,6 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   const wopal = Flag.WOPAL_SPACE
     ? yield* tryLoadWopalSpaceTuiConfig(
         {
-          findWopalDirs: (start, stop) =>
-            afs.up({ targets: [".wopal"], start, stop }).pipe(Effect.catch(() => Effect.succeed([] as string[]))),
           readConfigFile,
           loadConfig: load,
           merge,

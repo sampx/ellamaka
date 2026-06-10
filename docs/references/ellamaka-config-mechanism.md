@@ -13,13 +13,13 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 模式 | 激活方式 | 行为 |
 |------|---------|------|
 | 普通模式（opencode 兼容） | 默认（非 wopal-space 目录） | 加载 opencode 兼容层 + ellamaka 全局配置 |
-| wopal-space 模式 | 自动检测或 `--wopal-space` | 短路到 wopal-space 配置体系 |
+| wopal-space 模式 | 自动检测（`.wopal/.git` 文件） | 短路到 wopal-space 配置体系 |
 
 #### wopal-space 自动检测
 
-从 cwd 向上查找 `.wopal/config/settings.json[c]`，若文件含 `"ellamaka"` 键则自动启用 wopal-space 模式。用户可显式传入 `--no-wopal-space` 强制禁用自动检测。
+从 cwd 向上查找 `.wopal/.git` 为文件的最近祖先目录（ontology worktree 标记），以此作为空间根。检测在用户 home 目录处停止。用户可显式传入 `--no-wopal-space` 强制禁用自动检测（逃生舱），恢复原生 opencode 行为。
 
-实现位于 `packages/ellamaka/detect.ts` 的 `detectWopalSpace(cwd)` 函数，在 `packages/opencode/src/index.ts` 的 yargs 中间件中调用。
+实现位于 `packages/ellamaka/detect.ts` 的 `detectWopalSpace(cwd)` 函数，返回 `{ root, wopalDir }` 或 undefined。在 `packages/opencode/src/index.ts` 的 yargs 中间件中调用，检测到则设置 `WOPAL_SPACE=1` 和 `WOPAL_SPACE_ROOT=<空间根>`。
 
 ### 普通模式链路
 
@@ -42,16 +42,16 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 ### wopal-space 模式链路
 
-启用 wopal-space 模式后，直接短路到 wopal-space 配置体系，不碰任何 opencode 路径：
+自动检测到空间根后，直接短路到 wopal-space 配置体系，不碰任何 opencode 路径。空间根由 `WOPAL_SPACE_ROOT` 定位。
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
 | 1 | `OPENCODE_CONFIG_CONTENT` | 同普通模式 |
 | 2 | `~/.wopal/config/settings.jsonc` | 全局配置（`ellamaka` 字段） |
 | 3 | `~/.wopal/` | 全局能力扫描（agents/commands/plugins/skills） |
-| 4 | 空间 `.wopal/config/settings.json[c]` | 空间配置（`ellamaka` + `tui` 字段） |
-| 5 | 空间 `.wopal/` | 空间能力扫描（agents/commands/plugins/skills） |
-| 6 | 空间 `.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
+| 4 | `<WOPAL_SPACE_ROOT>/.wopal/config/settings.json[c]` | 空间配置（`ellamaka` + `tui` 字段） |
+| 5 | `<WOPAL_SPACE_ROOT>/.wopal/` | 空间能力扫描（agents/commands/plugins/skills） |
+| 6 | `<WOPAL_SPACE_ROOT>/.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
 
 > `~/.wopal/config/` 是纯配置目录，不扫描能力。能力来自 `~/.wopal/`（全局）和 `.wopal/`（空间）。
 
@@ -92,7 +92,8 @@ wopal-space 模式**不加载**：
 
 | 变量 | 说明 |
 |------|------|
-| `WOPAL_SPACE` | 激活 wopal-space 模式（自动检测或 `--wopal-space` 设置） |
+| `WOPAL_SPACE` | 激活 wopal-space 模式（自动检测设置） |
+| `WOPAL_SPACE_ROOT` | 检测到的空间根绝对路径（内部状态，不接受用户环境变量注入） |
 | `WOPAL_HOME` | 覆盖 `~/.wopal/` 根路径 |
 | `OPENCODE_MODELS_URL` | 自定义模型发现 URL |
 | `OPENCODE_MODELS_PATH` | 自定义模型发现文件路径 |
@@ -425,13 +426,15 @@ Agent permission 有两种配置入口：
 
 ### Wopal-Space 模式下的 Skill 加载
 
-wopal-space 模式下，`Flag.WOPAL_SPACE` 会自动禁用 opencode 兼容路径（`~/.claude/skills`、`.agents/skills`、Claude Code 提示词），无需手动设置环境变量。
+wopal-space 模式下，skill 按以下优先级加载（低→高，同名高优先级覆盖低优先级）：
 
-Skill 来源仅剩：
-1. `~/.wopal/skills/`（全局能力目录）
-2. 空间 `.wopal/skills/`（向上搜索）
-3. 配置中 `skills.paths` 指定的额外路径
-4. 配置中 `skills.urls` 拉取的远程技能
+1. `~/.agents/skills/`（外部 agent skill，最低优先级）
+2. `~/.wopal/skills/`（全局能力目录）
+3. `<WOPAL_SPACE_ROOT>/.wopal/skills/`（空间能力目录，最高优先级）
+4. 配置中 `skills.paths` 指定的额外路径
+5. 配置中 `skills.urls` 拉取的远程技能
+
+Claude Code 技能（`~/.claude/skills/`）和 Claude Code 提示词在 wopal-space 模式下自动排除，无需手动设置环境变量。
 
 > `~/.wopal/config/` 是纯配置目录，不扫描 skills/agents/commands 等能力。
 

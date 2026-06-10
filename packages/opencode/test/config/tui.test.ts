@@ -1,4 +1,4 @@
-import { expect } from "bun:test"
+import { expect, describe, afterEach, test } from "bun:test"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer } from "effect"
@@ -876,3 +876,67 @@ it.instance("missing tui.json - silently treated as empty (ENOENT path)", () =>
     }),
   ),
 )
+
+// ---------------------------------------------------------------------------
+// WopalSpace TUI config loading — WOPAL_SPACE_ROOT based
+// ---------------------------------------------------------------------------
+
+describe("WopalSpace TUI config loading", () => {
+  type WopalSpaceSettingsResult = import("../../src/config/wopal-space-settings").WopalSpaceSettingsResult
+  const { loadWopalSpaceSettingsFiles } = require("../../src/config/wopal-space-settings") as {
+    loadWopalSpaceSettingsFiles: (
+      deps: { readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never> },
+      ctx: { directory: string },
+    ) => Effect.Effect<WopalSpaceSettingsResult | undefined, never, never>
+  }
+
+  const originalWopalSpace = process.env.WOPAL_SPACE
+  const originalWopalSpaceRoot = process.env.WOPAL_SPACE_ROOT
+  const originalDisableProjectConfig = process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+
+  afterEach(() => {
+    if (originalWopalSpace === undefined) delete process.env.WOPAL_SPACE
+    else process.env.WOPAL_SPACE = originalWopalSpace
+    if (originalWopalSpaceRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
+    else process.env.WOPAL_SPACE_ROOT = originalWopalSpaceRoot
+    if (originalDisableProjectConfig === undefined) delete process.env.OPENCODE_DISABLE_PROJECT_CONFIG
+    else process.env.OPENCODE_DISABLE_PROJECT_CONFIG = originalDisableProjectConfig
+  })
+
+  test("TUI settings files load from WOPAL_SPACE_ROOT/.wopal/", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/tmp/tui-space-root"
+
+    const tuiSettings = JSON.stringify({ tui: { theme: "space-theme" } })
+    const readFile = (filepath: string) => {
+      if (filepath.includes("settings.jsonc")) return Effect.succeed(tuiSettings)
+      return Effect.succeed(undefined)
+    }
+    const deps = { readConfigFile: readFile }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/some/dir" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual(["/tmp/tui-space-root/.wopal"])
+    expect((result as WopalSpaceSettingsResult).files).toHaveLength(1)
+    expect((result as WopalSpaceSettingsResult).files[0].path).toContain("/tmp/tui-space-root/.wopal/config/settings.jsonc")
+  })
+
+  test("TUI settings files resolve from WOPAL_SPACE_ROOT regardless of cwd", async () => {
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = "/outer/workspace"
+
+    const readFile = (_filepath: string) => Effect.succeed(undefined)
+    const deps = { readConfigFile: readFile }
+
+    const result = await Effect.runPromise(
+      loadWopalSpaceSettingsFiles(deps, { directory: "/outer/workspace/projects/nested-repo" }),
+    )
+
+    expect(result).toBeDefined()
+    expect((result as WopalSpaceSettingsResult).localWopalDirs).toEqual(["/outer/workspace/.wopal"])
+    expect((result as WopalSpaceSettingsResult).directories.some((d: string) => d === "/outer/workspace/.wopal")).toBe(true)
+  })
+})

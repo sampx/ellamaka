@@ -133,10 +133,10 @@ N/A — 无业务规则变更。
 
 ### Agent 验证
 
-1. [ ] 在 `packages/ellamaka` 下：`bun test test/detect.test.ts` 退出码 0。
-2. [ ] 在 `packages/opencode` 下：`bun test test/config/config.test.ts test/config/tui.test.ts test/skill/skill.test.ts test/session/instruction.test.ts` 退出码 0。
-3. [ ] 在 `packages/opencode` 下：`bun typecheck` 退出码 0。
-4. [ ] 在 `packages/opencode` 下：测试证据确认嵌套项目 cwd 启动时，即使 cwd git worktree 是嵌套项目根，也能加载 `<空间根>/.wopal/` 配置和能力。
+1. [x] 在 `packages/ellamaka` 下：`bun test test/detect.test.ts` 退出码 0。
+2. [x] 在 `packages/opencode` 下：`bun test test/config/config.test.ts test/config/tui.test.ts test/skill/skill.test.ts test/session/instruction.test.ts` 退出码 0。
+3. [x] 在 `packages/opencode` 下：`bun typecheck` 退出码 0。
+4. [x] 在 `packages/opencode` 下：测试证据确认嵌套项目 cwd 启动时，即使 cwd git worktree 是嵌套项目根，也能加载 `<空间根>/.wopal/` 配置和能力。
 5. [ ] 用户验证场景 2 确认 `--no-wopal-space` 恢复原生 opencode 兼容行为。此条不需要自动化测试——这是用户触发的模式切换，通过人工观察验证。
 
 ### 用户验证
@@ -166,7 +166,7 @@ N/A — 无业务规则变更。
 - Goal: 确认 `detectWopalSpace` 通过 `.wopal/.git` 文件识别空间根，home 上界正确，非 worktree `.wopal/` 不阻塞搜索，不依赖 settings 文件
 - Fixture: tmpdir 内创建多层目录，在指定层级放置 `.wopal/.git` 文件和非 worktree 的 `.wopal/` 目录
 - Execution:
-  - [ ] Step 1: 覆盖 AC#1, AC#4 — 在 `packages/ellamaka` 下运行 `bun test test/detect.test.ts`
+  - [x] Step 1: 覆盖 AC#1, AC#4 — 在 `packages/ellamaka` 下运行 `bun test test/detect.test.ts`
 - Expected Evidence: 全部测试通过，`detectWopalSpace` 返回 `{ root, wopalDir }` 而非布尔值
 
 ##### Case 2: 配置和 TUI 加载
@@ -174,7 +174,7 @@ N/A — 无业务规则变更。
 - Goal: 确认 WopalSpace 配置和 TUI 加载器直接使用 `WOPAL_SPACE_ROOT/.wopal/`，不依赖 `findWopalDirs` 和 worktree 边界
 - Fixture: tmpdir 内模拟嵌套项目仓库结构，外层空间根有 `.wopal/`，内层项目为独立 git 仓库
 - Execution:
-  - [ ] Step 1: 覆盖 AC#2, AC#3, AC#4 — 在 `packages/opencode` 下运行 `bun test test/config/config.test.ts test/config/tui.test.ts`
+  - [x] Step 1: 覆盖 AC#2, AC#3, AC#4 — 在 `packages/opencode` 下运行 `bun test test/config/config.test.ts test/config/tui.test.ts`
 - Expected Evidence: 嵌套项目 cwd 下 `tryLoadWopalSpaceConfig` 正确加载空间根 `.wopal/` 的配置和能力
 
 ##### Case 3: 技能和指令加载
@@ -182,7 +182,7 @@ N/A — 无业务规则变更。
 - Goal: 确认空间模式下 skill 链路为 `~/.agents/` → `~/.wopal/` → `.wopal/`，Claude prompt 和 Claude skill 被排除
 - Fixture: tmpdir 内准备 `~/.agents/skills/`、`~/.claude/skills/`、`~/.wopal/skills/` 和空间 `.wopal/skills/` 的多层目录结构
 - Execution:
-  - [ ] Step 1: 覆盖 AC#2, AC#3 — 在 `packages/opencode` 下运行 `bun test test/skill/skill.test.ts test/session/instruction.test.ts`
+  - [x] Step 1: 覆盖 AC#2, AC#3 — 在 `packages/opencode` 下运行 `bun test test/skill/skill.test.ts test/session/instruction.test.ts`
 - Expected Evidence: 空间模式下 skill 优先级正确，Claude 内容被排除；非空间模式行为不变
 
 ##### Case 4: 文档契约
@@ -190,7 +190,7 @@ N/A — 无业务规则变更。
 - Goal: 确认项目文档记录了 WopalSpace 最终运行时契约
 - Fixture: 实施完成后的 `docs/BRANDING.md` 或 `AGENTS.md`
 - Execution:
-  - [ ] Step 1: 覆盖 AC#3 — 运行 `bun typecheck && rg -l 'WOPAL_SPACE_ROOT' docs/BRANDING.md AGENTS.md`
+  - [x] Step 1: 覆盖 AC#3 — 运行 `bun typecheck && rg -l 'WOPAL_SPACE_ROOT' docs/BRANDING.md AGENTS.md`
 - Expected Evidence: typecheck 通过且文档包含 `WOPAL_SPACE_ROOT` 相关描述
 
 ## 实施
@@ -230,7 +230,7 @@ N/A — 无业务规则变更。
 
 **Done**：
 任务产出：WopalSpace 根检测和 CLI 模式选择是确定性的，不依赖 settings 文件。
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
@@ -266,7 +266,7 @@ N/A — 无业务规则变更。
 
 **Done**：
 任务产出：主配置和 TUI 配置一致使用检测到的 WopalSpace 根。
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
@@ -304,7 +304,7 @@ Claude Code 提示词和技能排除直接由空间模式分支处理，不需�
 
 **Done**：
 任务产出：WopalSpace 技能和指令加载按设计的短路链路运行。
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
@@ -333,7 +333,7 @@ Claude Code 提示词和技能排除直接由空间模式分支处理，不需�
 
 **Done**：
 任务产出：文档反映最终 WopalSpace 模式契约。
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 

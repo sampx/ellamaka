@@ -38,7 +38,6 @@ async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]>
 }
 
 export interface WopalSpaceDeps {
-  findWopalDirs: (start: string, stop?: string) => Effect.Effect<string[], never, never>
   installPluginDeps: (dir: string, add: InstallDependency[]) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
   loadConfig: (
@@ -67,18 +66,16 @@ export interface WopalSpaceResult {
 
 export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
   directory: string
-  worktree: string | undefined
 }) {
   return Effect.gen(function* () {
-    if (!Flag.WOPAL_SPACE || !ctx.worktree || Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+    if (!Flag.WOPAL_SPACE || Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
       return undefined
     }
 
-    log.info("wopal-space mode detected", { directory: ctx.directory, worktree: ctx.worktree })
+    log.info("wopal-space mode detected", { directory: ctx.directory })
 
-    const settings = yield* loadWopalSpaceSettingsFiles(deps, { directory: ctx.directory, stop: ctx.worktree })
-    if (!settings || settings.localWopalDirs.length === 0) {
-      log.warn("--wopal-space enabled but no .wopal directory found between cwd and worktree")
+    const settings = yield* loadWopalSpaceSettingsFiles(deps, { directory: ctx.directory })
+    if (!settings) {
       return undefined
     }
 
