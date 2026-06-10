@@ -14,66 +14,54 @@
 - **Complexity**: Medium
 - **Confidence**: High
 
-## Goal
+## 目标
 
-Make ellamaka detect WopalSpace by the actual space root and run a coherent WopalSpace config and capability chain from anywhere inside the space.
+让 ellamaka 通过实际空间根来识别 WopalSpace，保证从空间内任意位置启动都能走完整一致的空间配置和能力加载链路。
 
-## Technical Context
+## 技术上下文
 
-### Architecture Context
+### 架构现状
 
-ellamaka currently has two separate WopalSpace decisions.
+ellamaka 的 WopalSpace 判定目前分两步走，两步的搜索边界不一致。
 
-The CLI detects space mode by walking upward from cwd and checking whether `.wopal/config/settings.json[c]` contains an `ellamaka` key.
+CLI 检测阶段从 cwd 向上遍历，检查 `.wopal/config/settings.json[c]` 是否包含 `ellamaka` 键来决定是否进入空间模式。
 
-The config loader then searches for `.wopal/` only between cwd and the current git worktree root.
+配置加载阶段则只在 cwd 和当前 git worktree 根之间搜索 `.wopal/`。
 
-This splits detection from loading.
+当 ellamaka 在嵌套项目仓库（如 `projects/ellamaka/`）内启动时，检测器能穿透子仓库找到工作空间根，但加载器被卡在子仓库的 git 根边界，找不到空间根的 `.wopal/`。结果是检测说"在空间内"，但加载不到空间级配置和能力。
 
-When ellamaka starts inside a nested project repo such as `projects/ellamaka/`, the detector can find the workspace root while the loader is capped at the project git root.
+WopalSpace 的身份标识是空间根。空间根是最近祖先目录中 `.wopal/.git` 为文件的那个目录。`.wopal/config/settings.jsonc` 是配置覆盖层，不是身份标识。
 
-The result is inconsistent mode selection: space mode can be detected while space-local config, agents, commands, plugins, and skills are not loaded.
+WopalSpace 模式应是一条短路链路：在空间内走空间链路，不在空间内保持 opencode 兼容链路不动。
 
-WopalSpace identity belongs to the space root.
+### 研究结论
 
-The root is the nearest ancestor directory whose `.wopal/.git` is a file.
+目标 WopalSpace 加载模型：
 
-The presence of `.wopal/config/settings.jsonc` is a config overlay, not the identity marker.
-
-WopalSpace mode should be a short-circuit chain.
-
-Inside a space, ellamaka uses the WopalSpace chain.
-
-Outside a space, ellamaka keeps the opencode-compatible chain unchanged.
-
-### Research Findings
-
-The target WopalSpace loading model is:
-
-1. Space detection finds the nearest valid space root from cwd upward, stopping at the user home directory.
-2. `--no-wopal-space` is the only manual override and restores native opencode behavior inside a space.
-3. `--wopal-space` is removed because space mode cannot be forced outside an actual space.
-4. `WOPAL_SPACE_ROOT` is process-internal state set by detection and cleared otherwise.
-5. Config and capability loaders consume `WOPAL_SPACE_ROOT/.wopal/` directly.
-6. Space mode loads skills in this priority order: `~/.agents/skills/` → `~/.wopal/skills/` → `<space-root>/.wopal/skills/`.
-7. Space mode excludes Claude Code prompts and Claude Code skills.
-8. Non-space mode keeps the current opencode-compatible behavior.
+1. 空间检测从 cwd 向上找到最近的有效空间根，上界为用户 home 目录。
+2. `--no-wopal-space` 是唯一手动覆写入口，用于在空间内恢复原生 opencode 行为。
+3. `--wopal-space` 删除——非空间内不能强制开启空间模式。
+4. `WOPAL_SPACE_ROOT` 由检测逻辑设置，检测不到则清除，不接受用户环境变量注入。
+5. 配置和能力加载器直接消费 `WOPAL_SPACE_ROOT/.wopal/`。
+6. 空间模式下 skill 加载优先级：`~/.agents/skills/` → `~/.wopal/skills/` → `<空间根>/.wopal/skills/`。
+7. 空间模式排除 Claude Code 提示词和 Claude Code 技能。
+8. 非空间模式保持现有 opencode 兼容行为不变。
 
 **参考资料**：
-- N/A — source-level behavior was inspected directly during planning.
+- N/A — 源行为在规划阶段直接审查。
 
-### Key Decisions
+### 关键决策
 
-- D-01: Detect WopalSpace by `.wopal/.git` being a file, because the ontology worktree is the space identity marker.
-- D-02: Stop upward detection at the user home directory, because `~/.wopal/` is the global user layer and must not be treated as a nested space search boundary beyond home.
-- D-03: Remove `--wopal-space`, because forcing space mode outside a detected space creates invalid state.
-- D-04: Keep `--no-wopal-space`, because it is the escape hatch for restoring native opencode behavior while working inside a space.
-- D-05: Use `WOPAL_SPACE_ROOT` as internal process state and ignore user-supplied `WOPAL_SPACE` or `WOPAL_SPACE_ROOT` values before detection runs.
-- D-06: Load WopalSpace config and TUI config from `WOPAL_SPACE_ROOT/.wopal/` directly, not by searching from cwd to the current git worktree.
-- D-07: Keep existing command and agent field-level merge behavior. Space definitions override only the fields they define.
-- D-08: Keep skill and plugin replacement behavior. Same-name skills and same-identity plugins from higher layers replace lower layers.
+- D-01：通过 `.wopal/.git` 是否为文件来检测 WopalSpace，因为 ontology worktree 就是空间身份标识。
+- D-02：向上检测上界为用户 home 目录，`~/.wopal/` 是全局用户层，不做为空间嵌套搜索边界。
+- D-03：删除 `--wopal-space`，因为非空间内强制开启空间模式会产生无效状态。
+- D-04：保留 `--no-wopal-space`，作为空间内恢复原生 opencode 行为的逃生舱。
+- D-05：`WOPAL_SPACE_ROOT` 为进程内部状态，检测运行前忽略用户提供的同名环境变量。
+- D-06：WopalSpace 配置和 TUI 配置直接从 `WOPAL_SPACE_ROOT/.wopal/` 加载，不再从 cwd 到当前 git worktree 扫描。
+- D-07：保持现有 command 和 agent 的字段级合并行为——空间定义只覆盖自己声明的字段。
+- D-08：保持现有 skill 和 plugin 的同名替换行为——上层同名 skill / 同 identity plugin 完整替换下层。
 
-### Key Interfaces
+### 关键接口
 
 ```ts
 type WopalSpaceDetection = {
@@ -84,269 +72,275 @@ type WopalSpaceDetection = {
 function detectWopalSpace(cwd: string, options?: { home?: string }): WopalSpaceDetection | undefined
 ```
 
-Runtime contract:
+运行时契约：
 
-- `WOPAL_SPACE_ROOT` is the absolute path to the detected space root.
-- `WOPAL_SPACE` remains only as internal compatibility state for existing `Flag.WOPAL_SPACE` consumers.
-- `--no-wopal-space` clears both internal values for the current process.
+- `WOPAL_SPACE_ROOT` 为检测到的空间根绝对路径。
+- `WOPAL_SPACE` 仅保留为内部兼容状态，供已有 `Flag.WOPAL_SPACE` 消费者使用。
+- `--no-wopal-space` 清除当前进程的两个内部值。
 
-## In Scope
+## 范围内
 
-- Replace settings-file-based WopalSpace detection with ontology worktree detection.
-- Remove the force-enable `--wopal-space` CLI option.
-- Preserve `--no-wopal-space` as the explicit native-mode escape hatch.
-- Make config and TUI loading use the detected space root instead of the current git worktree boundary.
-- Make WopalSpace skill discovery load `~/.agents/skills/` at the lowest priority.
-- Keep Claude Code prompts and Claude Code skills excluded in WopalSpace mode.
-- Add regression tests for nested project execution inside a space.
-- Update ellamaka project documentation if existing docs describe the old WopalSpace behavior.
+- 将基于 settings 文件的 WopalSpace 检测替换为基于 ontology worktree 的检测。
+- 删除强制开启的 `--wopal-space` CLI 选项。
+- 保留 `--no-wopal-space` 作为显式原生模式逃生舱。
+- 配置和 TUI 加载使用检测到的空间根，不再依赖当前 git worktree 边界。
+- WopalSpace 模式下 skill 发现加载 `~/.agents/skills/` 作为最低优先级层。
+- WopalSpace 模式继续排除 Claude Code 提示词和 Claude Code 技能。
+- 为空间内嵌套项目启动添加回归测试。
+- 如果现有文档描述了旧 WopalSpace 行为，更新 ellamaka 项目文档。
 
-## Out of Scope
+## 范围外
 
-- Changing generic opencode-compatible behavior outside WopalSpace mode.
-- Changing command and agent merge semantics.
-- Changing skill and plugin replacement semantics.
-- Supporting manual force-enable space mode outside a detected WopalSpace.
-- Changing upstream opencode config names or paths.
+- 修改非 WopalSpace 模式下的 opencode 兼容行为。
+- 修改 command 和 agent 的合并语义。
+- 修改 skill 和 plugin 的替换语义。
+- 支持在检测不到 WopalSpace 时手动强制开启空间模式。
+- 修改上游 opencode 的配置名称或路径。
 
-## Business Rules Impact
+## 业务规则影响
 
 ### 新增
 
-N/A — no business rules change.
+N/A — 无业务规则变更。
 
 ### 修改
 
-N/A — no business rules change.
+N/A — 无业务规则变更。
 
 ### 废弃
 
-N/A — no business rules change.
+N/A — 无业务规则变更。
 
 ### 同步确认
-- [ ] N/A — no `BUSINESS_RULES.md` update required.
+- [ ] N/A — 无需更新 `BUSINESS_RULES.md`。
 
-## Affected Files
+## 涉及文件
 
-| Component | Files | Operation | Role |
-|-----------|-------|-----------|------|
-| Space detection | `packages/ellamaka/detect.ts`, `packages/ellamaka/test/detect.test.ts` | Modify/Create | Detect the nearest WopalSpace root by ontology worktree marker |
-| CLI mode selection | `packages/opencode/src/index.ts` | Modify | Remove force-enable flag and normalize internal space-mode state |
-| Main config loading | `packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/test/config/config.test.ts` | Modify | Load WopalSpace config and capabilities from `WOPAL_SPACE_ROOT/.wopal/` |
-| TUI config loading | `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/test/config/tui.test.ts` | Modify | Keep TUI config on the same WopalSpace root chain |
-| Skill loading | `packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/test/skill/skill.test.ts` | Modify | Load `~/.agents/skills/` first and exclude Claude skills in space mode |
-| Instruction loading | `packages/opencode/src/session/instruction.ts`, `packages/opencode/test/session/instruction.test.ts` | Modify | Exclude Claude prompts in space mode without affecting non-space mode |
-| Documentation | `docs/BRANDING.md`, `AGENTS.md` | Modify if needed | Record the target WopalSpace behavior for future maintenance |
+| 组件 | 文件 | 操作 | 作用 |
+|------|------|------|------|
+| 空间检测 | `packages/ellamaka/detect.ts`, `packages/ellamaka/test/detect.test.ts` | 修改/新建 | 通过 ontology worktree 标记检测最近 WopalSpace 根 |
+| CLI 模式选择 | `packages/opencode/src/index.ts` | 修改 | 删除强制开启 flag，规范化内部空间模式状态 |
+| 主配置加载 | `packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/test/config/config.test.ts` | 修改 | 从 `WOPAL_SPACE_ROOT/.wopal/` 加载空间配置和能力 |
+| TUI 配置加载 | `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/test/config/tui.test.ts` | 修改 | TUI 配置跟随同一条 WopalSpace 根链路 |
+| Skill 加载 | `packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/test/skill/skill.test.ts` | 修改 | 空间模式优先加载 `~/.agents/skills/` 并排除 Claude 技能 |
+| 指令加载 | `packages/opencode/src/session/instruction.ts`, `packages/opencode/test/session/instruction.test.ts` | 修改 | 空间模式排除 Claude 提示词，不影响非空间模式 |
+| 文档 | `docs/BRANDING.md`, `AGENTS.md` | 按需修改 | 记录目标 WopalSpace 行为供后续维护 |
 
-## Acceptance Criteria
+## 验收标准
 
-### Agent Verification
+### Agent 验证
 
-1. [ ] From `packages/ellamaka`: `bun test test/detect.test.ts` exits 0.
-2. [ ] From `packages/opencode`: `bun test test/config/config.test.ts test/config/tui.test.ts test/skill/skill.test.ts test/session/instruction.test.ts` exits 0.
-3. [ ] From `packages/opencode`: `bun typecheck` exits 0.
-4. [ ] From `packages/opencode`: test evidence confirms nested project cwd under a WopalSpace loads `<space-root>/.wopal/` config and capabilities even when cwd git worktree is the nested project root.
-5. [ ] User Validation Scenario 2 confirms `--no-wopal-space` restores native opencode-compatible behavior. No automated test required — this is a user-initiated mode switch verified through manual observation.
+1. [ ] 在 `packages/ellamaka` 下：`bun test test/detect.test.ts` 退出码 0。
+2. [ ] 在 `packages/opencode` 下：`bun test test/config/config.test.ts test/config/tui.test.ts test/skill/skill.test.ts test/session/instruction.test.ts` 退出码 0。
+3. [ ] 在 `packages/opencode` 下：`bun typecheck` 退出码 0。
+4. [ ] 在 `packages/opencode` 下：测试证据确认嵌套项目 cwd 启动时，即使 cwd git worktree 是嵌套项目根，也能加载 `<空间根>/.wopal/` 配置和能力。
+5. [ ] 用户验证场景 2 确认 `--no-wopal-space` 恢复原生 opencode 兼容行为。此条不需要自动化测试——这是用户触发的模式切换，通过人工观察验证。
 
-### User Validation
+### 用户验证
 
-#### Scenario 1: Start ellamaka from a project repo inside WopalSpace
-- Goal: Confirm ellamaka uses the space root `.wopal/` chain when launched from `projects/<name>/`.
-- Precondition: The implemented branch is active and ellamaka has been restarted from inside a project directory under the workspace.
-- User Actions:
-  1. Launch ellamaka from a nested project directory inside the WopalSpace.
-  2. Inspect available skills or agent behavior that is defined by the space root `.wopal/` layer.
-- Expected Result: Space-local abilities are available even though the current git repo is the nested project repo.
+#### 场景 1：从 WopalSpace 内项目仓库启动 ellamaka
+- 目标：确认从 `projects/<name>/` 启动时 ellamaka 使用空间根 `.wopal/` 链路。
+- 前置条件：已切换到实施分支，ellamaka 已重启，当前位于工作空间内某项目目录。
+- 用户操作：
+  1. 从 WopalSpace 内的嵌套项目目录启动 ellamaka。
+  2. 检查由空间根 `.wopal/` 层定义的可用技能或 agent 行为。
+- 预期结果：即使当前 git 仓库是嵌套项目仓库，空间级能力仍然可用。
 
-#### Scenario 2: Disable WopalSpace mode explicitly
-- Goal: Confirm `--no-wopal-space` restores native opencode-compatible behavior.
-- Precondition: The same project directory is inside a detected WopalSpace.
-- User Actions:
-  1. Launch ellamaka with `--no-wopal-space`.
-  2. Inspect whether WopalSpace-only abilities are absent.
-- Expected Result: ellamaka follows the native opencode-compatible chain for that process.
+#### 场景 2：显式关闭 WopalSpace 模式
+- 目标：确认 `--no-wopal-space` 恢复原生 opencode 兼容行为。
+- 前置条件：同一项目目录位于已检测到的 WopalSpace 内。
+- 用户操作：
+  1. 使用 `--no-wopal-space` 启动 ellamaka。
+  2. 检查 WopalSpace 独有能力是否不可用。
+- 预期结果：ellamaka 在本次进程中走原生 opencode 兼容链路。
 
 - [ ] 用户已完成上述功能验证并确认结果符合预期
 
-## Implementation
+## Test Plan
 
-### Task 1: Detect the WopalSpace root and normalize CLI mode
+##### Case 1: 空间根检测
 
-**Verification Intent**: AC#1, AC#5
+- Goal: 确认 `detectWopalSpace` 通过 `.wopal/.git` 文件识别空间根，home 上界正确，非 worktree `.wopal/` 不阻塞搜索，不依赖 settings 文件
+- Fixture: tmpdir 内创建多层目录，在指定层级放置 `.wopal/.git` 文件和非 worktree 的 `.wopal/` 目录
+- Execution:
+  - [ ] Step 1: 覆盖 AC#1, AC#4 — 在 `packages/ellamaka` 下运行 `bun test test/detect.test.ts`
+- Expected Evidence: 全部测试通过，`detectWopalSpace` 返回 `{ root, wopalDir }` 而非布尔值
 
-**Behavior**: ellamaka detects the nearest space root by `.wopal/.git` file, stops at the user home directory, removes `--wopal-space`, and keeps `--no-wopal-space` as the only manual override.
+##### Case 2: 配置和 TUI 加载
 
-**Files**: `packages/ellamaka/detect.ts`, `packages/ellamaka/test/detect.test.ts`, `packages/opencode/src/index.ts`
+- Goal: 确认 WopalSpace 配置和 TUI 加载器直接使用 `WOPAL_SPACE_ROOT/.wopal/`，不依赖 `findWopalDirs` 和 worktree 边界
+- Fixture: tmpdir 内模拟嵌套项目仓库结构，外层空间根有 `.wopal/`，内层项目为独立 git 仓库
+- Execution:
+  - [ ] Step 1: 覆盖 AC#2, AC#3, AC#4 — 在 `packages/opencode` 下运行 `bun test test/config/config.test.ts test/config/tui.test.ts`
+- Expected Evidence: 嵌套项目 cwd 下 `tryLoadWopalSpaceConfig` 正确加载空间根 `.wopal/` 的配置和能力
 
-**Pre-read**: `packages/ellamaka/detect.ts`, `packages/opencode/src/index.ts`
+##### Case 3: 技能和指令加载
 
-**Design**:
+- Goal: 确认空间模式下 skill 链路为 `~/.agents/` → `~/.wopal/` → `.wopal/`，Claude prompt 和 Claude skill 被排除
+- Fixture: tmpdir 内准备 `~/.agents/skills/`、`~/.claude/skills/`、`~/.wopal/skills/` 和空间 `.wopal/skills/` 的多层目录结构
+- Execution:
+  - [ ] Step 1: 覆盖 AC#2, AC#3 — 在 `packages/opencode` 下运行 `bun test test/skill/skill.test.ts test/session/instruction.test.ts`
+- Expected Evidence: 空间模式下 skill 优先级正确，Claude 内容被排除；非空间模式行为不变
 
-Change detection from boolean settings-file scanning to root detection.
+##### Case 4: 文档契约
 
-The detector walks upward from cwd to the home directory.
+- Goal: 确认项目文档记录了 WopalSpace 最终运行时契约
+- Fixture: 实施完成后的 `docs/BRANDING.md` 或 `AGENTS.md`
+- Execution:
+  - [ ] Step 1: 覆盖 AC#3 — 运行 `bun typecheck && rg -l 'WOPAL_SPACE_ROOT' docs/BRANDING.md AGENTS.md`
+- Expected Evidence: typecheck 通过且文档包含 `WOPAL_SPACE_ROOT` 相关描述
 
-The first ancestor containing `.wopal/.git` as a file is the detected space root.
+## 实施
 
-Plain `.wopal/` directories without a git worktree marker are ignored and do not stop the search.
+### Task 1：检测 WopalSpace 根并规范化 CLI 模式
 
-`index.ts` removes the `--wopal-space` option and keeps `--no-wopal-space` through yargs boolean negation support.
+**验证意图**：AC#1, AC#5
 
-Before applying detection results, clear any inherited `WOPAL_SPACE` and `WOPAL_SPACE_ROOT` values so user-provided environment variables cannot force mode.
+**行为**：ellamaka 通过 `.wopal/.git` 文件检测最近空间根，上界为用户 home 目录，删除 `--wopal-space`，保留 `--no-wopal-space` 作为唯一手动覆写。
 
-If `--no-wopal-space` is present, leave both values cleared.
+**文件**：`packages/ellamaka/detect.ts`, `packages/ellamaka/test/detect.test.ts`, `packages/opencode/src/index.ts`
 
-Otherwise, set both values from the detected root.
+**预读**：`packages/ellamaka/detect.ts`, `packages/opencode/src/index.ts`
 
-**TDD**: true
+**设计**：
 
-**Changes**:
-1. Add RED tests for detected root, nearest-root priority, home stop boundary, ignored non-worktree `.wopal/`, and settings-file-independent detection.
-2. Update `detectWopalSpace` to return root metadata instead of a boolean.
-3. Update `index.ts` middleware to remove the force-enable flag and normalize internal env state from detection.
-4. Update call sites and tests affected by the detector return type.
+将检测从布尔型 settings 文件扫描改为根路径检测。
 
-**Verify**:
-From `packages/ellamaka`: `bun test test/detect.test.ts`
+检测器从 cwd 向上遍历到 home 目录，第一个包含 `.wopal/.git` 为文件的祖先目录即为空间根。普通 `.wopal/` 目录无 git worktree 标记的忽略，不中止搜索。
 
-**Done**:
-任务产出：WopalSpace root detection and CLI mode selection are deterministic and settings-file independent.
+`index.ts` 删除 `--wopal-space` 选项，通过 yargs 布尔否定支持保留 `--no-wopal-space`。
+
+检测前清除所有继承的 `WOPAL_SPACE` 和 `WOPAL_SPACE_ROOT` 值，防止用户环境变量注入。
+
+若 `--no-wopal-space` 存在，两个值均清除；否则从检测到的空间根设置两个值。
+
+**TDD**：true
+
+**改动**：
+1. 为检测到的根、最近根优先级、home 停止边界、非 worktree `.wopal/` 忽略、不依赖 settings 文件检测等场景编写 RED 测试。
+2. 将 `detectWopalSpace` 改为返回根元数据而非布尔值。
+3. 更新 `index.ts` middleware，删除强制开启 flag，从检测结果规范化内部环境状态。
+4. 更新受检测器返回类型影响的调用点和测试。
+
+**验证**：
+在 `packages/ellamaka` 下：`bun test test/detect.test.ts`
+
+**Done**：
+任务产出：WopalSpace 根检测和 CLI 模式选择是确定性的，不依赖 settings 文件。
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
-### Task 2: Load main and TUI config from the detected space root
+### Task 2：从检测到的空间根加载主配置和 TUI 配置
 
-**Verification Intent**: AC#2, AC#3, AC#4, AC#5
+**验证意图**：AC#2, AC#3, AC#4, AC#5
 
-**Behavior**: WopalSpace config loading uses `WOPAL_SPACE_ROOT/.wopal/` directly and works from nested project repos, non-git directories under a space, and spaces without local settings overlays.
+**行为**：WopalSpace 配置加载直接使用 `WOPAL_SPACE_ROOT/.wopal/`，适用于嵌套项目仓库、空间内非 git 目录、无本地 settings 覆盖层的空间。
 
-**Files**: `packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/test/config/config.test.ts`, `packages/opencode/test/config/tui.test.ts`
+**文件**：`packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/config.ts`, `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`, `packages/opencode/test/config/config.test.ts`, `packages/opencode/test/config/tui.test.ts`
 
-**Pre-read**: `packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`
+**预读**：`packages/opencode/src/config/wopal-space.ts`, `packages/opencode/src/config/wopal-space-settings.ts`, `packages/opencode/src/cli/cmd/tui/config/wopal-space.ts`, `packages/opencode/src/cli/cmd/tui/config/tui.ts`
 
-**Design**:
+**设计**：
 
-Replace `findWopalDirs` with root-based resolution.
+用基于根的解析替换 `findWopalDirs`。空间模式下本地 Wopal 目录始终为 `[path.join(WOPAL_SPACE_ROOT, ".wopal")]`。
 
-The local Wopal directory is always `[path.join(WOPAL_SPACE_ROOT, ".wopal")]` in space mode.
+加载器不再要求 `ctx.worktree`，不再要求空间本地有 settings 文件。有本地 settings 文件时合并其中的 `ellamaka` 或 `tui` 部分；无本地 settings 文件时继续加载全局配置和能力。
 
-The loader should not require `ctx.worktree`.
+普通模式不动。`--no-wopal-space` 使 WopalSpace 加载器返回 undefined，让已有原生路径继续运行。
 
-The loader should not require a space-local settings file to exist.
+**TDD**：true
 
-When a local settings file exists, merge its `ellamaka` or `tui` section as today.
+**改动**：
+1. 编写 RED 配置测试：cwd 在嵌套项目仓库内且 `WOPAL_SPACE_ROOT` 指向外层工作空间。
+2. 编写 RED 配置测试：检测到空间但无 `.wopal/config/settings.jsonc`。
+3. 编写 RED TUI 配置测试：同上述嵌套根场景。
+4. 从 WopalSpace 配置和 TUI 依赖中移除 `findWopalDirs`。
+5. 两个加载器直接使用内部根路径。
 
-When no local settings file exists, continue with global config and capability loading.
+**验证**：
+在 `packages/opencode` 下：`bun test test/config/config.test.ts test/config/tui.test.ts && bun typecheck`
 
-Keep normal mode untouched.
-
-`--no-wopal-space` must make the WopalSpace loader return undefined and allow the existing native path to run.
-
-**TDD**: true
-
-**Changes**:
-1. Add RED config tests where cwd is inside a nested project repo and `WOPAL_SPACE_ROOT` points to the outer workspace.
-2. Add RED config tests for a detected space without `.wopal/config/settings.jsonc`.
-3. Add RED TUI config tests with the same nested-root shape.
-4. Remove `findWopalDirs` from WopalSpace config and TUI dependencies.
-5. Make both loaders use the internal root directly.
-
-**Verify**:
-From `packages/opencode`: `bun test test/config/config.test.ts test/config/tui.test.ts && bun typecheck`
-
-**Done**:
-任务产出：Main config and TUI config use the detected WopalSpace root consistently.
+**Done**：
+任务产出：主配置和 TUI 配置一致使用检测到的 WopalSpace 根。
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
-### Task 3: Apply the WopalSpace skill and instruction chain
+### Task 3：应用 WopalSpace 技能和指令链路
 
-**Verification Intent**: AC#2, AC#3, AC#5
+**验证意图**：AC#2, AC#3, AC#5
 
-**Behavior**: In WopalSpace mode, skills load from `~/.agents/skills/` first, then `~/.wopal/skills/`, then `<space-root>/.wopal/skills/`; Claude skills and Claude prompts are excluded. Outside WopalSpace mode, existing opencode-compatible skill and prompt behavior remains unchanged.
+**行为**：WopalSpace 模式下，skill 按 `~/.agents/skills/` → `~/.wopal/skills/` → `<空间根>/.wopal/skills/` 顺序加载；Claude 技能和 Claude 提示词被排除。非 WopalSpace 模式下，现有 opencode 兼容行为不变。
 
-**Files**: `packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/src/session/instruction.ts`, `packages/opencode/test/skill/skill.test.ts`, `packages/opencode/test/session/instruction.test.ts`
+**文件**：`packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/src/session/instruction.ts`, `packages/opencode/test/skill/skill.test.ts`, `packages/opencode/test/session/instruction.test.ts`
 
-**Pre-read**: `packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/src/session/instruction.ts`
+**预读**：`packages/opencode/src/skill/index.ts`, `packages/opencode/src/effect/runtime-flags.ts`, `packages/opencode/src/session/instruction.ts`
 
-**Design**:
+**设计**：
 
-Stop using `WOPAL_SPACE` as a blanket runtime flag for disabling all external skills.
+不再用 `WOPAL_SPACE` 作为禁用所有外部技能的万能 flag。空间模式有自己的显式 skill 发现链路。
 
-Space mode has its own explicit skill discovery chain.
+链路以 `~/.agents/skills/` 开头，使外部 agent 技能成为最低优先级层。之后 config 目录按现有顺序加载用户级和空间级 Wopal 技能。Skill 替换保持 last-write-wins。
 
-The chain starts with `~/.agents/skills/` so external agent skills become the lowest priority layer.
+Claude Code 提示词和技能排除直接由空间模式分支处理，不需要用户设置环境变量。
 
-Config directories then load user-level and space-level Wopal skills in existing order.
+普通模式保持现有外部技能和指令逻辑不变。
 
-Skill replacement remains last-write-wins.
+**TDD**：true
 
-Claude Code prompt and skill exclusion is handled directly by space-mode branching, not by requiring users to set environment variables.
+**改动**：
+1. 编写 RED skill 测试：空间模式下加载 `~/.agents/skills/`，且被 `~/.wopal/skills/` 和 `<空间根>/.wopal/skills/` 覆盖。
+2. 编写 RED skill 测试：空间模式下不加载 `~/.claude/skills/`。
+3. 编写 RED instruction 测试：空间模式下排除 Claude 提示词文件，普通模式下正常工作。
+4. 重构 skill 发现逻辑，为 WopalSpace 模式显式分支。
+5. 重构指令加载逻辑，通过空间模式状态排除 Claude 提示词，替代广谱外部禁用。
 
-Normal mode keeps the existing external skill and instruction logic.
+**验证**：
+在 `packages/opencode` 下：`bun test test/skill/skill.test.ts test/session/instruction.test.ts && bun typecheck`
 
-**TDD**: true
-
-**Changes**:
-1. Add RED skill tests proving `~/.agents/skills/` loads in space mode and is overridden by `~/.wopal/skills/` and `<space-root>/.wopal/skills/`.
-2. Add RED skill tests proving `~/.claude/skills/` is not loaded in space mode.
-3. Add RED instruction tests proving Claude prompt files are excluded in space mode and still work in normal mode.
-4. Refactor skill discovery to branch explicitly for WopalSpace mode.
-5. Refactor instruction loading to exclude Claude prompts via space-mode state instead of broad external-skill disabling.
-
-**Verify**:
-From `packages/opencode`: `bun test test/skill/skill.test.ts test/session/instruction.test.ts && bun typecheck`
-
-**Done**:
-任务产出：WopalSpace skill and prompt loading follows the designed short-circuit chain.
+**Done**：
+任务产出：WopalSpace 技能和指令加载按设计的短路链路运行。
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
-### Task 4: Document the final WopalSpace mode contract
+### Task 4：文档记录最终 WopalSpace 模式契约
 
-**Verification Intent**: AC#3
+**验证意图**：AC#3
 
-**Behavior**: Project documentation states the target WopalSpace runtime contract in configuration-oriented language without preserving old detection assumptions.
+**行为**：项目文档以面向配置的语言记录目标 WopalSpace 运行时契约，不保留旧检测假设。
 
-**Files**: `docs/BRANDING.md`, `AGENTS.md`
+**文件**：`docs/BRANDING.md`, `AGENTS.md`
 
-**Pre-read**: `docs/BRANDING.md`, `AGENTS.md`
+**预读**：`docs/BRANDING.md`, `AGENTS.md`
 
-**Design**:
+**设计**：
 
-Update existing ellamaka documentation only where it already describes WopalSpace behavior.
+仅更新已描述 WopalSpace 行为的现有文档。保持文字操作性。记录根标记、短路配置链路、skill 优先级和 `--no-wopal-space` 逃生舱。不写入源码分析笔记或实施历史。
 
-Keep the text operational.
+**TDD**：false — 纯文档任务。
 
-Document the root marker, short-circuit config chain, skill priority, and `--no-wopal-space` escape hatch.
+**改动**：
+1. 如存在相关文档章节，更新之。
+2. 仅在后续维护者需要时添加或调整 AGENTS 指导。
 
-Avoid source-analysis notes or implementation history.
+**验证**：
+在 `packages/opencode` 下：`bun typecheck`；然后在 `projects/ellamaka` 下：`rg -l 'WOPAL_SPACE_ROOT' docs/BRANDING.md AGENTS.md` 退出码 0。
 
-**TDD**: false — documentation-only task.
-
-**Changes**:
-1. Update the relevant documentation section if it exists.
-2. Add or adjust AGENTS guidance only if maintainers need it to preserve this behavior in future config work.
-
-**Verify**:
-From `packages/opencode`: `bun typecheck`; then from `projects/ellamaka`: `rg -l 'WOPAL_SPACE_ROOT' docs/BRANDING.md AGENTS.md` exits 0.
-
-**Done**:
-任务产出：Documentation reflects the final WopalSpace mode contract.
+**Done**：
+任务产出：文档反映最终 WopalSpace 模式契约。
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
-## Delegation Strategy
+## 委派策略
 
 | Wave | Task | 执行者 | 依赖 | 委派理由 |
 |------|------|--------|------|---------|
-| 1 | Task 1 | fae | 无 | Detection and CLI mode are the foundation for all later loaders |
-| 2 | Task 2 | fae | Task 1 | Config and TUI loaders depend on the internal root contract |
-| 3 | Task 3 | fae | Task 1, Task 2 | Skill and instruction loading should use the finalized space-mode contract |
-| 4 | Task 4 | fae | Task 1, Task 2, Task 3 | Documentation should reflect the implemented contract |
+| 1 | Task 1 | fae | 无 | 检测和 CLI 模式是所有后续加载器的基础 |
+| 2 | Task 2 | fae | Task 1 | 配置和 TUI 加载器依赖内部根契约 |
+| 3 | Task 3 | fae | Task 1, Task 2 | 技能和指令加载应使用已确定的空间模式契约 |
+| 4 | Task 4 | fae | Task 1, Task 2, Task 3 | 文档应反映已实施的契约 |
 
-Each wave is sequential because the internal WopalSpace root contract affects every downstream loader.
+每 wave 顺序执行，因为内部 WopalSpace 根契约影响所有下游加载器。
