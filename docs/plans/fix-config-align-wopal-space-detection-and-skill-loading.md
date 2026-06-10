@@ -7,7 +7,10 @@
 - **Project Path**: projects/ellamaka/
 - **Project Type**: standard
 - **Created**: 2026-06-10
-- **Status**: reviewing
+- **Status**: executing
+- **Worktree**:
+  - branch: align-wopal-space-detection-and-skill-loading
+  - path: /Users/sam/coding/wopal/wopal-workspace/.worktrees/ellamaka-align-wopal-space-detection-and-skill-loading
 
 ## Scope Assessment
 
