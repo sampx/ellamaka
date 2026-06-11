@@ -630,19 +630,25 @@ export const layer: Layer.Layer<
       }
     })
 
-    const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
+    const updateMessage = <T extends MessageV2.Info>(
+      msg: T,
+      opts?: { publish?: boolean },
+    ): Effect.Effect<T> =>
       Effect.gen(function* () {
-        yield* sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg })
+        yield* sync.run(MessageV2.Event.Updated, { sessionID: msg.sessionID, info: msg }, opts)
         return msg
       }).pipe(Effect.withSpan("Session.updateMessage"))
 
-    const updatePart = <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
+    const updatePart = <T extends MessageV2.Part>(
+      part: T,
+      opts?: { publish?: boolean },
+    ): Effect.Effect<T> =>
       Effect.gen(function* () {
         yield* sync.run(MessageV2.Event.PartUpdated, {
           sessionID: part.sessionID,
           part: structuredClone(part),
           time: Date.now(),
-        })
+        }, opts)
         return part
       }).pipe(Effect.withSpan("Session.updatePart"))
 
@@ -713,12 +719,15 @@ export const layer: Layer.Layer<
         idMap.set(msg.info.id, newID)
 
         const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
-          ...msg.info,
-          sessionID: session.id,
-          id: newID,
-          ...(parentID && { parentID }),
-        })
+        const cloned = yield* updateMessage(
+          {
+            ...msg.info,
+            sessionID: session.id,
+            id: newID,
+            ...(parentID && { parentID }),
+          },
+          { publish: false },
+        )
 
         for (const part of msg.parts) {
           const p: MessageV2.Part = {
@@ -730,7 +739,7 @@ export const layer: Layer.Layer<
           if (p.type === "compaction" && p.tail_start_id) {
             p.tail_start_id = idMap.get(p.tail_start_id)
           }
-          yield* updatePart(p)
+          yield* updatePart(p, { publish: false })
         }
       }
       return session

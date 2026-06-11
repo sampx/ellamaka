@@ -215,4 +215,73 @@ describe("Session", () => {
       expect(saved.metadata).toBeUndefined()
     }),
   )
+
+  it.instance("fork does not publish message.updated or message.part.updated for cloned records", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+
+      // Create a session with messages and parts
+      const parent = yield* Effect.acquireRelease(
+        session.create({ title: "fork-storm-test" }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+
+      const msgID = MessageID.ascending()
+      yield* session.updateMessage({
+        id: msgID,
+        sessionID: parent.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "user",
+        model: { providerID: "test", modelID: "test" },
+        tools: {},
+        mode: "",
+      } as unknown as MessageV2.Info)
+
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: msgID,
+        sessionID: parent.id,
+        type: "step-finish",
+        reason: "stop",
+        cost: 0,
+        tokens: { total: 100, input: 50, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+
+      // Set up trap: if any message.updated or message.part.updated arrives
+      // for the forked session, the deferred resolves and the test fails.
+      const stormCaught = yield* Deferred.make<string>()
+      const trap = (eventType: string) => (event: NonNullable<GlobalEvent["payload"]>) => {
+        const sid = (event.properties as { sessionID?: string } | undefined)?.sessionID
+        if (sid && sid !== parent.id) {
+          Deferred.doneUnsafe(stormCaught, Effect.succeed(eventType))
+        }
+      }
+      const unsubMsg = subscribeGlobal(MessageV2.Event.Updated.type, trap("message.updated"))
+      const unsubPart = subscribeGlobal(MessageV2.Event.PartUpdated.type, trap("message.part.updated"))
+      yield* Effect.addFinalizer(() => Effect.sync(unsubMsg))
+      yield* Effect.addFinalizer(() => Effect.sync(unsubPart))
+
+      // Fork — this is the operation that must NOT publish per-message/part events
+      const forked = yield* Effect.acquireRelease(
+        session.fork({ sessionID: parent.id }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+
+      // Allow a brief window for any async publish to arrive
+      const stormResult = yield* Effect.race(
+        Deferred.await(stormCaught),
+        Effect.sleep("200 millis").pipe(Effect.as(undefined)),
+      )
+
+      expect(stormResult).toBeUndefined()
+
+      // Verify cloned data was actually persisted (fork still works correctly)
+      const forkedMsgs = yield* session.messages({ sessionID: forked.id })
+      expect(forkedMsgs.length).toBe(1)
+      expect(forkedMsgs[0]!.parts.length).toBe(1)
+      expect(forkedMsgs[0]!.parts[0]!.type).toBe("step-finish")
+    }),
+    { timeout: 30000 },
+  )
 })

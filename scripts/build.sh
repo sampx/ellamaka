@@ -84,6 +84,7 @@ esac
 
 if [[ -z "${OPENCODE_VERSION:-}" ]]; then
   VERSION=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 2>/dev/null)
+  VERSION="${VERSION#v}"
   if [[ -n "$VERSION" ]]; then
     export OPENCODE_VERSION="$VERSION"
   fi
