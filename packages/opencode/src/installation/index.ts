@@ -13,6 +13,7 @@ import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { NpmConfig } from "@opencode-ai/core/npm-config"
 import { BINARY_NAME } from "../../../ellamaka/branding"
+import { isWopalInstall } from "../../../ellamaka/is-wopal-install"
 
 const log = Log.create({ service: "installation" })
 
@@ -214,7 +215,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         return "unknown" as Method
       }),
       latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
-        if (InstallationChannel.startsWith("ellamaka")) {
+        if (isWopalInstall()) {
           return InstallationVersion
         }
 
@@ -275,7 +276,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
-        if (InstallationChannel.startsWith("ellamaka")) {
+        if (isWopalInstall()) {
           return yield* new UpgradeFailedError({
             stderr: `${BINARY_NAME} is updated via wopal-cli. Run: wopal ellamaka update`,
           })

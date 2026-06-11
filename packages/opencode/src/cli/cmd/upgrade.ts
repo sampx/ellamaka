@@ -3,8 +3,8 @@ import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
+import { isWopalInstall } from "../../../../ellamaka/is-wopal-install"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
@@ -27,7 +27,7 @@ export const UpgradeCommand = {
     UI.println(UI.logo("  "))
     UI.empty()
     prompts.intro("Upgrade")
-    if (InstallationChannel.startsWith("ellamaka")) {
+    if (isWopalInstall()) {
       prompts.log.info(`${BINARY_NAME} is updated via wopal-cli.`)
       prompts.log.info(`Run: wopal ellamaka update`)
       prompts.outro("Done")

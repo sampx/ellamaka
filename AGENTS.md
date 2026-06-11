@@ -2,6 +2,15 @@
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 
+## Canonical References
+
+- **DESIGN**: `docs/DESIGN.md` — architecture overview, config contract, ontology loading
+- **BRANDING**: `docs/BRANDING.md` — single source of truth for all upstream injection changes (per-file, per-line, per-pattern)
+- **DISTRIBUTION**: `docs/DISTRIBUTION.md`
+- **Upstream Merge logs**: `docs/UPSTREAM-MERGE-LOG.md`
+- **Config Reference**: `docs/references/ellamaka-config-mechanism.md`
+- **opencode package rules**: `packages/opencode/AGENTS.md`
+
 ## Commits and PR Titles
 
 Use conventional commit-style messages and PR titles: `type(scope): summary`.

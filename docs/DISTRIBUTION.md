@@ -152,7 +152,7 @@ BINARY_NAME=ellamaka OPENCODE_VERSION=0.1.0 OPENCODE_RELEASE=true \
 bun packages/ellamaka/build.ts
 ```
 
-等价于 `BINARY_NAME=ellamaka OPENCODE_CHANNEL=ellamaka-main bun run build -- --p1`，版本号自动推导为 `0.0.0-ellamaka-main-{timestamp}`。
+等价于 `BINARY_NAME=ellamaka OPENCODE_CHANNEL=main bun run build -- --p1`，版本号自动推导为 `0.0.0-main-{timestamp}`。
 
 ### 3.4 发布验证清单
 
@@ -201,13 +201,13 @@ P1 的信任边界是 R2 HTTPS 下载与 SHA-256 完整性校验。`checksums.tx
 
 ### 4.2 Local development channel
 
-`ellamaka-main` 保持本地开发特例语义：
+`main` 保持本地开发特例语义：
 
 1. `bun packages/ellamaka/build.ts` 本地构建
 2. 本地验证
 3. 手动 rebuild / replace
 
-`ellamaka-main` 走独立的手动路径，与 released channel 分离。
+`main` 走独立的手动路径，与 released channel 分离。
 
 ---
 
@@ -231,7 +231,7 @@ Contract：
 3. `manifest.json` 是 installer 的机器可读入口，其中 `url` 指向 R2 自定义域名；`checksumsUrl` 指向同版本 `checksums.txt` 的 R2 地址。
 4. `checksums.txt` 与 `release-notes.md` 作为元数据文件与 artifacts 一同发布到 R2。
 5. 归档格式与 wopal-cli 对齐：macOS / Linux 使用 `.tar.gz`，Windows 使用 `.zip`。
-6. release build 的 channel 对外固定为 `ellamaka`（`packages/ellamaka/branding.ts:CHANNEL_RELEASE`）；本地开发 channel 保持 `ellamaka-main`（`CHANNEL_DEV`）。
+6. release build 的 channel 对外固定为 `latest`（`packages/ellamaka/branding.ts:CHANNEL_RELEASE`）；本地开发 channel 保持 `main`（`CHANNEL_DEV`）。
 7. release workflow 的发布目标为 R2 + GitHub Release（markdown）+ Gitee Release（markdown）。
 
 ---

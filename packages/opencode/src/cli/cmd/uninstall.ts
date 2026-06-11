@@ -267,7 +267,7 @@ async function getShellConfigFile(): Promise<string | null> {
     if (!exists) continue
 
     const content = await Filesystem.readText(file).catch(() => "")
-    if (content.includes("# opencode") || content.includes(".wopal/bin")) {
+    if (content.includes("# ellamaka") || content.includes(".wopal/bin")) {
       return file
     }
   }
@@ -285,7 +285,7 @@ async function cleanShellConfig(file: string) {
   for (const line of lines) {
     const trimmed = line.trim()
 
-    if (trimmed === "# opencode") {
+    if (trimmed === "# ellamaka") {
       skip = true
       continue
     }

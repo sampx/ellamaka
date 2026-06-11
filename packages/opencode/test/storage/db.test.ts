@@ -11,9 +11,10 @@ describe("Database.getChannelPath", () => {
   it.effect("returns database path for the current channel", () =>
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
+      const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
       const expected = ["latest", "beta", "prod"].includes(InstallationChannel)
-        ? path.join(Global.Path.data, "opencode.db")
-        : path.join(Global.Path.data, `opencode-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`)
+        ? path.join(Global.Path.data, "ellamaka.db")
+        : path.join(Global.Path.data, `ellamaka-${safe}.db`)
 
       expect(Database.getChannelPath(flags)).toBe(expected)
     }).pipe(Effect.provide(RuntimeFlags.layer())),
@@ -23,7 +24,7 @@ describe("Database.getChannelPath", () => {
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
 
-      expect(Database.getChannelPath(flags)).toBe(path.join(Global.Path.data, "opencode.db"))
+      expect(Database.getChannelPath(flags)).toBe(path.join(Global.Path.data, "ellamaka.db"))
     }).pipe(Effect.provide(RuntimeFlags.layer({ disableChannelDb: true }))),
   )
 

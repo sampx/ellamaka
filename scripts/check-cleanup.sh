@@ -72,6 +72,8 @@ CLEANUP_PATHS=(
   ".github/ISSUE_TEMPLATE"
   ".github/workflows/publish.yml"
   ".github/workflows/deploy.yml"
+  # Dead test paths (exercised only by opencode's npm/brew/GitHub upgrade chain)
+  "packages/opencode/test/installation"
 )
 
 violations=()

@@ -2,15 +2,12 @@
 
 ## 分支策略
 
-| 分支 | 用途 | 说明 |
-|------|------|------|
-| `main` | 主分支 | ellamaka 定制代码的稳定版本 |
-| `dev` | 上游跟踪 | 与 upstream/dev 保持同步，作为合并基准 |
+| 分支 | 用途 |
+|------|------|
+| `main` | ellamaka 定制代码的稳定版本 |
+| `dev` | 上游跟踪，与 `upstream/dev` 同步 |
 
-**合并流程**：从 `upstream/dev` 拉取 → 在 `main` 上执行 `git merge upstream/dev` →
-解决冲突 → `./scripts/check-cleanup.sh` 检查 → 若发现则 `--clean` 清理 → 验证 → 提交。
-
-合并策略（精简清单、保护文件、最小侵入原则、验证清单）统一维护在 `docs/BRANDING.md` §9，此处不再重复。
+合并流程和策略统一维护在 `docs/BRANDING.md` §9，此处只记录每次合并的关键元数据和值得注意的事项。
 
 ## Remotes
 
@@ -21,195 +18,50 @@
 
 ## 合并历史（按时间倒序）
 
-### 2026-06-09 | upstream v1.15.13（tag `385cb69441`）
+### 2026-06-09 | upstream v1.15.13
 
-**范围**：v1.14.39 → v1.15.13（14 个小版本）
+| 角色 | Commit | 描述 |
+|------|--------|------|
+| 合并基点 | `d055cd71b8` | ellamaka main 合并前的 HEAD |
+| 合入目标 | `385cb69441` | upstream v1.15.13 发布 tag |
+| 分叉点 | `6e7c9eb820` | `git merge-base` 共同祖先 |
 
-**架构变更**：
-- Zod → Effect Schema 全面迁移
-- RuntimeFlags Service 替代 Flag 静态对象（WOPAL_SPACE 移入 RuntimeFlags）
-- AppProcess Service 统一进程调用
-- TUI Plugin API 重写（TuiAttention 通知/音效、ToolContext.ask Promise 化）
+**值得注意**：14 个小版本压缩合并（v1.14.39 → v1.15.13）。Zod→Effect Schema 全面迁移、RuntimeFlags Service 重构、TUI Plugin API 重写。29 个内容冲突 + ~300 个 modify/delete（精简目录自动 `git rm`）。精简新增 `packages/stats/`。
 
-**冲突统计**：29 个内容冲突 + ~300 个 modify/delete 冲突（精简目录自动 `git rm`）
-
-**定制保留**：
-- Installation channel 守卫（`ellamaka` 检测、`.wopal/bin` 路径）
-- USER_AGENT 品牌化（`BINARY_NAME`）
-- WOPAL_SPACE 配置注入点（`tryLoadWopalSpaceConfig`）
-- loadGlobal 仅读 `settings.jsonc`
-- tui-ellamaka.tsx 迁移到 `api.attention.notify`
-- `.wopal/bin` 检测保留
-- `.env` 文件加载保留（`loadEnvFile`）
-- `Flag.WOPAL_SPACE` 向后兼容 getter
-- `RuntimeFlags.disableAgentsSkills` 新增
-
-**精简扩展**：`packages/stats/`（云监控面板）
-
-**验证**：
-- typecheck 通过（1 预存构建产物错误）
-- 测试 config: 82/92 pass，installation: 8/11 pass
-- 零 conflict marker
-- 关键 AC 全部通过
-
-**相关 Plan**：`chore-ellamaka-merge-upstream-opencode-v11513`
-
-### 2026-05-06 ~ 07 | upstream v1.14.28 → v1.14.39
-
-**关键提交**：
-
-| Commit | 说明 |
-|--------|------|
-| `26d30a68c` | 前置：移除废弃的 `scripts/merge-upstream.sh`，更新日志 |
-| `618dca9de` | **初始合并**：`git merge upstream/dev`（双亲：`26d30a68c` + `6e7c9eb82`） |
-| `17d08ee11` | 修复：恢复 wopal-space runtime 在合并后的完整功能 |
-| `f13ed20c4` | 修复：TUI 从 `.wopal/config/settings.*` 加载外部插件和主题 |
-| `5a9548513` | 增强：`scripts/dev.sh` 支持 in-process TUI、attach/server 分流 |
-| `e9ff086ff` | **收口合并**：将 worktree 分支的 TUI 修复合并入 `main`（双亲：`5a9548513` + `f13ed20c4`） |
-
-**范围**：375 commits（`61eabfc60..6e7c9eb82`），~400 files changed
-
-#### 上游核心变更
-
-- Barrels 全面移除：`src/*/index.ts` 已删除，import 直接从子路径引用
-- CLI `effectCmd` 迁移：20+ 子命令从 Promise 转为 Effect-native
-- Instance 生命周期重构：`InstanceBootstrap` 提取为 Service，ALS 模式
-- HttpApi 后端默认启用：Hono → Effect native HttpApi（Bun.serve）
-- Schema 迁移：Tool、Session、Provider 域从 Zod → Effect Schema
-- Desktop 包整合：`desktop-electron` → `desktop`，移除 Tauri
-- Shell tool 重命名：`bash` → `shell`
-- `shared` → `core` 重命名（上次合并已跟进）
-
-#### 冲突解决
-
-**内容冲突（6 个文件）**：
-
-| 文件 | 冲突原因 | 处理方式 |
-|------|----------|----------|
-| `config/paths.ts` | `.wopal` 目录扫描 + 死代码清理 | 手动适配 |
-| `config/managed.ts` | import 路径 barrels 移除 | 手动适配 |
-| `skill/index.ts` | 外部技能目录扫描 + `DISABLE_AGENTS_SKILLS` 守卫 | 手动适配 |
-| `bus/index.ts` | Payload `id` 字段上游变更 | 手动适配 |
-| `permission/index.ts` | 调试日志注释移除 | 手动适配 |
-| `cli/cmd/tui/worker.ts` | import 路径 + `OPENCODE_LOG_LEVEL` | 手动适配 |
-
-**精简清单**：310+ 文件自动 `git rm`（桌面端/web/enterprise/slack/console 等）
-
-**Flags 注册**：上游 `Flag` 类型不含 ellamaka 定制，手动补充注册：
-`OPENCODE_DISABLE_AGENTS_SKILLS`、`WOPAL_SPACE`
-
-#### 保留的 ellamaka 定制（自动合并或手动适配）
-
-| 定制 | 位置 | 本次状态 |
-|------|------|----------|
-| `tryLoadWopalSpaceConfig` 注入 | `config/config.ts` | 自动合并 ✅ |
-| wopal-space 配置模块 | `config/wopal-space.ts` | 完整保留（160 行）|
-| `.wopal` 目录扫描 | `config/paths.ts` | 手动适配 |
-| `--wopal-space` CLI 标志 | `index.ts` | 自动合并 ✅ |
-| `.wopal/bin` 路径检测 + ellamaka-main 通道 | `installation/index.ts` | 自动合并 ✅ |
-| `.wopal` 路径清理 | `uninstall.ts` | 自动合并 ✅ |
-| `OPENCODE_LOG_LEVEL` 环境变量 | `cli/cmd/tui/worker.ts` | 手动适配 |
-| `OPENCODE_DISABLE_AGENTS_SKILLS` 守卫 | `skill/index.ts` | 手动适配 |
-
-#### 合并后修复
-
-**05-06 当天**（`17d08ee11`、最初 `f13ed20c4` 的部分内容）：
-
-- `core/flag/flag.ts`：`WOPAL_SPACE` 改为 getter，修复 TUI / worker 双实例下模式识别时序问题
-- `config/wopal-space.ts` + `plugin/shared.ts`：`.wopal/plugins/*` 的本地源码插件自动安装
-  `file:` 依赖，不再只装 `@opencode-ai/plugin`
-- `cli/cmd/tui/config/tui.ts`：`WOPAL_SPACE` 模式下过滤 `.opencode` 目录自动发现
-- `core/util/log.ts` + `scripts/dev.sh`：新增 `WOPAL_DEBUG_LOG_DIR`，debug 日志落到 `$space/logs/`
-- `core/global.ts` + `core/package.json` + `bun.lock`：移除 `xdg-basedir`，固定 `WOPAL_HOME` 路径体系
-- `scripts/build.sh` + `scripts/dev.sh`：安装改为复制二进制；补齐 preload、in-process TUI、attach/server 分流
-
-**05-07 TUI 补丁**（`f13ed20c4` 收口 → `e9ff086ff` merge）：
-
-- `config/wopal-space-settings.ts`（新文件）：提取 `.wopal/config/settings.jsonc|json` 共享查找逻辑
-- `cli/cmd/tui/config/wopal-space.ts`（新文件）：`WOPAL_SPACE` 模式从 `settings.*` 的 `tui` 字段加载外部 TUI 插件
-- `cli/cmd/tui/config/tui.ts`：接入 `tryLoadWopalSpaceTuiConfig`，取代 `.opencode/tui.json` 依赖
-- `cli/cmd/tui/plugin/runtime.ts`：本地 wopal-space 插件 theme 持久化到 `.wopal/config/themes/`
-- `cli/cmd/tui/context/theme.tsx`：`getCustomThemes()` 扫描 `.wopal/config/themes/*.json`
-
-**本次教训**：
-- TUI 配置加载链独立于主 `config.ts`，需显式接入 `.wopal/settings.*` 才能在 wopal-space 模式下生效
-- 合并后需验证 `WOPAL_SPACE` flag 在双实例（worker + TUI）下都能正确读取
-
-#### 验证
-
-- typecheck：`packages/opencode` + `packages/core` 通过
-- build：成功
-- test：2357 pass / 25 fail（11 skip, 2 todo）
-  - 6 skill 测试：上游 skill 发现重构后已知问题
-  - 19 网络/超时/时序测试：无头环境固有
+**Plan**: `chore-ellamaka-merge-upstream-opencode-v11513`
 
 ---
 
-### 2026-04-27 | upstream v1.14.25 → v1.14.28
+### 2026-05-06 | upstream v1.14.39
 
-- **Commit**：`7e8f3bba0` on `main`
-- **上游范围**：91 commits（`f2d4d816f..61eabfc60`），155 files changed，+7738/-2560
-- **Plan**：`projects/ellamaka/docs/plans/done/20260427-chore-ellamaka-merge-upstream-dev-v11428.md`
-
-**上游核心变更**：
-- HttpApi 桥接端点扩充：session、sync、workspace 读写、TUI/PTY、事件流路由
-- Go 页面更新：DeepSeek 图标、models 端点、定价更新
-- 可配置 shell 选择 + 桌面设置 UI
-- npm config 重构、Installation service 统一为 Effect Service
-- OpenTUI 升级（0.1.104 → 0.1.105）
-
-**冲突解决**：
-- `bun.lock`：接受上游版本
-- `installation/index.ts`：手动将 ellamaka 定制移植到上游新 Interface 结构
-- 71 个 modify/delete 冲突：精简清单 自动处理
-- `config/wopal-space.ts`：从 `config.ts` 中提取为独立模块，减少后续冲突面
-
-**保留的 ellamaka 定制（9 项）**：
-WOPAL_HOME 路径系统、`DISABLE_AGENTS_SKILLS` 开关、`WOPAL_SPACE` 模式标志、
-`.wopal/bin` 目录检测、ellamaka-main 构建通道、wopal-space 配置注入、
-`OPENCODE_LOG_LEVEL`、独立 `.agents` 技能目录、`.wopal` 路径清理
-
-**验证**：typecheck 通过，build 成功
+**值得注意**：375 commits 合并。Barrels 全面移除、CLI 命令从 Promise 迁移到 Effect-native、HttpApi 后端默认启用、`shared`→`core` 包重命名、`bash`→`shell` tool 重命名。6 个内容冲突，310+ 文件精简。
 
 ---
 
-### 2026-04-26 | upstream v1.14.19 → v1.14.25
+### 2026-04-27 | upstream v1.14.28
 
-- **Commit**：`eb6094850` on `main`
-- **上游范围**：186 commits（`224548d87..f2d4d816f`），349 files changed
-- **Plan**：`projects/ellamaka/docs/plans/chore-ellamaka-merge-upstream-dev-v11425.md`
+**值得注意**：91 commits 合并。HttpApi 桥接端点扩充、npm config 重构、Installation service 统一为 Effect Service。`config/wopal-space.ts` 独立为模块以减小后续冲突面。
 
-**上游核心变更**：
-- 包重命名：`@opencode-ai/shared` → `@opencode-ai/core`
-- 文件迁移：`flag.ts`、`global/index.ts` 从 opencode 包移至 core 包
-- Zod → Effect Schema 全面迁移
-- 14+ HTTP API 桥接端点
+**Merge commit**: `7e8f3bba0`
 
-**冲突解决**：
-- 精简清单 自动删除 140+ 文件
-- 定制逻辑从旧位置（opencode 包）移植到新位置（core 包）：
-  - `core/global.ts`：WOPAL_HOME + `~/.wopal/ellamaka/*` 路径
-  - `core/flag/flag.ts`：`DISABLE_AGENTS_SKILLS` 开关
-  - `opencode/src/installation/index.ts`：`.wopal/bin` 路径
-  - `opencode/src/skill/index.ts`：`.agents` 独立技能目录
-- 所有 `@opencode-ai/shared` import 更新为 `@opencode-ai/core`
+**Plan**: `20260427-chore-ellamaka-merge-upstream-dev-v11428`
 
-**验证**：typecheck 6 包全部通过，test 2124 pass / 6 fail（上游已知问题）
+---
+
+### 2026-04-26 | upstream v1.14.25
+
+**值得注意**：186 commits 合并。`@opencode-ai/shared`→`@opencode-ai/core` 包重命名，`flag.ts`、`global/index.ts` 从 opencode 包迁移到 core 包。Zod→Effect Schema 迁移。
+
+**Merge commit**: `eb6094850`
+
+**Plan**: `chore-ellamaka-merge-upstream-dev-v11425`
 
 ---
 
 ### 2026-04-21 | 初始合并（813 commits）
 
-- **Commit**：`8312e78` on `main`
-- **上游范围**：813 commits，415 files changed
-- **分叉点**：`500dcfc58`（2026-04-03）
-- **Plan**：`projects/ellamaka/docs/plans/done/20260421-118-chore-config-merge-upstream-opencode-into-ellamaka.md`
+**值得注意**：ellamaka 首次正式合并上游。Effect Schema 重构，config 模块拆分为 15+ 子模块。分叉点 `500dcfc58`。
 
-**上游核心变更**：
-- Effect Schema 重构（config 模块拆分为 15+ 子模块）
-- 大规模架构变更
+**Merge commit**: `8312e78`
 
-**保留的 ellamaka 定制**：
-`WOPAL_HOME` 环境变量、`~/.wopal/ellamaka/*` 路径结构、
-`ai.wopal.managed` plist domain、`OPENCODE_DISABLE_AGENTS_SKILLS` 开关、
-`.agents` 独立技能目录
+**Plan**: `20260421-118-chore-config-merge-upstream-opencode-into-ellamaka`

@@ -10,8 +10,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 权威引用：
 
 - DESIGN: `docs/DESIGN.md`
+- BRANDING: `docs/BRANDING.md` — 品牌化定制的唯一真相源，逐文件记录所有上游注入变更
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
-- BRANDING: `docs/BRANDING.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
