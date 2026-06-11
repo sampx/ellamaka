@@ -10,7 +10,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 权威引用：
 
 - DESIGN: `docs/DESIGN.md`
-- BRANDING: `docs/BRANDING.md` — 品牌化定制的唯一真相源，逐文件记录所有上游注入变更
+- BRANDING: `docs/BRANDING.md` — 品牌化定制的唯一真相源，记录每项定制的设计意图和实现逻辑
+- `.gitattributes` — fork 独有文件的 merge 保护规则（merge=ours），上游合并自动保留 ellamaka 版本
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
@@ -27,47 +28,27 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | `packages/app/`, `packages/ui/`, `packages/storybook/` | inherited UI surfaces；只在 engine/TUI 需要时改动 |
 | `packages/plugin/`, `packages/script/`, `packages/util/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
-| `packages/ellamaka/` | 品牌常量（branding.ts）、品牌字模（logo.ts）、构建包装（build.ts）、WopalSpace 自动检测（detect.ts）及包级测试 |
+| `packages/ellamaka/` | 品牌常量（branding.ts/channel）、品牌字模（logo.ts）、构建包装（build.ts）、WopalSpace 自动检测（detect.ts）、安装路径判断（is-wopal-install.ts）及包级测试 |
 | `docs/` | project DESIGN、BRANDING、DISTRIBUTION、references、research 和 plans |
 
 ## 3. Development Commands (build format test)
 
 | 场景 | 命令 | 何时 |
 |---|---|---|
-| Root dev | `bun run dev` | 本地启动 opencode package dev entry |
-| Web dev | `bun run dev:web` | 调试 app/web surface |
-| Storybook | `bun run dev:storybook` | 调试 storybook surface |
 | Lint | `bun run lint` | 修改 TypeScript / config 后 |
 | Root typecheck | `bun run typecheck` | 需要全仓类型检查时 |
 | opencode typecheck | `bun typecheck` from `packages/opencode` | 修改 engine 主包后；不要直接运行 `tsc` |
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | 修改 engine 主包行为后 |
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
-| JS SDK regeneration | `./packages/sdk/js/script/build.ts` | SDK 输出需要重新生成时 |
 | ellamaka build | `bun packages/ellamaka/build.ts` | 本地构建 ellamaka 品牌 CLI 时 |
-| 本地构建（darwin） | `./scripts/build.sh` | macOS 本地编译 CLI 二进制 |
-| 本地开发环境 | `./scripts/dev.sh` | 启动开发环境（支持 in-process TUI、attach/server 分流） |
-| 发布 tag 推送 | `./scripts/tag-push.sh <tag> [remote]` | 打 tag 并推送 main，触发 publish-ellamaka CI |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 
 测试不能从 repo root 运行；root `test` script 是 guard。
 
 ## 4. Implementation Rules
 
-- 优先使用 Bun APIs，例如 `Bun.file()`。
-- 保持代码在一个函数中，除非逻辑需要复用或组合。
-- 避免 `try` / `catch`；遵循现有 Effect error handling 模式。
-- 避免 `any`；需要缺陷类错误时遵循 `packages/opencode/AGENTS.md` 的 Effect Schema 规则。
-- 依赖类型推断；除导出边界或清晰度需要外，避免显式类型和 interface。
-- 优先使用 `flatMap`、`filter`、`map` 等函数式数组方法；`filter` 使用 type guard 保持下游类型推断。
-- 避免不必要的 destructuring；使用 dot notation 保留上下文。
-- 优先 `const`；用 ternary 或 early return 替代变量重赋值。
-- 避免 `else`；优先 early return。
-- 只使用 `let` 表达真实可变状态。
-- 只在值被复用或能提升可读性时创建中间变量；一次性值优先内联。
-- `src/config` 新增模块时遵循现有 self-export pattern，例如 `export * as ConfigAgent from "./agent"`。
-- Drizzle schema 字段使用 snake_case，避免通过字符串重定义 column name。
-- 修改 `packages/opencode/` 内部模块、Effect、database、migration 或 Instance lifecycle 时，遵循 `packages/opencode/AGENTS.md`。
+- 遵循 `packages/opencode/AGENTS.md` 的通用编码规范（Bun APIs、Effect Schema、类型/控制流、Drizzle schema、模块组织等）。
 - WopalSpace 定制优先放在新文件；上游文件只保留最小 import 和调用注入点。
 - 定制分支使用提前返回 guard，避免与 upstream 主流程改动重叠。
 - 新模块需要访问 upstream 内部能力时优先用回调/闭包注入，不直接暴露 upstream Service 类型边界。
@@ -76,6 +57,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - `main` 是 ellamaka 定制稳定主线；`dev` 只跟踪 upstream OpenCode `dev`，不要在 `dev` 上做 ellamaka 定制开发。
 - diff 基准使用 `main` 或 `origin/main`；不要用 `dev` 作为 ellamaka 定制差异基准。
 - 上游合并时遵循 `docs/UPSTREAM-MERGE-LOG.md` 的精简清单、保留定制项和验证门槛。
+- `.gitattributes` 已配置以下 fork 独有文件的 `merge=ours` 保护：`README.md`、`README.zh-CN.md`、`AGENTS.md`、`AGENTS.zh-CN.md`、`scripts/**`、`docs/**`、`.husky/**`、`.github/TEAM_MEMBERS`、`.github/workflows/publish-ellamaka.yml`。上游合并时这些文件自动保留 ellamaka 版本，禁止删除或修改该规则。
 
 ## 5. Testing
 

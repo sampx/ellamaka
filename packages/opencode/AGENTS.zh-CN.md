@@ -44,10 +44,8 @@ description: Main inherited OpenCode engine package for CLI, runtime, config, se
 | Dev | `bun run dev` | 本地运行 package dev entry |
 | Typecheck | `bun typecheck` | 修改 TypeScript 后；不要直接运行 `tsc` |
 | Test | `bun test --timeout 30000` | 修改 package behavior 后 |
-| CI test | `bun run test:ci` | 需要 junit output 时 |
 | Build | `bun run build` | 修改 runtime、CLI、package build 或发布相关代码后 |
 | Database migration | `bun run db generate --name <slug>` | schema 变化需要生成 migration 时 |
-| Fix node-pty | `bun run fix-node-pty` | node-pty patch / install flow 需要修复时 |
 
 所有命令从 `packages/opencode` 目录运行。
 
@@ -73,13 +71,9 @@ description: Main inherited OpenCode engine package for CLI, runtime, config, se
 - typed errors 使用 `Schema.TaggedErrorClass`；defect-like causes 使用 `Schema.Defect`。
 - 在 `Effect.gen` / `Effect.fn` 中直接 `yield* new MyError(...)`，不要包一层 `Effect.fail(new MyError(...))`。
 - 所有 services 使用 `makeRuntime` (from `src/effect/run-service.ts`)。It returns `{ runPromise, runFork, runCallback }` backed by a shared memoMap that deduplicates layers.
-- per-directory 或 per-project state（需要 per-instance cleanup 的）使用 `InstanceState` (from `src/effect/instance-state.ts`)。It uses `ScopedCache` keyed by directory — each open project gets its own state, automatically cleaned up on disposal.
-- 需要按目录隔离的 service 必须用 `InstanceState`，不要共享单一 service copy。
-- 在 `InstanceState.make` closure 内直接完成 work；不要额外加 fibers、`ensure()` callbacks 或 `started` flags。
-- cleanup、subscriptions、process teardown 使用 `Effect.addFinalizer` 或 `Effect.acquireRelease`。
-- background stream consumers 在 closure 内使用 `Effect.forkScoped`。
-- service `init()` 需要非阻塞时，在调用点 fork `InstanceState.get(state)`；不要在 `InstanceState.make` closure 内 fork 初始化工作。
-- `src/project/bootstrap.ts` 已将 service `init()` 包装为 fire-and-forget；service 内部 `init()` 保持 synchronous，调用方控制并发。
+- per-directory state（需 per-instance cleanup）使用 `InstanceState` (`src/effect/instance-state.ts`)，基于 ScopedCache 按 directory 隔离，自动 dispose；需要目录隔离的 service 必须用它。
+- `InstanceState.make` closure 内直接完成 work，cleanup 用 `Effect.addFinalizer` / `Effect.acquireRelease`，background consumers 用 `Effect.forkScoped`；不额外加 fibers、`ensure()`、`started` flags。
+- `bootstrap.ts` 已将 `init()` 包装为 fire-and-forget，service 内部 `init()` 保持 synchronous；如需非阻塞在调用点 fork，不在 make closure 内 fork。
 - Effect v4 beta 没有 `Effect.fork` 和 `Effect.forkDaemon`；使用 `Effect.forkIn(scope)`。
 - Effect 服务中优先 yield 既有 Effect services；避免直接使用 ad hoc platform APIs。
 - effectful file I/O 优先 `FileSystem.FileSystem`，process 优先 `ChildProcessSpawner.ChildProcessSpawner` + `ChildProcess.make(...)`，HTTP 优先 `HttpClient.HttpClient`。

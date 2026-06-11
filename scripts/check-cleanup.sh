@@ -68,6 +68,8 @@ CLEANUP_PATHS=(
   "CONTRIBUTING.md"
   "README.zh.md"
   "SECURITY.md"
+  # Upstream screenshots (language-specific README assets)
+  "screenshot-uk.png"
   # GitHub — partial: keep publish-ellamaka.yml, TEAM_MEMBERS (runtime dep)
   ".github/ISSUE_TEMPLATE"
   ".github/workflows/publish.yml"
