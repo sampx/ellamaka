@@ -57,9 +57,10 @@ Usage: $self [command|option]
 
   Options:
     -a, --attach      Start HTTP server + attach TUI client
-    -h, --help        Show this help message
     --debug [mods]    Enable debug mode (default: all)
                       Modules: task, rules, or comma-separated list
+    -ns               Disable WopalSpace mode (native opencode behavior)
+    -h, --help        Forwarded to ellamaka
 
   Without args, starts TUI directly (no HTTP server, backend in-process).
 
@@ -84,8 +85,9 @@ passthrough=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --) shift; passthrough+=("$@"); break ;;
-    stop|-h|--help|help|serve) cmd="$1"; shift ;;
+    stop|help|serve) cmd="$1"; shift ;;
     -a|--attach) attach=true; shift ;;
+    -h|--help) passthrough+=(--help); shift ;;
     --debug)
       debug=true
       if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
@@ -94,13 +96,14 @@ while [[ $# -gt 0 ]]; do
         debug_modules="all"; shift
       fi
       ;;
+    -ns) passthrough+=(--no-wopal-space); shift ;;
     *) echo "unknown: $1"; exit 1 ;;
   esac
 done
 
 case "$cmd" in
   stop) stop; exit ;;
-  -h|--help|help) usage; exit ;;
+  help) usage; exit ;;
 esac
 
 if ! $attach && [ "$cmd" != "serve" ]; then

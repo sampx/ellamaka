@@ -89,8 +89,8 @@ const cli = yargs(args)
     describe: "run without external plugins",
     type: "boolean",
   })
-  .option("wopal-space", {
-    describe: "enable wopal space mode (use --no-wopal-space to disable)",
+  .option("no-wopal-space", {
+    describe: "disable WopalSpace mode (use native opencode behavior)",
     type: "boolean",
   })
   .middleware(async (opts) => {
@@ -102,8 +102,7 @@ const cli = yargs(args)
       process.env.OPENCODE_PURE = "1"
     }
 
-    // opts.wopalSpace is undefined when flag not passed; --no-wopal-space makes it false
-    if (opts.wopalSpace !== false) {
+    if (!opts.noWopalSpace) {
       const detection = detectWopalSpace(process.cwd())
       if (detection) {
         process.env.WOPAL_SPACE = "1"
