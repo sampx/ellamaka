@@ -59,6 +59,14 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - 上游合并时遵循 `docs/UPSTREAM-MERGE-LOG.md` 的精简清单、保留定制项和验证门槛。
 - `.gitattributes` 已配置以下 fork 独有文件的 `merge=ours` 保护：`README.md`、`README.zh-CN.md`、`AGENTS.md`、`AGENTS.zh-CN.md`、`scripts/**`、`docs/**`、`.husky/**`、`.github/TEAM_MEMBERS`、`.github/workflows/publish-ellamaka.yml`。上游合并时这些文件自动保留 ellamaka 版本，禁止删除或修改该规则。
 
+### 提交信息与 PR 标题
+
+使用 conventional commit 格式：`type(scope): summary`。
+
+有效 type：`feat`、`fix`、`docs`、`chore`、`refactor`、`test`。scope 可选，建议使用受影响的包或模块，如 `core`、`opencode`、`tui`、`app`、`desktop`、`sdk`、`plugin`。
+
+示例：`fix(tui): simplify thinking toggle styling`、`docs: update contributing guide`、`chore(sdk): regenerate types`。
+
 ## 5. Testing
 
 - 代码类变更遵循 TDD：先写能失败的测试，再实现代码使其通过。
@@ -77,6 +85,17 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - 本仓库默认分支是 `main`。`dev` 分支仅跟踪 upstream OpenCode 的 `dev`，用于 merge 集成。
 - diff 基准使用 `main` 或 `origin/main`；`dev` 仅作 upstream-tracking。
 - 优先自动执行明确请求；遇到缺少关键信息、安全风险或不可逆操作时先确认。
+
+### 通用原则
+
+- 除非需要组合或复用，否则保持逻辑在一个函数内。
+- 不要预先提取单次使用的 helper。仅在 helper 被复用、隐藏了真正复杂边界或有清晰独立命名时提取。
+- 尽量避免 `try`/`catch`。
+- 避免使用 `any` 类型。
+- 尽可能使用 Bun API（如 `Bun.file()`）。
+- 尽可能依赖类型推断；除非导出或需要明确性，避免显式类型标注或 interface。
+- 优先使用函数式数组方法（`flatMap`、`filter`、`map`）而非 for 循环；filter 上使用类型守卫以保持下游类型推断。
+- 在 `src/config` 中，添加新模块遵循已有自导出模式：`export * as ConfigAgent from "./agent"`。
 
 ### Style Guide — Code Examples
 
@@ -157,3 +176,26 @@ const table = sqliteTable("session", {
   createdAt: integer("created_at").notNull(),
 })
 ```
+
+### 复杂逻辑
+
+当函数有多个验证分支或辅助细节时，让主函数保持 Happy Path，将辅助细节移入下方的小型 helper。
+
+```ts
+// Good
+export function loadThing(input: unknown) {
+  const config = requireConfig(input)
+  const metadata = readMetadata(input)
+  return createThing({ config, metadata })
+}
+
+function requireConfig(input: unknown) {
+  ...
+}
+```
+
+- 将 helper 放在靠近所支持代码的位置，在主 export 下方以改善可读性。
+- 不要将简单表达式过度抽象为多个单次使用的 helper；仅在 helper 命名了真正的概念时提取（如 `requireConfig`、`readMetadata`）。
+- 不要从 helper 返回 `Effect`，除非它们确实执行有副作用的工作。同步的解析、验证和选项构建应保持同步。
+- 解析不可信 JSON 字符串时，优先使用 Effect schema 辅助方法（`Schema.UnknownFromJsonString`、`Schema.decodeUnknownOption`）而非手写 `JSON.parse` 包裹在 `Effect.try` 中。
+- 为非显而易见的约束和意外行为添加注释，不要为明显的赋值或控制流添加注释。
