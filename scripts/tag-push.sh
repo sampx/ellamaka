@@ -49,6 +49,12 @@ if [ -z "$TAG" ]; then
   exit 1
 fi
 
+# 规范化 tag：确保 v 前缀（publish-ellamaka.yml 仅由 v* tag 触发）
+case "$TAG" in
+  v*) ;;
+  *) echo "→ 补全 v 前缀: $TAG → v$TAG"; TAG="v$TAG" ;;
+esac
+
 # --- 执行 ---
 echo "→ 检查远程 tag: $TAG"
 if git ls-remote --tags "$REMOTE" "$TAG" | grep -q "$TAG"; then
