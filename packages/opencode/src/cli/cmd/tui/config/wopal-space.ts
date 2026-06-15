@@ -40,6 +40,7 @@ export function tryLoadWopalSpaceTuiConfig(deps: WopalSpaceDeps, ctx: { director
           }),
         ),
       )
+      log.info("loaded tui config", { path: file.path })
     }
 
     return {

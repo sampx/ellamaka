@@ -224,8 +224,14 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
   }
 
   // 1. Global tui config (lowest precedence).
+  //    Extract only the `tui` field from settings.jsonc — the file also contains
+  //    `ontologies`, `spaces`, `ellamaka` which are not valid TUI config keys.
   for (const file of [path.join(Global.Path.config, "settings.jsonc")]) {
-    yield* merge(file, yield* loadSettingsFile(file))
+    const text = yield* readConfigFile(file)
+    if (!text) continue
+    const raw = ConfigParse.jsonc(text, file) as Record<string, unknown>
+    if (!raw.tui || typeof raw.tui !== "object") continue
+    yield* merge(file, yield* load(JSON.stringify(raw.tui), file))
   }
 
   // 2. Explicit OPENCODE_TUI_CONFIG override, if set.

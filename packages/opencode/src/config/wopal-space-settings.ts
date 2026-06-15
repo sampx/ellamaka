@@ -45,7 +45,15 @@ export function loadWopalSpaceSettingsFiles(deps: WopalSpaceSettingsDeps, ctx: {
 
     const files: WopalSpaceSettingsFile[] = []
     for (const dir of localWopalDirs) {
+      // Public settings (committed to ontology)
       for (const file of ["settings.jsonc", "settings.json"]) {
+        const settingsPath = path.join(dir, "config", file)
+        const text = yield* deps.readConfigFile(settingsPath)
+        if (!text) continue
+        files.push({ dir, path: settingsPath, text })
+      }
+      // Local settings (private, gitignored — deep-merge overrides public)
+      for (const file of ["settings.local.jsonc"]) {
         const settingsPath = path.join(dir, "config", file)
         const text = yield* deps.readConfigFile(settingsPath)
         if (!text) continue

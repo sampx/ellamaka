@@ -109,10 +109,11 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
               ),
           )
           loaded = true
+          log.info("loaded ellamaka config", { path: file.path })
         }
       }
       if (!loaded) {
-        log.warn("wopal space detected but no config/settings.jsonc with ellamaka field found", { dir })
+        log.warn("wopal space detected but no settings.jsonc or settings.local.jsonc with ellamaka field found", { dir })
       }
     }
 

@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-06-15 | Updated | §6.1 加载链路增加 `settings.local.jsonc`（公开/私有配置拆分） |
 | 2026-06-11 | Updated | channel 改名 `latest`/`main`（与 opencode 一致）；update guard 从 channel 判断改为路径判断 `isWopalInstall()`；数据库剥离逻辑移除 |
 | 2026-06-01 | Created | 初始版本，以文件级变更清单形式记录 |
 
@@ -225,13 +226,22 @@ ellamaka 提供两种运行模式的配置加载：
 #### 加载链路（优先级从低到高）
 
 ```
-① ~/.wopal/config/settings.jsonc          — 全局配置
+① ~/.wopal/config/settings.jsonc          — 全局配置（ellamaka 字段作为默认值）
 ② ~/.wopal/                                — 全局能力（agents/commands/plugins/skills）
-③ <space>/.wopal/config/settings.jsonc     — 空间配置（提取 ellamaka + tui 字段）
-④ <space>/.wopal/                          — 空间能力（最高优先级）
-⑤ <space>/.wopal/agents/{name}.md          — agent frontmatter（权限最高优先级）
-⑥ OPENCODE_CONFIG_CONTENT                  — 环境变量覆盖（最高）
+③ <space>/.wopal/config/settings.jsonc     — 空间公开配置（提交至 ontology，提取 ellamaka + tui 字段）
+④ <space>/.wopal/config/settings.local.jsonc — 空间私有配置（深度合并覆盖 ③，gitignored，不提交）
+⑤ <space>/.wopal/                          — 空间能力
+⑥ <space>/.wopal/agents/{name}.md          — agent frontmatter（权限最高优先级）
+⑦ OPENCODE_CONFIG_CONTENT                  — 环境变量覆盖（最高）
 ```
+
+##### 公开/私有配置拆分（settings.local.jsonc）
+
+`config/settings.jsonc` 是 ontology 的一部分，随 `space/<name>` 分支提交和分发。其中 `ellamaka` 字段包含适用于所有用户的公共默认值（如 `default_agent`、`autoupdate`、通用 permission 规则）。
+
+`config/settings.local.jsonc` 是用户私有配置，已加入 `.gitignore`。其中 `ellamaka` 和 `tui` 字段包含用户特定的覆盖值（provider 定义、per-agent model 分配、install 路径、shell 偏好、MCP 配置等）。
+
+合并顺序：`settings.jsonc` 先加载，`settings.local.jsonc` 通过 `mergeDeep` 深度合并覆盖。目录级合并独立于全局配置合并。
 
 #### 目录解析
 
@@ -245,7 +255,7 @@ ellamaka 提供两种运行模式的配置加载：
 
 `tryLoadWopalSpaceConfig()` 在 WOPAL_SPACE 激活时：
 1. 调用 `loadWopalSpaceSettingsFiles()` 获取目录列表和设置文件
-2. 合并全局配置，然后遍历空间设置文件提取 `ellamaka` 字段并合并
+2. 合并全局配置，然后遍历空间设置文件（`settings.jsonc` → `settings.local.jsonc`）提取 `ellamaka` 字段并合并
 3. 从目录加载 agents（含 frontmatter mergeDeep）、commands、plugins
 4. 返回完整结果，`config.ts` 中 **直接短路返回**，不执行后续任何 opencode 配置加载（remote wellknown、`~/.config/opencode/`、项目 `opencode.jsonc`、`.opencode/` 扫描等）
 
