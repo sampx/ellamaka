@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "tui-web-embed-poc",
+      "dependencies": {
+        "bun-pty": "0.4.8",
+      },
+    },
+  },
+  "packages": {
+    "bun-pty": ["bun-pty@0.4.8", "https://registry.npmmirror.com/bun-pty/-/bun-pty-0.4.8.tgz", {}, "sha512-rO70Mrbr13+jxHHHu2YBkk2pNqrJE5cJn29WE++PUr+GFA0hq/VgtQPZANJ8dJo6d7XImvBk37Innt8GM7O28w=="],
+  }
+}

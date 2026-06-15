@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0a0c10" />
+  <title>ELLAMAKA</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100dvh;
+      background: #0a0c10;
+      color: #e4e7ec;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: env(safe-area-inset-top, 0px) 24px calc(40px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .brand {
+      text-align: center; margin-bottom: 40px;
+    }
+    .brand h1 {
+      font-size: 32px; font-weight: 200; letter-spacing: 8px;
+      background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .brand .tagline { font-size: 13px; color: #6b7280; letter-spacing: 1px; }
+
+    form {
+      width: 100%; max-width: 360px;
+      background: #13161c; border: 1px solid #1f2530;
+      border-radius: 16px; padding: 24px 20px;
+    }
+
+    .field { margin-bottom: 18px; }
+    .field label {
+      display: block; margin-bottom: 8px;
+      font-size: 12px; color: #9ca3af; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .field select, .field input {
+      width: 100%; height: 46px; border: 1px solid #252b38; border-radius: 10px;
+      padding: 0 14px; font-size: 15px; outline: none;
+      background: #0a0c10; color: #e4e7ec;
+      transition: border-color .15s;
+    }
+    .field select:focus, .field input:focus { border-color: #3b82f6; }
+
+    .btn {
+      display: block; width: 100%; height: 48px; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      border: none; transition: opacity .15s, transform .1s;
+      text-decoration: none; text-align: center; line-height: 48px;
+    }
+    .btn:disabled { opacity: .4; }
+    .btn:active { transform: scale(.98); }
+
+    .btn-resume {
+      background: #1c2230; color: #e4e7ec; border: 1px solid #2d3548;
+      margin-bottom: 14px;
+    }
+    .btn-resume:hover { background: #232a3a; }
+
+    .btn-new {
+      background: #3b82f6; color: #fff;
+    }
+    .btn-new:hover { background: #3574e0; }
+
+    .divider {
+      text-align: center; margin: 20px 0;
+      font-size: 11px; color: #4b5563; letter-spacing: 2px;
+    }
+
+    #status {
+      text-align: center; font-size: 13px; min-height: 20px; margin-top: 14px;
+    }
+    #status.error { color: #ef4444; }
+    #status.working { color: #6b7280; }
+
+    .runtime {
+      width: 100%; max-width: 360px; margin-top: 24px;
+      font-size: 11px; color: #4b5563; text-align: center;
+      line-height: 1.6; word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="brand">
+    <h1>ELLAMAKA</h1>
+    <div class="tagline">AI Coding Companion</div>
+  </div>
+
+  <form id="form" onsubmit="return false">
+    <div class="field">
+      <label>Agent</label>
+      <select id="agent"></select>
+    </div>
+
+    <div class="field">
+      <label>Model</label>
+      <input id="model" list="model-list" placeholder="留空使用 agent 默认模型" />
+      <datalist id="model-list"></datalist>
+    </div>
+
+    <button id="btn-resume" class="btn btn-resume" style="display:none">返回当前会话</button>
+
+    <div class="divider" id="divider" style="display:none">— 或 —</div>
+
+    <button id="btn-new" class="btn btn-new" disabled>新建会话</button>
+
+    <div id="status"></div>
+  </form>
+
+  <div class="runtime" id="runtime"></div>
+
+  <script>
+    const $agent = document.getElementById("agent");
+    const $model = document.getElementById("model");
+    const $btnNew = document.getElementById("btn-new");
+    const $btnResume = document.getElementById("btn-resume");
+    const $divider = document.getElementById("divider");
+    const $status = document.getElementById("status");
+    const $runtime = document.getElementById("runtime");
+    const $modelList = document.getElementById("model-list");
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function loadOptions() {
+      try {
+        const res = await fetch("/api/chat/options");
+        const data = await res.json();
+        if (!data.success) throw new Error("加载失败");
+        const opts = data.data;
+
+        const agents = (opts.agents || []).filter((a) => !a.hidden);
+        $agent.innerHTML = agents.map(
+          (a) => `<option value="${escapeHtml(a.name)}"${(opts.defaults?.agent === a.name) ? " selected" : ""}>${escapeHtml(a.name)}</option>`
+        ).join("");
+
+        $modelList.innerHTML = (opts.models || []).map(
+          (m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name || m.id)}</option>`
+        ).join("");
+
+        if (opts.current) {
+          $agent.value = opts.current.settings.agent || "";
+          $model.value = opts.current.settings.model || "";
+          $btnResume.style.display = "block";
+          $divider.style.display = "block";
+        } else if (opts.defaults?.model) {
+          $model.value = opts.defaults.model;
+        }
+
+        $runtime.textContent = `${opts.runtime.wopalHome} · ${opts.runtime.serveCwd}`;
+        $btnNew.disabled = !$agent.value;
+      } catch (err) {
+        $status.textContent = "配置加载失败：" + err.message;
+        $status.className = "error";
+      }
+    }
+
+    async function createSession() {
+      const agent = $agent.value.trim();
+      if (!agent) return;
+      $btnNew.disabled = true;
+      $btnResume.disabled = true;
+      $status.textContent = "正在创建会话…";
+      $status.className = "working";
+      try {
+        const res = await fetch("/api/chat/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent, model: $model.value.trim(), reset: true }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || "创建失败");
+        location.href = "/m";
+      } catch (err) {
+        $status.textContent = err.message;
+        $status.className = "error";
+        $btnNew.disabled = false;
+        $btnResume.disabled = false;
+      }
+    }
+
+    $btnNew.addEventListener("click", createSession);
+    $btnResume.addEventListener("click", () => { location.href = "/m"; });
+    $agent.addEventListener("change", () => { $btnNew.disabled = !$agent.value; });
+
+    loadOptions();
+  </script>
+</body>
+</html>

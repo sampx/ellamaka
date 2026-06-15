@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0a0c10" />
+  <title>ELLAMAKA · Select Space</title>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100dvh;
+      background: #0a0c10;
+      color: #e4e7ec;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      padding: 60px 24px 40px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+
+    .brand { text-align: center; margin-bottom: 48px; }
+    .brand h1 {
+      font-size: 36px; font-weight: 200; letter-spacing: 10px;
+      background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .brand .tagline {
+      font-size: 12px; color: #6b7280;
+      letter-spacing: 3px; text-transform: uppercase;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    a.card {
+      display: block;
+      background: #13161c;
+      border: 1px solid #1f2530;
+      border-radius: 12px;
+      padding: 18px 20px;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color .15s, background .15s, transform .1s;
+    }
+    a.card:hover { border-color: #3b82f6; background: #161a23; }
+    a.card:active { transform: scale(.99); }
+
+    .card .name {
+      font-size: 16px; font-weight: 600; color: #e4e7ec;
+      margin-bottom: 6px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card .badge {
+      font-size: 10px; font-weight: 600; color: #3fb950;
+      border: 1px solid #2ea043; padding: 1px 7px;
+      border-radius: 4px; letter-spacing: 0.5px;
+    }
+    .card .path {
+      font-size: 12px; color: #6b7280;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-all;
+    }
+
+    #status {
+      text-align: center; font-size: 13px; min-height: 20px; margin-top: 24px;
+    }
+    #status.error { color: #ef4444; }
+    #status.working { color: #6b7280; }
+
+    .footer {
+      text-align: center; margin-top: 48px;
+      font-size: 12px; color: #4b5563;
+    }
+    .footer a { color: #6b7280; text-decoration: none; }
+    .footer a:hover { color: #9ca3af; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="brand">
+      <h1>ELLAMAKA</h1>
+      <div class="tagline">Select a Space</div>
+    </div>
+
+    <div class="grid" id="grid"></div>
+    <div id="status"></div>
+
+    <div class="footer">
+      <a href="/m">手机聊天版 →</a>
+    </div>
+  </div>
+
+  <script>
+    const $grid = document.getElementById("grid");
+    const $status = document.getElementById("status");
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function load() {
+      $status.textContent = "加载空间列表…";
+      $status.className = "working";
+      try {
+        const res = await fetch("/api/spaces");
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || "加载失败");
+        const { spaces, current } = data.data;
+
+        if (!spaces.length) {
+          $status.textContent = "未找到任何空间。请先 wopal space add 创建。";
+          $status.className = "error";
+          return;
+        }
+
+        $grid.innerHTML = spaces.map((s) => {
+          const isCurrent = s.name === current;
+          const href = `/tui?space=${encodeURIComponent(s.name)}`;
+          return `
+            <a class="card" href="${href}">
+              <div class="name">
+                ${escapeHtml(s.name)}
+                ${isCurrent ? '<span class="badge">当前</span>' : ""}
+              </div>
+              <div class="path">${escapeHtml(s.path)}</div>
+            </a>
+          `;
+        }).join("");
+
+        $status.textContent = "";
+        $status.className = "";
+      } catch (err) {
+        $status.textContent = "加载失败：" + err.message;
+        $status.className = "error";
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

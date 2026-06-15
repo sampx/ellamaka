@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ellamaka TUI · Web Embed PoC</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; background: #0b0d12; overflow: hidden;
+      font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: #c8d2e0;
+    }
+
+    /* ----- Tab bar ----- */
+    #tabs {
+      position: fixed; top: 0; left: 0; right: 0; height: 34px;
+      background: #11151c; border-bottom: 1px solid #1c2230;
+      display: flex; align-items: center; gap: 4px;
+      padding: 0 8px; z-index: 10;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 600; color: #c8d2e0;
+      padding: 0 10px 0 4px; font-size: 12px;
+    }
+    .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5568; }
+    .brand .dot.on { background: #3fb950; }
+
+    #tab-list { display: flex; gap: 2px; align-items: center; }
+    .tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px 5px 10px; border-radius: 6px;
+      background: transparent; color: #8b97aa;
+      cursor: pointer; font-size: 12px;
+      border: 1px solid transparent;
+      max-width: 220px;
+    }
+    .tab:hover { background: #1a1f29; color: #c8d2e0; }
+    .tab.active {
+      background: #1c2230; color: #e4e7ec;
+      border-color: #2d3548;
+    }
+    .tab .name {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tab .close {
+      width: 16px; height: 16px; line-height: 14px; text-align: center;
+      color: #4a5568; border-radius: 3px; font-size: 14px;
+      flex-shrink: 0;
+    }
+    .tab .close:hover { background: #2d3548; color: #e4e7ec; }
+
+    .tab-add {
+      width: 28px; height: 24px; line-height: 22px; text-align: center;
+      color: #6b7280; cursor: pointer; border-radius: 6px;
+      font-size: 18px; font-weight: 300;
+    }
+    .tab-add:hover { background: #1a1f29; color: #e4e7ec; }
+
+    .spacer { flex: 1; }
+    .home-link {
+      padding: 5px 10px; color: #5a6577; text-decoration: none;
+      font-size: 11px;
+    }
+    .home-link:hover { color: #8b97aa; }
+
+    /* ----- Status bar ----- */
+    #status-bar {
+      position: fixed; top: 34px; left: 0; right: 0; height: 22px;
+      background: #0d1017; border-bottom: 1px solid #1a1f29;
+      color: #6b7280; font-size: 11px; line-height: 22px;
+      padding: 0 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      z-index: 9;
+      display: flex; gap: 12px; align-items: center;
+    }
+    #status-bar .status-text { color: #8b97aa; }
+    #status-bar .status-text.error { color: #ef4444; }
+    #status-bar .status-text.working { color: #6b7280; }
+
+    /* ----- Stage ----- */
+    #stage {
+      position: absolute; top: 56px; left: 0; right: 0; bottom: 0;
+    }
+    .term-pane {
+      position: absolute; inset: 0;
+      padding: 6px 4px 4px 8px;
+      display: none;
+    }
+    .term-pane.active { display: block; }
+    .xterm { height: 100%; }
+    .xterm-viewport { background-color: transparent !important; }
+
+    /* ----- Space picker ----- */
+    #space-picker {
+      position: fixed; top: 38px; left: 50%; transform: translateX(-50%);
+      background: #13161c; border: 1px solid #1f2530; border-radius: 10px;
+      padding: 6px; min-width: 320px; max-width: 480px;
+      max-height: 360px; overflow-y: auto;
+      box-shadow: 0 12px 32px rgba(0,0,0,.5);
+      z-index: 20;
+      display: none;
+    }
+    #space-picker.open { display: block; }
+    .picker-item {
+      display: block; width: 100%; padding: 8px 12px;
+      background: transparent; color: #e4e7ec;
+      border: none; text-align: left; cursor: pointer;
+      border-radius: 6px; font-size: 13px;
+      font-family: inherit;
+    }
+    .picker-item:hover:not(:disabled) { background: #1c2230; }
+    .picker-item:disabled { color: #4b5563; cursor: not-allowed; }
+    .picker-item .name { font-weight: 500; }
+    .picker-item .badge {
+      font-size: 10px; color: #6b7280; margin-left: 6px;
+    }
+    .picker-item .path {
+      display: block; font-size: 11px; color: #6b7280;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      margin-top: 2px; word-break: break-all;
+    }
+    .picker-empty {
+      padding: 16px 12px; text-align: center; color: #6b7280; font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="tabs">
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      Ellamaka TUI
+    </div>
+    <div id="tab-list"></div>
+    <div class="tab-add" id="tab-add" title="打开新空间">+</div>
+    <div class="spacer"></div>
+    <a class="home-link" href="/">← 首页</a>
+  </div>
+
+  <div id="status-bar">
+    <span class="status-text" id="status-text">loading…</span>
+  </div>
+
+  <div id="stage"></div>
+
+  <div id="space-picker">
+    <div id="picker-list"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script>
+    // -------- State --------
+    // Each tab holds one xterm + one SSE connection to its space's PTY.
+    const tabs = new Map(); // space -> { term, fit, sse, pane, status, online, cwd }
+    let activeSpace = null;
+    let allSpaces = [];
+
+    const initialSpace = new URLSearchParams(location.search).get("space");
+
+    // -------- Helpers --------
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function post(path, body, space) {
+      try {
+        await fetch(`${path}?space=${encodeURIComponent(space)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      } catch {}
+    }
+
+    async function loadSpaces() {
+      const res = await fetch("/api/spaces");
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || "load failed");
+      allSpaces = data.data.spaces;
+      return data.data;
+    }
+
+    // -------- Tab management --------
+    async function openTab(space) {
+      if (tabs.has(space)) { setActive(space); return; }
+      const info = allSpaces.find((s) => s.name === space);
+      if (!info) return;
+
+      const pane = document.createElement("div");
+      pane.className = "term-pane";
+      document.getElementById("stage").appendChild(pane);
+
+      const term = new Terminal({
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: 13,
+        cursorBlink: true,
+        allowProposedApi: true,
+      });
+      const fit = new FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.open(pane);
+
+      const state = {
+        term, fit, pane,
+        sse: null,
+        status: "connecting…",
+        online: false,
+        space,
+        cwd: info.path,
+      };
+
+      const spaceQuery = `?space=${encodeURIComponent(space)}`;
+      const sse = new EventSource("/api/tui/stream" + spaceQuery);
+      state.sse = sse;
+
+      sse.addEventListener("open", () => {
+        state.status = "connected";
+        state.online = true;
+        if (activeSpace === space) updateStatusBar();
+      });
+      sse.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        if (m.type === "connected") {
+          state.status = "connected";
+          state.online = true;
+          if (m.cwd) state.cwd = m.cwd;
+          settleAndResize(state);
+        } else if (m.type === "output") {
+          term.write(m.data);
+        } else if (m.type === "exited") {
+          // PTY 进程退出 = 终态。立即关闭 SSE 阻止浏览器自动重连触发 PTY 重启。
+          try { sse.close(); } catch {}
+          state.status = `exited (code=${m.exitCode})`;
+          state.online = false;
+          if (activeSpace === space) updateStatusBar();
+          // 延迟关闭 tab，让用户先看到 exited 状态
+          setTimeout(() => { if (tabs.has(space)) closeTab(space); }, 800);
+        }
+        if (activeSpace === space) updateStatusBar();
+      };
+      sse.onerror = () => {
+        state.status = "disconnected — retrying";
+        state.online = false;
+        if (activeSpace === space) updateStatusBar();
+      };
+
+      term.onData((d) => post("/api/tui/input", { data: d }, space));
+
+      tabs.set(space, state);
+      renderTabs();
+      setActive(space);
+    }
+
+    function closeTab(space) {
+      const tab = tabs.get(space);
+      if (!tab) return;
+      // 通知服务端 kill PTY 进程，避免内存泄漏（fire-and-forget，不等响应）
+      // 注意：PTY 自己 exit 触发的 closeTab 此时 ptys.get(space) 已被 onExit 清理，
+      // kill 请求会返回 404，无害。
+      try {
+        fetch(`/api/tui/kill?space=${encodeURIComponent(space)}`, { method: "POST" }).catch(() => {});
+      } catch {}
+      try { tab.sse.close(); } catch {}
+      try { tab.term.dispose(); } catch {}
+      tab.pane.remove();
+      tabs.delete(space);
+
+      if (activeSpace === space) {
+        activeSpace = null;
+        const next = tabs.keys().next().value ?? null;
+        if (next) setActive(next);
+        else updateStatusBar();
+      }
+      renderTabs();
+    }
+
+    function setActive(space) {
+      if (activeSpace === space) return;
+      if (activeSpace && tabs.has(activeSpace)) {
+        tabs.get(activeSpace).pane.classList.remove("active");
+      }
+      activeSpace = space;
+      if (space && tabs.has(space)) {
+        const tab = tabs.get(space);
+        tab.pane.classList.add("active");
+        // Fit after CSS applies; only visible panes can fit correctly
+        requestAnimationFrame(() => {
+          try { tab.fit.fit(); } catch {}
+          post("/api/tui/resize", { cols: tab.term.cols, rows: tab.term.rows }, space);
+          try { tab.term.focus(); } catch {}
+        });
+      }
+      renderTabs();
+      updateStatusBar();
+    }
+
+    async function settleAndResize(state) {
+      if (document.fonts && document.fonts.ready) {
+        try { await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 800))]); } catch {}
+      }
+      for (let i = 0; i < 12; i++) {
+        try { state.fit.fit(); } catch {}
+        await new Promise((r) => requestAnimationFrame(r));
+        if (state.term.cols >= 20 && state.term.rows >= 8) break;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      await post("/api/tui/resize", { cols: state.term.cols, rows: state.term.rows }, state.space);
+    }
+
+    // -------- Render --------
+    function renderTabs() {
+      const $list = document.getElementById("tab-list");
+      $list.innerHTML = "";
+      for (const [space, state] of tabs) {
+        const el = document.createElement("div");
+        el.className = "tab" + (space === activeSpace ? " active" : "");
+        el.innerHTML = `<span class="name">${escapeHtml(space)}</span><span class="close" title="关闭">×</span>`;
+        el.addEventListener("click", (e) => {
+          if (e.target.classList.contains("close")) closeTab(space);
+          else setActive(space);
+        });
+        $list.appendChild(el);
+      }
+    }
+
+    function updateStatusBar() {
+      const $text = document.getElementById("status-text");
+      const $dot = document.getElementById("dot");
+      if (!activeSpace || !tabs.has(activeSpace)) {
+        $text.textContent = activeSpace === null ? "no tab open — click + to pick a space" : "loading…";
+        $text.className = "status-text";
+        $dot.classList.remove("on");
+        return;
+      }
+      const tab = tabs.get(activeSpace);
+      $text.textContent = `${activeSpace} · ${tab.status} · ${tab.cwd}`;
+      $text.className = "status-text" + (tab.online ? "" : tab.status.startsWith("exited") ? " error" : " working");
+      $dot.classList.toggle("on", tab.online);
+    }
+
+    // -------- Space picker --------
+    async function openPicker() {
+      const $picker = document.getElementById("space-picker");
+      const $list = document.getElementById("picker-list");
+      try { await loadSpaces(); }
+      catch (err) {
+        $list.innerHTML = `<div class="picker-empty">加载失败：${escapeHtml(err.message)}</div>`;
+        $picker.classList.add("open");
+        return;
+      }
+      if (!allSpaces.length) {
+        $list.innerHTML = `<div class="picker-empty">未找到任何空间</div>`;
+        $picker.classList.add("open");
+        return;
+      }
+      $list.innerHTML = allSpaces.map((s) => {
+        const open = tabs.has(s.name);
+        return `<button class="picker-item" data-space="${escapeHtml(s.name)}"${open ? " disabled" : ""}>
+          <span class="name">${escapeHtml(s.name)}</span>
+          ${open ? '<span class="badge">已打开</span>' : ""}
+          <span class="path">${escapeHtml(s.path)}</span>
+        </button>`;
+      }).join("");
+      $list.querySelectorAll(".picker-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          openTab(btn.dataset.space);
+          closePicker();
+        });
+      });
+      $picker.classList.add("open");
+    }
+
+    function closePicker() {
+      document.getElementById("space-picker").classList.remove("open");
+    }
+
+    // -------- Global events --------
+    document.getElementById("tab-add").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const $picker = document.getElementById("space-picker");
+      if ($picker.classList.contains("open")) closePicker();
+      else openPicker();
+    });
+    document.addEventListener("click", (e) => {
+      const $picker = document.getElementById("space-picker");
+      if ($picker.classList.contains("open")
+        && !$picker.contains(e.target)
+        && e.target.id !== "tab-add"
+        && !e.target.closest("#tab-add")) {
+        closePicker();
+      }
+    });
+
+    // Resize only fires for the active pane (hidden panes can't be measured)
+    window.addEventListener("resize", () => {
+      if (!activeSpace || !tabs.has(activeSpace)) return;
+      const tab = tabs.get(activeSpace);
+      try { tab.fit.fit(); } catch {}
+      post("/api/tui/resize", { cols: tab.term.cols, rows: tab.term.rows }, activeSpace);
+    });
+
+    // Shift+Enter → newline to the active PTY only
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && activeSpace) {
+        e.preventDefault();
+        e.stopPropagation();
+        post("/api/tui/input", { data: "\n" }, activeSpace);
+      }
+    }, true);
+
+    // -------- Init --------
+    (async () => {
+      try { await loadSpaces(); }
+      catch (err) {
+        document.getElementById("status-text").textContent = "加载空间失败：" + err.message;
+        document.getElementById("status-text").className = "status-text error";
+        return;
+      }
+      const initial = initialSpace && allSpaces.find((s) => s.name === initialSpace)
+        ? initialSpace
+        : (allSpaces[0]?.name ?? null);
+      if (initial) openTab(initial);
+      else updateStatusBar();
+    })();
+  </script>
+</body>
+</html>

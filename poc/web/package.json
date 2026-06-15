@@ -1,0 +1,14 @@
+{
+  "name": "web-poc",
+  "private": true,
+  "version": "0.0.0",
+  "description": "PoC: unified web access to ellamaka — TUI embed (desktop) + chat UI (mobile)",
+  "type": "module",
+  "scripts": {
+    "start": "bun run server.ts",
+    "dev": "bun run server.ts"
+  },
+  "dependencies": {
+    "bun-pty": "0.4.8"
+  }
+}
