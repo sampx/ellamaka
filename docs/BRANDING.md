@@ -11,6 +11,8 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容；§7.1 TUI 配置统一；新增 §14 TUI tips 和 sidebar 品牌化：所有模式下移除 opencode 相关 tips，CLI 命令引用使用 BINARY_NAME，sidebar 版本署名使用 BINARY_TITLE |
+| 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容：所有模式仅加载 ellamaka 自身配置，不再加载 opencode XDG 全局配置和项目级 opencode.jsonc |
 | 2026-06-15 | Updated | §6.1 加载链路增加 `settings.local.jsonc`（公开/私有配置拆分） |
 | 2026-06-11 | Updated | channel 改名 `latest`/`main`（与 opencode 一致）；update guard 从 channel 判断改为路径判断 `isWopalInstall()`；数据库剥离逻辑移除 |
 | 2026-06-01 | Created | 初始版本，以文件级变更清单形式记录 |
@@ -217,9 +219,9 @@ CLI 入口中间件**始终先清除**用户环境中的 `WOPAL_SPACE`/`WOPAL_SP
 
 ### 目的
 
-ellamaka 提供两种运行模式的配置加载：
-- **空间模式**：从 Wopal 生态路径加载，不与 opencode 路径产生任何交互
-- **普通模式**：兼容 opencode 配置体系，让老用户零迁移使用
+ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置路径加载，不与 opencode 配置体系交互：
+- **空间模式**：叠加空间级 `.wopal/` 配置和能力
+- **普通模式**：仅使用 `~/.wopal/config/settings.jsonc` 全局配置
 
 ### 6.1 空间模式配置加载
 
@@ -259,18 +261,19 @@ ellamaka 提供两种运行模式的配置加载：
 3. 从目录加载 agents（含 frontmatter mergeDeep）、commands、plugins
 4. 返回完整结果，`config.ts` 中 **直接短路返回**，不执行后续任何 opencode 配置加载（remote wellknown、`~/.config/opencode/`、项目 `opencode.jsonc`、`.opencode/` 扫描等）
 
-### 6.2 普通模式兼容层
+### 6.2 普通模式配置加载
 
-空间模式未激活时，ellamaka 保持与 opencode 的兼容：
+空间模式未激活时，ellamaka 仅从自身配置路径加载，不与 opencode 配置体系产生交互：
 
 ```
-① ~/.config/opencode/{config.json, opencode.json[c]}  — XDG 全局配置
-② ~/.wopal/config/settings.jsonc                      — ellamaka 全局覆盖
-③ opencode.jsonc / .opencode/opencode.json[c]          — 项目级配置
-④ ~/.opencode/ + .opencode/ + ~/.config/opencode/     — 能力扫描
+① ~/.wopal/config/settings.jsonc  — ellamaka 全局配置
 ```
 
-`settings.jsonc` 中若包含 `ellamaka` 字段，提取该字段作为配置覆盖。
+`settings.jsonc` 若包含 `ellamaka` 字段，提取该字段作为配置主体。
+
+**设计决策**：不再加载 opencode XDG 全局配置文件（`~/.config/opencode/{config.json, opencode.json[c]}`）和项目级 `opencode.jsonc`。原因：ellamaka 版本可能与用户机器上的 opencode 版本不一致，opencoe 配置格式的跨版本不兼容变更会导致 ellamaka 解析失败。
+
+能力扫描（agents/commands/plugins）不受影响，`.opencode/`、`~/.opencode/`、`~/.config/opencode/` 目录的能力加载保持不变。
 
 ### 6.3 目录扫描守卫
 
@@ -282,16 +285,17 @@ ellamaka 提供两种运行模式的配置加载：
 
 ### 目的
 
-TUI 的配置加载和视觉元素与 WopalSpace 模式深度整合，同时保持非空间模式的兼容性。
+TUI 的配置加载和视觉元素与 WopalSpace 模式深度整合。所有模式下 TUI 配置仅从 ellamaka 自身路径加载，不与 opencode 配置体系交互。
 
 ### 7.1 TUI 配置加载
 
-TUI 加载流程中的 WOPAL_SPACE 分支：
+TUI 加载流程中的统一行为（空间/非空间模式一致）：
 
-1. **目录过滤**：空间模式下主题扫描目录仅保留 `~/.wopal/config/`，跳过所有 `.opencode/` 目录
-2. **跳过 opencode 配置**：不加载 `~/.config/opencode/tui.*`、`.opencode/` 下的 tui 配置文件
-3. **空间 TUI 配置**：调用 `tryLoadWopalSpaceTuiConfig()` → 复用 `loadWopalSpaceSettingsFiles()` → 从 `settings.jsonc` 提取 `tui` 字段 → 合并到 TUI 配置
-4. **配置迁移跳过**：空间模式下跳过 opencode 配置文件中的旧 TUI key 迁移
+1. **跳过 opencode 配置**：不加载 `~/.config/opencode/tui.*`，`.opencode/` 目录的能力扫描（agents/commands/plugins）不受影响
+2. **全局 TUI 配置**：从 `~/.wopal/config/settings.jsonc` 提取 `tui` 字段 → 合并到 TUI 配置
+3. **空间 TUI 配置**（空间模式）：调用 `tryLoadWopalSpaceTuiConfig()` → 复用 `loadWopalSpaceSettingsFiles()` → 从空间级 `settings.jsonc` 提取 `tui` 字段 → 合并覆盖
+4. **目录过滤**（空间模式）：主题扫描目录仅保留 `~/.wopal/config/`，跳过所有 `.opencode/` 目录
+5. **配置迁移跳过**：所有模式下跳过 opencode 配置文件中的旧 TUI key 迁移
 
 ### 7.2 TUI 品牌插件
 
@@ -451,8 +455,8 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 
 | 路径/名称 | 类型 | 保留原因 |
 |-----------|------|----------|
-| `.opencode/` 目录 | 配置目录 | 非空间模式下的项目级配置目录，需与 opencode 兼容 |
-| `opencode.json` / `opencode.jsonc` | 配置文件 | 同上 |
+| `.opencode/` 目录 | 能力目录 | 非空间模式下用于能力扫描（agents/commands/plugins），配置不再从此目录加载 |
+| `opencode.json` / `opencode.jsonc` | 配置文件 | 不再加载 — 非空间模式下仅使用 `~/.wopal/config/settings.jsonc` |
 | `opencode-clipboard.png` | 临时文件 | 运行时缓存，用户不可见 |
 | `"opencode-oauth-dummy-key"` | 运行时标识 | 内部变量名，改名引入风险无收益 |
 | `ProviderID.opencode` | API 枚举 | 内部 provider 标识 |
@@ -464,3 +468,25 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 | Provider 插件 HTTP header | `https://opencode.ai/`、`X-Title: opencode` 等 | 发给第三方 AI provider 的身份标识。待定替换为 `wopal.cn` |
 | mDNS 运行时兜底值 | `mdns.ts` 硬编码 `"opencode.local"` | CLI 默认已是 `ellamaka.local`，但 fallback 路径未更新 |
 | mDNS 配置 schema 描述 | `server.ts` schema annotation | 描述文字仍写 `opencode.local`
+
+---
+
+## 14. TUI tips 与 sidebar 品牌化
+
+### 目的
+
+TUI 首页 tips 系统和 sidebar 版本署名中不再出现 `OpenCode` 引用，全部替换为 ellamaka 品牌。
+
+### 14.1 Tips 列表
+
+原创 tips 列表定义在 `packages/ellamaka/tips.ts`，导出 `ELLAMAKA_TIPS`。tips-view.tsx 通过 import 引用，不再内联定义。
+
+**策展原则**：
+- 保留所有通用功能 tips（快捷键、agent、权限、配置等）
+- 移除 opencode 特有功能 tips（GitHub 集成、share at opencode.ai、opencode.ai Zen、docker 镜像）
+- CLI 命令引用使用 `BINARY_NAME` 常量（`ellamaka run`、`ellamaka serve` 等）
+- 配置文件引用从 `opencode.json` 更新为 `settings.jsonc`
+
+### 14.2 Sidebar 版本署名
+
+sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中的 `OpenCode` → `BINARY_TITLE`（`Ellamaka`）。通过 import `BINARY_TITLE` from `packages/ellamaka/branding` 注入。

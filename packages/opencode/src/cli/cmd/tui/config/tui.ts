@@ -217,12 +217,6 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
     plugin_origins: [],
   }
 
-  if (!Flag.WOPAL_SPACE) {
-    for (const file of ConfigPaths.fileInDirectory(Global.Path.opencodeConfig, "tui")) {
-      yield* mergeFile(file)
-    }
-  }
-
   // 1. Global tui config (lowest precedence).
   //    Extract only the `tui` field from settings.jsonc — the file also contains
   //    `ontologies`, `spaces`, `ellamaka` which are not valid TUI config keys.
@@ -261,16 +255,6 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
         ctx,
       )
     : undefined
-
-  if (!Flag.WOPAL_SPACE) {
-    for (const dir of opencodeDirs) {
-      if (dir === Global.Path.opencodeConfig) continue
-      if (!dir.endsWith(".opencode") && dir !== Flag.OPENCODE_CONFIG_DIR) continue
-      for (const file of ConfigPaths.fileInDirectory(dir, "tui")) {
-        yield* mergeFile(file)
-      }
-    }
-  }
 
   const dirs = wopal?.dirs ?? opencodeDirs
 

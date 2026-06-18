@@ -456,16 +456,8 @@ export const layer = Layer.effect(
       return yield* loadConfig(text, { dir: path.dirname(filepath), source: filepath })
     })
 
-    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
-      let result: Info = {}
-      if (!Flag.WOPAL_SPACE) {
-        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "config.json")))
-        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "opencode.json")))
-        result = mergeConfig(result, yield* loadFile(path.join(Global.Path.opencodeConfig, "opencode.jsonc")))
-      }
-      result = mergeConfig(result, yield* loadSettingsFile(globalConfigFile()))
-
-      return result
+    const loadGlobal = Effect.fnUntraced(function* (_env?: Record<string, string>) {
+      return yield* loadSettingsFile(globalConfigFile())
     })
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
@@ -673,12 +665,6 @@ export const layer = Layer.effect(
           log.debug("loaded custom config", { path: Flag.OPENCODE_CONFIG })
         }
 
-        if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-          for (const file of yield* ConfigPaths.files("opencode", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
-            yield* merge(file, yield* loadFile(file, authEnv), "local")
-          }
-        }
-
         result.agent = result.agent || {}
         result.mode = result.mode || {}
         result.plugin = result.plugin || []
@@ -693,17 +679,6 @@ export const layer = Layer.effect(
 
         for (const dir of directories) {
           if (dir === Global.Path.config) continue
-
-          if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
-            for (const file of ["opencode.json", "opencode.jsonc"]) {
-              const source = path.join(dir, file)
-              log.debug(`loading config from ${source}`)
-              yield* merge(source, yield* loadFile(source, authEnv))
-              result.agent ??= {}
-              result.mode ??= {}
-              result.plugin ??= []
-            }
-          }
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 

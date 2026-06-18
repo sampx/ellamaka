@@ -8,6 +8,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-06-18 | Updated | §3 放弃 opencode 配置兼容：普通模式下不再加载 opencode XDG 全局配置和项目级 opencode.jsonc；§2 适配点表格同步 |
 | 2026-06-11 | Updated | §1 新增文档关系声明；§2 表移除与 BRANDING.md 重复细节，添加节号引用；§5 简化指向 BRANDING.md；同步 BRANDING.md 重构为设计意图驱动 |
 | 2026-05-31 | Updated | 精简为设计事实与契约；移除上游继承描述和 fork delta 管理哲学。 |
 | 2026-05-31 | Updated | 明确 P1 不改 runtime loading 模型；skill loader 改为确定性覆盖。 |
@@ -37,7 +38,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 |--------|------|-------------------|
 | WOPAL_SPACE 自动检测 | 从 cwd 向上查找 `.wopal/.git` 文件确定空间根 | §7.3 |
 | 全局路径分离 | `~/.wopal/config` + `~/.wopal/ellamaka/{data,cache,state}` | §5 |
-| 普通模式兼容层 | 加载 opencode XDG 配置后再用 ellamaka 全局配置覆盖 | §7.3 |
+| 普通模式配置加载 | 所有模式仅从 `~/.wopal/config/settings.jsonc` 加载配置，不与 opencode 配置交互 | §6.2 |
 | 空间配置加载 | 从空间根加载 `.wopal/` 下的配置和能力 | §5.1 |
 | 空间模式跳过项目配置 | `RuntimeFlags.wopalSpace` guard 短路项目级 `opencode.jsonc` | §7.3 |
 | Agent/Command/Plugin 加载 | 从 `.wopal/` 加载同名可覆盖内置 | §2, §5.1 |
@@ -61,7 +62,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | Agent frontmatter | `<space>/.wopal/agents/*.md` |
 | Environment override | `OPENCODE_CONFIG_CONTENT` |
 
-权限合并同此优先链，按最后匹配项生效。普通模式先加载 opencode 的 XDG 全局配置和 `.opencode/` 能力，再加载 `~/.wopal/config/settings.jsonc`。
+权限合并同此优先链，按最后匹配项生效。普通模式下仅从 `~/.wopal/config/settings.jsonc` 加载配置，不加载 opencode XDG 全局配置。
 
 ## 4. Ontology Loading Contract
 
