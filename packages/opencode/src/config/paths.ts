@@ -23,6 +23,7 @@ export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
 
 export const directories = Effect.fn("ConfigPaths.directories")(function* (directory: string, worktree?: string) {
   const afs = yield* AppFileSystem.Service
+  const wopalHome = Global.Path.wopalHome
   return unique([
     Global.Path.config,
     ...(!Flag.WOPAL_SPACE && existsSync(Global.Path.opencodeConfig) ? [Global.Path.opencodeConfig] : []),
@@ -39,6 +40,11 @@ export const directories = Effect.fn("ConfigPaths.directories")(function* (direc
       stop: Global.Path.home,
     })),
     ...(Flag.OPENCODE_CONFIG_DIR ? [Flag.OPENCODE_CONFIG_DIR] : []),
+    // ellamaka 全局根（$WOPAL_HOME）。普通模式下追加到列表末尾，使该目录下的
+    // agents/commands/plugins/skills 最后加载并覆盖 opencode 生态同名能力；同时
+    // 允许该目录下的 opencode.json[c] 配置文件按目录优先级加载（正常布局下不存在）。
+    // wopal-space 模式由 wopalSpaceDirectories() 负责纳入，此处不重复添加。
+    ...(!Flag.WOPAL_SPACE && existsSync(wopalHome) && wopalHome !== Global.Path.config ? [wopalHome] : []),
   ])
 })
 

@@ -17,7 +17,9 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 #### wopal-space 自动检测
 
-从 cwd 向上查找 `.wopal/.git` 为文件的最近祖先目录（ontology worktree 标记），以此作为空间根。检测在用户 home 目录处停止。用户可显式传入 `--no-wopal-space` 强制禁用自动检测（逃生舱），恢复原生 opencode 行为。
+从 cwd 向上查找 `.wopal/.git` 为文件的最近祖先目录（ontology worktree 标记），以此作为空间根。检测在用户 home 目录处停止。用户可显式传入 `--disable-wopalspace` 强制禁用自动检测（逃生舱），恢复原生 opencode 行为。
+
+> CLI flag 使用 `--disable-wopalspace`（无 `no-` 前缀）而非 `--no-wopal-space`：yargs 对 `--no-XXX` 有内置取反解析，会把 `--no-wopal-space` 解析为未声明的 `wopalSpace` 字段，触发 `.strict()` 报错并打印 help。
 
 实现位于 `packages/ellamaka/detect.ts` 的 `detectWopalSpace(cwd)` 函数，返回 `{ root, wopalDir }` 或 undefined。在 `packages/opencode/src/index.ts` 的 yargs 中间件中调用，检测到则设置 `WOPAL_SPACE=1` 和 `WOPAL_SPACE_ROOT=<空间根>`。
 
@@ -35,6 +37,15 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 6 | 全局配置 | `~/.wopal/config/settings.jsonc`（`ellamaka` 字段，通过 `WOPAL_HOME` 定制） |
 | 7 | opencode XDG 全局配置 | `~/.config/opencode/config.json` / `opencode.json[c]`（兼容层底配置） |
 | 8 | 远程 `.well-known/opencode` | 若设 `OPENCODE_AUTO_SHARE`，从共享 URL 拉取 |
+
+**能力加载顺序**（后加载覆盖先加载）：
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| 1 | `.opencode/`、`~/.opencode/`、`~/.config/opencode/` | opencode 生态能力（原生路径，优先扫描） |
+| 2 | `~/.wopal/`（`WOPAL_HOME`） | ellamaka 全局能力（agents/commands/plugins/skills），最后加载覆盖同名能力 |
+
+> `~/.wopal/config/` 是纯配置目录，不参与能力扫描；能力只来自 `~/.wopal/` 根下的 capability 子目录。
 
 **合并规则**：高优先级配置通过 `mergeDeep` 覆盖低优先级的同名键，`agent`、`mode`、`plugin`、`command` 等特殊键做深度合并。
 

@@ -22,6 +22,7 @@ const paths = {
   get home() {
     return process.env.OPENCODE_TEST_HOME ?? os.homedir()
   },
+  wopalHome: wopalRoot,
   data,
   bin: path.join(cache, "bin"),
   log: path.join(data, "log"),
@@ -86,6 +87,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Gl
 
 export interface Interface {
   readonly home: string
+  readonly wopalHome: string
   readonly data: string
   readonly cache: string
   readonly config: string
@@ -100,6 +102,7 @@ export interface Interface {
 export function make(input: Partial<Interface> = {}): Interface {
   return {
     home: Path.home,
+    wopalHome: Path.wopalHome,
     data: Path.data,
     cache: Path.cache,
     config: Flag.OPENCODE_CONFIG_DIR ?? Path.config,

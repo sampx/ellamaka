@@ -96,7 +96,7 @@ while [[ $# -gt 0 ]]; do
         debug_modules="all"; shift
       fi
       ;;
-    -ns) passthrough+=(--no-wopal-space); shift ;;
+    -ns) passthrough+=(--disable-wopalspace); shift ;;
     *) echo "unknown: $1"; exit 1 ;;
   esac
 done

@@ -615,6 +615,8 @@ export const layer = Layer.effect(
         }, ctx)
         if (wopalResult) return wopalResult
 
+        log.info("normal mode (opencode compatible)", { directory: ctx.directory })
+
         for (const [key, value] of Object.entries(auth)) {
           if (value.type === "wellknown") {
             const url = key.replace(/\/+$/, "")

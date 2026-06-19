@@ -203,7 +203,9 @@ GitHub issue URL 从 `anomalyco/opencode` 替换为 `wopal-cn/${BINARY_NAME}`，
 
 - `WOPAL_SPACE=1`：触发下游所有空间模式行为
 - `WOPAL_SPACE_ROOT=<绝对路径>`：配置和能力加载器直接消费
-- `--no-wopal-space` 显式传入 → 清除两者，强制禁用（逃生舱）
+- `--disable-wopalspace` 显式传入 → 清除两者，强制禁用（逃生舱）
+
+> CLI flag 命名为 `--disable-wopalspace`（无 `no-` 前缀），避开 yargs 对 `--no-XXX` 的内置取反解析。yargs 会把它解析为 `disableWopalspace` 字段。
 
 ### 启动安全
 
@@ -263,7 +265,7 @@ ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置�
 
 ### 6.2 普通模式配置加载
 
-空间模式未激活时，ellamaka 仅从自身配置路径加载，不与 opencode 配置体系产生交互：
+空间模式未激活时，ellamaka 仅从自身配置路径加载配置，不与 opencode 配置体系产生交互：
 
 ```
 ① ~/.wopal/config/settings.jsonc  — ellamaka 全局配置
@@ -271,9 +273,20 @@ ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置�
 
 `settings.jsonc` 若包含 `ellamaka` 字段，提取该字段作为配置主体。
 
-**设计决策**：不再加载 opencode XDG 全局配置文件（`~/.config/opencode/{config.json, opencode.json[c]}`）和项目级 `opencode.jsonc`。原因：ellamaka 版本可能与用户机器上的 opencode 版本不一致，opencoe 配置格式的跨版本不兼容变更会导致 ellamaka 解析失败。
+**设计决策**：不再加载 opencode XDG 全局配置文件（`~/.config/opencode/{config.json, opencode.json[c]}`）和项目级 `opencode.jsonc`。原因：ellamaka 版本可能与用户机器上的 opencode 版本不一致，opencode 配置格式的跨版本不兼容变更会导致 ellamaka 解析失败。
 
-能力扫描（agents/commands/plugins）不受影响，`.opencode/`、`~/.opencode/`、`~/.config/opencode/` 目录的能力加载保持不变。
+#### 能力加载（优先级从低到高）
+
+能力扫描（agents/commands/plugins/skills）覆盖以下目录，**后加载者覆盖先加载者**：
+
+```
+① .opencode/、~/.opencode/、~/.config/opencode/   — opencode 生态能力（原生路径）
+② ~/.wopal/                                         — ellamaka 全局能力（最后加载，覆盖 ①）
+```
+
+`~/.wopal/`（由 `WOPAL_HOME` 定位）下的 agents/commands/plugins/skills 等 capability 目录在普通模式**最后**加载，作为全局能力底座覆盖 opencode 生态同名能力。这使非空间模式下也能使用 ellamaka 自带的能力（如 wopal/faq/rook 等 agent、wopal 命令、wopal-plugin 等）。
+
+`~/.wopal/config/` 是纯配置目录，不参与能力扫描——能力只来自 `~/.wopal/` 根下的 capability 子目录。
 
 ### 6.3 目录扫描守卫
 

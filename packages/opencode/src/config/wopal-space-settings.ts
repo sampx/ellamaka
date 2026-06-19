@@ -23,7 +23,7 @@ export interface WopalSpaceSettingsResult {
 }
 
 export function wopalSpaceDirectories(localWopalDirs: string[]) {
-  const homeWopal = path.join(Global.Path.home, ".wopal")
+  const homeWopal = Global.Path.wopalHome
   const seen = new Set<string>()
   const directories: string[] = []
   for (const dir of [Global.Path.config, ...(existsSync(homeWopal) ? [homeWopal] : []), ...localWopalDirs]) {
