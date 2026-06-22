@@ -47,6 +47,13 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 
 > `~/.wopal/config/` 是纯配置目录，不参与能力扫描；能力只来自 `~/.wopal/` 根下的 capability 子目录。
 
+**插件依赖安装（ellamaka 增强）**：能力扫描到 `~/.wopal/` 时，额外为该目录下的本地插件安装其 `package.json` 声明的依赖。
+
+- **upstream 行为**：opencode 对每个能力目录只调 `npmSvc.install(dir, { add: [{ name: "@opencode-ai/plugin" }] })`，仅装 plugin SDK 公共头文件。对 `file://` 本地插件，`resolvePluginTarget`（`plugin/shared.ts`）只解析路径、检查 `package.json` 存在，**不安装插件自身的 `dependencies`**。upstream 假设 `file://` 插件由开发者自行管理依赖。
+- **ellamaka 增强**：扫描到 `~/.wopal/`（`Global.Path.wopalHome`）时，复用 wopal-space 模式的 `localPluginInstallDeps(dir)` 收集该目录下所有本地插件的 `file:` 依赖，与 `@opencode-ai/plugin` 一起交给 `npmSvc.install` 安装。
+- **范围**：仅对 `~/.wopal/` 触发；其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）走 upstream 默认路径，只装 `@opencode-ai/plugin`。
+- 实现位于 `packages/opencode/src/config/config.ts` 的目录循环，函数定义在 `packages/opencode/src/config/wopal-space.ts`。
+
 **合并规则**：高优先级配置通过 `mergeDeep` 覆盖低优先级的同名键，`agent`、`mode`、`plugin`、`command` 等特殊键做深度合并。
 
 **禁用项目配置**：`OPENCODE_DISABLE_PROJECT_CONFIG=true` 跳过第 4、5 步。
@@ -276,6 +283,8 @@ Ellamaka 是 OpenCode 的定制 fork，通过 `WOPAL_HOME` 环境变量覆盖全
 设置 `WOPAL_HOME=/custom/path` → `config` 前缀变为 `/custom/path/config/`，`data`/`cache`/`state` 前缀变为 `/custom/path/ellamaka/`。
 
 > **注意**：`Global.Path.config`（`~/.wopal/config/`）是**纯配置目录**，仅存放 `settings.jsonc` 等配置文件。两种模式下都不在该目录加载 agents、commands、plugins 或执行依赖安装。
+>
+> 能力扫描和插件依赖安装在 `$WOPAL_HOME` **根目录**（即 `Global.Path.wopalHome`，通常是 `~/.wopal/`）进行——该目录下的 capability 子目录（agents/commands/plugins/skills）被扫描，且为其中的本地插件安装 `file:` 依赖。
 
 ---
 

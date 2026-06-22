@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-06-22 | Updated | §6.2 补充普通模式插件依赖安装机制说明（复用 `localPluginInstallDeps`） |
 | 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容；§7.1 TUI 配置统一；新增 §14 TUI tips 和 sidebar 品牌化：所有模式下移除 opencode 相关 tips，CLI 命令引用使用 BINARY_NAME，sidebar 版本署名使用 BINARY_TITLE |
 | 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容：所有模式仅加载 ellamaka 自身配置，不再加载 opencode XDG 全局配置和项目级 opencode.jsonc |
 | 2026-06-15 | Updated | §6.1 加载链路增加 `settings.local.jsonc`（公开/私有配置拆分） |
@@ -287,6 +288,21 @@ ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置�
 `~/.wopal/`（由 `WOPAL_HOME` 定位）下的 agents/commands/plugins/skills 等 capability 目录在普通模式**最后**加载，作为全局能力底座覆盖 opencode 生态同名能力。这使非空间模式下也能使用 ellamaka 自带的能力（如 wopal/faq/rook 等 agent、wopal 命令、wopal-plugin 等）。
 
 `~/.wopal/config/` 是纯配置目录，不参与能力扫描——能力只来自 `~/.wopal/` 根下的 capability 子目录。
+
+#### 插件依赖安装（ellamaka 增强）
+
+**upstream 行为**：opencode 的配置加载循环（`config.ts` 目录扫描）对每个能力目录只调用 `npmSvc.install(dir, { add: [{ name: "@opencode-ai/plugin" }] })`，仅安装 plugin SDK 公共头文件。对 `file://` 本地插件，`resolvePluginTarget`（`plugin/shared.ts`）只解析路径、检查 `package.json` 存在，**不安装插件自身的 `dependencies`**。upstream 的设计假设是：`file://` 插件由开发者自行 `npm install` 管理依赖，opencode 不代劳。若插件 `import` 了未安装的包（如 `openai`），运行时会报 `Cannot find package 'openai'`。
+
+**ellamaka 增强**：普通模式扫描到 `~/.wopal/`（`Global.Path.wopalHome`）时，额外为该目录下的本地插件自动安装其 `package.json` 中声明的 `dependencies`。实现上复用了 wopal-space 模式的 `localPluginInstallDeps(dir)` 函数（定义在 `wopal-space.ts`），该函数：
+
+1. 扫描目录下所有本地插件（通过 `ConfigPlugin.load`）
+2. 读取每个插件的 `package.json`，提取 `name`
+3. 生成 `{ name, version: "file:<插件目录>" }` 形式的 install 请求
+4. 返回依赖列表，与 `@opencode-ai/plugin` 一起交给 `npmSvc.install` 安装到该目录的 `node_modules`
+
+**范围限定**：仅对 `Global.Path.wopalHome` 目录触发 `localPluginInstallDeps`，其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）仍按 upstream 默认行为，只装 `@opencode-ai/plugin`。原因：这些目录是 opencode 生态的 npm 插件（通过 `npm:` 协议安装，依赖随包发布），没有需要额外收集的 `file:` 依赖；只有 `~/.wopal/` 下维护着 ellamaka 自有的本地插件（如 wopal-plugin）。
+
+**与空间模式的关系**：`localPluginInstallDeps` 本是为空间模式写的（`tryLoadWopalSpaceConfig` 遍历空间配置目录时调用）。普通模式直接 import 同一个函数，不重写一份。
 
 ### 6.3 目录扫描守卫
 
