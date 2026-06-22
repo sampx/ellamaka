@@ -40,7 +40,7 @@ import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
-import { tryLoadWopalSpaceConfig } from "./wopal-space"
+import { tryLoadWopalSpaceConfig, localPluginInstallDeps } from "./wopal-space"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { ConfigExperimental } from "@opencode-ai/core/config/experimental"
 
@@ -684,6 +684,12 @@ export const layer = Layer.effect(
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
+          // $WOPAL_HOME 下的本地插件（如 wopal-plugin）声明了自身依赖（如 openai），
+          // 需要通过 file: 协议安装到该目录的 node_modules。普通模式复用 wopal-space
+          // 模式的 localPluginInstallDeps 收集这些依赖，与 @opencode-ai/plugin 一同安装。
+          const pluginDeps =
+            dir === Global.Path.wopalHome ? yield* Effect.promise(() => localPluginInstallDeps(dir)) : []
+
           const dep = yield* npmSvc
             .install(dir, {
               add: [
@@ -691,6 +697,7 @@ export const layer = Layer.effect(
                   name: "@opencode-ai/plugin",
                   version: InstallationLocal ? undefined : InstallationVersion,
                 },
+                ...pluginDeps,
               ],
             })
             .pipe(

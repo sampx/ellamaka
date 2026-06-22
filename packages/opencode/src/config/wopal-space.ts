@@ -16,12 +16,12 @@ import type { ConsoleState } from "./console-state"
 
 const log = Log.create({ service: "config" })
 
-type InstallDependency = {
+export type InstallDependency = {
   name: string
   version?: string
 }
 
-async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
+export async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
   const seen = new Set<string>()
   const list: (InstallDependency & { dir: string })[] = []
 
