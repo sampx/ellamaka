@@ -588,7 +588,6 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
     }
     if (!live) setRelease(undefined)
     if (live || hold() || release() || glow()) return
-    if (props.idle) return
     stop()
   }
 
@@ -604,7 +603,6 @@ export function Logo(props: { shape?: LogoShape; ink?: RGBA; idle?: boolean } = 
   onMount(() => {
     if (!props.idle) return
     setNow(performance.now())
-    start()
   })
 
   const hit = (x: number, y: number) => {
