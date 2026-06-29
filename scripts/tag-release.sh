@@ -101,11 +101,11 @@ COMMIT="$(git rev-parse HEAD)"
 RUN_ID=""
 
 for i in $(seq 1 12); do
-  RUN_ID=$(gh run list --workflow publish-ellamaka.yml --commit "$COMMIT" --status in_progress,queued --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
+  RUN_ID=$(gh run list -R wopal-cn/ellamaka --workflow publish-ellamaka.yml --commit "$COMMIT" --status in_progress,queued --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
   if [ -n "$RUN_ID" ]; then
     break
   fi
-  RUN_ID=$(gh run list --workflow publish-ellamaka.yml --commit "$COMMIT" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
+  RUN_ID=$(gh run list -R wopal-cn/ellamaka --workflow publish-ellamaka.yml --commit "$COMMIT" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
   if [ -n "$RUN_ID" ]; then
     break
   fi

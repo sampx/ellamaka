@@ -146,6 +146,7 @@ jobs:
           if gh release view "$tag" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
             gh release edit "$tag" \
               --repo wopal-cn/ellamaka \
+              --draft=false \
               --notes-file release-output/release-notes.md
             echo "Updated ellamaka release $tag"
           else
