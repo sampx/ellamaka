@@ -123,8 +123,14 @@ POLL_INTERVAL=15
 i=0
 while true; do
   i=$((i + 1))
-  STATUS=$(gh run view "$RUN_ID" -R wopal-cn/ellamaka --json status,conclusion -q '[.status, .conclusion] | join(" ")' 2>/dev/null || echo "unknown")
+  FULL=$(gh run view "$RUN_ID" -R wopal-cn/ellamaka --json status,conclusion,jobs -q '
+    "\(.status) \(.conclusion // "")",
+    (.jobs // [] | map("       [\(.status)] \(.name): \(.conclusion // "running...")") | join("\n"))
+  ' 2>/dev/null || echo "unknown")
+
+  STATUS=$(echo "$FULL" | head -n 1)
   echo "  [$i] $STATUS"
+  echo "$FULL" | tail -n +2
 
   case "$STATUS" in
     "completed success") break ;;

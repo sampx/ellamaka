@@ -73,15 +73,15 @@ export async function createOrGetRelease({ fetch, baseUrl, owner, repo, tag, ver
   const tagBody = tagResp.status === 404 ? null : await readJson(tagResp, "lookup release by tag")
 
   if (tagBody && typeof tagBody === "object" && tagBody.id) {
-    const updateUrl = `${baseUrl}/repos/${owner}/${repo}/releases/${tagBody.id}?access_token=${encodeURIComponent(token)}`
-    const updateResp = await fetch(updateUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildUpdateBody({ version, tag, notesContent, token, productName })),
-    })
-    const updated = await readJson(updateResp, "update release")
-    if (!updated || !updated.id) throw new Error(`Update returned no id: ${JSON.stringify(updated)}`)
-    return { id: updated.id, created: false }
+    // Delete and recreate so created_at reflects the current release date.
+    // PATCH preserves the original created_at, which keeps the release from
+    // appearing as "latest" on the Gitee homepage.
+    const deleteUrl = `${baseUrl}/repos/${owner}/${repo}/releases/${tagBody.id}?access_token=${encodeURIComponent(token)}`
+    const deleteResp = await fetch(deleteUrl, { method: "DELETE" })
+    if (deleteResp.status !== 204) {
+      const text = await deleteResp.text()
+      throw new Error(`delete release failed: HTTP ${deleteResp.status} — ${text}`)
+    }
   }
 
   const createUrl = `${baseUrl}/repos/${owner}/${repo}/releases`

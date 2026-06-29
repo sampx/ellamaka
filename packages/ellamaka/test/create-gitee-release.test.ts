@@ -106,8 +106,8 @@ describe("create-gitee-release.mjs", () => {
     expect(JSON.parse(mocked.calls[1][1].body as string).tag_name).toBe("v0.1.0")
   })
 
-  test("updates an existing release", async () => {
-    const mocked = makeFetch([response(200, { id: 99 }), response(200, { id: 99 })])
+  test("deletes and recreates an existing release", async () => {
+    const mocked = makeFetch([response(200, { id: 99 }), response(204, ""), response(201, { id: 100 })])
     const result = await script.createOrGetRelease({
       fetch: mocked.fetch,
       baseUrl: "https://gitee.test/api/v5",
@@ -119,9 +119,11 @@ describe("create-gitee-release.mjs", () => {
       token: "TOKEN",
     })
 
-    expect(result).toEqual({ id: 99, created: false })
-    expect(mocked.calls[1][1].method).toBe("PATCH")
-    expect(JSON.parse(mocked.calls[1][1].body as string).body).toBe("updated notes")
+    expect(result).toEqual({ id: 100, created: true })
+    expect(mocked.calls).toHaveLength(3)
+    expect(mocked.calls[1][1].method).toBe("DELETE")
+    expect(mocked.calls[2][1].method).toBe("POST")
+    expect(JSON.parse(mocked.calls[2][1].body as string).body).toBe("updated notes")
   })
 
   test("treats null lookup body as missing release", async () => {
