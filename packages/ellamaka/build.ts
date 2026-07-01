@@ -154,10 +154,10 @@ let targets: typeof allTargets
 
 if (archArg === "primary") {
   targets = allTargets.filter((item) => {
-    if (item.os === "darwin" && item.arch === "arm64" && item.avx2 !== false) return true
-    if (item.os === "darwin" && item.arch === "x64" && item.avx2 !== false) return true
-    if (item.os === "linux" && item.arch === "x64" && item.abi === undefined && item.avx2 !== false) return true
-    if (item.os === "win32" && item.arch === "x64" && item.avx2 !== false) return true
+    if (item.os === "darwin" && item.arch === "arm64") return true
+    if (item.os === "darwin" && item.arch === "x64") return true
+    if (item.os === "linux" && item.arch === "x64" && item.abi === undefined) return true
+    if (item.os === "win32" && item.arch === "x64") return true
     return false
   })
 } else if (archArg) {

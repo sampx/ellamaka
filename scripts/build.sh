@@ -83,7 +83,10 @@ case "$MODE" in
 esac
 
 if [[ -z "${OPENCODE_VERSION:-}" ]]; then
-  VERSION=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 2>/dev/null)
+  # Restrict to tags reachable from HEAD (current branch). Without this,
+  # git describe picks up upstream tags (e.g. v1.17.3) from the dev branch
+  # which are not part of ellamaka's release line.
+  VERSION=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null)
   VERSION="${VERSION#v}"
   if [[ -n "$VERSION" ]]; then
     export OPENCODE_VERSION="$VERSION"
