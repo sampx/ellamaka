@@ -165,6 +165,8 @@ start_backend() {
     )
   fi
 
+  srv_args+=("${passthrough[@]}")
+
   cd "$space"
   env "${srv_env[@]}" \
     nohup bun --preload "$opencode_preload" "$opencode_entry" "${srv_args[@]}" > "$LOGDIR/ellamaka-dev-server.log" 2>&1 &
