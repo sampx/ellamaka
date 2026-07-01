@@ -156,23 +156,30 @@ jobs:
             --content-type "application/json" \
             --endpoint-url ${R2_URL} >/dev/null
 
-          # Download back from CDN and verify sha256 matches manifest.
-          # This catches any storage-layer corruption (multipart, encoding,
-          # CDN transform) before the release is announced.
-          echo "Verifying uploaded artifacts..."
+          # Verify uploaded objects by downloading from R2 directly (not CDN).
+          # CDN may serve stale cached copies right after upload, causing false
+          # checksum mismatches. s3api get-object reads straight from R2 storage.
+          echo "Verifying R2 uploads..."
+          VERIFY_DIR="$(mktemp -d)"
           for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
             name="$(basename "$f")"
             local_hash="$(sha256sum "$f" | cut -d' ' -f1)"
-            remote_hash="$(curl -fsSL "https://download.coursedao.com/ellamaka/v${VERSION}/${name}" | sha256sum | cut -d' ' -f1)"
+            aws s3api get-object \
+              --bucket wopal-release \
+              --key "ellamaka/v${VERSION}/${name}" \
+              --endpoint-url ${R2_URL} \
+              "${VERIFY_DIR}/${name}" >/dev/null
+            remote_hash="$(sha256sum "${VERIFY_DIR}/${name}" | cut -d' ' -f1)"
             if [ "$local_hash" != "$remote_hash" ]; then
-              echo "ERROR: checksum mismatch after upload: $name"
+              echo "ERROR: R2 checksum mismatch: $name"
               echo "  local  sha256: $local_hash"
               echo "  remote sha256: $remote_hash"
-              echo "  The object may be corrupted in R2. Re-run the workflow to retry."
+              echo "  R2 object does not match uploaded file. Re-run the workflow to retry."
               exit 1
             fi
             echo "  OK: $name"
           done
+          rm -rf "$VERIFY_DIR"
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
