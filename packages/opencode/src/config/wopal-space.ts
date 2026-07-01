@@ -73,6 +73,14 @@ export async function writeDirDepFingerprint(dir: string, fingerprint: string, p
   await writeDepsState(state)
 }
 
+export async function writeInstallManifest(dir: string, deps: InstallDependency[], extraDeps?: InstallDependency[]): Promise<void> {
+  const dependencies: Record<string, string> = {}
+  for (const dep of [...(extraDeps ?? []), ...deps]) {
+    dependencies[dep.name] = dep.version ?? "latest"
+  }
+  await Bun.write(path.join(dir, "package.json"), JSON.stringify({ dependencies }, null, 2))
+}
+
 // --- Plugin dependency collection ---
 
 export type CollectedPluginDeps = {
@@ -130,13 +138,10 @@ export async function needsPluginDepInstall(dir: string, fingerprint: string): P
 }
 
 export async function cleanPluginDepArtifacts(dir: string): Promise<void> {
-  const files = ["package.json", "package-lock.json"]
-  for (const file of files) {
-    const p = path.join(dir, file)
-    try {
-      await Bun.file(p).exists() && (await import("fs/promises").then((m) => m.unlink(p)))
-    } catch {}
-  }
+  try {
+    const fs = await import("fs/promises")
+    await fs.unlink(path.join(dir, "package-lock.json")).catch(() => {})
+  } catch {}
 }
 
 export interface WopalSpaceDeps {

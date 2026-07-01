@@ -40,7 +40,7 @@ import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
-import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, cleanPluginDepArtifacts, type InstallDependency } from "./wopal-space"
+import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, writeInstallManifest, cleanPluginDepArtifacts, type InstallDependency } from "./wopal-space"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { ConfigExperimental } from "@opencode-ai/core/config/experimental"
 
@@ -621,7 +621,12 @@ export const layer = Layer.effect(
                 ),
                 Effect.asVoid,
                 Effect.tap(() =>
-                  Effect.promise(() => writeDirDepFingerprint(dir, fingerprint, plugins)),
+                  Effect.promise(() =>
+                    Promise.all([
+                      writeDirDepFingerprint(dir, fingerprint, plugins),
+                      writeInstallManifest(dir, add, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
+                    ]),
+                  ),
                 ),
                 Effect.forkDetach,
               ),
@@ -749,7 +754,12 @@ export const layer = Layer.effect(
                       log.warn("background dependency install failed", { dir, error: String(exit.cause) })
                     })
                   : depFingerprint
-                    ? Effect.promise(() => writeDirDepFingerprint(dir, depFingerprint, depPlugins!))
+                    ? Effect.promise(() =>
+                        Promise.all([
+                          writeDirDepFingerprint(dir, depFingerprint, depPlugins!),
+                          writeInstallManifest(dir, pluginDeps, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
+                        ]),
+                      )
                     : Effect.void,
               ),
               Effect.asVoid,
