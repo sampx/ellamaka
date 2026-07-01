@@ -9,7 +9,7 @@
 - **Project Path**: projects/ellamaka
 
 - **Created**: 2026-07-01
-- **Status**: verifying
+- **Status**: done
 - **Verification Commit**: dc6706a0f2ca982cfedde6388b90ac204f40b487
 - **Worktree**:
   - branch: auto-install-plugin-deps-on-windows-and-fix-first-start-race
