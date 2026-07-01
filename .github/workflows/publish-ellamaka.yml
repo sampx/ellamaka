@@ -111,22 +111,68 @@ jobs:
           VERSION_KEY="s3://wopal-release/ellamaka/v${VERSION}"
           LATEST_KEY="s3://wopal-release/ellamaka/latest"
 
-          aws s3 cp dist/ ${VERSION_KEY}/ \
-            --recursive \
-            --endpoint-url ${R2_URL} \
-            --exclude "*" \
-            --include "ellamaka-*.tar.gz" \
-            --include "ellamaka-*.zip"
+          # Use s3api put-object (single PUT) instead of s3 cp (multipart).
+          # R2's multipart upload can silently corrupt objects: the stored
+          # bytes diverge from the uploaded data, while content-length
+          # metadata still reflects the original size. Single PUT avoids
+          # multipart entirely — S3 supports up to 5GB per single PUT.
+          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
+            name="$(basename "$f")"
+            content_type="application/octet-stream"
+            case "$name" in *.tar.gz) content_type="application/x-tar";; *.zip) content_type="application/zip";; esac
+            aws s3api put-object \
+              --bucket wopal-release \
+              --key "ellamaka/v${VERSION}/${name}" \
+              --body "$f" \
+              --content-type "$content_type" \
+              --endpoint-url ${R2_URL} >/dev/null
+          done
 
-          aws s3 cp release-output/manifest.json ${VERSION_KEY}/manifest.json \
-            --endpoint-url ${R2_URL}
-          aws s3 cp release-output/checksums.txt ${VERSION_KEY}/checksums.txt \
-            --endpoint-url ${R2_URL}
-          aws s3 cp release-output/release-notes.md ${VERSION_KEY}/release-notes.md \
-            --endpoint-url ${R2_URL}
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka/v${VERSION}/manifest.json" \
+            --body release-output/manifest.json \
+            --content-type "application/json" \
+            --endpoint-url ${R2_URL} >/dev/null
 
-          aws s3 cp release-output/manifest.json ${LATEST_KEY}/manifest.json \
-            --endpoint-url ${R2_URL}
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka/v${VERSION}/checksums.txt" \
+            --body release-output/checksums.txt \
+            --content-type "text/plain" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka/v${VERSION}/release-notes.md" \
+            --body release-output/release-notes.md \
+            --content-type "text/markdown" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka/latest/manifest.json" \
+            --body release-output/manifest.json \
+            --content-type "application/json" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          # Download back from CDN and verify sha256 matches manifest.
+          # This catches any storage-layer corruption (multipart, encoding,
+          # CDN transform) before the release is announced.
+          echo "Verifying uploaded artifacts..."
+          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
+            name="$(basename "$f")"
+            local_hash="$(sha256sum "$f" | cut -d' ' -f1)"
+            remote_hash="$(curl -fsSL "https://download.coursedao.com/ellamaka/v${VERSION}/${name}" | sha256sum | cut -d' ' -f1)"
+            if [ "$local_hash" != "$remote_hash" ]; then
+              echo "ERROR: checksum mismatch after upload: $name"
+              echo "  local  sha256: $local_hash"
+              echo "  remote sha256: $remote_hash"
+              echo "  The object may be corrupted in R2. Re-run the workflow to retry."
+              exit 1
+            fi
+            echo "  OK: $name"
+          done
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
