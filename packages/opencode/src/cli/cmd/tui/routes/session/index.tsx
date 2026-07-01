@@ -35,7 +35,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { BINARY_NAME } from "@ellamaka/build/branding"
+import { BINARY_NAME } from "../../../../../../../ellamaka/branding"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
