@@ -40,7 +40,7 @@ import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
-import { tryLoadWopalSpaceConfig, localPluginInstallDeps } from "./wopal-space"
+import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, cleanPluginDepArtifacts, type InstallDependency } from "./wopal-space"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { ConfigExperimental } from "@opencode-ai/core/config/experimental"
 
@@ -599,6 +599,32 @@ export const layer = Layer.effect(
                 Effect.asVoid,
                 Effect.forkDetach,
               ),
+          installPluginDepsWithFingerprint: (dir, add, fingerprint, plugins) =>
+            npmSvc
+              .install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                  ...add,
+                ],
+              })
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.sync(() => {
+                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                      })
+                    : Effect.void,
+                ),
+                Effect.asVoid,
+                Effect.tap(() =>
+                  Effect.promise(() => writeDirDepFingerprint(dir, fingerprint, plugins)),
+                ),
+                Effect.forkDetach,
+              ),
           readConfigFile,
           loadConfig,
           getGlobal,
@@ -685,10 +711,25 @@ export const layer = Layer.effect(
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
           // $WOPAL_HOME 下的本地插件（如 wopal-plugin）声明了自身依赖（如 openai），
-          // 需要通过 file: 协议安装到该目录的 node_modules。普通模式复用 wopal-space
-          // 模式的 localPluginInstallDeps 收集这些依赖，与 @opencode-ai/plugin 一同安装。
-          const pluginDeps =
-            dir === Global.Path.wopalHome ? yield* Effect.promise(() => localPluginInstallDeps(dir)) : []
+          // 扁平化收集 dependencies 字段，通过 arborist 安装到该目录的 node_modules。
+          // 指纹检测：依赖未变则跳过安装。
+          let pluginDeps: InstallDependency[] = []
+          let depFingerprint: string | undefined
+          let depPlugins: Record<string, { path: string; deps: Record<string, string> }> | undefined
+          if (dir === Global.Path.wopalHome) {
+            const collected = yield* Effect.promise(() => collectPluginDeps(dir))
+            if (collected.deps.length > 0) {
+              const needInstall = yield* Effect.promise(() => needsPluginDepInstall(dir, collected.fingerprint))
+              if (!needInstall) {
+                log.info("plugin deps up to date, skipping install", { dir })
+              } else {
+                pluginDeps = collected.deps
+                depFingerprint = collected.fingerprint
+                depPlugins = collected.plugins
+                yield* Effect.promise(() => cleanPluginDepArtifacts(dir))
+              }
+            }
+          }
 
           const dep = yield* npmSvc
             .install(dir, {
@@ -707,7 +748,9 @@ export const layer = Layer.effect(
                   ? Effect.sync(() => {
                       log.warn("background dependency install failed", { dir, error: String(exit.cause) })
                     })
-                  : Effect.void,
+                  : depFingerprint
+                    ? Effect.promise(() => writeDirDepFingerprint(dir, depFingerprint, depPlugins!))
+                    : Effect.void,
               ),
               Effect.asVoid,
               Effect.forkDetach,

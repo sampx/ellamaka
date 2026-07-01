@@ -13,6 +13,7 @@ import { loadWopalSpaceSettingsFiles } from "./wopal-space-settings"
 import { Effect, Exit, Fiber } from "effect"
 import type { Info } from "./config"
 import type { ConsoleState } from "./console-state"
+import { existsSync } from "fs"
 
 const log = Log.create({ service: "config" })
 
@@ -21,37 +22,131 @@ export type InstallDependency = {
   version?: string
 }
 
-async function scanPluginPackages(dir: string): Promise<{ dir: string; name: string }[]> {
-  const seen = new Set<string>()
-  const result: { dir: string; name: string }[] = []
+// --- Plugin dependency fingerprint ---
+
+type PluginDepSnapshot = {
+  path: string
+  deps: Record<string, string>
+}
+
+type DirDepState = {
+  fingerprint: string
+  installed_at: number
+  plugins: Record<string, PluginDepSnapshot>
+}
+
+type PluginDepsState = {
+  version: 1
+  dirs: Record<string, DirDepState>
+}
+
+function depsStatePath() {
+  return path.join(Global.Path.state, "plugin-deps.json")
+}
+
+export function hashDeps(deps: InstallDependency[]): string {
+  const str = deps.map((d) => `${d.name}@${d.version ?? ""}`).sort().join(",")
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0
+  }
+  return hash.toString(16)
+}
+
+async function readDepsState(): Promise<PluginDepsState> {
+  return Bun.file(depsStatePath())
+    .json()
+    .catch(() => ({ version: 1 as const, dirs: {} }))
+}
+
+async function writeDepsState(state: PluginDepsState): Promise<void> {
+  await Bun.write(depsStatePath(), JSON.stringify(state, null, 2))
+}
+
+export async function writeDirDepFingerprint(dir: string, fingerprint: string, plugins: Record<string, PluginDepSnapshot>): Promise<void> {
+  const state = await readDepsState()
+  state.dirs[dir] = {
+    fingerprint,
+    installed_at: Date.now(),
+    plugins,
+  }
+  await writeDepsState(state)
+}
+
+// --- Plugin dependency collection ---
+
+export type CollectedPluginDeps = {
+  deps: InstallDependency[]
+  fingerprint: string
+  plugins: Record<string, PluginDepSnapshot>
+}
+
+export async function collectPluginDeps(dir: string): Promise<CollectedPluginDeps> {
+  const plugins: Record<string, PluginDepSnapshot> = {}
+  const resolved = new Map<string, string>()
 
   for (const pkgPath of await Glob.scan("{plugin,plugins}/*/package.json", {
     cwd: dir,
     absolute: true,
   })) {
-    const pkgDir = path.dirname(pkgPath)
-    if (seen.has(pkgDir)) continue
-    seen.add(pkgDir)
-
     const json = await Bun.file(pkgPath).json().catch(() => undefined)
     const name = typeof json?.name === "string" ? json.name.trim() : undefined
     if (!name) continue
 
-    result.push({ dir: pkgDir, name })
+    const deps = (json?.dependencies ?? {}) as Record<string, string>
+    plugins[name] = {
+      path: path.relative(dir, pkgPath),
+      deps,
+    }
+
+    for (const [depName, depVersion] of Object.entries(deps)) {
+      if (typeof depVersion === "string") {
+        resolved.set(depName, depVersion)
+      }
+    }
   }
 
-  return result
+  const depsList = Array.from(resolved.entries())
+    .map(([name, version]) => ({ name, version }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return {
+    deps: depsList,
+    fingerprint: hashDeps(depsList),
+    plugins,
+  }
 }
 
 export async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
-  const packages = await scanPluginPackages(dir)
-  return packages
-    .toSorted((a, b) => a.dir.localeCompare(b.dir))
-    .map(({ dir, name }) => ({ name, version: `file:${dir}` }))
+  const { deps } = await collectPluginDeps(dir)
+  return deps
+}
+
+export async function needsPluginDepInstall(dir: string, fingerprint: string): Promise<boolean> {
+  if (!existsSync(path.join(dir, "node_modules"))) return true
+  const state = await readDepsState()
+  const entry = state.dirs[dir]
+  return !entry || entry.fingerprint !== fingerprint
+}
+
+export async function cleanPluginDepArtifacts(dir: string): Promise<void> {
+  const files = ["package.json", "package-lock.json"]
+  for (const file of files) {
+    const p = path.join(dir, file)
+    try {
+      await Bun.file(p).exists() && (await import("fs/promises").then((m) => m.unlink(p)))
+    } catch {}
+  }
 }
 
 export interface WopalSpaceDeps {
   installPluginDeps: (dir: string, add: InstallDependency[]) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
+  installPluginDepsWithFingerprint: (
+    dir: string,
+    add: InstallDependency[],
+    fingerprint: string,
+    plugins: Record<string, PluginDepSnapshot>,
+  ) => Effect.Effect<Fiber.Fiber<void, never>, never, never>
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
   loadConfig: (
     text: string,
@@ -133,9 +228,22 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
     deps.initContainers()
 
     const depFibers: Fiber.Fiber<void, never>[] = []
-    for (const dir of localWopalDirs) {
+    const dirsToInstall = [Global.Path.wopalHome, ...localWopalDirs].filter((d) => existsSync(d))
+    for (const dir of dirsToInstall) {
       yield* deps.ensureGitignore(dir).pipe(Effect.orDie)
-      depFibers.push(yield* deps.installPluginDeps(dir, yield* Effect.promise(() => localPluginInstallDeps(dir))))
+      const collected = yield* Effect.promise(() => collectPluginDeps(dir))
+      if (collected.deps.length === 0) continue
+
+      const needInstall = yield* Effect.promise(() => needsPluginDepInstall(dir, collected.fingerprint))
+      if (!needInstall) {
+        log.info("plugin deps up to date, skipping install", { dir })
+        continue
+      }
+
+      yield* Effect.promise(() => cleanPluginDepArtifacts(dir))
+      depFibers.push(
+        yield* deps.installPluginDepsWithFingerprint(dir, collected.deps, collected.fingerprint, collected.plugins),
+      )
     }
 
     for (const dir of directories) {
