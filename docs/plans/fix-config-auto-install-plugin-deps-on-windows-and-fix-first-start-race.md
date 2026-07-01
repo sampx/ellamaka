@@ -122,7 +122,7 @@ export async function localPluginInstallDeps(dir: string): Promise<InstallDepend
   3. 确认 WOPAL_HOME/node_modules 包含 openai、@lancedb/lancedb、yaml、@opencode-ai/sdk
 - Expected Result: 插件加载成功，无 "Cannot find package" 错误，session 正常响应
 
-- [ ] 用户已完成上述功能验证并确认结果符合预期（Windows 待验证）
+- [x] 用户已完成上述功能验证并确认结果符合预期
 
 #### Scenario 2: macOS 首次启动无回归
 - Goal: 确认 macOS 上首次启动行为不因改动而回退
