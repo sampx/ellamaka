@@ -94,7 +94,7 @@ export const layer = Layer.effect(
             arborist.reify({
               ...npmOptions,
               add,
-              save: true,
+              save: false,
               saveType: "prod",
             }),
           catch: (cause) =>
