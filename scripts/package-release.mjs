@@ -55,9 +55,20 @@ export function parseArgs(argv) {
 }
 
 export function parseArchiveName(filename) {
-  const match = filename.match(/^ellamaka-([^-]+)-([^.]+)\.(tar\.gz|zip)$/)
+  // Matches: ellamaka-<os>-<arch>[-baseline].<ext>
+  // Examples:
+  //   ellamaka-darwin-arm64.tar.gz       → os=darwin, arch=arm64, variant=null
+  //   ellamaka-linux-x64-baseline.tar.gz → os=linux, arch=x64, variant=baseline
+  const match = filename.match(
+    /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/,
+  )
   if (!match) throw new Error(`Cannot parse archive name: ${filename}`)
-  return { os: match[1], arch: match[2], ext: match[3] }
+  return {
+    os: match[1],
+    arch: match[2],
+    variant: match[3] ?? null,
+    ext: match[4],
+  }
 }
 
 function osLabel(os) {
@@ -115,7 +126,7 @@ export function manifestCommand(flags) {
       name: file,
       os: parsed.os,
       arch: parsed.arch,
-      variant: null,
+      variant: parsed.variant,
       url: `${versionBaseUrl}/${file}`,
       sha256: sha256(filePath),
       size: fileSize(filePath),
