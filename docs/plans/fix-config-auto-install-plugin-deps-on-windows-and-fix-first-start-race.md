@@ -9,11 +9,13 @@
 - **Project Path**: projects/ellamaka
 
 - **Created**: 2026-07-01
-- **Status**: executing
+- **Status**: verifying
+- **Verification Commit**: dc6706a0f2ca982cfedde6388b90ac204f40b487
 - **Worktree**:
   - branch: auto-install-plugin-deps-on-windows-and-fix-first-start-race
-  - path: /Volumes/U500G/coding/wopal-workspace/.worktrees/ellamaka-auto-install-plugin-deps-on-windows-and-fix-first-start-race
+  - path: (removed)
 
+- **Verification Dir**: /Volumes/U500G/coding/wopal-workspace/projects/ellamaka
 ## Scope Assessment
 
 - **Complexity**: Medium
@@ -104,10 +106,10 @@ export async function localPluginInstallDeps(dir: string): Promise<InstallDepend
 
 ### Agent Verification
 
-1. [ ] `cd projects/ellamaka/packages/opencode && bun test test/config/wopal-space-deps.test.ts --timeout 30000` 全部 pass
-2. [ ] `cd projects/ellamaka/packages/opencode && bun typecheck` exit 0
-3. [ ] `rg -c 'package.json' packages/opencode/src/config/wopal-space.ts` ≥ 1（新扫描逻辑存在）
-4. [ ] `rg -c 'findPathPluginPackage' packages/opencode/src/config/wopal-space.ts` = 0（旧逻辑已移除）
+1. [x] `cd projects/ellamaka/packages/opencode && bun test test/config/wopal-space-deps.test.ts --timeout 30000` 全部 pass
+2. [x] `cd projects/ellamaka/packages/opencode && bun typecheck` exit 0
+3. [x] `rg -c 'package.json' packages/opencode/src/config/wopal-space.ts` ≥ 1（新扫描逻辑存在）
+4. [x] `rg -c 'findPathPluginPackage' packages/opencode/src/config/wopal-space.ts` = 0（旧逻辑已移除）
 
 ### User Validation
 
@@ -182,7 +184,7 @@ export async function localPluginInstallDeps(dir: string): Promise<InstallDepend
 
 **Done**:
 任务产出：`localPluginInstallDeps` 改为直接扫描 plugin 子目录的 package.json，跨平台一致，Windows shim 场景能正确收集 wopal-plugin 依赖
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤执行, 并确认结果符合预期（必须由实施 Agent 勾选）
 
 ---
 
