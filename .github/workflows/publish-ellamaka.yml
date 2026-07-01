@@ -114,24 +114,19 @@ jobs:
           aws s3 cp dist/ ${VERSION_KEY}/ \
             --recursive \
             --endpoint-url ${R2_URL} \
-            --cache-control "public, max-age=604800" \
             --exclude "*" \
             --include "ellamaka-*.tar.gz" \
             --include "ellamaka-*.zip"
 
           aws s3 cp release-output/manifest.json ${VERSION_KEY}/manifest.json \
-            --endpoint-url ${R2_URL} \
-            --cache-control "public, max-age=604800"
+            --endpoint-url ${R2_URL}
           aws s3 cp release-output/checksums.txt ${VERSION_KEY}/checksums.txt \
-            --endpoint-url ${R2_URL} \
-            --cache-control "public, max-age=604800"
+            --endpoint-url ${R2_URL}
           aws s3 cp release-output/release-notes.md ${VERSION_KEY}/release-notes.md \
-            --endpoint-url ${R2_URL} \
-            --cache-control "public, max-age=604800"
+            --endpoint-url ${R2_URL}
 
           aws s3 cp release-output/manifest.json ${LATEST_KEY}/manifest.json \
-            --endpoint-url ${R2_URL} \
-            --cache-control "public, max-age=300"
+            --endpoint-url ${R2_URL}
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
