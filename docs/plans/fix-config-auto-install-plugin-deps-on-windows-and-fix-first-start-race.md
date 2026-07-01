@@ -9,7 +9,10 @@
 - **Project Path**: projects/ellamaka
 
 - **Created**: 2026-07-01
-- **Status**: reviewing
+- **Status**: executing
+- **Worktree**:
+  - branch: auto-install-plugin-deps-on-windows-and-fix-first-start-race
+  - path: /Volumes/U500G/coding/wopal-workspace/.worktrees/ellamaka-auto-install-plugin-deps-on-windows-and-fix-first-start-race
 
 ## Scope Assessment
 
