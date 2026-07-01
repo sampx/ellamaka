@@ -97,7 +97,7 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     -ns) passthrough+=(--disable-wopalspace); shift ;;
-    *) echo "unknown: $1"; exit 1 ;;
+    *) passthrough+=("$1"); shift ;;
   esac
 done
 
