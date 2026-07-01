@@ -721,12 +721,14 @@ export const layer = Layer.effect(
           let pluginDeps: InstallDependency[] = []
           let depFingerprint: string | undefined
           let depPlugins: Record<string, { path: string; deps: Record<string, string> }> | undefined
+          let skipInstall = false
           if (dir === Global.Path.wopalHome) {
             const collected = yield* Effect.promise(() => collectPluginDeps(dir))
             if (collected.deps.length > 0) {
               const needInstall = yield* Effect.promise(() => needsPluginDepInstall(dir, collected.fingerprint))
               if (!needInstall) {
                 log.info("plugin deps up to date, skipping install", { dir })
+                skipInstall = true
               } else {
                 pluginDeps = collected.deps
                 depFingerprint = collected.fingerprint
@@ -736,36 +738,38 @@ export const layer = Layer.effect(
             }
           }
 
-          const dep = yield* npmSvc
-            .install(dir, {
-              add: [
-                {
-                  name: "@opencode-ai/plugin",
-                  version: InstallationLocal ? undefined : InstallationVersion,
-                },
-                ...pluginDeps,
-              ],
-            })
-            .pipe(
-              Effect.exit,
-              Effect.tap((exit) =>
-                Exit.isFailure(exit)
-                  ? Effect.sync(() => {
-                      log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                    })
-                  : depFingerprint
-                    ? Effect.promise(() =>
-                        Promise.all([
-                          writeDirDepFingerprint(dir, depFingerprint, depPlugins!),
-                          writeInstallManifest(dir, pluginDeps, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
-                        ]),
-                      )
-                    : Effect.void,
-              ),
-              Effect.asVoid,
-              Effect.forkDetach,
-            )
-          deps.push(dep)
+          if (!skipInstall) {
+            const dep = yield* npmSvc
+              .install(dir, {
+                add: [
+                  {
+                    name: "@opencode-ai/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                  ...pluginDeps,
+                ],
+              })
+              .pipe(
+                Effect.exit,
+                Effect.tap((exit) =>
+                  Exit.isFailure(exit)
+                    ? Effect.sync(() => {
+                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                      })
+                    : depFingerprint
+                      ? Effect.promise(() =>
+                          Promise.all([
+                            writeDirDepFingerprint(dir, depFingerprint, depPlugins!),
+                            writeInstallManifest(dir, pluginDeps, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
+                          ]),
+                        )
+                      : Effect.void,
+                ),
+                Effect.asVoid,
+                Effect.forkDetach,
+              )
+            deps.push(dep)
+          }
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
