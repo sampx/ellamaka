@@ -458,6 +458,7 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 
 - `src/index.ts` — CLI 入口
 - `src/cli/cmd/debug/index.ts` — debug 信息
+- `src/cli/cmd/run/splash.ts` — 启动/退出画面，退出 resume 命令通过 `BINARY_NAME` 注入
 - `core/src/global.ts` — 路径系统
 
 

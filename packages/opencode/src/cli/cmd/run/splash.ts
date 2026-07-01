@@ -1,6 +1,6 @@
 // Entry and exit splash banners for direct interactive mode scrollback.
 //
-// Renders the full opencode entry logo and a compact [O] exit badge, plus
+// Renders the full ellamaka entry logo and a compact [O] exit badge, plus
 // session metadata and the resume command. These are scrollback snapshots, so
 // they become immutable terminal history once committed.
 //
@@ -20,6 +20,7 @@ import {
 } from "@opentui/core"
 import * as Locale from "@/util/locale"
 import { go, logo } from "@/cli/logo"
+import { BINARY_NAME } from "../../../../../ellamaka/branding"
 import type { RunSplashTheme } from "./theme"
 
 export const SPLASH_TITLE_LIMIT = 50
@@ -196,7 +197,7 @@ function draw(
   }
 }
 
-function build(input: SplashWriterInput, kind: "entry" | "exit", ctx: ScrollbackRenderContext): ScrollbackSnapshot {
+export function buildSplash(input: SplashWriterInput, kind: "entry" | "exit", ctx: ScrollbackRenderContext): ScrollbackSnapshot {
   const width = Math.max(1, ctx.width)
   const meta = splashMeta(input)
   const lines: Array<{ left: number; top: number; text: string; fg: ColorInput; bg?: ColorInput; attrs?: number }> = []
@@ -263,7 +264,7 @@ function build(input: SplashWriterInput, kind: "entry" | "exit", ctx: Scrollback
       lines,
       body_left + label.length,
       top + 1,
-      `opencode run -i -s ${meta.session_id}`,
+      `${BINARY_NAME} run -i -s ${meta.session_id}`,
       right,
       undefined,
       TextAttributes.BOLD,
@@ -302,9 +303,9 @@ export function splashMeta(input: SplashInput): SplashMeta {
 }
 
 export function entrySplash(input: SplashWriterInput): ScrollbackWriter {
-  return (ctx) => build(input, "entry", ctx)
+  return (ctx) => buildSplash(input, "entry", ctx)
 }
 
 export function exitSplash(input: SplashWriterInput): ScrollbackWriter {
-  return (ctx) => build(input, "exit", ctx)
+  return (ctx) => buildSplash(input, "exit", ctx)
 }
