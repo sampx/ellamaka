@@ -7,9 +7,9 @@ import { InstallationLocal, InstallationVersion } from "@opencode-ai/core/instal
 import { ConfigParse } from "./parse"
 import { ConfigCommand } from "./command"
 import { ConfigAgent } from "./agent"
+import { Glob } from "@opencode-ai/core/util/glob"
 import { ConfigPlugin } from "./plugin"
 import { loadWopalSpaceSettingsFiles } from "./wopal-space-settings"
-import { findPathPluginPackage } from "../plugin/shared"
 import { Effect, Exit, Fiber } from "effect"
 import type { Info } from "./config"
 import type { ConsoleState } from "./console-state"
@@ -21,20 +21,33 @@ export type InstallDependency = {
   version?: string
 }
 
-export async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
+async function scanPluginPackages(dir: string): Promise<{ dir: string; name: string }[]> {
   const seen = new Set<string>()
-  const list: (InstallDependency & { dir: string })[] = []
+  const result: { dir: string; name: string }[] = []
 
-  for (const plugin of await ConfigPlugin.load(dir)) {
-    const spec = ConfigPlugin.pluginSpecifier(plugin)
-    const pkg = await findPathPluginPackage(spec).catch(() => undefined)
-    const name = typeof pkg?.json.name === "string" ? pkg.json.name.trim() : undefined
-    if (!pkg || !name || seen.has(pkg.dir)) continue
-    seen.add(pkg.dir)
-    list.push({ dir: pkg.dir, name, version: `file:${pkg.dir}` })
+  for (const pkgPath of await Glob.scan("{plugin,plugins}/*/package.json", {
+    cwd: dir,
+    absolute: true,
+  })) {
+    const pkgDir = path.dirname(pkgPath)
+    if (seen.has(pkgDir)) continue
+    seen.add(pkgDir)
+
+    const json = await Bun.file(pkgPath).json().catch(() => undefined)
+    const name = typeof json?.name === "string" ? json.name.trim() : undefined
+    if (!name) continue
+
+    result.push({ dir: pkgDir, name })
   }
 
-  return list.toSorted((a, b) => a.dir.localeCompare(b.dir)).map(({ dir: _dir, ...item }) => item)
+  return result
+}
+
+export async function localPluginInstallDeps(dir: string): Promise<InstallDependency[]> {
+  const packages = await scanPluginPackages(dir)
+  return packages
+    .toSorted((a, b) => a.dir.localeCompare(b.dir))
+    .map(({ dir, name }) => ({ name, version: `file:${dir}` }))
 }
 
 export interface WopalSpaceDeps {
