@@ -66,27 +66,40 @@ if command -v gh &>/dev/null; then
   fi
 fi
 
+# --- 定位仓库 ---
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# --- 仓库守卫 ---
+REPO_URL="$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null || echo "")"
+if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
+  echo "错误: remote '$REMOTE' 不是 wopal-cn/ellamaka"
+  echo "  remote: $REPO_URL"
+  echo "  仓库: $REPO_ROOT"
+  exit 1
+fi
+
 # --- 执行 ---
 
 # 1. 检测重发 & 清理
 echo "→ 检查远程 tag: $TAG"
-if git ls-remote --tags "$REMOTE" "$TAG" | grep -q "$TAG"; then
+if git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$TAG" | grep -q "$TAG"; then
   echo "  检测到重发，删除远程 tag..."
-  git push "$REMOTE" ":$TAG"
+  git -C "$REPO_ROOT" push "$REMOTE" ":$TAG"
 fi
 
 echo "→ 检查本地 tag: $TAG"
-if git tag -l "$TAG" | grep -q "$TAG"; then
+if git -C "$REPO_ROOT" tag -l "$TAG" | grep -q "$TAG"; then
   echo "  本地 tag 已存在，删除..."
-  git tag -d "$TAG"
+  git -C "$REPO_ROOT" tag -d "$TAG"
 fi
 
 # 2. 创建 tag + 原子推送
 echo "→ 创建 tag: $TAG"
-git tag "$TAG"
+git -C "$REPO_ROOT" tag "$TAG"
 
 echo "→ 原子推送 main 和 $TAG"
-git push "$REMOTE" main "$TAG"
+git -C "$REPO_ROOT" push "$REMOTE" main "$TAG"
 
 # 3. Watch workflow
 echo ""
@@ -97,7 +110,7 @@ fi
 
 echo "→ 等待 publish-ellamaka workflow 启动..."
 
-COMMIT="$(git rev-parse HEAD)"
+COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 RUN_ID=""
 
 for i in $(seq 1 12); do
