@@ -1,6 +1,6 @@
 import { spawn } from "bun-pty";
 import { resolve as resolvePath, join as joinPath } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 // ---------------------------------------------------------------------------
@@ -74,11 +74,12 @@ const encoder = new TextEncoder();
 // ---------------------------------------------------------------------------
 
 const readFile = (name: string) => Bun.file(joinPath(import.meta.dir, "public", name)).text();
-const [indexHtml, desktopHtml, tuiHtml, mHtml] = await Promise.all([
+const [indexHtml, desktopHtml, tuiHtml, mHtml, workbenchHtml] = await Promise.all([
   readFile("index.html"),
   readFile("desktop.html"),
   readFile("tui.html"),
   readFile("m.html"),
+  readFile("workbench.html"),
 ]);
 
 function html(body: string) {
@@ -86,7 +87,9 @@ function html(body: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Spaces API — wraps `wopal space list --json`
+// Spaces API — wraps `wopal space list`
+// Tries `--json` first (future-proof); falls back to parsing the markdown
+// table that current wopal versions print to stdout.
 // ---------------------------------------------------------------------------
 
 interface SpaceInfo { name: string; path: string }
@@ -94,32 +97,87 @@ interface SpaceInfo { name: string; path: string }
 // 写死 wopal 二进制路径，避免 PATH 中的 wopal 指向错误的 WOPAL_HOME。
 const WOPAL_BIN = joinPath(POC_WOPAL_HOME, "bin", "wopal");
 
+// Parse a markdown table row like "| wopal-workspace | /path/to/space |"
+function parseSpaceRow(line: string): SpaceInfo | null {
+  const parts = line.split("|").map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  // skip separator rows like |---|---|
+  if (parts.every((p) => /^[-:]+$/.test(p))) return null;
+  const name = parts[0];
+  const path = parts[1];
+  if (!name || !path || name.toLowerCase() === "name") return null;
+  return { name, path };
+}
+
+function parseSpacesMarkdown(text: string): SpaceInfo[] {
+  const spaces: SpaceInfo[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) continue;
+    const info = parseSpaceRow(trimmed);
+    if (info) spaces.push(info);
+  }
+  return spaces;
+}
+
 async function listSpaces(): Promise<{ spaces: SpaceInfo[]; current: string | null }> {
+  // Try --json first; if the installed wopal doesn't support it, fall back to
+  // parsing the human-readable markdown table. Either way we return the same
+  // shape so callers don't care which path was taken.
+  const env = { ...process.env, WOPAL_HOME: POC_WOPAL_HOME };
   const proc = Bun.spawn([WOPAL_BIN, "space", "list", "--json"], {
     cwd: SPACE_ROOT,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, WOPAL_HOME: POC_WOPAL_HOME },
+    env,
   });
   const text = await new Response(proc.stdout).text();
   const exitCode = await proc.exited;
-  if (exitCode !== 0) throw new Error(`wopal space list failed (exit ${exitCode}): ${text.slice(0, 200)}`);
-  const parsed = JSON.parse(text) as { success?: boolean; data?: { spaces?: SpaceInfo[] } };
-  const spaces = parsed?.data?.spaces ?? [];
+
+  if (exitCode === 0) {
+    try {
+      const parsed = JSON.parse(text) as { success?: boolean; data?: { spaces?: SpaceInfo[] } };
+      const spaces = parsed?.data?.spaces ?? [];
+      const current = spaces.find((s) => s.path === SPACE_ROOT)?.name ?? null;
+      return { spaces, current };
+    } catch { /* not JSON, fall through to markdown parse */ }
+  }
+
+  // Fallback: re-run without --json and parse the markdown table.
+  const proc2 = Bun.spawn([WOPAL_BIN, "space", "list"], {
+    cwd: SPACE_ROOT,
+    stdout: "pipe",
+    stderr: "pipe",
+    env,
+  });
+  const md = await new Response(proc2.stdout).text();
+  const exit2 = await proc2.exited;
+  if (exit2 !== 0) throw new Error(`wopal space list failed (exit ${exit2}): ${md.slice(0, 200)}`);
+  const spaces = parseSpacesMarkdown(md);
   const current = spaces.find((s) => s.path === SPACE_ROOT)?.name ?? null;
   return { spaces, current };
 }
 
 // ===========================================================================
-// Part 1 — TUI Embed (desktop): bun-pty + xterm.js
+// Part 1 — TUI Embed (desktop): pty-bridge 子进程 + xterm.js
 // Multi-space support: one PTY per space, indexed by space name.
+//
+// 为什么用子进程：bun-pty 0.4.8 的 native read-loop（while + await setTimeout）
+// 在 Bun.serve 进程里 onData 回调不触发——已通过最小复现确认（fetch handler、
+// ReadableStream、Worker 均失效，仅独立 bun 进程正常）。根因是 bun-pty 的 ffi
+// 轮询循环在 Bun.serve 的事件循环上下文里不被调度。解法：把 PTY 管理外包给
+// 独立子进程 pty-bridge.ts，主 server 通过 stdin/stdout NDJSON 与之通信。
 // ===========================================================================
 
 interface PtySession {
-  pty: ReturnType<typeof spawn>;
   controllers: Set<ReadableStreamDefaultController<Uint8Array>>;
   space: string;
   cwd: string;
+  // 暂存 PTY 启动后、首个客户端连上前的 output（解决创建早于 SSE 注册的时序竞态）。
+  pendingOutput: string[];
+  // 最近一次 resize 的尺寸，用于复用 PTY 时触发重绘。
+  lastCols: number;
+  lastRows: number;
 }
 
 const ptys = new Map<string, PtySession>();
@@ -129,34 +187,114 @@ function ptySend(c: ReadableStreamDefaultController<Uint8Array>, payload: unknow
 }
 
 function ptyBroadcast(session: PtySession, payload: unknown) {
+  // 还没有客户端连接时，output 类消息先缓冲，等首个 controller 注册时 flush。
+  if (session.controllers.size === 0) {
+    if (typeof payload === "object" && payload !== null && (payload as { type?: string }).type === "output") {
+      session.pendingOutput.push((payload as { data: string }).data);
+      if (session.pendingOutput.length > 256) session.pendingOutput.shift();
+    }
+    return;
+  }
   for (const c of session.controllers) ptySend(c, payload);
 }
 
-function ensurePtyForSpace(space: string, cwd: string): PtySession {
+// ----- pty-bridge 子进程管理 -----
+// 单一桥接进程管理所有空间的 PTY。主 server 通过 stdin 发命令、通过 stdout 收事件。
+
+let bridgeProc: ReturnType<typeof Bun.spawn> | null = null;
+let bridgeReady: Promise<void> | null = null;
+let bridgeReadyResolve: (() => void) | null = null;
+let bridgeLineBuf = "";
+
+function bridgeSend(cmd: unknown) {
+  if (!bridgeProc) return;
+  try { bridgeProc.stdin.write(JSON.stringify(cmd) + "\n"); } catch {}
+}
+
+function startBridge() {
+  if (bridgeProc) return;
+  const bridgePath = joinPath(import.meta.dir, "pty-bridge.ts");
+  // 通过 sh -c 启动，让 bridge 进程脱离 Bun.spawn 子进程的 ffi 事件循环束缚
+  // （直接 Bun.spawn(["bun","run",...]) 时 bun-pty 的 onData 不触发，sh 启动则正常）
+  bridgeProc = Bun.spawn(["sh", "-c", `exec bun run "${bridgePath}"`], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "inherit",
+    env: { ...process.env, WOPAL_HOME: POC_WOPAL_HOME },
+  });
+  bridgeReady = new Promise((r) => { bridgeReadyResolve = r; });
+
+  // 读 bridge stdout NDJSON，分发事件到对应 session
+  const reader = bridgeProc.stdout.getReader();
+  const decoder = new TextDecoder();
+  (async () => {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bridgeLineBuf += decoder.decode(value, { stream: true });
+      const lines = bridgeLineBuf.split("\n");
+      bridgeLineBuf = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try { handleBridgeEvent(JSON.parse(trimmed)); } catch {}
+      }
+    }
+  })();
+
+  bridgeProc.exited.then((code) => {
+    console.log(`[tui/bridge] exited code=${code}`);
+    bridgeProc = null;
+    // 清理所有 session
+    for (const [space, session] of ptys) {
+      ptyBroadcast(session, { type: "exited", exitCode: -1, signal: "bridge-down" });
+      for (const c of session.controllers) { try { c.close(); } catch {} }
+    }
+    ptys.clear();
+  });
+}
+
+function handleBridgeEvent(ev: { type?: string; space?: string; data?: string; exitCode?: number; signal?: string | null; pid?: number; message?: string }) {
+  switch (ev.type) {
+    case "ready":
+      console.log(`[tui/bridge] ready`);
+      if (bridgeReadyResolve) { bridgeReadyResolve(); bridgeReadyResolve = null; }
+      break;
+    case "spawned":
+      console.log(`[tui/bridge] spawned space=${ev.space} pid=${ev.pid}`);
+      break;
+    case "output": {
+      const session = ptys.get(ev.space ?? "");
+      if (session) ptyBroadcast(session, { type: "output", data: ev.data ?? "" });
+      break;
+    }
+    case "exited": {
+      const session = ptys.get(ev.space ?? "");
+      if (session) {
+        ptyBroadcast(session, { type: "exited", exitCode: ev.exitCode ?? 0, signal: ev.signal ?? null });
+        for (const c of session.controllers) { try { c.close(); } catch {} }
+        session.controllers.clear();
+        ptys.delete(ev.space ?? "");
+      }
+      break;
+    }
+    case "error":
+      console.error(`[tui/bridge] error: ${ev.message ?? "unknown"}`);
+      break;
+  }
+}
+
+async function ensurePtyForSpace(space: string, cwd: string): Promise<PtySession> {
   const existing = ptys.get(space);
   if (existing) return existing;
 
-  mkdirSync(cwd, { recursive: true });
-  const pty = spawn(RESOLVED_CMD, ARGS, {
-    name: "xterm-256color",
-    cols: 100,
-    rows: 30,
-    cwd,
-    env: { ...process.env, WOPAL_HOME: POC_WOPAL_HOME, TERM: "xterm-256color" } as Record<string, string>,
-  });
-  const session: PtySession = { pty, controllers: new Set(), space, cwd };
+  startBridge();
+  if (bridgeReady) await bridgeReady;
+
+  const session: PtySession = { controllers: new Set(), space, cwd, pendingOutput: [], lastCols: 100, lastRows: 30 };
   ptys.set(space, session);
-  console.log(`[tui/pty] spawned pid=${pty.pid} space=${space} cwd=${cwd}`);
-
-  pty.onData((data) => ptyBroadcast(session, { type: "output", data }));
-  pty.onExit(({ exitCode, signal }) => {
-    console.log(`[tui/pty] exited space=${space} code=${exitCode} signal=${signal ?? ""}`);
-    ptyBroadcast(session, { type: "exited", exitCode, signal });
-    for (const c of session.controllers) { try { c.close(); } catch {} }
-    session.controllers.clear();
-    ptys.delete(space);
-  });
-
+  console.log(`[tui/pty] requesting spawn space=${space} cwd=${cwd}`);
+  bridgeSend({ cmd: "spawn", space, cwd });
   return session;
 }
 
@@ -174,14 +312,26 @@ async function tuiStream(req: Request) {
   const resolved = await resolveSpaceFromReq(req);
   if (resolved instanceof Object && "error" in resolved) return resolved.error;
   const spaceInfo = resolved;
-  const session = ensurePtyForSpace(spaceInfo.name, spaceInfo.path);
+  const session = await ensurePtyForSpace(spaceInfo.name, spaceInfo.path);
 
   let mine: ReadableStreamDefaultController<Uint8Array> | null = null;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       mine = controller;
+      // 复用判定：若已有其他客户端连接，说明 PTY 早创建、banner 已输出过。
+      const wasReused = session.controllers.size > 0;
       session.controllers.add(controller);
       ptySend(controller, { type: "connected", space: spaceInfo.name, cwd: spaceInfo.path });
+      // flush 暂存的 output（PTY 创建早于首个客户端连接的时序竞态修复）
+      if (session.pendingOutput.length > 0) {
+        const buffered = session.pendingOutput.join("");
+        session.pendingOutput.length = 0;
+        ptySend(controller, { type: "output", data: buffered });
+      }
+      // 复用已有 PTY 时主动 resize 触发 ellamaka 重绘，让新客户端看到当前 TUI 界面
+      if (wasReused) {
+        bridgeSend({ cmd: "resize", space: spaceInfo.name, cols: session.lastCols, rows: session.lastRows });
+      }
       console.log(`[tui/sse] client joined space=${spaceInfo.name} (total=${session.controllers.size})`);
     },
     cancel() {
@@ -202,10 +352,9 @@ async function tuiStream(req: Request) {
 async function tuiInput(req: Request) {
   const url = new URL(req.url);
   const space = url.searchParams.get("space") ?? "";
-  const session = ptys.get(space);
-  if (!session) return new Response(`no active PTY for space: ${space}`, { status: 400 });
+  if (!ptys.has(space)) return new Response(`no active PTY for space: ${space}`, { status: 400 });
   const body = await req.json() as { data?: string };
-  session.pty.write(body.data ?? "");
+  bridgeSend({ cmd: "input", space, data: body.data ?? "" });
   return new Response(null, { status: 204 });
 }
 
@@ -217,17 +366,18 @@ async function tuiResize(req: Request) {
   const body = await req.json() as { cols?: number; rows?: number };
   const cols = Math.max(1, Number(body.cols) | 0);
   const rows = Math.max(1, Number(body.rows) | 0);
-  try { session.pty.resize(cols, rows); } catch {}
+  session.lastCols = cols;
+  session.lastRows = rows;
+  bridgeSend({ cmd: "resize", space, cols, rows });
   return new Response(null, { status: 204 });
 }
 
 async function tuiKill(req: Request) {
   const url = new URL(req.url);
   const space = url.searchParams.get("space") ?? "";
-  const session = ptys.get(space);
-  if (!session) return new Response(null, { status: 404 });
-  // kill 触发 onExit 回调，由其完成 broadcast + Map 清理
-  try { session.pty.kill(); } catch {}
+  if (!ptys.has(space)) return new Response(null, { status: 404 });
+  // kill 命令触发 bridge 的 onExit 回调，由其完成 broadcast + Map 清理
+  bridgeSend({ cmd: "kill", space });
   return new Response(null, { status: 202 });
 }
 
@@ -771,6 +921,37 @@ async function chatSend(req: Request) {
 }
 
 // ===========================================================================
+// Workbench — feedback collection (prototype validation)
+// ---------------------------------------------------------------------------
+// PoC stores feedback to a JSONL file under the PoC dir. Production would
+// forward to an analytics/CRM pipeline. Captures rating + free text + the
+// view/space context the user was in, so iteration prioritization is grounded.
+// ===========================================================================
+
+const FEEDBACK_FILE = joinPath(import.meta.dir, "feedback.jsonl");
+
+async function feedbackReceive(req: Request) {
+  try {
+    const body = await req.json() as { rating?: number; text?: string; view?: string; space?: string; ts?: number };
+    const rating = Math.max(1, Math.min(5, Number(body.rating) | 0));
+    if (!rating) return Response.json({ success: false, message: "rating required" }, { status: 400 });
+    const entry = {
+      rating,
+      text: String(body.text ?? "").slice(0, 2000),
+      view: String(body.view ?? ""),
+      space: String(body.space ?? ""),
+      ts: body.ts ?? Date.now(),
+      receivedAt: new Date().toISOString(),
+    };
+    appendFileSync(FEEDBACK_FILE, JSON.stringify(entry) + "\n");
+    console.log(`[feedback] rating=${rating} view=${entry.view} space=${entry.space} text=${entry.text.slice(0, 60)}`);
+    return Response.json({ success: true, data: { saved: true } });
+  } catch (err) {
+    return Response.json({ success: false, message: err instanceof Error ? err.message : "feedback failed" }, { status: 500 });
+  }
+}
+
+// ===========================================================================
 // Router
 // ===========================================================================
 
@@ -788,11 +969,13 @@ Bun.serve({
     const url = new URL(req.url);
     const { pathname } = url;
 
-    // Pages — `/` auto-routes by User-Agent
+    // Pages — `/` auto-routes by User-Agent.
+    // Desktop default → productized Workbench (三栏 IDE 工作台).
     if (pathname === "/" || pathname === "/index.html") {
-      return html(isDesktopUA(req) ? desktopHtml : indexHtml);
+      return html(isDesktopUA(req) ? workbenchHtml : indexHtml);
     }
     if (pathname === "/desktop" || pathname === "/desktop.html") return html(desktopHtml);
+    if (pathname === "/workbench" || pathname === "/workbench.html") return html(workbenchHtml);
     if (pathname === "/tui" || pathname === "/tui.html") return html(tuiHtml);
     if (pathname === "/m" || pathname === "/m.html") return html(mHtml);
 
@@ -819,12 +1002,19 @@ Bun.serve({
     if (pathname === "/api/chat/stream") return chatStream();
     if (pathname === "/api/chat/send" && req.method === "POST") return chatSend(req);
 
+    // Workbench — feedback collection + health probe
+    if (pathname === "/api/feedback" && req.method === "POST") return feedbackReceive(req);
+    if (pathname === "/api/health" && req.method === "GET") {
+      return Response.json({ success: true, data: { ok: true, tuiSessions: ptys.size, chatReady: chatSession !== null, spaces: (await listSpaces().catch(() => ({ spaces: [] }))).spaces.length, uptime: process.uptime() | 0 } });
+    }
+
     return new Response("not found", { status: 404 });
   },
 });
 
 console.log("\n  ── Ellamaka Web PoC (TUI + Chat) ──");
 console.log(`  web:      http://localhost:${PORT}            (auto route by UA)`);
+console.log(`  workbench:http://localhost:${PORT}/workbench (产品化工作台 — 推荐)`);
 console.log(`  desktop:  http://localhost:${PORT}/desktop    (space selector → /tui?space=)`);
 console.log(`  tui:      http://localhost:${PORT}/tui?space=  (desktop, per-space PTY)`);
 console.log(`  chat:     http://localhost:${PORT}/m          (mobile)`);
