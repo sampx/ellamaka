@@ -83,7 +83,6 @@
 |------|-----|------|
 | `BINARY_NAME` | `ellamaka` | CLI 命令名、help 文本、错误前缀 |
 | `BINARY_TITLE` | `Ellamaka` | 用户界面标题 |
-| `VERSION_PREFIX` | `ellamaka` | `--version` 输出前缀（`ellamaka/x.y.z`） |
 | `CHANNEL_RELEASE` | `latest` | 发布渠道标识，与 opencode 标准 channel 一致 |
 | `CHANNEL_DEV` | `main` | 本地开发渠道标识，对应 ellamaka 主分支名 |
 
@@ -161,7 +160,7 @@ CLI 的所有用户可见输出——命令名、帮助文本、版本号、启�
 
 ### 版本号
 
-`--version` 输出格式 `ellamaka/x.y.z`，通过 `.version(VERSION_PREFIX + "/" + InstallationVersion)` 注入。
+`--version` 输出纯 `InstallationVersion`（如 `1.15.13` 或开发构建的 `local`），与上游 opencode 完全一致，不添加品牌前缀。
 
 ### 命令名
 

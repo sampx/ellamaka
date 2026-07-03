@@ -28,7 +28,7 @@ import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
 import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
-import { BINARY_NAME, VERSION_PREFIX } from "../../ellamaka/branding"
+import { BINARY_NAME } from "../../ellamaka/branding"
 import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { Global } from "@opencode-ai/core/global"
@@ -74,7 +74,7 @@ const cli = yargs(args)
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
-  .version("version", "show version number", `${VERSION_PREFIX}/${InstallationVersion}`)
+  .version("version", "show version number", InstallationVersion)
   .alias("version", "v")
   .option("print-logs", {
     describe: "print logs to stderr",
