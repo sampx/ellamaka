@@ -10,7 +10,7 @@ import { testEffect } from "../lib/effect"
 
 const { Plugin } = await import("../../src/plugin/index")
 const { PluginLoader } = await import("../../src/plugin/loader")
-const { readPackageThemes } = await import("../../src/plugin/shared")
+const { readPackageThemes, resolvePathPluginTarget } = await import("../../src/plugin/shared")
 const { Bus } = await import("../../src/bus")
 const { Npm } = await import("@opencode-ai/core/npm")
 const { TestConfig } = await import("../fixture/config")
@@ -93,6 +93,59 @@ describe("plugin.loader.shared", () => {
         Effect.gen(function* () {
           yield* load(tmp.path)
           expect(yield* Effect.promise(() => fs.readFile(tmp.extra.mark, "utf8"))).toBe("called")
+        }),
+    ),
+  )
+
+  it.live("loads a file plugin from a flattened Git symlink placeholder", () =>
+    withTmp(
+      async (dir) => {
+        const entry = path.join(dir, "wopal-plugin.ts")
+        const source = path.join(dir, "wopal-plugin", "src", "index.ts")
+        const mark = path.join(dir, "called.txt")
+        await fs.mkdir(path.dirname(source), { recursive: true })
+        await Bun.write(
+          source,
+          [
+            "export default async () => {",
+            `  await Bun.write(${JSON.stringify(mark)}, "called")`,
+            "  return {}",
+            "}",
+            "",
+          ].join("\n"),
+        )
+        await Bun.write(entry, "wopal-plugin/src/index.ts")
+        await Bun.write(
+          path.join(dir, "opencode.json"),
+          JSON.stringify({ plugin: [pathToFileURL(entry).href] }, null, 2),
+        )
+
+        return { mark }
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          yield* load(tmp.path)
+          expect(yield* Effect.promise(() => fs.readFile(tmp.extra.mark, "utf8"))).toBe("called")
+        }),
+    ),
+  )
+
+  it.live("does not resolve a flattened Git symlink placeholder outside its plugin directory", () =>
+    withTmp(
+      async (dir) => {
+        const plugins = path.join(dir, "plugins")
+        const entry = path.join(plugins, "escaped-plugin.ts")
+        const outside = path.join(dir, "outside", "index.ts")
+        await fs.mkdir(plugins, { recursive: true })
+        await fs.mkdir(path.dirname(outside), { recursive: true })
+        await Bun.write(outside, "export default async () => ({})\n")
+        await Bun.write(entry, "../outside/index.ts")
+        return { entry }
+      },
+      (tmp) =>
+        Effect.gen(function* () {
+          const spec = pathToFileURL(tmp.extra.entry).href
+          expect(yield* Effect.promise(() => resolvePathPluginTarget(spec))).toBe(spec)
         }),
     ),
   )

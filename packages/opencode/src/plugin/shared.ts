@@ -133,6 +133,21 @@ async function resolveTargetDirectory(target: string) {
   return file
 }
 
+// Git with core.symlinks=false materializes symlink blobs as tiny files containing the link target.
+async function resolveFlattenedGitSymlink(file: string, size: number) {
+  if (size === 0 || size > 4096) return
+
+  const raw = await Filesystem.readText(file).catch(() => undefined)
+  if (!raw || raw !== raw.trim()) return
+  if (!/^(?:\.{1,2}[\\/])?(?:[\w@.-]+[\\/])+[\w@.-]+\.[cm]?[jt]sx?$/.test(raw)) return
+
+  const root = Filesystem.resolve(path.dirname(file))
+  const target = Filesystem.resolve(path.resolve(root, raw))
+  if (!Filesystem.contains(root, target)) return
+  if (!(await Filesystem.statAsync(target))?.isFile()) return
+  return target
+}
+
 async function resolvePluginEntrypoint(spec: string, target: string, kind: PluginKind, pkg?: PluginPackage) {
   const source = pluginSource(spec)
   const hit =
@@ -177,6 +192,10 @@ export async function resolvePathPluginTarget(spec: string) {
   const file = path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw) ? raw : path.resolve(raw)
   const stat = await Filesystem.statAsync(file)
   if (!stat?.isDirectory()) {
+    if (stat?.isFile()) {
+      const target = await resolveFlattenedGitSymlink(file, Number(stat.size))
+      if (target) return pathToFileURL(target).href
+    }
     if (spec.startsWith("file://")) return spec
     return pathToFileURL(file).href
   }

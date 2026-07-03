@@ -99,6 +99,7 @@ description: Main inherited OpenCode engine package for CLI, runtime, config, se
 - 修改 legacy Hono / Effect HttpApi 路由时，添加或更新 parity coverage，例如 `test/server/httpapi-bridge.test.ts` 或 focused HttpApi tests。
 - 修改 database schema 时生成 migration，并添加或更新 migration tests。
 - 修改 CLI/runtime/config/plugin/agent/TUI space mode 后，验证或说明 `WOPAL_SPACE` flag、`.wopal/config/settings.*`、TUI settings、plugin loading、theme loading。
+- Windows 的 Git 克隆通常使用 `core.symlinks=false`；插件解析器必须把内容为受限相对源码路径的扁平化 symlink 占位文件解析到同一插件目录内的真实文件，并拒绝目录越界目标。
 
 ## 6. User-Supplied Rules
 
