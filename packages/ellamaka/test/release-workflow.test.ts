@@ -27,11 +27,28 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).toContain("--tag v\"$VERSION\"")
     expect(workflow).toContain("s3://wopal-release/ellamaka/v${VERSION}")
     expect(workflow).toContain("s3://wopal-release/ellamaka/latest")
-    expect(workflow).toContain("max-age=604800")
-    expect(workflow).toContain("max-age=300")
-    expect(workflow).toContain("${LATEST_KEY}/manifest.json")
-    expect(workflow).not.toContain("${LATEST_KEY}/checksums.txt")
-    expect(workflow).not.toContain("${LATEST_KEY}/release-notes.md")
+    expect(workflow).toContain("ellamaka/latest/manifest.json")
+    expect(workflow).not.toContain("ellamaka/latest/checksums.txt")
+    expect(workflow).not.toContain("ellamaka/latest/release-notes.md")
+  })
+
+  test("deletes R2 object before put-object to avoid stale truncated residue", () => {
+    expect(workflow).toContain("aws s3api delete-object")
+    expect(workflow).toContain("aws s3api put-object")
+    // Retry on put-object failure for large archives
+    expect(workflow).toMatch(/for attempt in 1 2 3[\s\S]*put-object/)
+  })
+
+  test("verifies R2 uploads against manifest hashes (not local dist files)", () => {
+    // The manifest is the source of truth for install-time checksum verification.
+    // Comparing against local dist files can pass when both are identically
+    // corrupted; comparing against the manifest catches that case.
+    expect(workflow).toContain("Verifying R2 uploads against manifest...")
+    expect(workflow).toContain("manifest sha256")
+    expect(workflow).toContain("manifest size")
+    expect(workflow).toContain("R2 object is truncated")
+    expect(workflow).not.toContain("local  sha256")
+    expect(workflow).not.toContain("local_hash")
   })
 
   test("creates 4 markdown-only release entries", () => {

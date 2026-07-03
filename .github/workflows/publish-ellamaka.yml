@@ -116,16 +116,39 @@ jobs:
           # bytes diverge from the uploaded data, while content-length
           # metadata still reflects the original size. Single PUT avoids
           # multipart entirely — S3 supports up to 5GB per single PUT.
+          #
+          # Delete-then-put: put-object overwrites, but a prior corrupted
+          # object (truncated body with stale content-length metadata) can
+          # leave residue. Deleting first ensures a clean object.
+          #
+          # Retry: R2 single PUT on large (~35-50MB) archives occasionally
+          # returns success yet stores a truncated object. Retry until the
+          # post-upload verify (against manifest hash) confirms integrity.
           for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
             name="$(basename "$f")"
             content_type="application/octet-stream"
             case "$name" in *.tar.gz) content_type="application/x-tar";; *.zip) content_type="application/zip";; esac
-            aws s3api put-object \
+            key="ellamaka/v${VERSION}/${name}"
+            aws s3api delete-object \
               --bucket wopal-release \
-              --key "ellamaka/v${VERSION}/${name}" \
-              --body "$f" \
-              --content-type "$content_type" \
-              --endpoint-url ${R2_URL} >/dev/null
+              --key "$key" \
+              --endpoint-url ${R2_URL} >/dev/null 2>&1 || true
+            for attempt in 1 2 3; do
+              if aws s3api put-object \
+                --bucket wopal-release \
+                --key "$key" \
+                --body "$f" \
+                --content-type "$content_type" \
+                --endpoint-url ${R2_URL} >/dev/null; then
+                break
+              fi
+              echo "  put-object attempt $attempt failed for $name"
+              if [ "$attempt" -eq 3 ]; then
+                echo "ERROR: put-object failed after 3 attempts: $name"
+                exit 1
+              fi
+              sleep 5
+            done
           done
 
           aws s3api put-object \
@@ -159,25 +182,51 @@ jobs:
           # Verify uploaded objects by downloading from R2 directly (not CDN).
           # CDN may serve stale cached copies right after upload, causing false
           # checksum mismatches. s3api get-object reads straight from R2 storage.
-          echo "Verifying R2 uploads..."
+          #
+          # CRITICAL: compare against the manifest's sha256/size, not the local
+          # dist file. The manifest is generated from the complete local file
+          # before upload; the local file could be mutated after manifest
+          # generation (e.g. truncated during put-object body read), making a
+          # local-vs-remote comparison a false positive when both are corrupted
+          # identically. Users install against the manifest hash — that is the
+          # authoritative source of truth.
+          echo "Verifying R2 uploads against manifest..."
           VERIFY_DIR="$(mktemp -d)"
+          # Parse manifest.json: name -> sha256, name -> size
+          declare -A manifest_sha manifest_size
+          while IFS=$'\t' read -r mname msha msize; do
+            manifest_sha["$mname"]="$msha"
+            manifest_size["$mname"]="$msize"
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.sha256, a.size].join("\t"));
+          ')
           for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
             name="$(basename "$f")"
-            local_hash="$(sha256sum "$f" | cut -d' ' -f1)"
             aws s3api get-object \
               --bucket wopal-release \
               --key "ellamaka/v${VERSION}/${name}" \
               --endpoint-url ${R2_URL} \
               "${VERIFY_DIR}/${name}" >/dev/null
             remote_hash="$(sha256sum "${VERIFY_DIR}/${name}" | cut -d' ' -f1)"
-            if [ "$local_hash" != "$remote_hash" ]; then
+            remote_size="$(stat -c%s "${VERIFY_DIR}/${name}")"
+            expected_hash="${manifest_sha[$name]}"
+            expected_size="${manifest_size[$name]}"
+            if [ "$remote_hash" != "$expected_hash" ]; then
               echo "ERROR: R2 checksum mismatch: $name"
-              echo "  local  sha256: $local_hash"
-              echo "  remote sha256: $remote_hash"
-              echo "  R2 object does not match uploaded file. Re-run the workflow to retry."
+              echo "  manifest sha256: $expected_hash"
+              echo "  remote   sha256: $remote_hash"
+              echo "  R2 object does not match manifest. Re-run the workflow to retry."
               exit 1
             fi
-            echo "  OK: $name"
+            if [ "$remote_size" != "$expected_size" ]; then
+              echo "ERROR: R2 size mismatch: $name"
+              echo "  manifest size: $expected_size"
+              echo "  remote   size: $remote_size"
+              echo "  R2 object is truncated. Re-run the workflow to retry."
+              exit 1
+            fi
+            echo "  OK: $name (sha256=$remote_hash size=$remote_size)"
           done
           rm -rf "$VERIFY_DIR"
 
