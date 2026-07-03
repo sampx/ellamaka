@@ -232,7 +232,7 @@ jobs:
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
-      - name: Purge Cloudflare CDN cache for latest alias
+      - name: Purge Cloudflare CDN cache
         if: needs.version.outputs.release != ''
         env:
           CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
@@ -240,26 +240,40 @@ jobs:
         run: |
           if [ -z "${CLOUDFLARE_CACHE_PURGE_TOKEN:-}" ] || [ -z "${CLOUDFLARE_CACHE_PURGE_ZONE:-}" ]; then
             echo "WARNING: CLOUDFLARE_CACHE_PURGE_TOKEN or CLOUDFLARE_CACHE_PURGE_ZONE secret not set."
-            echo "Skipping CDN purge. latest/manifest.json may serve stale version until TTL expires."
+            echo "Skipping CDN purge. CDN may serve stale files until TTL expires."
             exit 0
           fi
 
-          # Versioned paths (v$VERSION/*) are immutable by design — each version
-          # is published once and CDN caches them normally (1 week TTL). We do
-          # NOT purge versioned URLs: that would defeat CDN caching for the
-          # common case (first release of a new version).
-          #
-          # The latest alias (latest/manifest.json) points to the newest version.
-          # It has a short TTL (5 min) but we purge it on release so users
-          # discover the new version immediately instead of waiting up to 5 min.
-          PURGE_URL="https://download.coursedao.com/ellamaka/latest/manifest.json"
+          # Build purge URL list: latest alias + all versioned paths.
+          # When a version is re-released (same tag, new artifacts), the old
+          # files must be evicted from CDN edge caches or users will hit
+          # checksum mismatches.
+          PURGE_URLS=(
+            "https://download.coursedao.com/ellamaka/latest/manifest.json"
+            "https://download.coursedao.com/ellamaka/v${VERSION}/manifest.json"
+            "https://download.coursedao.com/ellamaka/v${VERSION}/checksums.txt"
+          )
 
-          echo "Purging latest alias from Cloudflare CDN: $PURGE_URL"
+          # Add all artifact URLs from the manifest
+          while IFS= read -r url; do
+            [ -n "$url" ] && PURGE_URLS+=("$url")
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log(a.url);
+          ')
+
+          echo "Purging ${#PURGE_URLS[@]} URLs from Cloudflare CDN..."
+          printf '%s\n' "${PURGE_URLS[@]}"
+
+          # Cloudflare free plan allows up to 30 URLs per purge call
+          JSON_FILES=$(printf '"%s",' "${PURGE_URLS[@]}")
+          JSON_FILES="[${JSON_FILES%,}]"
+
           HTTP_CODE=$(curl -s -o /tmp/purge-response.json -w "%{http_code}" \
             -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
             -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"files\":[\"${PURGE_URL}\"]}")
+            -d "{\"files\":${JSON_FILES}}")
 
           echo "Purge API response (HTTP $HTTP_CODE):"
           cat /tmp/purge-response.json
@@ -267,10 +281,10 @@ jobs:
 
           if [ "$HTTP_CODE" != "200" ]; then
             echo "WARNING: Cloudflare purge failed (HTTP $HTTP_CODE)."
-            echo "latest/manifest.json may serve stale version until TTL expires."
+            echo "CDN may serve stale files until TTL expires."
             exit 0
           fi
-          echo "CDN purge complete for ellamaka latest alias"
+          echo "CDN purge complete for ellamaka v${VERSION}"
 
       - name: Create or update ellamaka GitHub release (no binary assets)
         if: needs.version.outputs.release != ''
