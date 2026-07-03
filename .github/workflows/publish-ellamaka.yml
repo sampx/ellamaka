@@ -232,6 +232,46 @@ jobs:
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
+      - name: Purge Cloudflare CDN cache for latest alias
+        if: needs.version.outputs.release != ''
+        env:
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+          CLOUDFLARE_CACHE_PURGE_ZONE: ${{ secrets.CLOUDFLARE_CACHE_PURGE_ZONE }}
+        run: |
+          if [ -z "${CLOUDFLARE_CACHE_PURGE_TOKEN:-}" ] || [ -z "${CLOUDFLARE_CACHE_PURGE_ZONE:-}" ]; then
+            echo "WARNING: CLOUDFLARE_CACHE_PURGE_TOKEN or CLOUDFLARE_CACHE_PURGE_ZONE secret not set."
+            echo "Skipping CDN purge. latest/manifest.json may serve stale version until TTL expires."
+            exit 0
+          fi
+
+          # Versioned paths (v$VERSION/*) are immutable by design — each version
+          # is published once and CDN caches them normally (1 week TTL). We do
+          # NOT purge versioned URLs: that would defeat CDN caching for the
+          # common case (first release of a new version).
+          #
+          # The latest alias (latest/manifest.json) points to the newest version.
+          # It has a short TTL (5 min) but we purge it on release so users
+          # discover the new version immediately instead of waiting up to 5 min.
+          PURGE_URL="https://download.coursedao.com/ellamaka/latest/manifest.json"
+
+          echo "Purging latest alias from Cloudflare CDN: $PURGE_URL"
+          HTTP_CODE=$(curl -s -o /tmp/purge-response.json -w "%{http_code}" \
+            -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"files\":[\"${PURGE_URL}\"]}")
+
+          echo "Purge API response (HTTP $HTTP_CODE):"
+          cat /tmp/purge-response.json
+          echo ""
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: Cloudflare purge failed (HTTP $HTTP_CODE)."
+            echo "latest/manifest.json may serve stale version until TTL expires."
+            exit 0
+          fi
+          echo "CDN purge complete for ellamaka latest alias"
+
       - name: Create or update ellamaka GitHub release (no binary assets)
         if: needs.version.outputs.release != ''
         env:

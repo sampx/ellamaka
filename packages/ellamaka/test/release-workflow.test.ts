@@ -51,6 +51,19 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).not.toContain("local_hash")
   })
 
+  test("purges CDN cache only for latest alias, not versioned paths", () => {
+    // Versioned paths are immutable by design — CDN caches them normally.
+    // Only the latest alias (short TTL, points to newest version) is purged
+    // so users discover new versions immediately.
+    expect(workflow).toContain("Purge Cloudflare CDN cache for latest alias")
+    expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_TOKEN")
+    expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_ZONE")
+    expect(workflow).toContain("ellamaka/latest/manifest.json")
+    expect(workflow).not.toContain("purge_everything")
+    // Must not purge versioned artifact URLs — that would defeat CDN caching
+    expect(workflow).not.toMatch(/purge.*v\$\{VERSION\}\/ellamaka-/)
+  })
+
   test("creates 4 markdown-only release entries", () => {
     expect(workflow).toContain("wopal-cn/ellamaka")
     expect(workflow).toContain("wopal-cn/wopal-space-ontology")
