@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-06-11
+> **更新时间**: 2026-07-06
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-06 | Updated | §7.5 新增 WopalSpace 模式下 `/help` 命令覆盖机制：TUI palette 的 `help.show` 在空间模式下不注册 `slashName`，使 `/help` 回落到服务端命令系统，由 `commands/help.md` 接管 |
 | 2026-06-22 | Updated | §6.2 补充普通模式插件依赖安装机制说明（复用 `localPluginInstallDeps`） |
 | 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容；§7.1 TUI 配置统一；新增 §14 TUI tips 和 sidebar 品牌化：所有模式下移除 opencode 相关 tips，CLI 命令引用使用 BINARY_NAME，sidebar 版本署名使用 BINARY_TITLE |
 | 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容：所有模式仅加载 ellamaka 自身配置，不再加载 opencode XDG 全局配置和项目级 opencode.jsonc |
@@ -340,6 +341,41 @@ TUI 加载流程中的统一行为（空间/非空间模式一致）：
 ### 7.4 配置路径提示
 
 TUI 首页提示文案显示 `~/.wopal/config/settings.jsonc` 路径，与 ellamaka 实际配置根对齐。
+
+### 7.5 WopalSpace 模式 `/help` 命令覆盖
+
+#### 目的
+
+WopalSpace 模式下，`/help` 命令由空间级 `commands/help.md` 接管，而非 TUI 内置的 `DialogHelp` 弹窗。使空间可以自定义帮助内容（空间结构、命令列表、技能说明等）。
+
+#### 问题背景
+
+ellamaka 有两套独立的命令系统：
+
+| 系统 | 注册位置 | 触发方式 | 分发方式 |
+|------|---------|---------|---------|
+| TUI Palette 命令 | `app.tsx` keymap（`appCommands()`） | keymap 拦截 `/` + `slashName` | `keymap.dispatchCommand()` |
+| 服务端命令 | `command/index.ts` `Command.Service` | `parseSlashCommand()` 匹配 | 发送到服务端 → LLM 处理模板 |
+
+`/init` 能通过 `commands/init.md` 覆盖，是因为它的"内置"在服务端命令注册表（`Command.Default.INIT`）。`/help` 的"内置"在 TUI 的 keymap 层（`app.tsx:794-802`，`slashName: "help"`），两套系统不互通——`commands/*.md` 只能覆盖服务端命令，碰不到 TUI 层。
+
+#### 实现
+
+`app.tsx` 中 `help.show` 命令的 `slashName` 根据 `Flag.WOPAL_SPACE` 条件化：
+
+```tsx
+slashName: Flag.WOPAL_SPACE ? undefined : "help",
+```
+
+| 模式 | `slashName` | `/help` 行为 |
+|------|-------------|-------------|
+| 非 WopalSpace | `"help"` | TUI keymap 拦截 → 打开 DialogHelp（保持不变） |
+| WopalSpace | `undefined` | keymap 不拦截 → 落入 `parseSlashCommand` → 服务端 `Command.Service.get("help")` → 使用 `commands/help.md` 模板 |
+
+**不影响的部分**：
+- `help.show` 命令仍在命令面板（Ctrl+P）中可用
+- 其余带 `slashName` 的 palette 命令（`/new`、`/exit`、`/status` 等）不受影响
+- 非 WopalSpace 模式行为零变化
 
 ---
 

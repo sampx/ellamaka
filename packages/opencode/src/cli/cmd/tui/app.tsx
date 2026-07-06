@@ -794,7 +794,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       {
         name: "help.show",
         title: "Help",
-        slashName: "help",
+        slashName: Flag.WOPAL_SPACE ? undefined : "help",
         run: () => {
           dialog.replace(() => <DialogHelp />)
         },
