@@ -41,7 +41,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | 修改 engine 主包行为后 |
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
-| ellamaka build | `bun packages/ellamaka/build.ts` | 本地构建 ellamaka 品牌 CLI 时 |
+| ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | 本地构建 ellamaka 品牌 CLI 时；用 `--web-ui app` 嵌入上游 UI，用 `--web-ui none` 不嵌入 UI |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 
 测试不能从 repo root 运行；root `test` script 是 guard。

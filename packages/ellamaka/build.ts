@@ -60,10 +60,28 @@ const baselineFlag = process.argv.includes("--baseline")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const webUiOptions = ["ellamaka-app", "app", "none"] as const
+type WebUiOption = (typeof webUiOptions)[number]
+const webUiIndex = process.argv.indexOf("--web-ui")
+const webUiArg = webUiIndex === -1 ? "ellamaka-app" : process.argv[webUiIndex + 1]
 
-const createEmbeddedWebUIBundle = async () => {
-  console.log(`Building Web UI to embed in the binary`)
-  const appDir = path.join(import.meta.dirname, "../ellamaka-app")
+if (!webUiOptions.includes(webUiArg as WebUiOption)) {
+  console.error(`Invalid --web-ui value: ${webUiArg ?? "<missing>"}`)
+  console.error(`Expected one of: ${webUiOptions.join(", ")}`)
+  process.exit(1)
+}
+
+if (skipEmbedWebUi && webUiIndex !== -1 && webUiArg !== "none") {
+  console.error(`--skip-embed-web-ui cannot be combined with --web-ui ${webUiArg}`)
+  console.error(`Use --web-ui none instead`)
+  process.exit(1)
+}
+
+const webUi = (skipEmbedWebUi ? "none" : webUiArg) as WebUiOption
+
+const createEmbeddedWebUIBundle = async (webUi: Exclude<WebUiOption, "none">) => {
+  console.log(`Building ${webUi} Web UI to embed in the binary`)
+  const appDir = path.join(import.meta.dirname, "..", webUi)
   const dist = path.join(appDir, "dist")
   await $`bun run --cwd ${appDir} build`
   const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
@@ -85,7 +103,7 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedFileMap = webUi === "none" ? null : await createEmbeddedWebUIBundle(webUi)
 
 const allTargets: {
   os: string

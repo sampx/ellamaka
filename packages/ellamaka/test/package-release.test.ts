@@ -55,8 +55,18 @@ describe("package-release.mjs", () => {
   })
 
   test("parses ellamaka archive names", () => {
-    expect(script.parseArchiveName("ellamaka-darwin-arm64.tar.gz")).toEqual({ os: "darwin", arch: "arm64", ext: "tar.gz" })
-    expect(script.parseArchiveName("ellamaka-windows-x64.zip")).toEqual({ os: "windows", arch: "x64", ext: "zip" })
+    expect(script.parseArchiveName("ellamaka-darwin-arm64.tar.gz")).toEqual({
+      os: "darwin",
+      arch: "arm64",
+      variant: null,
+      ext: "tar.gz",
+    })
+    expect(script.parseArchiveName("ellamaka-windows-x64.zip")).toEqual({
+      os: "windows",
+      arch: "x64",
+      variant: null,
+      ext: "zip",
+    })
   })
 
   test("generates manifest.json with R2 URLs", () => {

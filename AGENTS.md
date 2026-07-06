@@ -39,7 +39,7 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | opencode tests | `bun test --timeout 30000` from `packages/opencode` | After engine main package behavior changes |
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | After branding, logo, or detection changes |
-| ellamaka build | `bun packages/ellamaka/build.ts` | When building ellamaka-branded CLI locally |
+| ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | When building ellamaka-branded CLI locally; use `--web-ui app` for upstream UI or `--web-ui none` for no embedded UI |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
 
 Tests cannot run from repo root; the root `test` script is a guard.

@@ -18,6 +18,7 @@ Options:
   -h, --help              Show this help message
   --all                   Build all 12 platform targets
   --arch <value>          Filter targets: "primary", "x64", "x64,arm64", etc.
+  --web-ui <value>        Embedded web UI: "ellamaka-app", "app", or "none"
   --install               Install binary after build
   --install-dir <dir>     Custom install directory (default: ~/.wopal/bin)
   --skip-embed-web-ui     Skip embedding web UI
@@ -43,6 +44,14 @@ while [[ $# -gt 0 ]]; do
     --arch)
       MODE="arch"
       BUILD_ARGS+=("--arch" "$2")
+      shift 2
+      ;;
+    --web-ui)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "❌ --web-ui requires a value: ellamaka-app, app, or none"
+        exit 1
+      fi
+      BUILD_ARGS+=("--web-ui" "$2")
       shift 2
       ;;
     --install)

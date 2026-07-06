@@ -88,7 +88,7 @@ bun install
 BINARY_NAME=ellamaka \
 OPENCODE_VERSION=0.1.0 \
 OPENCODE_RELEASE=true \
-bun packages/ellamaka/build.ts --arch primary
+bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app
 ```
 
 `--arch primary` 裁剪为 4 个 P1 目标平台。过滤逻辑明确排除 baseline（`avx2: false`）、musl、arm64 等变体：
@@ -99,6 +99,8 @@ bun packages/ellamaka/build.ts --arch primary
 | darwin | x64 | `avx2 !== false` |
 | linux | x64 | `avx2 !== false`, `abi === undefined` |
 | windows | x64 | `avx2 !== false` |
+
+`--web-ui` 默认嵌入 `ellamaka-app`。手动发布可以选择 `app` 基线或 `none`。
 
 **Step 3 — 打包上传**：
 
@@ -149,7 +151,7 @@ BINARY_NAME=ellamaka OPENCODE_VERSION=0.1.0 OPENCODE_RELEASE=true \
 **本地开发快捷方式**：
 
 ```bash
-bun packages/ellamaka/build.ts
+bun packages/ellamaka/build.ts --web-ui ellamaka-app
 ```
 
 等价于 `BINARY_NAME=ellamaka OPENCODE_CHANNEL=main bun run build -- --p1`，版本号自动推导为 `0.0.0-main-{timestamp}`。
@@ -159,7 +161,7 @@ bun packages/ellamaka/build.ts
 | 检查项 | 命令 / 方法 |
 |---|---|
 | TypeScript 类型检查 | `bun typecheck` |
-| P1 构建成功（4 平台，无 baseline 变体） | `BINARY_NAME=ellamaka bun packages/ellamaka/build.ts --arch primary` |
+| P1 构建成功（4 平台，无 baseline 变体） | `BINARY_NAME=ellamaka bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app` |
 | 产物数正确 | `dist/` 下恰好 4 个目录：`ellamaka-darwin-arm64`、`ellamaka-darwin-x64`、`ellamaka-linux-x64`、`ellamaka-windows-x64`；无 `*-baseline` 目录 |
 | 版本号正确 | `./dist/ellamaka-darwin-arm64/bin/ellamaka --version` 输出 `ellamaka/x.y.z` |
 | manifest 生成 | `manifest.json` 包含 4 个 artifact，`url` 指向 `download.coursedao.com/ellamaka/v$VERSION/` |

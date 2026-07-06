@@ -14,12 +14,22 @@ function count(text: string, needle: string) {
 describe("publish-ellamaka workflow", () => {
   test("builds release binaries with release channel and archives the 4 P1 artifacts", () => {
     expect(workflow).toContain("OPENCODE_RELEASE: ${{ needs.version.outputs.release }}")
+    expect(workflow).toContain("bash scripts/build.sh --arch primary --web-ui \"${WEB_UI}\"")
     expect(workflow).toContain("ellamaka-darwin-arm64.tar.gz")
     expect(workflow).toContain("ellamaka-darwin-x64.tar.gz")
     expect(workflow).toContain("ellamaka-linux-x64.tar.gz")
     expect(workflow).toContain("ellamaka-windows-x64.zip")
     expect(workflow).not.toContain("dist/ellamaka-darwin-arm64.zip")
     expect(workflow).not.toContain("dist/ellamaka-darwin-x64.zip")
+  })
+
+  test("selects the embedded web UI during manual dispatch", () => {
+    expect(workflow).toContain("web_ui:")
+    expect(workflow).toContain("default: \"ellamaka-app\"")
+    expect(workflow).toContain("- ellamaka-app")
+    expect(workflow).toContain("- app")
+    expect(workflow).toContain("- none")
+    expect(workflow).toContain("WEB_UI: ${{ github.event.inputs.web_ui || 'ellamaka-app' }}")
   })
 
   test("generates metadata and uploads binaries to R2", () => {
@@ -51,17 +61,16 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).not.toContain("local_hash")
   })
 
-  test("purges CDN cache only for latest alias, not versioned paths", () => {
-    // Versioned paths are immutable by design — CDN caches them normally.
-    // Only the latest alias (short TTL, points to newest version) is purged
-    // so users discover new versions immediately.
-    expect(workflow).toContain("Purge Cloudflare CDN cache for latest alias")
+  test("purges CDN cache for latest alias and release artifacts", () => {
+    // Re-publishing the same release version requires evicting versioned
+    // metadata and artifact URLs, otherwise CDN edges can serve stale bytes.
+    expect(workflow).toContain("Purge Cloudflare CDN cache")
     expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_TOKEN")
     expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_ZONE")
     expect(workflow).toContain("ellamaka/latest/manifest.json")
+    expect(workflow).toContain("ellamaka/v${VERSION}/manifest.json")
+    expect(workflow).toContain("for (const a of m.artifacts) console.log(a.url)")
     expect(workflow).not.toContain("purge_everything")
-    // Must not purge versioned artifact URLs — that would defeat CDN caching
-    expect(workflow).not.toMatch(/purge.*v\$\{VERSION\}\/ellamaka-/)
   })
 
   test("creates 4 markdown-only release entries", () => {

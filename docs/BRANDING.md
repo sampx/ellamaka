@@ -136,12 +136,13 @@
 
 ### 内容
 
-**上游 `script/build.ts` 零侵入**。ellamaka 通过独立 copy 文件 `packages/ellamaka/build.ts` 实现 4 类定制：
+**上游 `script/build.ts` 零侵入**。ellamaka 通过独立 copy 文件 `packages/ellamaka/build.ts` 实现 5 类定制：
 
 1. **品牌注入**：`BINARY_NAME` 替换硬编码 `"opencode"`，`CHANNEL_RELEASE`/`CHANNEL_DEV` 替换上游渠道
 2. **平台裁剪**：`--arch primary` 仅构建 4 个主流目标（darwin-arm64/x64, linux-x64, win32-x64），排除 baseline/musl/arm64 变体
 3. **路径适配**：import 路径加 `../opencode/` 前缀，指向引擎源码
 4. **单平台构建**：`--single` 仅构建当前平台
+5. **Web UI 选择**：`--web-ui ellamaka-app|app|none` 选择嵌入 ellamaka UI、上游 UI 或不嵌入 UI
 
 ### 要求
 
@@ -501,7 +502,7 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 ### 合并后验证
 
 1. `bun typecheck`
-2. `bun packages/ellamaka/build.ts --arch primary`
+2. `bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app`
 3. `./dist/ellamaka-darwin-*/bin/ellamaka --version` 输出 `ellamaka/x.y.z`
 4. `./scripts/check-cleanup.sh` 通过
 
@@ -597,15 +598,15 @@ sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中�
 
 ### 15.3 构建嵌入
 
-`packages/ellamaka/build.ts` 中 `createEmbeddedWebUIBundle()` 的源目录切换:
+`packages/ellamaka/build.ts` 的 `--web-ui` 参数选择嵌入源:
 
-```ts
-const appDir = path.join(import.meta.dirname, "../app")
-// →
-const appDir = path.join(import.meta.dirname, "../ellamaka-app")
+```bash
+bun packages/ellamaka/build.ts --web-ui ellamaka-app  # ellamaka 官方 Web UI
+bun packages/ellamaka/build.ts --web-ui app           # 上游 app 基线
+bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
 ```
 
-嵌入机制不变:Vite build → dist/ → `opencode-web-ui.gen.ts` 编译入二进制。
+默认值是 `ellamaka-app`。嵌入机制不变:Vite build → dist/ → `opencode-web-ui.gen.ts` 编译入二进制。
 
 ### 15.4 上游同步策略
 

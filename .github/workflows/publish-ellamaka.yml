@@ -7,6 +7,15 @@ on:
         description: "Override version (optional)"
         required: false
         type: string
+      web_ui:
+        description: "Embedded web UI"
+        required: false
+        default: "ellamaka-app"
+        type: choice
+        options:
+          - ellamaka-app
+          - app
+          - none
   push:
     tags:
       - "v*"
@@ -64,8 +73,11 @@ jobs:
       - run: bun install
 
       - name: Build
-        run: bun packages/ellamaka/build.ts --arch primary
+        run: |
+          echo "Embedding web UI: ${WEB_UI}"
+          bash scripts/build.sh --arch primary --web-ui "${WEB_UI}"
         env:
+          WEB_UI: ${{ github.event.inputs.web_ui || 'ellamaka-app' }}
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
 
