@@ -519,3 +519,91 @@ TUI 首页 tips 系统和 sidebar 版本署名中不再出现 `OpenCode` 引用�
 ### 14.2 Sidebar 版本署名
 
 sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中的 `OpenCode` → `BINARY_TITLE`（`Ellamaka`）。通过 import `BINARY_TITLE` from `packages/ellamaka/branding` 注入。
+
+---
+
+## 15. ellamaka-app Web UI
+
+### 目的
+
+`packages/ellamaka-app` 是 ellamaka 的官方 web UI,通过 fork 上游
+`packages/app` 创建。承接从 `poc/web` 验证的产品形态(三栏 IDE 工作台),
+同时保持与上游 `opencode` 能力更新的同步能力。
+
+**设计决策与架构详见 `docs/DESIGN.md §8`。** 本节记录品牌化实施细节。
+
+### 15.1 包级差异(相对于上游 `packages/app`)
+
+| 维度 | 上游 `packages/app` | `packages/ellamaka-app` |
+|------|---------------------|-------------------------|
+| 包名 | `@opencode-ai/app` | `@opencode-ai/ellamaka-app` |
+| 功能范围 | 通用 AI Agent UI | WopalSpace 工作台 + 空间管理 |
+| 上游同步 | 跟随上游 | 选择性同步(§15.3) |
+| 构建嵌入 | opencode 二进制 | ellamaka 二进制 |
+
+### 15.2 文件级差异
+
+`ellamaka-app` 在 `app` 基线上的新增部分:
+
+| 文件 | 差异类型 | 说明 |
+|------|---------|------|
+| `package.json` | 修改 | `name`: `@opencode-ai/ellamaka-app`;"workspace:*" 依赖保持一致 |
+| `src/app.tsx` | 追加 | 注册 `/workbench` 路由和 ViewProvider |
+| `src/pages/workbench/*` | 新增 | 工作台页面(三栏布局) |
+| `src/components/workbench/*` | 新增 | 工作台专属组件 |
+| `src/hooks/workbench/*` | 新增 | 工作台业务 hooks(use-spaces / use-space-tabs / use-view) |
+| `src/context/view.tsx` | 新增 | 视图切换 Provider(TUI/Chat/Split) |
+| `AGENTS.md` | 新增 | 包级开发规则 |
+
+**非侵入原则**:尽量不修改 app/ 现有结构,定制通过新增文件和入口追加方式注入。
+
+### 15.3 构建嵌入
+
+`packages/ellamaka/build.ts` 中 `createEmbeddedWebUIBundle()` 的源目录切换:
+
+```ts
+const appDir = path.join(import.meta.dirname, "../app")
+// →
+const appDir = path.join(import.meta.dirname, "../ellamaka-app")
+```
+
+嵌入机制不变:Vite build → dist/ → `opencode-web-ui.gen.ts` 编译入二进制。
+
+### 15.4 上游同步策略
+
+详见 `docs/DESIGN.md §8.4`。`.gitattributes` 保护规则:
+
+| 目录 | 合并保护 | 说明 |
+|------|---------|------|
+| `packages/app/` | `merge=ours` | 上游对照基线,不接受上游覆盖 |
+| `packages/ellamaka-app/` | `merge=ours` | ellamaka 定制,不接受上游覆盖 |
+| `packages/ellamaka-app/` 新增目录 | 无保护 | 无上游对应,不参与合并冲突 |
+
+上游 `packages/app` 有更新时,通过人工或脚本 review → cherry-pick 到 `ellamaka-app`。
+
+### 15.5 与 poc/web 的关系
+
+| 阶段 | poc/web | ellamaka-app |
+|------|---------|--------------|
+| 现状 | 原型验证中 | 待创建 |
+| 验证完成后 | 保留作为探索参考 | 承接产品化代码和架构决策 |
+| 后续 | 能力逐步迁移,最终归档 | 唯一 web UI 产品形态 |
+
+### 15.6 实施范围
+
+**首次实施(基础设施跑通)**:
+1. 复制 `packages/app` → `packages/ellamaka-app`(排除 node_modules/dist/.turbo)
+2. 修改 `package.json` 元数据
+3. 在 `packages/ellamaka/build.ts` 切换嵌入源
+4. 添加最小 `/workbench` 路由占位
+5. 验证 build + serve 工作
+
+**后续迭代**:工作台 UI 完善 → 上游 app 同步 → 最终整合。
+
+### 15.7 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| `packages/ellamaka-app/AGENTS.md` | 包级开发规则 |
+| `docs/DESIGN.md §8` | ellamaka-app 架构设计 |
+| `poc/web/OVERVIEW.md` | PoC 验证结果 |

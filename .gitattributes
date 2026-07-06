@@ -8,3 +8,4 @@ AGENTS.zh-CN.md merge=ours
 scripts/** merge=ours
 docs/** merge=ours
 .husky/** merge=ours
+packages/ellamaka-app/** merge=ours
