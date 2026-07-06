@@ -4124,6 +4124,37 @@ export type GlobalUpgradeResponses = {
 
 export type GlobalUpgradeResponse = GlobalUpgradeResponses[keyof GlobalUpgradeResponses]
 
+export type WopalSpaceSpacesData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/wopal-space/spaces"
+}
+
+export type WopalSpaceSpacesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceSpacesError = WopalSpaceSpacesErrors[keyof WopalSpaceSpacesErrors]
+
+export type WopalSpaceSpacesResponses = {
+  /**
+   * Registered WopalSpace spaces
+   */
+  200: {
+    spaces: Array<{
+      name: string
+      path: string
+      type?: string
+    }>
+  }
+}
+
+export type WopalSpaceSpacesResponse = WopalSpaceSpacesResponses[keyof WopalSpaceSpacesResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never

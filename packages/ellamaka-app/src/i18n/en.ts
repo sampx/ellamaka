@@ -980,4 +980,18 @@ export const dict = {
   "workspace.reset.archived.one": "1 session will be archived.",
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
+
+  "workbench.view.tui": "TUI",
+  "workbench.view.chat": "Chat",
+  "workbench.view.split": "Split",
+  "workbench.view.tui.placeholder": "Terminal integration coming soon",
+  "workbench.view.chat.placeholder": "Chat interface coming soon",
+  "workbench.view.split.placeholder": "Split view coming soon",
+  "workbench.panel.spaces": "Spaces",
+  "workbench.panel.search": "Search",
+  "workbench.panel.history": "History",
+  "workbench.sidebar.spaces": "Spaces",
+  "workbench.sidebar.refresh": "Refresh spaces",
+  "workbench.sidebar.empty": "No WopalSpace registered. Use `wopal space add` to register one.",
+  "workbench.workspace.empty": "Select a space from the sidebar to open a tab.",
 }

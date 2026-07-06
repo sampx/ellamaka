@@ -274,6 +274,8 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WopalSpaceSpacesErrors,
+  WopalSpaceSpacesResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -595,6 +597,20 @@ export class Global extends HeyApiClient {
   private _config?: Config
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
+  }
+}
+
+export class WopalSpace extends HeyApiClient {
+  /**
+   * List WopalSpace spaces
+   *
+   * Read the `spaces` registry from ~/.wopal/config/settings.jsonc (managed by wopal-cli). Returns all registered WopalSpace spaces with name, path, and type.
+   */
+  public spaces<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<WopalSpaceSpacesResponses, WopalSpaceSpacesErrors, ThrowOnError>({
+      url: "/wopal-space/spaces",
+      ...options,
+    })
   }
 }
 
@@ -5042,6 +5058,11 @@ export class OpencodeClient extends HeyApiClient {
   private _global?: Global
   get global(): Global {
     return (this._global ??= new Global({ client: this.client }))
+  }
+
+  private _wopalSpace?: WopalSpace
+  get wopalSpace(): WopalSpace {
+    return (this._wopalSpace ??= new WopalSpace({ client: this.client }))
   }
 
   private _event?: Event

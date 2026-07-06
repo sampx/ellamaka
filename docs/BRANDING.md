@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-07 | Updated | 新增 §16 WopalSpace 空间注册表 API;§15.2/§15.6 更新为实际实施文件清单和进度 |
 | 2026-07-06 | Updated | §7.5 新增 WopalSpace 模式下 `/help` 命令覆盖机制：TUI palette 的 `help.show` 在空间模式下不注册 `slashName`，使 `/help` 回落到服务端命令系统，由 `commands/help.md` 接管 |
 | 2026-06-22 | Updated | §6.2 补充普通模式插件依赖安装机制说明（复用 `localPluginInstallDeps`） |
 | 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容；§7.1 TUI 配置统一；新增 §14 TUI tips 和 sidebar 品牌化：所有模式下移除 opencode 相关 tips，CLI 命令引用使用 BINARY_NAME，sidebar 版本署名使用 BINARY_TITLE |
@@ -585,10 +586,11 @@ sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中�
 |------|---------|------|
 | `package.json` | 修改 | `name`: `@opencode-ai/ellamaka-app`;"workspace:*" 依赖保持一致 |
 | `src/app.tsx` | 追加 | 注册 `/workbench` 路由和 ViewProvider |
-| `src/pages/workbench/*` | 新增 | 工作台页面(三栏布局) |
-| `src/components/workbench/*` | 新增 | 工作台专属组件 |
-| `src/hooks/workbench/*` | 新增 | 工作台业务 hooks(use-spaces / use-space-tabs / use-view) |
-| `src/context/view.tsx` | 新增 | 视图切换 Provider(TUI/Chat/Split) |
+| `src/pages/workbench/index.tsx` | 新增 | 工作台页面主布局(TopBar + ActivityBar + Sidebar + Workspace + StatusBar) |
+| `src/pages/workbench/view.tsx` | 新增 | 视图切换 Provider(TUI/Chat/Split),持久化到 localStorage |
+| `src/pages/workbench/space-store.tsx` | 新增 | 空间列表 + tab 状态 Provider,通过 SDK `client.wopalSpace.spaces()` 拉取空间(详见 §16) |
+| `src/pages/workbench/parts/*` | 新增 | 工作台部件:top-bar / activity-bar / sidebar / workspace / status-bar |
+| `src/i18n/{en,zh}.ts` | 追加 | 12 个 `workbench.*` 翻译键(视图名、面板、侧栏、空状态) |
 | `AGENTS.md` | 新增 | 包级开发规则 |
 
 **非侵入原则**:尽量不修改 app/ 现有结构,定制通过新增文件和入口追加方式注入。
@@ -627,14 +629,16 @@ const appDir = path.join(import.meta.dirname, "../ellamaka-app")
 
 ### 15.6 实施范围
 
-**首次实施(基础设施跑通)**:
+**已完成(基础设施跑通 → 空间侧栏接通)**:
 1. 复制 `packages/app` → `packages/ellamaka-app`(排除 node_modules/dist/.turbo)
 2. 修改 `package.json` 元数据
 3. 在 `packages/ellamaka/build.ts` 切换嵌入源
-4. 添加最小 `/workbench` 路由占位
-5. 验证 build + serve 工作
+4. 注册 `/workbench` 路由 + 三栏布局骨架(TopBar/ActivityBar/Sidebar/Workspace/StatusBar)
+5. 视图切换 Provider(TUI/Chat/Split)持久化到 localStorage
+6. 空间侧栏接通真实数据:通过 `wopalSpace.spaces` SDK 方法(后端 §16)拉取 `~/.wopal/config/settings.jsonc` 的 WopalSpace 注册表
+7. 点击空间在 workbench 内开 tab,不跳转官方 session 路由(符合 PoC 设计)
 
-**后续迭代**:工作台 UI 完善 → 上游 app 同步 → 最终整合。
+**后续迭代**:TUI 视图接入(复用 terminal.tsx) → Chat 视图接入(复用 session 组件) → Split 分屏 → 命令面板集成 → 上游 app 同步。
 
 ### 15.7 相关文档
 
@@ -643,3 +647,98 @@ const appDir = path.join(import.meta.dirname, "../ellamaka-app")
 | `packages/ellamaka-app/AGENTS.md` | 包级开发规则 |
 | `docs/DESIGN.md §8` | ellamaka-app 架构设计 |
 | `poc/web/OVERVIEW.md` | PoC 验证结果 |
+
+---
+
+## 16. WopalSpace 空间注册表 API
+
+### 目的
+
+ellamaka-app workbench 侧栏需要展示用户通过 `wopal-cli` 注册的 WopalSpace 空间列表。wopal CLI 把空间注册表写入 `~/.wopal/config/settings.jsonc` 的 `spaces` 字段。ellamaka 后端暴露一个只读 HTTP endpoint,让 web UI 通过 SDK 拉取这份注册表。
+
+数据源是 wopal CLI 管理的 settings.jsonc,不是 ellamaka 自己的 project 持久化层。ellamaka 只读不写这份注册表。
+
+### 16.1 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/wopal-space/spaces` | 返回 `~/.wopal/config/settings.jsonc` 中所有注册的 WopalSpace 空间 |
+
+响应体 schema:
+
+```ts
+{
+  spaces: Array<{
+    name: string      // 空间名(注册表 key)
+    path: string      // 空间根目录绝对路径
+    type?: string     // 空间类型:"coding" | "common" 等(wopal CLI 定义)
+  }>
+}
+```
+
+### 16.2 实现位置
+
+ellamaka 定制遵循"新文件优先 + 最小注入点"原则:
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` | 新增 | `WopalSpaceApi` HttpApiGroup 定义,endpoint `GET /wopal-space/spaces` |
+| `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` | 新增 | handler 实现:读 `Global.Path.config/settings.jsonc` → 解析 JSONC → 提取 `spaces` 字段 |
+| `packages/opencode/src/server/routes/instance/httpapi/api.ts` | 注入(1 行) | `RootHttpApi.addHttpApi(WopalSpaceApi)` |
+| `packages/opencode/src/server/routes/instance/httpapi/server.ts` | 注入(2 行) | import + `rootApiRoutes` Layer.provide 添加 `wopalSpaceHandlers` |
+
+### 16.3 路由层级
+
+`WopalSpaceApi` 挂在 `RootHttpApi`(与 `ControlApi`/`GlobalApi` 同级),**不挂** `InstanceHttpApi`。原因:
+
+- WopalSpace 注册表是**全局**的,与具体 instance directory/workspace 无关
+- 不需要 `InstanceContextMiddleware` / `WorkspaceRoutingMiddleware`(那些 middleware 依赖 request-scoped directory)
+- 只需 `Authorization` middleware(继承 RootHttpApi 的 auth 声明)
+
+### 16.4 数据读取
+
+handler 直接读文件系统,不走 ellamaka config schema:
+
+```ts
+const SPACES_FILE = path.join(Global.Path.config, "settings.jsonc")
+const text = yield* fs.readFileStringSafe(SPACES_FILE).pipe(Effect.catch(() => Effect.succeed(undefined)))
+if (!text) return []
+const raw = ConfigParse.jsonc(text, SPACES_FILE)
+const spaces = (raw as { spaces?: Record<string, { path: string; type?: string }> })?.spaces
+```
+
+- 用 `ConfigParse.jsonc` 解析(支持 JSONC 注释,与 ellamaka config 加载一致)
+- 文件不存在或解析失败时返回空数组,不抛错
+- `Global.Path.config` 是 `~/.wopal/config`(受 `WOPAL_HOME` 环境变量覆盖,与 ellamaka 路径体系 §2 一致)
+
+### 16.5 SDK 自动生成
+
+ellamaka 的 SDK 由 `packages/sdk/js/script/build.ts` 从后端 OpenAPI spec 自动生成。新增 `WopalSpaceApi` 后:
+
+- `bun dev generate` 重新生成 openapi.json(含 `/wopal-space/spaces` operation)
+- `@hey-api/openapi-ts` 生成 `WopalSpace` 客户端类,挂在 `OpencodeClient` 上
+- 前端调用:`sdk.client.wopalSpace.spaces()`(连字符 operationId `wopal-space.spaces` 转驼峰为 `wopalSpace`)
+
+**生成产物**(自动,无需手写):
+
+| 文件 | 变更 |
+|------|------|
+| `packages/sdk/js/src/v2/gen/sdk.gen.ts` | 新增 `WopalSpace` 类 + `OpencodeClient.wopalSpace` getter |
+| `packages/sdk/js/src/v2/gen/types.gen.ts` | 新增 `WopalSpaceSpacesResponses` / `WopalSpaceSpacesErrors` 类型 |
+
+### 16.6 上游隔离
+
+`wopal-space` group/handler 是 ellamaka 定制,上游 opencode 不存在。上游合并时:
+
+- 新文件不受影响(无上游对应,不参与合并冲突)
+- `api.ts` 和 `server.ts` 是注入点,各 1-2 行追加,合并时需人工确认保留
+
+如果上游未来也加同类型 endpoint,需在合并时评估是否替换为本实现。
+
+### 16.7 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| `docs/DESIGN.md §8` | ellamaka-app 架构(workbench 侧栏数据源契约) |
+| `docs/BRANDING.md §2` | 路径体系(`Global.Path.config` = `~/.wopal/config`) |
+| `packages/opencode/src/server/routes/instance/httpapi/AGENTS.md` | HttpApi 路由模式规范 |
