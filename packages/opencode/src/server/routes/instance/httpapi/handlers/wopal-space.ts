@@ -1,11 +1,17 @@
 import path from "path"
+import { execSync } from "child_process"
+import { existsSync, readdirSync, statSync } from "fs"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { ConfigParse } from "@/config/parse"
+import { Session } from "@/session/session"
+import { Project } from "@/project/project"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
+import { InvalidRequestError } from "../errors"
 import type { WopalSpaceEntry } from "../groups/wopal-space"
+import { realpathSafe, groupSessionsBySpace } from "./wopal-space-grouping"
 
 const SPACES_FILE = path.join(Global.Path.config, "settings.jsonc")
 
@@ -23,20 +29,161 @@ const readSpaces = Effect.fn("WopalSpaceHttpApi.readSpaces")(function* () {
   }))
 })
 
+const isGitRepo = (dir: string): boolean => {
+  try {
+    execSync("git -C " + dir + " rev-parse --show-toplevel", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const scanDirectories = (root: string, maxDepth: number): string[] => {
+  const results: string[] = []
+  const walk = (dir: string, depth: number) => {
+    if (depth > maxDepth) return
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const name of entries) {
+      if (name.startsWith(".") || name === "node_modules") continue
+      const childPath = path.join(dir, name)
+      try {
+        if (!statSync(childPath).isDirectory()) continue
+      } catch {
+        continue
+      }
+      results.push(childPath)
+      walk(childPath, depth + 1)
+    }
+  }
+  walk(root, 0)
+  return results
+}
+
 export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space", (handlers) =>
   Effect.gen(function* () {
+    const sessionSvc = yield* Session.Service
+    const projectSvc = yield* Project.Service
+
     const spaces = Effect.fn("WopalSpaceHttpApi.spaces")(function* () {
       const list = yield* readSpaces()
       return { spaces: list }
     })
 
-    const spaceOverview = () => Effect.die("not implemented")
+    const spaceOverview = Effect.fn("WopalSpaceHttpApi.spaceOverview")(function* (ctx: {
+      query: { spaceName: string }
+    }) {
+      const list = yield* readSpaces()
+      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
+      const spaceRealPath = realpathSafe(entry.path)
+      const sessions = yield* sessionSvc.list()
+      const projects = yield* projectSvc.list()
+      const { projects: groupedProjects, spaceRootSessions } = groupSessionsBySpace(
+        spaceRealPath,
+        sessions,
+        projects,
+      )
+      return {
+        spaceName: ctx.query.spaceName,
+        spacePath: entry.path,
+        spaceRootSessionCount: spaceRootSessions.length,
+        spaceRootSessions,
+        projects: groupedProjects,
+      }
+    })
 
-    const nonSpaceOverview = () => Effect.die("not implemented")
+    const nonSpaceOverview = Effect.fn("WopalSpaceHttpApi.nonSpaceOverview")(function* () {
+      const list = yield* readSpaces()
+      const spaceRealPaths = new Set(list.map((s) => realpathSafe(s.path)))
+      const sessions = yield* sessionSvc.list()
+      const active = sessions.filter((s) => s.time.archived == null)
+      const orphan = active.filter((s) => {
+        for (const sp of spaceRealPaths) {
+          if (s.directory === sp || s.directory.startsWith(sp + "/")) return false
+        }
+        return true
+      })
+      const dirMap = new Map<string, typeof orphan>()
+      for (const s of orphan) {
+        const existing = dirMap.get(s.directory) || []
+        existing.push(s)
+        dirMap.set(s.directory, existing)
+      }
+      const orphanDirectories = [...dirMap.entries()].map(([p, s]) => ({
+        path: p,
+        sessionCount: s.length,
+        sessions: s.map((s) => ({
+          id: s.id,
+          title: s.title,
+          directory: s.directory,
+          marker: "" as const,
+          agent: s.agent,
+          timeCreated: s.time.created,
+          timeUpdated: s.time.updated,
+          timeArchived: s.time.archived,
+        })),
+      }))
+      return { orphanDirectories }
+    })
 
-    const searchDirectories = () => Effect.die("not implemented")
+    const searchDirectories = Effect.fn("WopalSpaceHttpApi.searchDirectories")(function* (ctx: {
+      query: { spaceName: string; query: string }
+    }) {
+      const list = yield* readSpaces()
+      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
+      const spaceRealPath = realpathSafe(entry.path)
+      if (!ctx.query.query) return { directories: [] }
+      const allDirs = scanDirectories(spaceRealPath, 3)
+      const q = ctx.query.query.toLowerCase()
+      const matched = allDirs.filter((d) => path.basename(d).toLowerCase().includes(q))
+      const limited = matched.slice(0, 50)
+      const directories = limited.map((d) => ({
+        path: d,
+        displayPath: d,
+        isGitRepo: isGitRepo(d),
+      }))
+      return { directories }
+    })
 
-    const recentDirectories = () => Effect.die("not implemented")
+    const recentDirectories = Effect.fn("WopalSpaceHttpApi.recentDirectories")(function* (ctx: {
+      query: { spaceName: string }
+    }) {
+      const list = yield* readSpaces()
+      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
+      const spaceRealPath = realpathSafe(entry.path)
+      const sessions = yield* sessionSvc.list()
+      const active = sessions.filter(
+        (s) =>
+          s.time.archived == null &&
+          (s.directory === spaceRealPath || s.directory.startsWith(spaceRealPath + "/")),
+      )
+      const dirLatest = new Map<string, number>()
+      for (const s of active) {
+        const prev = dirLatest.get(s.directory)
+        if (prev === undefined || s.time.created > prev) {
+          dirLatest.set(s.directory, s.time.created)
+        }
+      }
+      const sorted = [...dirLatest.entries()]
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 20)
+      const directories = sorted.map(([p]) => ({
+        path: p,
+        displayPath: p,
+        isGitRepo: isGitRepo(p),
+      }))
+      return { directories }
+    })
 
     return handlers
       .handle("spaces", spaces)
