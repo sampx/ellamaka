@@ -209,7 +209,9 @@ type WorkbenchPanel = {
   id: string
   mode: "tui" | "chat"
   directory: string
-  width: number
+  width: number            // flex ratio (positive number), panels share width proportionally
+  terminalOpen: boolean    // whether the panel-internal terminal is open
+  terminalHeight: number   // terminal area height ratio (0~1), default 0.35
 }
 
 type SpaceWorkbenchState = {
@@ -244,6 +246,66 @@ The UI stays consistent:
 
 Users never switch into a separate conceptual mode.
 They only compose panels.
+
+### 6.4 Panel width constraints
+
+| Constraint | Value | Explanation |
+|------|-----|------|
+| Minimum panel width | `280px` | Below this TUI characters wrap severely, Chat messages become unreadable |
+| Maximum panel count | 3 | Existing constraint, unchanged |
+| Viewport width check | `280 × panel_count + sidebar_width` | Validate viewport can accommodate before adding a panel; block if insufficient |
+| Resize handle | `4px` vertical divider between panels | Highlights on hover, cursor changes to `col-resize` |
+| Double-click handle | Equalize all panel widths | Quick reset to even layout |
+
+The `width` field semantics are **flex ratio** (positive number). For example, three panels with widths `[1, 2, 1]` yield a 25%:50%:25% split. Resize translates pixel deltas into proportional adjustments.
+
+### 6.5 Panel-internal terminal
+
+Each panel (TUI or Chat) can open a **panel-level embedded terminal** via the panel menu.
+
+When open, the panel splits vertically into two regions:
+
+```
+┌─────────────────────────┐
+│ Panel Header (mode/dir) │  fixed height
+├─────────────────────────┤
+│                         │
+│   TUI or Chat content   │  flex: 1 - terminalHeight
+│                         │
+├── resize handle ────────┤  4px horizontal drag bar
+│   Panel Terminal        │  terminalHeight (default 35%)
+│   (independent PTY)     │
+└─────────────────────────┘
+```
+
+#### Rules
+
+| Action | Trigger | Behavior |
+|------|---------|------|
+| Open terminal | Panel menu → "Open Terminal" | Creates independent PTY instance, sets `terminalOpen: true`, height defaults to 35% |
+| Close terminal | Terminal area titlebar × button | Destroys PTY, sets `terminalOpen: false` |
+| Adjust height | Drag horizontal resize handle | Updates `terminalHeight`, persisted |
+| Minimum height constraint | — | Terminal area minimum `120px`, main content area minimum `200px` |
+
+#### Technical implementation
+
+Panel terminal reuses the existing `Terminal` component (`src/components/terminal.tsx`). The component is self-contained:
+
+- Automatically connects to an independent PTY instance via WebSocket
+- Uses ghostty-web WASM terminal, multiple instances on the same page without conflict
+- `FitAddon` automatically adapts to container size changes
+- Session isolation per panel via `TerminalProvider`'s `scope` parameter
+
+No modifications needed to the `Terminal` component itself or the backend PTY system.
+
+#### Relationship with the bottom terminal dock
+
+Panel-internal terminals are **panel-level**, following the panel's `directory` context.
+The bottom terminal dock is **space-level**, independent of panel composition.
+
+They cover different scenarios:
+- Panel terminal: execute related commands while chatting (e.g. `git status`, `npm test`)
+- Bottom dock: quick global operations (e.g. `wopal` commands)
 
 ## 7. TUI panel
 
@@ -290,13 +352,15 @@ The implementation can begin with one chat session per directory per space and e
 Workbench includes a bottom dock above the statusbar.
 It reuses the existing official web terminal capability.
 
-This dock is separate from panel TUI.
+This dock is separate from both panel TUI and panel-internal terminals. It is a **space-level** quick terminal.
 
 Its job is:
 
 - provide a familiar quick terminal
 - support quick commands without disturbing panel composition
 - remain available when the panel workspace is chat-heavy
+
+**Priority**: Panel-internal terminal (§6.5) ships first, bottom dock iterates later. The two coexist without conflict.
 
 ## 10. Settings
 
@@ -405,22 +469,25 @@ It creates the right container for the real TUI and Chat integrations that follo
 - The workbench settings entry lives at the bottom of the space rail
 - Titlebar and statusbar visibility are already user-toggleable and persist across refreshes
 
-### 14.2 Not implemented yet
+### 14.2 Not yet implemented
 
-- The TUI panel is still a placeholder surface
-- The Chat panel is still a placeholder surface
-- The PoC terminal flow has not been migrated into the panel model yet
-- The PoC chat flow has not been migrated into the panel model yet
-- Panel directory selection UI is not wired yet
-- Panel resize handles are not wired yet
-- The bottom dock does not use the real terminal yet
+- TUI panels are still placeholder UI
+- Chat panels are still placeholder UI
+- PoC terminal flow not yet migrated into panel model
+- PoC chat flow not yet migrated into panel model
+- Panel directory selection UI not yet wired
+- Panel width resize handles not yet wired
+- Panel width constraints (minimum 280px, viewport check) not yet implemented
+- Panel-internal vertical split terminal (§6.5) not yet implemented
+- Bottom dock not yet using real terminal
 
-### 14.3 Resume point for the next session
+### 14.3 Continuation point for next session
 
-Resume from real content integration rather than more shell work.
+Continue from real content integration, not more shell work.
 
-1. Migrate the PoC terminal flow into the TUI panel
-2. Migrate the PoC chat flow into the Chat panel
-3. Wire per-panel directory targeting
-4. Wire the bottom dock to the real terminal implementation
-5. Add resize handles after real TUI and Chat are in place
+1. Migrate PoC terminal flow to TUI panels
+2. Migrate PoC chat flow to Chat panels
+3. Panel width constraints + resize handles
+4. Panel-internal vertical split terminal (panel menu → Open Terminal)
+5. Wire per-panel directory targeting
+6. Wire bottom dock to real terminal implementation
