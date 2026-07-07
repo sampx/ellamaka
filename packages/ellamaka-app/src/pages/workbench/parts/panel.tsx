@@ -17,6 +17,7 @@ import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
   panel: WorkbenchPanel
+  spaceName: string
   isActive: boolean
   panelCount: number
   onActivate: () => void
@@ -190,6 +191,48 @@ export function Panel(props: {
     wb.removePanel(spacePath, props.panel.id)
   }
 
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const sessionId = e.dataTransfer?.getData("text/sessionId")
+    const dragSpaceName = e.dataTransfer?.getData("text/spaceName")
+    if (!sessionId || !dragSpaceName) return
+
+    const spacePath = props.panel.directory || "/"
+
+    // Cross-space check
+    if (dragSpaceName !== props.spaceName) {
+      alert("会话不属于当前空间,请切换到对应空间 tab")
+      return
+    }
+
+    // Reject bound Panel
+    if (props.panel.slotState === "bound") {
+      alert("请先关闭当前会话或选择空 Panel")
+      return
+    }
+
+    // Only empty or open Panel can accept drop
+    if (props.panel.slotState !== "empty" && props.panel.slotState !== "open") return
+
+    const session = sessionStore.getSession(sessionId)
+    if (!session) {
+      alert("会话不存在")
+      return
+    }
+
+    // If session is already bound to another panel, unbind first
+    if (session.boundPanelId && session.boundPanelId !== props.panel.id) {
+      if (!confirm(`已在 Panel 中运行,是否移动到此 Panel?`)) return
+      sessionStore.unbindPanel(sessionId)
+    }
+
+    // Bind session to this panel
+    sessionStore.bindPanel(sessionId, props.panel.id)
+    wb.bindSessionToPanel(spacePath, props.panel.id, sessionId)
+    wb.setPanelViewMode(spacePath, props.panel.id, session.type)
+  }
+
   function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
     const session = () => sessionStore.getSession(props.panel.boundSessionId ?? "")
     const sessionTitle = () => session()?.title ?? "会话"
@@ -287,6 +330,8 @@ export function Panel(props: {
       }`}
       style={{ flex: props.panel.width }}
       onClick={props.onActivate}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
       data-panel-id={props.panel.id}
     >
       {/* Panel Header */}
