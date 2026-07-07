@@ -3,6 +3,7 @@ import { MemoryRouter, createMemoryHistory, Route } from "@solidjs/router"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Terminal } from "@/components/terminal"
 import { SessionContextTab } from "@/components/session"
+import { PanelChat } from "./parts/panel-chat"
 import type { WorkbenchPanel } from "./view"
 import type { Session } from "./session-store"
 
@@ -160,12 +161,17 @@ registerView({
   requiresSession: true,
   showContext: true,
   availableInOpen: false,
-  render: () => (
-    <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
-      <IconV2 name="edit" class="size-6 opacity-40" />
-      <span class="text-12-regular">Chat view - coming in Task 9</span>
-    </div>
-  ),
+  render: (ctx) => {
+    if (!ctx.session) {
+      return (
+        <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
+          <IconV2 name="edit" class="size-6 opacity-40" />
+          <span class="text-12-regular">No session bound</span>
+        </div>
+      )
+    }
+    return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} sdk={ctx.sdk} />
+  },
 })
 
 // ── Context View ──────────────────────────────────────────
