@@ -494,7 +494,7 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 **Done**:
 任务产出：SDK 重新生成，4 个新端点类型可用
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
