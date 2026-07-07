@@ -1,6 +1,6 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, batch } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view"
@@ -30,6 +30,73 @@ export function Workspace() {
 
   const panels = createMemo(() => space()?.panels ?? [])
   const activePanelID = createMemo(() => space()?.activePanelID ?? panels()[0]?.id ?? "")
+
+  let containerRef: HTMLDivElement | undefined
+
+  const handlePanelResizeStart = (e: MouseEvent, leftIndex: number) => {
+    e.preventDefault()
+    const container = containerRef
+    if (!container) return
+
+    const panelElements = Array.from(container.querySelectorAll("[data-panel-id]")) as HTMLElement[]
+    const leftPanelEl = panelElements[leftIndex]
+    const rightPanelEl = panelElements[leftIndex + 1]
+    if (!leftPanelEl || !rightPanelEl) return
+
+    const leftPanelID = leftPanelEl.getAttribute("data-panel-id")!
+    const rightPanelID = rightPanelEl.getAttribute("data-panel-id")!
+
+    const startX = e.clientX
+    const leftStartWidth = leftPanelEl.getBoundingClientRect().width
+    const rightStartWidth = rightPanelEl.getBoundingClientRect().width
+    const totalWidth = leftStartWidth + rightStartWidth
+
+    const currentPanels = panels()
+    const leftStartFlex = currentPanels[leftIndex].width
+    const rightStartFlex = currentPanels[leftIndex + 1].width
+    const flexSum = leftStartFlex + rightStartFlex
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX
+
+      let newLeftWidth = leftStartWidth + deltaX
+      let newRightWidth = rightStartWidth - deltaX
+
+      if (newLeftWidth < 280) {
+        newLeftWidth = 280
+        newRightWidth = totalWidth - 280
+      } else if (newRightWidth < 280) {
+        newRightWidth = 280
+        newLeftWidth = totalWidth - 280
+      }
+
+      const newLeftFlex = (newLeftWidth / totalWidth) * flexSum
+      const newRightFlex = (newRightWidth / totalWidth) * flexSum
+
+      const path = activePath()
+      if (path) {
+        batch(() => {
+          wb.setPanelWidth(path, leftPanelID, newLeftFlex)
+          wb.setPanelWidth(path, rightPanelID, newRightFlex)
+        })
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", onMouseUp)
+    }
+
+    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mouseup", onMouseUp)
+  }
+
+  const handlePanelResizeReset = () => {
+    const path = activePath()
+    if (path) {
+      wb.resetPanelWidths(path)
+    }
+  }
 
   return (
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-v2-background-bg-base">
@@ -62,7 +129,7 @@ export function Workspace() {
         }}
       />
 
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden" ref={containerRef}>
         <Show
           when={panels().length > 0}
           fallback={
@@ -72,26 +139,36 @@ export function Workspace() {
           }
         >
           <For each={panels()}>
-            {(panel) => (
-              <SDKProvider directory={panel.directory}>
-                <Panel
-                  panel={panel}
-                  isActive={panel.id === activePanelID()}
-                  panelCount={panels().length}
-                  onActivate={() => {
-                    const path = activePath()
-                    if (path) wb.setActivePanel(path, panel.id)
-                  }}
-                  onModeChange={(mode) => {
-                    const path = activePath()
-                    if (path) wb.setPanelMode(path, panel.id, mode)
-                  }}
-                  onRemove={() => {
-                    const path = activePath()
-                    if (path) wb.removePanel(path, panel.id)
-                  }}
-                />
-              </SDKProvider>
+            {(panel, index) => (
+              <>
+                <SDKProvider directory={panel.directory}>
+                  <Panel
+                    panel={panel}
+                    isActive={panel.id === activePanelID()}
+                    panelCount={panels().length}
+                    onActivate={() => {
+                      const path = activePath()
+                      if (path) wb.setActivePanel(path, panel.id)
+                    }}
+                    onModeChange={(mode) => {
+                      const path = activePath()
+                      if (path) wb.setPanelMode(path, panel.id, mode)
+                    }}
+                    onRemove={() => {
+                      const path = activePath()
+                      if (path) wb.removePanel(path, panel.id)
+                    }}
+                  />
+                </SDKProvider>
+                <Show when={index() < panels().length - 1}>
+                  <div
+                    class="w-1 hover:w-1.5 z-20 cursor-col-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"
+                    onMouseDown={(e) => handlePanelResizeStart(e, index())}
+                    onDblClick={handlePanelResizeReset}
+                    title="双击恢复等宽"
+                  />
+                </Show>
+              </>
             )}
           </For>
         </Show>

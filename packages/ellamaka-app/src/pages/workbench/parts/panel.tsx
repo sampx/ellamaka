@@ -19,7 +19,8 @@ export function Panel(props: {
   const language = useLanguage()
   const t = (k: string) => language.t(k)
   const sdk = useSDK()
-  const { setPanelPtyId, setPanelSplitTerminal } = useWorkbenchState()
+  const wb = useWorkbenchState()
+  const { setPanelPtyId, setPanelSplitTerminal } = wb
   const [menuOpen, setMenuOpen] = createSignal(false)
 
   const modeLabel = () => {
@@ -120,6 +121,50 @@ export function Panel(props: {
     }
   }
 
+  let panelContainerRef: HTMLDivElement | undefined
+
+  const splitHeight = () => props.panel.splitHeight ?? 180
+
+  const handleSplitResizeStart = (e: MouseEvent) => {
+    e.preventDefault()
+    const container = panelContainerRef
+    if (!container) return
+
+    const startY = e.clientY
+    const startHeight = splitHeight()
+    const totalHeight = container.getBoundingClientRect().height
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY
+      let newHeight = startHeight - deltaY
+
+      // Constraints:
+      // 1. Bottom split terminal min-height: 120px
+      if (newHeight < 120) {
+        newHeight = 120
+      }
+
+      // 2. Top area min-height: 200px
+      const maxHeight = Math.max(120, totalHeight - 4 - 200)
+      if (newHeight > maxHeight) {
+        newHeight = maxHeight
+      }
+
+      const spacePath = props.panel.directory || "/"
+      if (spacePath) {
+        wb.setPanelSplitHeight(spacePath, props.panel.id, newHeight)
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", onMouseUp)
+    }
+
+    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mouseup", onMouseUp)
+  }
+
   return (
     <div
       class={`flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 ${
@@ -127,6 +172,7 @@ export function Panel(props: {
       }`}
       style={{ flex: props.panel.width }}
       onClick={props.onActivate}
+      data-panel-id={props.panel.id}
     >
       {/* Panel Header */}
       <div
@@ -210,8 +256,11 @@ export function Panel(props: {
       </div>
 
       {/* Main Mode View Area */}
-      <div class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
-        <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
+      <div
+        class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep"
+        ref={panelContainerRef}
+      >
+        <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
           <Show when={props.panel.mode === "tui"}>
             <Show
               when={props.panel.tuiPtyId}
@@ -269,9 +318,21 @@ export function Panel(props: {
           </Show>
         </div>
 
+        {/* Split Divider Handle */}
+        <Show when={props.panel.splitTerminal}>
+          <div
+            class="h-1 hover:h-1.5 z-20 cursor-row-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"
+            onMouseDown={handleSplitResizeStart}
+            title="拖动调整终端高度"
+          />
+        </Show>
+
         {/* Lower Split Terminal Area */}
         <Show when={props.panel.splitTerminal}>
-          <div class="flex-1 min-h-[140px] max-h-[50%] min-w-0 flex flex-col border-t border-v2-border-border-base relative overflow-hidden">
+          <div
+            class="min-w-0 flex flex-col relative overflow-hidden bg-v2-background-bg-deep flex-shrink-0"
+            style={{ height: `${splitHeight()}px` }}
+          >
             <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
               <span class="uppercase tracking-wider">Terminal (Split)</span>
               <button

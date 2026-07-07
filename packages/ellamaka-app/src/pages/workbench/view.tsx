@@ -15,6 +15,7 @@ export type WorkbenchPanel = {
   tuiPtyId?: string
   termPtyId?: string
   splitPtyId?: string
+  splitHeight?: number
 }
 
 export type SpaceWorkbenchState = {
@@ -189,6 +190,45 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setStore("display", key, value)
     }
 
+    function setPanelWidth(path: string, id: string, width: number) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === id,
+        produce((panel) => {
+          panel.width = width
+        }),
+      )
+    }
+
+    function setPanelSplitHeight(path: string, id: string, height: number) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === id,
+        produce((panel) => {
+          panel.splitHeight = height
+        }),
+      )
+    }
+
+    function resetPanelWidths(path: string) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        () => true,
+        produce((panel) => {
+          panel.width = 1
+        }),
+      )
+    }
+
     function clearSpacePtyIds(path: string) {
       ensureSpace(path)
       setStore(
@@ -219,6 +259,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       toggleTerminalDock,
       setDisplay,
       clearSpacePtyIds,
+      setPanelWidth,
+      setPanelSplitHeight,
+      resetPanelWidths,
     }
   },
 })
