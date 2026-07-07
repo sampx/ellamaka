@@ -310,6 +310,7 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 3. **session 归组**：
    - 遍历所有 session（不限 project_id，用 session.directory）
+   - **过滤已归档会话**：`session.timeArchived != null` 的 session 跳过，不进入任何归组（左侧树不展示归档会话）
    - 对每个 session，匹配其 directory：
      - directory === spaceRealPath → **始终归 spaceRootSessions**（不管空间根是否 git repo，空间根会话不进任何 project）
      - directory 落在某 project root 下（`dir === root || dir.startsWith(root + "/")`）：

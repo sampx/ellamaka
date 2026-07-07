@@ -824,7 +824,7 @@ Space
 
 #### 数据来源
 
-- **session**：`Session.Service.list()` 获取所有 session，用 `session.directory` 归组（不用 `session.project_id`）
+- **session**：`Session.Service.list()` 获取所有 session，用 `session.directory` 归组（不用 `session.project_id`）。**已归档会话（`timeArchived != null`）过滤掉**，不进入任何归组，左侧树不展示
 - **project name**：`Project.Service.list()` 仅用于取 project.name（opencode project 表记录），归组逻辑不依赖它
 - **一级 git repo**：扫描 `spaceRealPath` 下一层目录（不含 spaceRealPath 本身），`git -C <child> rev-parse --show-toplevel` 检测是否 git repo
 - **worktree**：对每个 project root 执行 `git worktree list --porcelain`，关联独立 worktree 回主项目
