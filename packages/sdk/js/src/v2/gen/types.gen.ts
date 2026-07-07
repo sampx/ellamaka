@@ -4155,6 +4155,206 @@ export type WopalSpaceSpacesResponses = {
 
 export type WopalSpaceSpacesResponse = WopalSpaceSpacesResponses[keyof WopalSpaceSpacesResponses]
 
+export type WopalSpaceSpaceOverviewData = {
+  body?: never
+  path?: never
+  query: {
+    spaceName: string
+  }
+  url: "/wopal-space/space-overview"
+}
+
+export type WopalSpaceSpaceOverviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceSpaceOverviewError = WopalSpaceSpaceOverviewErrors[keyof WopalSpaceSpaceOverviewErrors]
+
+export type WopalSpaceSpaceOverviewResponses = {
+  /**
+   * Space overview with grouped sessions
+   */
+  200: {
+    spaceName: string
+    spacePath: string
+    spaceRootSessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    spaceRootSessions: Array<{
+      id: string
+      title: string
+      directory: string
+      marker: "" | "directory" | "worktree"
+      agent?: string
+      timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      timeArchived?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    projects: Array<{
+      path: string
+      displayPath: string
+      name?: string
+      vcs?: "git"
+      sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      rootSessions: Array<{
+        id: string
+        title: string
+        directory: string
+        marker: "" | "directory" | "worktree"
+        agent?: string
+        timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        timeArchived?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+      directories: Array<{
+        path: string
+        sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        sessions: Array<{
+          id: string
+          title: string
+          directory: string
+          marker: "" | "directory" | "worktree"
+          agent?: string
+          timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          timeArchived?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }>
+      }>
+      worktrees: Array<{
+        worktreePath: string
+        branch?: string
+        stale: boolean
+        sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        sessions: Array<{
+          id: string
+          title: string
+          directory: string
+          marker: "" | "directory" | "worktree"
+          agent?: string
+          timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          timeArchived?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }>
+      }>
+    }>
+  }
+}
+
+export type WopalSpaceSpaceOverviewResponse = WopalSpaceSpaceOverviewResponses[keyof WopalSpaceSpaceOverviewResponses]
+
+export type WopalSpaceNonSpaceOverviewData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/wopal-space/non-space-overview"
+}
+
+export type WopalSpaceNonSpaceOverviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceNonSpaceOverviewError = WopalSpaceNonSpaceOverviewErrors[keyof WopalSpaceNonSpaceOverviewErrors]
+
+export type WopalSpaceNonSpaceOverviewResponses = {
+  /**
+   * Non-space sessions grouped by directory
+   */
+  200: {
+    orphanDirectories: Array<{
+      path: string
+      sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      sessions: Array<{
+        id: string
+        title: string
+        directory: string
+        marker: "" | "directory" | "worktree"
+        agent?: string
+        timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        timeArchived?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+    }>
+  }
+}
+
+export type WopalSpaceNonSpaceOverviewResponse =
+  WopalSpaceNonSpaceOverviewResponses[keyof WopalSpaceNonSpaceOverviewResponses]
+
+export type WopalSpaceSearchDirectoriesData = {
+  body?: never
+  path?: never
+  query: {
+    spaceName: string
+    query: string
+  }
+  url: "/wopal-space/search-directories"
+}
+
+export type WopalSpaceSearchDirectoriesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceSearchDirectoriesError =
+  WopalSpaceSearchDirectoriesErrors[keyof WopalSpaceSearchDirectoriesErrors]
+
+export type WopalSpaceSearchDirectoriesResponses = {
+  /**
+   * Matching directories in the space
+   */
+  200: {
+    directories: Array<{
+      path: string
+      displayPath: string
+      isGitRepo: boolean
+    }>
+  }
+}
+
+export type WopalSpaceSearchDirectoriesResponse =
+  WopalSpaceSearchDirectoriesResponses[keyof WopalSpaceSearchDirectoriesResponses]
+
+export type WopalSpaceRecentDirectoriesData = {
+  body?: never
+  path?: never
+  query: {
+    spaceName: string
+  }
+  url: "/wopal-space/recent-directories"
+}
+
+export type WopalSpaceRecentDirectoriesErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceRecentDirectoriesError =
+  WopalSpaceRecentDirectoriesErrors[keyof WopalSpaceRecentDirectoriesErrors]
+
+export type WopalSpaceRecentDirectoriesResponses = {
+  /**
+   * Recently used directories in the space
+   */
+  200: {
+    directories: Array<{
+      path: string
+      displayPath: string
+      isGitRepo: boolean
+    }>
+  }
+}
+
+export type WopalSpaceRecentDirectoriesResponse =
+  WopalSpaceRecentDirectoriesResponses[keyof WopalSpaceRecentDirectoriesResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never

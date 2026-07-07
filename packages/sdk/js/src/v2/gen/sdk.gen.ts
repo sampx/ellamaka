@@ -274,6 +274,14 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WopalSpaceNonSpaceOverviewErrors,
+  WopalSpaceNonSpaceOverviewResponses,
+  WopalSpaceRecentDirectoriesErrors,
+  WopalSpaceRecentDirectoriesResponses,
+  WopalSpaceSearchDirectoriesErrors,
+  WopalSpaceSearchDirectoriesResponses,
+  WopalSpaceSpaceOverviewErrors,
+  WopalSpaceSpaceOverviewResponses,
   WopalSpaceSpacesErrors,
   WopalSpaceSpacesResponses,
   WorktreeCreateErrors,
@@ -610,6 +618,99 @@ export class WopalSpace extends HeyApiClient {
     return (options?.client ?? this.client).get<WopalSpaceSpacesResponses, WopalSpaceSpacesErrors, ThrowOnError>({
       url: "/wopal-space/spaces",
       ...options,
+    })
+  }
+
+  /**
+   * Get space overview
+   *
+   * Return the complete Workbench grouping structure for a space: projects with root sessions, subdirectory groups, and worktree groups, plus space-root sessions.
+   */
+  public spaceOverview<ThrowOnError extends boolean = false>(
+    parameters: {
+      spaceName: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "spaceName" }] }])
+    return (options?.client ?? this.client).get<
+      WopalSpaceSpaceOverviewResponses,
+      WopalSpaceSpaceOverviewErrors,
+      ThrowOnError
+    >({
+      url: "/wopal-space/space-overview",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get non-space overview
+   *
+   * Return sessions that do not belong to any registered WopalSpace, grouped by directory.
+   */
+  public nonSpaceOverview<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      WopalSpaceNonSpaceOverviewResponses,
+      WopalSpaceNonSpaceOverviewErrors,
+      ThrowOnError
+    >({ url: "/wopal-space/non-space-overview", ...options })
+  }
+
+  /**
+   * Search directories in a space
+   *
+   * Fuzzy-match subdirectories within a space by name. Returns up to 50 results with git-repo detection.
+   */
+  public searchDirectories<ThrowOnError extends boolean = false>(
+    parameters: {
+      spaceName: string
+      query: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "spaceName" },
+            { in: "query", key: "query" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      WopalSpaceSearchDirectoriesResponses,
+      WopalSpaceSearchDirectoriesErrors,
+      ThrowOnError
+    >({
+      url: "/wopal-space/search-directories",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get recent directories
+   *
+   * Return directories within a space that have had recent sessions, ordered by most recent first (up to 20).
+   */
+  public recentDirectories<ThrowOnError extends boolean = false>(
+    parameters: {
+      spaceName: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "spaceName" }] }])
+    return (options?.client ?? this.client).get<
+      WopalSpaceRecentDirectoriesResponses,
+      WopalSpaceRecentDirectoriesErrors,
+      ThrowOnError
+    >({
+      url: "/wopal-space/recent-directories",
+      ...options,
+      ...params,
     })
   }
 }
