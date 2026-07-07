@@ -2,6 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { batch, createMemo } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
+import { useServerSDK } from "@/context/server-sdk"
 
 export type PanelMode = "tui" | "chat" | "terminal"
 
@@ -63,6 +64,7 @@ const PERSISTED_DEFAULTS: PersistedWorkbench = {
 export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = createSimpleContext({
   name: "WorkbenchState",
   init: () => {
+    const sdk = useServerSDK()
     const [store, setStore] = persisted(
       Persist.global("workbench.v2", ["workbench", "workbench.v1"]),
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
@@ -93,6 +95,20 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     function removePanel(path: string, id: string) {
       const space = store.spaces[path]
       if (!space || space.panels.length <= 1) return
+
+      const panel = space.panels.find((p) => p.id === id)
+      if (panel) {
+        if (panel.tuiPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
+        }
+        if (panel.termPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(console.error)
+        }
+        if (panel.splitPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(console.error)
+        }
+      }
+
       batch(() => {
         setStore(
           "spaces",
@@ -173,8 +189,24 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setStore("display", key, value)
     }
 
+    function clearSpacePtyIds(path: string) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        () => true,
+        produce((panel) => {
+          panel.tuiPtyId = undefined
+          panel.termPtyId = undefined
+          panel.splitPtyId = undefined
+        }),
+      )
+    }
+
     return {
       display,
+      get spaces() { return store.spaces },
       spaceState,
       ensureSpace,
       addPanel,
@@ -186,6 +218,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setPanelDirectory,
       toggleTerminalDock,
       setDisplay,
+      clearSpacePtyIds,
     }
   },
 })

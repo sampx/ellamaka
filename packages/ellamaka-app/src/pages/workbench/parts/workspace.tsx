@@ -6,11 +6,13 @@ import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view"
 import { Panel } from "./panel"
 import { SDKProvider } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
 
 export function Workspace() {
   const store = useSpaceStore()
   const wb = useWorkbenchState()
   const language = useLanguage()
+  const sdk = useServerSDK()
   const t = (k: string) => language.t(k)
 
   const activePath = createMemo(() => store.activeTab()?.path ?? "")
@@ -39,6 +41,24 @@ export function Workspace() {
           if (!path) return
           const id = wb.addPanel(path)
           if (id) wb.setActivePanel(path, id)
+        }}
+        onCloseTab={(name, path) => {
+          const space = wb.spaceState(path)
+          if (space) {
+            space.panels.forEach((panel) => {
+              if (panel.tuiPtyId) {
+                sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
+              }
+              if (panel.termPtyId) {
+                sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(console.error)
+              }
+              if (panel.splitPtyId) {
+                sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(console.error)
+              }
+            })
+            wb.clearSpacePtyIds(path)
+          }
+          store.closeTab(name)
         }}
       />
 
@@ -84,6 +104,7 @@ function StageHeader(props: {
   activePath: string
   panelCount: number
   onAddPanel: () => void
+  onCloseTab: (name: string, path: string) => void
 }) {
   const store = useSpaceStore()
   const language = useLanguage()
@@ -108,7 +129,7 @@ function StageHeader(props: {
                 class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
                 onClick={(e) => {
                   e.stopPropagation()
-                  store.closeTab(tab.name)
+                  props.onCloseTab(tab.name, tab.path)
                 }}
               >
                 <IconV2 name="xmark-small" />

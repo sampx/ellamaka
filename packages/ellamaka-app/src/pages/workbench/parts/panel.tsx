@@ -39,23 +39,7 @@ export function Panel(props: {
 
     if (!spacePath) return
 
-    if (mode === "tui" && !props.panel.tuiPtyId) {
-      sdk.client.pty
-        .create({
-          command: "/Users/sam/.wopal/bin/ellamaka",
-          cwd: directory,
-          title: `ellamaka tui (${props.panel.id})`,
-        })
-        .then((res) => {
-          const ptyId = res.data?.id
-          if (ptyId) {
-            setPanelPtyId(spacePath, props.panel.id, "tui", ptyId)
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to create TUI pty:", err)
-        })
-    } else if (mode === "terminal" && !props.panel.termPtyId) {
+    if (mode === "terminal" && !props.panel.termPtyId) {
       sdk.client.pty
         .create({
           cwd: directory,
@@ -99,18 +83,27 @@ export function Panel(props: {
     }
   })
 
-  // Destroy all created PTY sessions on panel destruction to avoid background leaks
-  onCleanup(() => {
-    if (props.panel.tuiPtyId) {
-      sdk.client.pty.remove({ ptyID: props.panel.tuiPtyId }).catch(console.error)
-    }
-    if (props.panel.termPtyId) {
-      sdk.client.pty.remove({ ptyID: props.panel.termPtyId }).catch(console.error)
-    }
-    if (props.panel.splitPtyId) {
-      sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
-    }
-  })
+  const startTui = () => {
+    const directory = props.panel.directory
+    const spacePath = props.panel.directory || "/"
+    if (!spacePath) return
+
+    sdk.client.pty
+      .create({
+        command: "/Users/sam/.wopal/bin/ellamaka",
+        cwd: directory,
+        title: `ellamaka tui (${props.panel.id})`,
+      })
+      .then((res) => {
+        const ptyId = res.data?.id
+        if (ptyId) {
+          setPanelPtyId(spacePath, props.panel.id, "tui", ptyId)
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to create TUI pty:", err)
+      })
+  }
 
   const handleToggleSplit = () => {
     const spacePath = props.panel.directory || "/"
@@ -223,9 +216,18 @@ export function Panel(props: {
             <Show
               when={props.panel.tuiPtyId}
               fallback={
-                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-                  <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-                  <span class="text-11-regular">Starting ellamaka TUI...</span>
+                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-4 px-4 text-center bg-v2-background-bg-base">
+                  <IconV2 name="terminal" class="size-8 opacity-40 text-v2-text-text-muted" />
+                  <span class="text-13-medium text-v2-text-text-base">
+                    是否在 <code class="bg-v2-background-bg-deep px-1.5 py-0.5 rounded text-12-regular select-all break-all">{props.panel.directory}</code> 目录打开 ellamaka tui 界面？
+                  </span>
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 rounded-md bg-v2-overlay-simple-overlay-hover hover:bg-v2-overlay-simple-overlay-hover/80 text-v2-text-text-base text-12-medium border border-v2-border-border-base cursor-pointer transition-colors"
+                    onClick={startTui}
+                  >
+                    确认打开
+                  </button>
                 </div>
               }
             >
