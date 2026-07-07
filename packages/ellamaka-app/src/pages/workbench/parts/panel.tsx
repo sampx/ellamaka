@@ -122,7 +122,7 @@ export function Panel(props: {
 
   return (
     <div
-      class={`flex min-w-0 flex-col overflow-hidden border-r border-v2-border-border-base last:border-r-0 ${
+      class={`flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 ${
         props.isActive ? "" : "opacity-90"
       }`}
       style={{ flex: props.panel.width }}
