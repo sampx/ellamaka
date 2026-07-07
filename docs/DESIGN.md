@@ -202,11 +202,10 @@ wopal start
 
 | 文档 | 引用目的 |
 |------|----------|
-| `./BRANDING.md` | 品牌化定制唯一真相源——逐文件注入变更、模式、行数 |
+| `./BRANDING.md` | 品牌化定制唯一真相源— |
+| `./WORKBENCH-UI-REDESIGN.md` | ellamaka 自定义工作台 app 设计 |
 | `./DISTRIBUTION.md` | release、artifact、安装契约 |
-| `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | ellamaka 在产品分层中的定位 |
 | `../../wopal-cli/docs/DESIGN.md` | wopal-cli 如何消费 ellamaka release |
 | `UPSTREAM-MERGE-LOG.md` | 裁剪边界、合并策略、验证经验 |
-| `AGENTS.md` | 仓库级开发规则 |
 | `packages/opencode/AGENTS.md` | engine package 内部规则 |
 | `packages/ellamaka-app/AGENTS.md` | ellamaka 官方 web UI 包级开发规则 |
