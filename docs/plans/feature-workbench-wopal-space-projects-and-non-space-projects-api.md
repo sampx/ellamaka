@@ -282,7 +282,7 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 **Done**:
 任务产出：wopal-space API 组新增 4 个端点定义 + 完整 Workbench 归组 schema
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
@@ -357,7 +357,7 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 **Done**:
 任务产出：归组工具模块，含 git worktree list、session 归组、stale 检测、realpath
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
@@ -421,7 +421,7 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 **Done**:
 任务产出：4 个 handler 实现，组合归组工具 + Session.Service + Project.Service
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
