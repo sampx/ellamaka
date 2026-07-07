@@ -6,6 +6,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Button } from "@opencode-ai/ui/button"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { useTheme } from "@opencode-ai/ui/theme/context"
+import { ButtonV2 } from "@opencode-ai/ui/v2/components/button-v2.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 
@@ -29,6 +30,7 @@ import {
   SESSION_TABS_REMOVED_EVENT,
   type SessionTabsRemovedDetail,
 } from "@/components/titlebar-session-events"
+import { rememberOfficialRoute } from "@/pages/workbench/surface-route"
 
 type TauriDesktopWindow = {
   startDragging?: () => Promise<void>
@@ -344,6 +346,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               })
             })
 
+            createEffect(() => {
+              rememberOfficialRoute(path())
+            })
+
             const projects = createMemo(() => layout.projects.list())
             const projectByID = createMemo(
               () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
@@ -475,6 +481,14 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   icon={<IconV2 name="grid-plus" />}
                   state={!!homeMatch() ? "pressed" : undefined}
                 />
+                <ButtonV2
+                  variant="ghost"
+                  size="normal"
+                  class="h-8 shrink-0 px-2 text-v2-text-text-muted"
+                  onClick={() => navigate("/workbench")}
+                >
+                  {language.t("workbench.entry")}
+                </ButtonV2>
 
                 <div class="flex min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden">
                   <div class="flex min-w-0 flex-row items-center gap-1.5 overflow-hidden">

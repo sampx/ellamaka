@@ -9,7 +9,7 @@ import { Font } from "@opencode-ai/ui/font"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Navigate, Route, Router } from "@solidjs/router"
+import { type BaseRouterProps, Navigate, Route, Router, useLocation } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { Effect } from "effect"
 import {
@@ -51,7 +51,7 @@ import { ServersProvider } from "./context/servers"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
-const Workbench = lazy(() => import("@/pages/workbench"))
+const WorkbenchPage = lazy(() => import("@/pages/workbench"))
 
 const SessionRoute = Object.assign(
   () => (
@@ -120,7 +120,7 @@ function AppShellProviders(props: ParentProps) {
             <ModelsProvider>
               <CommandProvider>
                 <HighlightsProvider>
-                  <Layout>{props.children}</Layout>
+                  {props.children}
                 </HighlightsProvider>
               </CommandProvider>
             </ModelsProvider>
@@ -144,12 +144,15 @@ function SessionProviders(props: ParentProps) {
 }
 
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
+  const location = useLocation()
+  const isWorkbench = () => location.pathname.startsWith("/workbench")
+
   return (
     <AppShellProviders>
-      {/*<Suspense fallback={<Loading />}>*/}
       {props.appChildren}
-      {props.children}
-      {/*</Suspense>*/}
+      <Show when={isWorkbench()} fallback={<Layout>{props.children}</Layout>}>
+        {props.children}
+      </Show>
     </AppShellProviders>
   )
 }
@@ -328,7 +331,7 @@ export function AppInterface(props: {
                     root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
                   >
                     <Route path="/" component={HomeRoute} />
-                    <Route path="/workbench" component={Workbench} />
+                    <Route path="/workbench" component={WorkbenchPage} />
                     <Route path="/:dir" component={DirectoryLayout}>
                       <Route path="/" component={() => <Navigate href="session" />} />
                       <Route path="/session/:id?" component={SessionRoute} />

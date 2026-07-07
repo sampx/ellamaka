@@ -9,17 +9,11 @@ export type WopalSpace = {
   type?: string
 }
 
-export type SpaceTab = {
-  name: string
-  path: string
-  type?: string
-}
-
 export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimpleContext({
   name: "SpaceStore",
   init: () => {
     const sdk = useServerSDK()
-    const [tabs, setTabs] = createStore<SpaceTab[]>([])
+    const [tabs, setTabs] = createStore<WopalSpace[]>([])
     const [activeName, setActiveName] = createSignal<string | undefined>(undefined)
 
     const [spacesResource, spacesActions] = createResource(async () => {
