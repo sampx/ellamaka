@@ -1,16 +1,12 @@
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { ButtonV2 } from "@opencode-ai/ui/v2/components/button-v2.jsx"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { resolveOfficialRoute } from "../surface-route"
 
 export function WorkbenchTitlebar() {
   const store = useSpaceStore()
-  const command = useCommand()
   const language = useLanguage()
   const navigate = useNavigate()
   const t = (k: string) => language.t(k)
@@ -30,14 +26,6 @@ export function WorkbenchTitlebar() {
       </Show>
 
       <div class="grow" />
-
-      <IconButtonV2
-        variant="ghost-muted"
-        size="small"
-        icon={<IconV2 name="search" />}
-        aria-label={t("command.palette")}
-        onClick={() => command.show()}
-      />
 
       <ButtonV2
         variant="ghost"

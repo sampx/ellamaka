@@ -27,23 +27,17 @@ export function Workspace() {
 
   const panels = createMemo(() => space()?.panels ?? [])
   const activePanelID = createMemo(() => space()?.activePanelID ?? panels()[0]?.id ?? "")
-  const terminalDockOpen = createMemo(() => space()?.terminalDockOpen ?? false)
 
   return (
     <main class="flex min-w-0 flex-1 flex-col bg-v2-background-bg-base">
       <StageHeader
         activePath={activePath()}
         panelCount={panels().length}
-        terminalDockOpen={terminalDockOpen()}
         onAddPanel={() => {
           const path = activePath()
           if (!path) return
           const id = wb.addPanel(path)
           if (id) wb.setActivePanel(path, id)
-        }}
-        onToggleTerminalDock={() => {
-          const path = activePath()
-          if (path) wb.toggleTerminalDock(path)
         }}
       />
 
@@ -52,10 +46,7 @@ export function Workspace() {
           when={panels().length > 0}
           fallback={
             <div class="flex flex-1 items-center justify-center text-v2-text-text-muted">
-              <div class="flex flex-col items-center gap-3">
-                <IconV2 name="grid-plus" class="size-8 opacity-40" />
-                <span class="text-12-regular">{t("workbench.workspace.empty")}</span>
-              </div>
+              <span class="text-12-regular">{t("workbench.workspace.empty")}</span>
             </div>
           }
         >
@@ -89,9 +80,7 @@ export function Workspace() {
 function StageHeader(props: {
   activePath: string
   panelCount: number
-  terminalDockOpen: boolean
   onAddPanel: () => void
-  onToggleTerminalDock: () => void
 }) {
   const store = useSpaceStore()
   const language = useLanguage()
@@ -136,14 +125,6 @@ function StageHeader(props: {
           aria-label={t("workbench.panel.add")}
           disabled={props.panelCount >= 3}
           onClick={props.onAddPanel}
-        />
-        <IconButtonV2
-          variant="ghost-muted"
-          size="small"
-          icon={<IconV2 name="terminal" />}
-          aria-label={t("workbench.terminal.toggle")}
-          classList={{ "text-v2-icon-icon-accent": props.terminalDockOpen }}
-          onClick={props.onToggleTerminalDock}
         />
       </Show>
     </div>
