@@ -310,7 +310,7 @@ WorkbenchPanel 增加 slotState（empty/open/bound）、boundSessionId、viewMod
 
 **Done**:
 任务产出：Panel 状态模型重构，三态 empty/open/bound + Session 引用 + 兼容迁移
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
