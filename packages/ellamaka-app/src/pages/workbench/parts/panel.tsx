@@ -1,11 +1,15 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { MenuV2 } from "@opencode-ai/ui/v2/components/menu-v2.jsx"
+import { Button } from "@opencode-ai/ui/button"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Show, createSignal, createEffect, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view"
+import { useSessionStore } from "../session-store"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -21,6 +25,8 @@ export function Panel(props: {
   const sdk = useSDK()
   const wb = useWorkbenchState()
   const { setPanelPtyId, setPanelSplitTerminal } = wb
+  const sessionStore = useSessionStore()
+  const dialog = useDialog()
   const [menuOpen, setMenuOpen] = createSignal(false)
 
   const modeLabel = () => {
@@ -28,9 +34,15 @@ export function Panel(props: {
     if (props.panel.mode === "chat") return "CHAT"
     return "TERMINAL"
   }
-  const canRemove = () => props.panelCount > 1
-  const removeLabel = () =>
-    props.panel.mode === "tui" ? t("workbench.panel.forceClose") : t("workbench.panel.remove")
+  const canRemove = () => {
+    if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
+    return true
+  }
+  const removeLabel = () => {
+    if (props.panel.slotState === "bound") return "关闭会话"
+    if (props.panel.slotState === "open") return "关闭终端"
+    return "移除面板"
+  }
 
   // Effect to manage active main PTY lifecycle based on the current mode
   createEffect(() => {
@@ -119,6 +131,87 @@ export function Panel(props: {
     } else {
       setPanelSplitTerminal(spacePath, props.panel.id, true)
     }
+  }
+
+  const handleClose = () => {
+    const spacePath = props.panel.directory || "/"
+    if (!spacePath) return
+
+    const slotState = props.panel.slotState
+
+    // bound Panel: show confirmation dialog
+    if (slotState === "bound") {
+      dialog.show(() => <DialogClosePanel panel={props.panel} spacePath={spacePath} panelCount={props.panelCount} />)
+      return
+    }
+
+    // open Panel: kill PTYs and remove
+    if (slotState === "open") {
+      if (props.panel.termPtyId) {
+        sdk.client.pty.remove({ ptyID: props.panel.termPtyId }).catch(console.error)
+      }
+      if (props.panel.splitPtyId) {
+        sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
+      }
+      if (props.panelCount <= 1) {
+        wb.setPanelSlotState(spacePath, props.panel.id, "empty")
+        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
+        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
+        return
+      }
+      wb.removePanel(spacePath, props.panel.id)
+      return
+    }
+
+    // empty Panel: direct remove
+    if (props.panelCount <= 1) return
+    wb.removePanel(spacePath, props.panel.id)
+  }
+
+  function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
+    const session = () => sessionStore.getSession(props.panel.boundSessionId ?? "")
+    const sessionTitle = () => session()?.title ?? "会话"
+
+    const handleConfirm = () => {
+      const spacePath = props.spacePath
+      const sessionId = props.panel.boundSessionId
+      if (sessionId) sessionStore.unbindPanel(sessionId)
+
+      if (props.panelCount <= 1) {
+        // Last panel: clear to empty instead of removing
+        wb.setPanelSlotState(spacePath, props.panel.id, "empty")
+        wb.setPanelPtyId(spacePath, props.panel.id, "tui", undefined)
+        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
+        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
+        dialog.close()
+        return
+      }
+      wb.removePanel(spacePath, props.panel.id)
+      dialog.close()
+    }
+
+    return (
+      <Dialog title="关闭会话" fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              确定要关闭会话 "{sessionTitle()}" 吗？
+            </span>
+            <span class="text-12-regular text-text-muted">
+              关闭后会话将解绑，可在左侧会话列表中恢复
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              取消
+            </Button>
+            <Button variant="primary" size="large" onClick={handleConfirm}>
+              确认关闭
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
   }
 
   let panelContainerRef: HTMLDivElement | undefined
@@ -247,7 +340,7 @@ export function Panel(props: {
               <MenuV2.Item onSelect={handleToggleSplit}>
                 {props.panel.splitTerminal ? "关闭内嵌终端" : "垂直拆分终端"}
               </MenuV2.Item>
-              <MenuV2.Item disabled={!canRemove()} onSelect={() => props.onRemove()}>
+              <MenuV2.Item disabled={!canRemove()} onSelect={handleClose}>
                 {removeLabel()}
               </MenuV2.Item>
             </MenuV2.Content>

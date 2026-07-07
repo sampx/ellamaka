@@ -131,7 +131,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
       const panel = space.panels.find((p) => p.id === id)
       if (panel) {
-        if (panel.tuiPtyId) {
+        // Skip tuiPtyId for bound panels — let TUI process exit naturally
+        if (panel.tuiPtyId && panel.slotState !== "bound") {
           sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
         }
         if (panel.termPtyId) {
