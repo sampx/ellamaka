@@ -812,20 +812,21 @@ ellamaka 的 SDK 由 `packages/sdk/js/script/build.ts` 从后端 OpenAPI spec �
 
 ```
 Space
-└── Project（空间下的一级 git repo，含空间根本身如果是 git repo）
-    ├── 会话（directory = 项目根，无标记）
-    ├── 📁子目录
-    │   └── 会话（directory = 子目录，标记"目录"）
-    └── 工作树
-        └── 会话（directory = .worktrees/xxx，标记"工作树"，归主项目）
-            worktree 已删除/状态不正常 → 会话不展示
+├── 会话（directory = 空间根，挂 Space 下，不进任何 project）
+├── Project（空间下的一级 git repo，不含空间根本身）
+│   ├── 会话（directory = 项目根，无标记）
+│   ├── 📁子目录
+│   │   └── 会话（directory = 子目录，标记"目录"）
+│   └── 工作树
+│       └── 会话（directory = .worktrees/xxx，标记"工作树"，归主项目）
+│           worktree 已删除/状态不正常 → 会话不展示
 ```
 
 #### 数据来源
 
 - **session**：`Session.Service.list()` 获取所有 session，用 `session.directory` 归组（不用 `session.project_id`）
 - **project name**：`Project.Service.list()` 仅用于取 project.name（opencode project 表记录），归组逻辑不依赖它
-- **一级 git repo**：扫描 `spaceRealPath` 下一层目录，`git -C <child> rev-parse --show-toplevel` 检测是否 git repo
+- **一级 git repo**：扫描 `spaceRealPath` 下一层目录（不含 spaceRealPath 本身），`git -C <child> rev-parse --show-toplevel` 检测是否 git repo
 - **worktree**：对每个 project root 执行 `git worktree list --porcelain`，关联独立 worktree 回主项目
 
 #### 软链接 realpath 处理

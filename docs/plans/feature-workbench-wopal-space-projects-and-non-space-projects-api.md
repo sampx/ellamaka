@@ -32,13 +32,15 @@ opencode 的 project 模型用 git worktree 根向上查找，非 git 目录归�
 
 ```
 Space
-└── Project（空间下的一级 git repo，含空间根本身如果是 git repo）
-    ├── 会话（directory = 项目根，无标记）
-    ├── 📁子目录
-    │   └── 会话（directory = 子目录，标记"目录"）
-    └── 工作树
-        └── 会话（directory = .worktrees/xxx，标记"工作树"，归主项目）
-            worktree 已删除/状态不正常 → 会话不展示
+├── 会话（directory = 空间根，挂 Space 下，不进任何 project）
+├── Project（空间下的一级 git repo，不含空间根本身）
+│   ├── 会话（directory = 项目根）          → 无标记
+│   ├── 📁子目录
+│   │   └── 会话（directory = 子目录）       → 标记（目录）
+│   └── 工作树
+│       └── 会话（directory = .worktrees/xxx）
+│           └── 通过 git worktree list 关联到主项目  → 标记（工作树）
+│               worktree 已删除/不正常 → 不展示
 ```
 
 ### Research Findings
@@ -294,11 +296,11 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 
 1. **扫描一级 git repo**：
    - 读 spaceRealPath 下一层目录列表（`fs.readdir`）
+   - **跳过 spaceRealPath 本身**（不把空间根作为 project，即使它是 git repo）
    - 对每个子目录 `git -C <child> rev-parse --show-toplevel`：
      - 成功 → 是 git repo，toplevel 是 repo 根
      - 失败 → 非 git repo，跳过
    - 去重（多个子目录可能同属一个 repo 根）
-   - 空间根本身也是 git repo 时，`git -C <spaceRealPath> rev-parse --show-toplevel` 成功 → 空间根也是 project
 
 2. **worktree 关联回主项目**：
    - 对每个 project（一级 git repo），执行 `git -C <repoRoot> worktree list --porcelain`
@@ -309,14 +311,14 @@ const WorkbenchRecentDirectoriesResponse = Schema.Struct({
 3. **session 归组**：
    - 遍历所有 session（不限 project_id，用 session.directory）
    - 对每个 session，匹配其 directory：
-     - directory === spaceRealPath 且空间根不是 git repo → 归 spaceRootSessions（兜底）
+     - directory === spaceRealPath → **始终归 spaceRootSessions**（不管空间根是否 git repo，空间根会话不进任何 project）
      - directory 落在某 project root 下（`dir === root || dir.startsWith(root + "/")`）：
        - dir === root → rootSessions，marker=""
        - dir 是子目录 → directories 分组，marker="directory"
      - directory 落在某 worktree 下：
        - dir === worktreePath → 该 worktree 的 sessions，marker="worktree"
        - dir 是 worktree 子目录 → 该 worktree 的 directories 分组（标记仍是 "worktree"）
-     - 不匹配任何 project/worktree 但落在 spaceRealPath 下 → 归 spaceRootSessions 或动态子目录分组
+     - directory 落在 spaceRealPath 下但不匹配任何 project/worktree → 归 spaceRootSessions（兜底）
 
 4. **stale 检测**：
    - `fs.existsSync(worktreePath)` 为 false → stale=true
