@@ -12,6 +12,7 @@ import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
 import { listViews } from "../view-registry"
 import { ContextPopup } from "./context-popup"
+import { PanelLoader } from "./panel-loader"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -427,7 +428,11 @@ export function Panel(props: {
         ref={panelContainerRef}
       >
         <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
-          <Show when={props.panel.mode === "tui"}>
+          <Show when={props.panel.slotState === "empty"}>
+            <PanelLoader panel={props.panel} />
+          </Show>
+
+          <Show when={props.panel.mode === "tui"}> 
             <Show
               when={props.panel.tuiPtyId}
               fallback={
