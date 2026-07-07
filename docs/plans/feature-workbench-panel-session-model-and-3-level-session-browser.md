@@ -548,7 +548,7 @@ Context 指示器复用官方 `session-context-usage.tsx` 的圆环组件，填�
 
 **Done**:
 任务产出：Context 指示器圆环 + Popup，复用官方数据，与 Context 视图互补
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
