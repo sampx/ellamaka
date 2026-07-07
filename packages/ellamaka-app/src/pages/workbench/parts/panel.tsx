@@ -11,6 +11,7 @@ import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
 import { listViews } from "../view-registry"
+import { ContextPopup } from "./context-popup"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -295,57 +296,64 @@ export function Panel(props: {
             : "bg-v2-background-bg-base border-v2-border-border-base"
         }`}
       >
-        <span class="text-10-medium text-v2-text-text-muted uppercase [letter-spacing:1px]">{modeLabel()}</span>
+        {/* Status dot */}
+        <span
+          class="size-2 rounded-full shrink-0"
+          classList={{
+            "bg-green-500": props.panel.slotState === "bound",
+            "bg-blue-400": props.panel.slotState === "open",
+            "bg-v2-text-text-faint": props.panel.slotState === "empty",
+          }}
+        />
 
-        <span class="text-10-regular text-v2-text-text-faint truncate max-w-40 ml-1">
-          {props.panel.directory}
+        {/* Title */}
+        <span class="text-10-regular text-v2-text-text-faint truncate max-w-40 ml-0.5">
+          {title()}
         </span>
 
         <div class="grow" />
 
-        <button
-          type="button"
-          class={`px-1.5 py-0.5 rounded text-10-regular transition-colors cursor-pointer ${
-            props.panel.mode === "tui"
-              ? "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base"
-              : "text-v2-text-text-muted hover:text-v2-text-text-base"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onModeChange("tui")
+        {/* View switch buttons */}
+        <For each={headerViews()}>
+          {(view) => {
+            const active = props.panel.viewMode === view.id
+            const spacePath = props.panel.directory || "/"
+            return (
+              <button
+                type="button"
+                class={`px-1.5 py-0.5 rounded text-10-regular transition-colors ${
+                  view.disabled
+                    ? "text-v2-text-text-faint cursor-not-allowed"
+                    : "cursor-pointer"
+                } ${
+                  active && !view.disabled
+                    ? "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base"
+                    : !view.disabled
+                      ? "text-v2-text-text-muted hover:text-v2-text-text-base"
+                      : ""
+                }`}
+                disabled={view.disabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (view.disabled) return
+                  wb.setPanelViewMode(spacePath, props.panel.id, view.id)
+                }}
+              >
+                {view.label}
+              </button>
+            )
           }}
-        >
-          TUI
-        </button>
-        <button
-          type="button"
-          class={`px-1.5 py-0.5 rounded text-10-regular transition-colors cursor-pointer ${
-            props.panel.mode === "chat"
-              ? "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base"
-              : "text-v2-text-text-muted hover:text-v2-text-text-base"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onModeChange("chat")
-          }}
-        >
-          Chat
-        </button>
-        <button
-          type="button"
-          class={`px-1.5 py-0.5 rounded text-10-regular transition-colors cursor-pointer ${
-            props.panel.mode === "terminal"
-              ? "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base"
-              : "text-v2-text-text-muted hover:text-v2-text-text-base"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onModeChange("terminal")
-          }}
-        >
-          Terminal
-        </button>
+        </For>
 
+        {/* Context indicator */}
+        <Show when={showContextIndicator()}>
+          <ContextPopup
+            sessionId={props.panel.boundSessionId}
+            directory={props.panel.directory}
+          />
+        </Show>
+
+        {/* ... menu */}
         <MenuV2 gutter={4} modal={false} placement="bottom-end" open={menuOpen()} onOpenChange={setMenuOpen}>
           <MenuV2.Trigger
             as={IconButtonV2}
@@ -357,12 +365,57 @@ export function Panel(props: {
           />
           <MenuV2.Portal>
             <MenuV2.Content>
-              <MenuV2.Item onSelect={handleToggleSplit}>
-                {props.panel.splitTerminal ? "关闭内嵌终端" : "垂直拆分终端"}
-              </MenuV2.Item>
-              <MenuV2.Item disabled={!canRemove()} onSelect={handleClose}>
-                {removeLabel()}
-              </MenuV2.Item>
+              {/* Session group (bound only) */}
+              <Show when={props.panel.slotState === "bound"}>
+                <MenuV2.Group>
+                  <MenuV2.GroupLabel>Session</MenuV2.GroupLabel>
+                  <MenuV2.Item disabled>重命名</MenuV2.Item>
+                  <MenuV2.Item disabled>
+                    {sessionStore.getSession(props.panel.boundSessionId ?? "")?.status === "archived"
+                      ? "取消归档"
+                      : "归档"}
+                  </MenuV2.Item>
+                  <MenuV2.Item disabled>复制链接</MenuV2.Item>
+                  <MenuV2.Item disabled>在新 Panel 中打开</MenuV2.Item>
+                </MenuV2.Group>
+                <MenuV2.Separator />
+              </Show>
+
+              {/* Panel group */}
+              <MenuV2.Group>
+                <MenuV2.GroupLabel>Panel</MenuV2.GroupLabel>
+                <Show when={props.panel.slotState !== "empty"}>
+                  <MenuV2.Item onSelect={handleToggleSplit}>
+                    {props.panel.splitTerminal ? "关闭内嵌终端" : "垂直拆分终端"}
+                  </MenuV2.Item>
+                </Show>
+                <MenuV2.Item disabled>向右添加 Panel</MenuV2.Item>
+                <MenuV2.Item disabled={!canRemove()} onSelect={handleClose}>
+                  {removeLabel()}
+                </MenuV2.Item>
+              </MenuV2.Group>
+
+              {/* View group (open/bound only) */}
+              <Show when={props.panel.slotState !== "empty"}>
+                <MenuV2.Separator />
+                <MenuV2.Group>
+                  <MenuV2.GroupLabel>视图</MenuV2.GroupLabel>
+                  <For each={listViews()}>
+                    {(view) => {
+                      const active = props.panel.viewMode === view.id
+                      const spacePath = props.panel.directory || "/"
+                      return (
+                        <MenuV2.Item
+                          disabled={active}
+                          onSelect={() => wb.setPanelViewMode(spacePath, props.panel.id, view.id)}
+                        >
+                          切换为 {view.label}
+                        </MenuV2.Item>
+                      )
+                    }}
+                  </For>
+                </MenuV2.Group>
+              </Show>
             </MenuV2.Content>
           </MenuV2.Portal>
         </MenuV2>
