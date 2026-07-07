@@ -1,6 +1,7 @@
 import { Show, createMemo, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider, useSpaceStore } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view"
+import { SessionStoreProvider } from "./session-store"
 import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
@@ -74,10 +75,12 @@ function WorkbenchShell() {
 
 export default function Workbench() {
   return (
-    <WorkbenchStateProvider>
-      <SpaceStoreProvider>
-        <WorkbenchShell />
-      </SpaceStoreProvider>
-    </WorkbenchStateProvider>
+    <SessionStoreProvider>
+      <WorkbenchStateProvider>
+        <SpaceStoreProvider>
+          <WorkbenchShell />
+        </SpaceStoreProvider>
+      </WorkbenchStateProvider>
+    </SessionStoreProvider>
   )
 }
