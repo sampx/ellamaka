@@ -11,296 +11,481 @@
 
 ## Scope Assessment
 
-- **Complexity**: Medium
-- **Confidence**: High
+- **Complexity**: High
+- **Confidence**: Medium
 
 ## Goal
 
-为 wopal-space API 组新增两个端点：`wopal-space.projects({ spaceName })` 返回指定空间下的项目目录列表（含会话数聚合），`wopal-space.nonSpaceProjects()` 返回不在任何已注册空间路径下的项目目录列表。为 Workbench 三级 Session Browser 提供后端数据能力。
+为 wopal-space API 组新增端点，支持 Workbench 左侧"Space → Project → Session"三级会话浏览器和空 Panel 目录搜索。**完全按 Workbench 自有的归组逻辑重新组织**，不沿用 opencode 的 project_id 归组——所有会话按"空间→项目（一级 git repo）→[子目录 | worktree]→会话"归组，并标注会话来源（目录/工作树）。
 
 ## Technical Context
 
 ### Architecture Context
 
-当前 `wopal-space` API 组只有 `spaces` 端点（`groups/wopal-space.ts`），返回 `~/.wopal/config/settings.jsonc` 里注册的所有空间。`project.list` 端点（`handlers/project.ts:14`）返回数据库里所有打开过的项目，**无空间过滤**，且 `Project.Info` 无 spaceName 字段，只有 `worktree` 路径。
+opencode 的 project 模型用 git worktree 根向上查找，非 git 目录归入 "global" project（id="global", worktree="/"）。这导致 Workbench 视图下：
 
-Workbench 三级树需要"指定空间下的项目列表"，但 `project.list` 返回全局所有项目，前端过滤低效且逻辑分散。需要后端按空间路径过滤并聚合会话数。
+- 空间根本身如果不是 git repo（如 WopalSpace、common 空间），所有会话被归入 global project
+- 多个空间根的会话混在 global 下无法区分
+- opencode 的 project_id 关联与 Workbench 的"空间/项目"概念不匹配
 
-session.list 已支持 `{ directory }` 过滤（`session.ts:290` ListInput），前端展开项目节点时复用此 API 懒加载会话，本 Plan 不涉及 session.list 改动。
+**Workbench 自有归组模型**（与 opencode project_id 解耦）：
+
+```
+Space
+└── Project（空间下的一级 git repo，含空间根本身如果是 git repo）
+    ├── 会话（directory = 项目根，无标记）
+    ├── 📁子目录
+    │   └── 会话（directory = 子目录，标记"目录"）
+    └── 工作树
+        └── 会话（directory = .worktrees/xxx，标记"工作树"，归主项目）
+            worktree 已删除/状态不正常 → 会话不展示
+```
 
 ### Research Findings
 
-- `wopal-space` API 组位于 `groups/wopal-space.ts` + `handlers/wopal-space.ts`，已有 `spaces` 端点读 `settings.jsonc`
-- `project.list` 的 `svc.list()` 无参数，返回 `Project.Info[]`，含 `worktree`（真实路径，opencode 存储时已 realpath）
-- `session.list({ directory })` 已支持按目录过滤，返回 `Session.Info[]`，含 `directory` 字段
-- 软链接处理：opencode 存储时已统一 realpath，后端匹配时用数据库里的真实路径；space.path 来自 settings.jsonc 需 realpath 后再匹配
-- `WopalSpaceEntry` 类型已定义在 `groups/wopal-space.ts:7`：`{ name, path, type? }`
+通过观察本地 ellamaka 数据库（`~/.wopal/ellamaka/data/ellamaka.db`）确认的事实：
+
+- 7 个 project 记录，48 个 session
+- project.id 不是 git HEAD hash，是 opencode 内部生成的 projectID
+- global project（id="global", worktree="/"）是**非 git 目录的兜底**：5 个 session 的 directory 完全不同（Desktop/nen、tests/WopalSpace×2、spaces/common、coding 父目录）
+- `session.project_id` 外键存在，但 Workbench 不沿用其归组，只取 session.directory 做归组
+- 同一 git repo 的多个 worktree = opencode 的多个独立 project 记录，但 Workbench 按 git worktree list 关联回主项目
+
+**git worktree 验证**（实测）：
+- 在 worktree 内 `git rev-parse --git-common-dir` 返回主 repo 的 .git 路径
+- 在 worktree 内 `git rev-parse --show-toplevel` 返回当前 worktree 路径
+- 主 repo `git worktree list --porcelain` 列出所有 worktree（含主 worktree）
+- 通过 common-dir 可确认某 git root 是否为某 repo 的 worktree，并找到主 repo
+
+**软链接处理**：opencode 存储 session.directory 时已 realpath，project.worktree 同样已是真实路径。space.path 来自 settings.jsonc 需 realpath 后匹配。
 
 **参考资料**：
-- `docs/ELLAMAKA-WORKBENCH-STEP5-DESIGN.zh-CN.md` §3.4 数据源章节
-- `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`
-- `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts`
-- `packages/opencode/src/project/project.ts` — Project.Info + Service
-- `packages/opencode/src/session/session.ts` — Session.list + ListInput
+- `docs/ELLAMAKA-WORKBENCH-STEP5-DESIGN.zh-CN.md` §3.4 数据源
+- `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`（现有 spaces 端点）
+- `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts`（现有 readSpaces）
+- `packages/opencode/src/session/session.ts` — Session.Service.list
+- `packages/opencode/src/project/project.ts` — Project.Service.list
 
 ### Key Decisions
 
-- D-01: 新端点放在 `wopal-space` API 组下，不污染上游 `project` API（wopal 概念归 wopal-space）
-- D-02: 返回项目目录列表（含会话数聚合），不返回 session 列表（session 懒加载复用 session.list）
-- D-03: 项目目录来源是 project 表与 session 表的并集：project.worktree 落在 spacePath 下的，加上 session.directory 落在 spacePath 下的，去重
-- D-04: 软链接统一 realpath 匹配：space.path 来自 settings.jsonc 需 realpath，project.worktree/session.directory 已是真实路径直接用
-- D-05: 匹配规则 `worktree === spaceRealPath || worktree.startsWith(spaceRealPath + "/")`
-- D-06: 非空间项目单独端点 `nonSpaceProjects`，返回不在任何已注册空间路径下的项目目录
-- D-07: 返回结构含 `path`（真实路径，用于匹配和 session.list 参数）和 `displayPath`（原始路径，用于显示，当前阶段两者相同，为未来软链接友好显示预留）
+- D-01: 完全按 Workbench 自有归组，不沿用 opencode 的 project_id 归组逻辑
+- D-02: Project = 空间下的一级 git repo（`projects/`, `labs/`, `.wopal/` 等顶层目录下的 git repo）；空间根本身是 git repo 也算一个 project
+- D-03: 会话归组用 session.directory 匹配项目 worktree 或子目录，不用 session.project_id
+- D-04: worktree 会话归主项目，通过 `git worktree list` 关联；worktree 已删除/状态不正常 → 会话不展示（归档语义，从视图层隐藏）
+- D-05: 会话标记：无标记=directory=项目根；（目录）=子目录；（工作树）=worktree
+- D-06: realpath 统一匹配：space.path realpath 后匹配，session.directory 已是真实路径直接用
+- D-07: 后端 API 返回完整归组结构（含 session 列表摘要），不返回完整 session 详情（详情复用现有 session.get）
+- D-08: 目录搜索端点限制返回前 50，模糊匹配空间下子目录
+- D-09: 全部后端改造放在一个 Plan，不拆分
 
 ### Key Interfaces
 
 ```ts
-// 新增 schema（groups/wopal-space.ts）
-const WopalSpaceProject = Schema.Struct({
-  path: Schema.String,           // 真实路径（realpath 后，用于 session.list 的 directory 参数）
-  displayPath: Schema.String,     // 显示路径（当前=真实路径，预留软链接友好显示）
-  name: Schema.optional(Schema.String),   // 项目名（从 Project.Info.name 取，可能为空）
-  hasSessions: Schema.Boolean,   // 是否有会话
-  sessionCount: Schema.Number,   // 会话数
+// ============ 需求 A: 会话归组 ============
+
+const WorkbenchSessionMarker = Schema.Literal("", "directory", "worktree")
+// "" = 项目根会话; "directory" = 子目录会话; "worktree" = 工作树会话
+
+const WorkbenchSessionSummary = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  directory: Schema.String,
+  marker: WorkbenchSessionMarker,         // 标记来源
+  agent: Schema.optional(Schema.String),
+  timeCreated: Schema.Number,
+  timeUpdated: Schema.Number,
+  timeArchived: Schema.optional(Schema.Number),
 })
 
-const WopalSpaceProjectsResponse = Schema.Struct({
-  projects: Schema.Array(WopalSpaceProject),
+const WorkbenchDirectoryGroup = Schema.Struct({
+  path: Schema.String,                    // 子目录路径
+  sessionCount: Schema.Number,
+  sessions: Schema.Array(WorkbenchSessionSummary),  // 子目录下的会话
 })
 
-const WopalSpaceProjectsQuery = Schema.Struct({
-  spaceName: Schema.String,      // 空间名
+const WorkbenchWorktreeGroup = Schema.Struct({
+  worktreePath: Schema.String,            // worktree 真实路径
+  branch: Schema.optional(Schema.String),  // 分支名
+  stale: Schema.Boolean,                  // worktree 是否已删除/状态不正常
+  sessionCount: Schema.Number,            // 始终为 0（stale 时不展示会话）
+  sessions: Schema.Array(WorkbenchSessionSummary),  // 非 stale 时才填充
 })
 
-// 新增端点
-wopal-space.projects({ query: { spaceName } })  → WopalSpaceProjectsResponse
-wopal-space.nonSpaceProjects()                   → WopalSpaceProjectsResponse
+const WorkbenchProject = Schema.Struct({
+  path: Schema.String,                    // 项目根真实路径
+  displayPath: Schema.String,              // 显示路径（预留软链接友好显示）
+  name: Schema.optional(Schema.String),    // 项目名（从目录名或 Project.Info.name 取）
+  vcs: Schema.optional(Schema.Literal("git")),
+  sessionCount: Schema.Number,             // 会话总数（含子目录和 worktree）
+  rootSessions: Schema.Array(WorkbenchSessionSummary),  // directory=项目根的会话
+  directories: Schema.Array(WorkbenchDirectoryGroup),   // 子目录分组
+  worktrees: Schema.Array(WorkbenchWorktreeGroup),       // 工作树分组
+})
+
+const WorkbenchSpaceOverviewResponse = Schema.Struct({
+  spaceName: Schema.String,
+  spacePath: Schema.String,
+  spaceRootSessionCount: Schema.Number,   // directory=spacePath 的会话数（空间根本身不是 git repo 时的兜底会话）
+  spaceRootSessions: Schema.Array(WorkbenchSessionSummary),
+  projects: Schema.Array(WorkbenchProject),
+})
+
+const WorkbenchNonSpaceOverviewResponse = Schema.Struct({
+  // 不在任何空间下的 session，按 directory 分组
+  orphanDirectories: Schema.Array({
+    path: Schema.String,
+    sessionCount: Schema.Number,
+    sessions: Schema.Array(WorkbenchSessionSummary),
+  }),
+})
+
+// ============ 需求 B: 目录搜索 ============
+
+const WorkbenchSearchDirectory = Schema.Struct({
+  path: Schema.String,                    // 真实路径
+  displayPath: Schema.String,
+  isGitRepo: Schema.Boolean,              // 是否 git repo（决定是否可作为 project）
+})
+
+const WorkbenchSearchDirectoriesResponse = Schema.Struct({
+  directories: Schema.Array(WorkbenchSearchDirectory),
+})
+
+const WorkbenchRecentDirectoriesResponse = Schema.Struct({
+  directories: Schema.Array(WorkbenchSearchDirectory),
+})
 ```
 
 ## In Scope
 
-- 新增 `wopal-space.projects` 端点：按 spaceName 查 spacePath → realpath → 过滤 project.worktree + session.directory 落在该路径下的项目目录，聚合会话数，去重返回
-- 新增 `wopal-space.nonSpaceProjects` 端点：返回不在任何已注册空间路径下的项目目录，含会话数聚合
-- realpath 处理：space.path realpath 后匹配，project/session 路径已是真实直接用
-- 按项目目录聚合会话数（session.directory 分组 count）
-- 单元测试：覆盖空间内项目、非空间项目、边界（路径前缀匹配、realpath、空结果）
+- 新增 `wopal-space.spaceOverview({ spaceName })`：返回空间下完整归组结构（projects 含 rootSessions/directories/worktrees 分组 + 空间根会话）
+- 新增 `wopal-space.nonSpaceOverview()`：返回不在任何空间下的 session 按 directory 分组
+- 新增 `wopal-space.searchDirectories({ spaceName, query })`：模糊匹配空间下子目录，限制前 50
+- 新增 `wopal-space.recentDirectories({ spaceName })`：返回最近开过 session 的目录
+- 归组逻辑：用 session.directory 匹配 project（一级 git repo）+ git worktree list 关联 worktree 回主项目
+- 会话标记：无标记=项目根；（目录）=子目录；（工作树）=worktree
+- stale worktree 检测：worktree 路径不存在或 git 状态不正常 → sessionCount=0，sessions=[]（归档语义，视图层不展示）
+- realpath 统一匹配
+- 单元测试：覆盖空间内/非空间/worktree/stale/realpath/搜索边界
 
 ## Out of Scope
 
-- session.list 改动（前端懒加载复用现有 API）
-- 前端实现（属前端 Plan 的 Task 5）
-- 数据库 schema 变更（不新增 spaceName 字段，纯路径匹配）
-- 软链接友好显示（displayPath 当前=真实路径，仅预留字段）
-- 空间与项目的显式数据库关联（后续如需再扩展）
+- 前端实现（属前端 Plan）
+- 完整 session 详情（复用现有 session.get）
+- worktree ↔ 主 repo 的"按 repo 归并视图"（第一阶段每个 worktree 会话归主项目节点下，不独立成节点）
+- 修改 session.list 或 session.get（前端懒加载详情时复用现有 API）
+- 修改数据库 schema（不新增字段，纯查询时归组）
+- 快速 Terminal 入口（用户确认移除，降低复杂度）
 
 ## Affected Files
 
 | Component | Files | Operation | Role |
 |-----------|-------|-----------|------|
-| wopal-space API 组定义 | `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` | 修改 | 新增 projects/nonSpaceProjects 端点定义 + WopalSpaceProject schema |
-| wopal-space handler | `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` | 修改 | 实现 projects/nonSpaceProjects 逻辑：读空间、realpath、过滤、聚合 |
-| SDK 类型 | `packages/sdk/` | 重新生成 | `./packages/sdk/js/script/build.ts` 重新生成 SDK 类型 |
-| 单元测试 | `packages/opencode/test/server/wopal-space-projects.test.ts` | 创建 | 覆盖空间内/非空间/边界场景 |
+| wopal-space API 组定义 | `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` | 修改 | 新增 4 个端点定义 + Workbench 归组 schema |
+| wopal-space handler | `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` | 修改 | 实现 4 个 handler：归组、搜索、最近 |
+| 归组工具 | `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space-grouping.ts` | 创建 | 归组逻辑抽出独立模块：扫描一级 git repo、git worktree list、session 归组、stale 检测 |
+| SDK 类型 | `packages/sdk/` | 重新生成 | `./packages/sdk/js/script/build.ts` |
+| 单元测试 | `packages/opencode/test/server/wopal-space-overview.test.ts` | 创建 | 覆盖归组/搜索/stale/realpath 场景 |
 
 ## Acceptance Criteria
 
 ### Agent Verification
 
-1. [ ] `rg -c 'projects' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1（端点已定义）
-2. [ ] `rg -c 'nonSpaceProjects' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
-3. [ ] `rg -c 'WopalSpaceProject' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
-4. [ ] `rg -c 'realpath' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` ≥ 1
-5. [ ] `cd packages/opencode && bun typecheck` 全部 pass
-6. [ ] `cd packages/opencode && bun test --timeout 30000 test/server/wopal-space-projects.test.ts` 全部 pass
-7. [ ] `rg -c 'wopalSpace\.projects\|wopalSpace\.nonSpaceProjects' packages/sdk/` ≥ 1（SDK 已重新生成）
+1. [ ] `rg -c 'spaceOverview' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+2. [ ] `rg -c 'nonSpaceOverview' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+3. [ ] `rg -c 'searchDirectories' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+4. [ ] `rg -c 'recentDirectories' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+5. [ ] `rg -c 'WorkbenchProject' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+6. [ ] `rg -c 'git worktree list\|worktree.*list\|listWorktrees' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space-grouping.ts` ≥ 1
+7. [ ] `rg -c 'realpath' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space-grouping.ts` ≥ 1
+8. [ ] `rg -c 'stale' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space-grouping.ts` ≥ 1
+9. [ ] `cd packages/opencode && bun typecheck` 全部 pass
+10. [ ] `cd packages/opencode && bun test --timeout 30000 test/server/wopal-space-overview.test.ts` 全部 pass
+11. [ ] `rg -c 'wopalSpace\.spaceOverview\|wopalSpace\.searchDirectories' packages/sdk/` ≥ 1（SDK 已重新生成）
 
 ### User Validation
 
-#### Scenario 1: 空间项目列表
-- Goal: 确认 `wopal-space.projects({ spaceName: "main" })` 返回 main 空间下的项目目录
-- Precondition: ellamaka serve 已启动，settings.jsonc 已注册 main 空间，数据库有项目记录
+#### Scenario 1: 空间会话归组
+- Goal: 确认 `wopal-space.spaceOverview({ spaceName: "wopal-workspace" })` 返回正确的归组结构
+- Precondition: ellamaka serve 已启动，wopal-workspace 空间有多个 project 和 session
 - User Actions:
-  1. 调用 API（curl 或前端）传入 main 空间名
-  2. 观察返回的 projects 数组，每个含 path/displayPath/hasSessions/sessionCount
-  3. 确认返回的项目路径都在 main 空间路径下
-- Expected Result: 返回正确的空间内项目列表，会话数正确
+  1. 调用 API 传入 wopal-workspace 空间名
+  2. 观察返回的 projects 数组，每个含 path/rootSessions/directories/worktrees
+  3. 确认 wopal-workspace 空间根的 36 个会话归到对应 project 的 rootSessions 或 spaceRootSessions
+  4. 确认 ellamaka project 的 poc/web session 标记为 marker="directory"
+- Expected Result: 会话按 Workbench 模型正确归组，marker 标记准确
 
 - [ ] 用户已完成上述功能验证并确认结果符合预期
 
-#### Scenario 2: 非空间项目列表
-- Goal: 确认 `wopal-space.nonSpaceProjects()` 返回不在任何空间下的项目
-- Precondition: 数据库有不在任何已注册空间路径下的项目记录
+#### Scenario 2: 非空间会话
+- Goal: 确认 `wopal-space.nonSpaceOverview()` 返回不在任何空间下的 session
+- Precondition: 数据库有 global project 的 session（如 Desktop/nen、coding 父目录）
 - User Actions:
-  1. 调用 nonSpaceProjects API
-  2. 观察返回的项目都不在任何已注册空间路径下
-- Expected Result: 返回游离项目列表
+  1. 调用 nonSpaceOverview API
+  2. 观察返回的 orphanDirectories 数组
+  3. 确认 Desktop/nen 和 coding 父目录的 session 都在
+- Expected Result: 非空间 session 正确归组
+
+- [ ] 用户已完成上述功能验证并确认结果符合预期
+
+#### Scenario 3: 目录搜索
+- Goal: 确认 `wopal-space.searchDirectories({ spaceName, query: "ellamaka" })` 返回匹配的目录
+- Precondition: wopal-workspace 下有 projects/ellamaka 目录
+- User Actions:
+  1. 调用 searchDirectories 传入 query="ellamaka"
+  2. 观察返回的 directories 数组含 projects/ellamaka
+  3. 测试 query 为空或超短时仍能返回合理结果
+- Expected Result: 模糊匹配正确，限制前 50
 
 - [ ] 用户已完成上述功能验证并确认结果符合预期
 
 ## Implementation
 
-### Task 1: wopal-space.projects 和 nonSpaceProjects 端点定义
+### Task 1: API 组定义 + Workbench 归组 schema
 
-**Verification Intent**: AC#1, AC#2, AC#3
+**Verification Intent**: AC#1-5
 
-**Behavior**: 在 wopal-space API 组新增 projects 和 nonSpaceProjects 两个 GET 端点定义，含 WopalSpaceProject schema 和 query 参数。输入 HttpApiGroup 定义 → 输出含两个新端点的 WopalSpaceApi。
+**Behavior**: 在 wopal-space API 组新增 4 个端点定义和完整 Workbench 归组 schema。
 
 **Files**: `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`
 
-**Pre-read**: `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`, `packages/opencode/src/server/routes/instance/httpapi/groups/project.ts`（参考端点定义风格）
+**Pre-read**: `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`, `packages/opencode/src/server/routes/instance/httpapi/groups/project.ts`（端点定义风格）
 
 **Design**:
-在现有 wopal-space.ts 的 HttpApiGroup 中追加两个端点：
-- `projects`：GET `/wopal-space/projects`，query 含 spaceName，success 为 WopalSpaceProjectsResponse
-- `nonSpaceProjects`：GET `/wopal-space/non-space-projects`，无 query，success 为 WopalSpaceProjectsResponse
+在现有 wopal-space.ts 的 HttpApiGroup 中追加 4 个端点：
+- `spaceOverview`：GET `/wopal-space/space-overview`，query={ spaceName }，success=WorkbenchSpaceOverviewResponse
+- `nonSpaceOverview`：GET `/wopal-space/non-space-overview`，success=WorkbenchNonSpaceOverviewResponse
+- `searchDirectories`：GET `/wopal-space/search-directories`，query={ spaceName, query }，success=WorkbenchSearchDirectoriesResponse
+- `recentDirectories`：GET `/wopal-space/recent-directories`，query={ spaceName }，success=WorkbenchRecentDirectoriesResponse
 
-新增 schema：WopalSpaceProject（path/displayPath/name?/hasSessions/sessionCount）、WopalSpaceProjectsResponse（projects 数组）、WopalSpaceProjectsQuery（spaceName）。
+新增所有 Workbench 归组 schema（见 Key Interfaces）：WorkbenchSessionMarker、WorkbenchSessionSummary、WorkbenchDirectoryGroup、WorkbenchWorktreeGroup、WorkbenchProject、WorkbenchSpaceOverviewResponse、WorkbenchNonSpaceOverviewResponse、WorkbenchSearchDirectory、WorkbenchSearchDirectoriesResponse、WorkbenchRecentDirectoriesResponse。
 
-遵循现有端点定义风格：`.annotateMerge(OpenApi.annotations({ identifier, summary, description }))`。沿用 Authorization middleware。
+沿用 Authorization middleware，与 spaces 端点一致。
 
 **TDD**: true
 
 **Changes**:
-1. 定义 WopalSpaceProject schema（path/displayPath/name?/hasSessions/sessionCount）
-2. 定义 WopalSpaceProjectsResponse schema（projects 数组）
-3. 定义 WopalSpaceProjectsQuery schema（spaceName）
-4. 在 HttpApiGroup 中追加 `projects` 端点（GET /wopal-space/projects，query=spaceName，success=WopalSpaceProjectsResponse）
-5. 在 HttpApiGroup 中追加 `nonSpaceProjects` 端点（GET /wopal-space/non-space-projects，success=WopalSpaceProjectsResponse）
-6. 两个端点均 annotateMerge OpenApi 元数据（identifier/summary/description）
+1. 定义所有 Workbench 归组 schema（WorkbenchSessionMarker/Summary/DirectoryGroup/WorktreeGroup/Project 等）
+2. 定义 4 个响应 schema（SpaceOverview/NonSpaceOverview/SearchDirectories/RecentDirectories）
+3. 定义 query schema（spaceOverview={spaceName}, searchDirectories={spaceName,query}, recentDirectories={spaceName}）
+4. 在 HttpApiGroup 追加 4 个端点定义，每个 annotateMerge OpenApi 元数据
 
 **Verify**:
-`cd packages/opencode && bun typecheck` 全部 pass，`rg -c 'projects' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1，`rg -c 'nonSpaceProjects' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1，`rg -c 'WopalSpaceProject' packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` ≥ 1
+`cd packages/opencode && bun typecheck` 全部 pass，AC#1-5 的 rg 命令全部 ≥ 1
 
 **Done**:
-任务产出：wopal-space API 组新增 projects 和 nonSpaceProjects 端点定义 + schema
+任务产出：wopal-space API 组新增 4 个端点定义 + 完整 Workbench 归组 schema
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
-### Task 2: wopal-space handler 实现（projects + nonSpaceProjects）
+### Task 2: 归组工具模块（git worktree list + session 归组 + stale 检测）
 
-**Verification Intent**: AC#4, AC#5
+**Verification Intent**: AC#6, AC#7, AC#8
 
-**Behavior**: 实现 projects 和 nonSpaceProjects 的 handler 逻辑。输入 spaceName → 输出该空间下的项目目录列表（含会话数聚合）；无参数 → 输出非空间项目列表。realpath 统一匹配。
+**Behavior**: 独立归组工具模块，实现"扫描一级 git repo、git worktree list 关联、session 按 directory 归组、stale 检测"逻辑。输入 spaceRealPath + 所有 session 列表 → 输出 WorkbenchProject[] + spaceRootSessions。
+
+**Files**: `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space-grouping.ts`
+
+**Pre-read**: `packages/opencode/src/session/session.ts`（Session.Info 结构）, `packages/opencode/src/project/project.ts`（Project.Service.list）
+
+**Design**:
+归组模块导出纯函数 `groupSessionsBySpace(spaceRealPath, sessions, projects)`，返回 `{ projects, spaceRootSessions }`。逻辑：
+
+1. **扫描一级 git repo**：
+   - 读 spaceRealPath 下一层目录列表（`fs.readdir`）
+   - 对每个子目录 `git -C <child> rev-parse --show-toplevel`：
+     - 成功 → 是 git repo，toplevel 是 repo 根
+     - 失败 → 非 git repo，跳过
+   - 去重（多个子目录可能同属一个 repo 根）
+   - 空间根本身也是 git repo 时，`git -C <spaceRealPath> rev-parse --show-toplevel` 成功 → 空间根也是 project
+
+2. **worktree 关联回主项目**：
+   - 对每个 project（一级 git repo），执行 `git -C <repoRoot> worktree list --porcelain`
+   - 解析输出得到所有 worktree（含主 worktree 和独立 worktree）
+   - 主 worktree 即 repo 根，独立 worktree 是 `.worktrees/xxx` 等路径
+   - 每个 worktree 作为 project 的 WorkbenchWorktreeGroup
+
+3. **session 归组**：
+   - 遍历所有 session（不限 project_id，用 session.directory）
+   - 对每个 session，匹配其 directory：
+     - directory === spaceRealPath 且空间根不是 git repo → 归 spaceRootSessions（兜底）
+     - directory 落在某 project root 下（`dir === root || dir.startsWith(root + "/")`）：
+       - dir === root → rootSessions，marker=""
+       - dir 是子目录 → directories 分组，marker="directory"
+     - directory 落在某 worktree 下：
+       - dir === worktreePath → 该 worktree 的 sessions，marker="worktree"
+       - dir 是 worktree 子目录 → 该 worktree 的 directories 分组（标记仍是 "worktree"）
+     - 不匹配任何 project/worktree 但落在 spaceRealPath 下 → 归 spaceRootSessions 或动态子目录分组
+
+4. **stale 检测**：
+   - `fs.existsSync(worktreePath)` 为 false → stale=true
+   - `git -C <worktreePath> status` 失败 → stale=true
+   - stale=true 时 sessionCount=0, sessions=[]（归档语义，视图层不展示该 worktree 的会话）
+   - stale project（project root 不存在）同样 stale=true，整个 project 不展示
+
+5. **realpath 处理**：
+   - space.path → `fs.realpath()` → spaceRealPath（失败回退原 path）
+   - session.directory 和 project.worktree 已是真实路径直接用
+   - 匹配用真实路径
+
+6. **project name 取值**：
+   - 优先从 Project.Info.name（opencode project 表）取
+   - 为空时从目录名取（path.basename）
+
+**TDD**: true
+
+**Changes**:
+1. 创建 `wopal-space-grouping.ts`，定义归组函数签名和类型
+2. 实现 `scanFirstLevelGitRepos(spaceRealPath)`：扫描一级 git repo（用 git rev-parse 检测）
+3. 实现 `listProjectWorktrees(repoRoot)`：`git worktree list --porcelain` 解析，返回 worktree 列表（含分支名）
+4. 实现 `checkWorktreeStale(worktreePath)`：fs.existsSync + git status 检测
+5. 实现 `groupSessionsBySpace(spaceRealPath, sessions, projects)`：主归组函数，组合上述工具，输出 WorkbenchProject[] + spaceRootSessions
+6. 实现 `realpathSafe(p)`：realpath 包裹，失败回退原 path
+7. 实现 `getProjectName(projectInfo, path)`：从 Project.Info.name 或 basename 取
+
+**Verify**:
+`cd packages/opencode && bun typecheck` 全部 pass，AC#6-8 的 rg 命令全部 ≥ 1
+
+**Done**:
+任务产出：归组工具模块，含 git worktree list、session 归组、stale 检测、realpath
+- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+
+---
+
+### Task 3: 4 个 handler 实现（spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories）
+
+**Verification Intent**: AC#9
+
+**Behavior**: 实现 4 个端点的 handler 逻辑，组合归组工具模块和 Session.Service。
 
 **Files**: `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts`
 
-**Pre-read**: `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts`（现有 readSpaces 逻辑）, `packages/opencode/src/project/project.ts`（Project.Service.list）, `packages/opencode/src/session/session.ts`（Session.Service.list）, Task 1 的 groups/wopal-space.ts
+**Pre-read**: Task 1 groups/wopal-space.ts, Task 2 wopal-space-grouping.ts, `packages/opencode/src/session/session.ts`
 
 **Design**:
-在现有 wopal-space.ts handler 中追加两个 handler：
+在现有 wopal-space.ts handler 中追加 4 个 handler，引入 Session.Service 和归组模块：
 
-**projects handler**:
-1. 读 settings.jsonc 获取所有 spaces（复用现有 readSpaces）
-2. 找到 spaceName 对应的 space，取 space.path
-3. realpath(space.path) → spaceRealPath（用 Node fs.realpath 或 effect FileSystem）
-4. 调 Project.Service.list() 获取所有项目，filter `worktree === spaceRealPath || worktree.startsWith(spaceRealPath + "/")`
-5. 调 Session.Service.list() 获取所有 session，按 directory 聚合 count（Map<directory, count>），filter directory 落在 spaceRealPath 下
-6. 合并两个来源的目录去重（Set），每个目录构造 WopalSpaceProject：path=真实路径，displayPath=真实路径，name=从 Project.Info.name 取（可能为空），hasSessions=sessionMap.has(path)，sessionCount=sessionMap.get(path) ?? 0
-7. 返回 { projects: [...] }
+**spaceOverview({ spaceName })**:
+1. 读 spaces → 找 spaceName 对应 space.path → realpath → spaceRealPath
+2. `Session.Service.list()` → 所有 session
+3. `Project.Service.list()` → 所有 project（取 name 用）
+4. 调 `groupSessionsBySpace(spaceRealPath, sessions, projects)` → 归组结果
+5. 过滤 sessions 只保留 directory 落在 spaceRealPath 下的（归组函数内已做）
+6. 构造 WorkbenchSpaceOverviewResponse 返回
 
-**nonSpaceProjects handler**:
-1. 读 settings.jsonc 获取所有 spaces，每个 space.path realpath → spaceRealPaths 集合
-2. 调 Project.Service.list()，filter worktree 不在任何 spaceRealPath 下（`!spaceRealPaths.some(sp => worktree === sp || worktree.startsWith(sp + "/"))`）
-3. 调 Session.Service.list()，按 directory 聚合 count，filter directory 不在任何 spaceRealPath 下
-4. 同样合并去重，构造 WopalSpaceProject 返回
+**nonSpaceOverview()**:
+1. 读所有 spaces → 所有 space.path realpath → spaceRealPaths 集合
+2. `Session.Service.list()` → 所有 session
+3. 过滤 session.directory 不在任何 spaceRealPaths 下的
+4. 按 directory 分组 → orphanDirectories
+5. 构造 WorkbenchNonSpaceOverviewResponse 返回
 
-**realpath 处理**：用 `Effect.promise(() => fs.promises.realpath(p))` 或 effect FileSystem 的 realpath API。注意 space.path 可能不存在（已删除目录），realpath 失败时回退用原 path 匹配（容错）。
+**searchDirectories({ spaceName, query })**:
+1. 找 spaceName → spaceRealPath
+2. 递归扫描 spaceRealPath 下子目录（限制深度 3-4 层，避免 labs 下成千上万目录）
+3. 模糊匹配 query（路径片段包含 query 即可，大小写不敏感）
+4. 限制返回前 50
+5. 对每个结果 `git -C <path> rev-parse` 检测 isGitRepo
+6. 构造 WorkbenchSearchDirectoriesResponse 返回
 
-Project.Service 和 Session.Service 通过 `yield*` 获取，与现有 handler 风格一致。
+**recentDirectories({ spaceName })**:
+1. 找 spaceName → spaceRealPath
+2. `Session.Service.list()` → 过滤 directory 落在 spaceRealPath 下的
+3. 按 directory 去重，按 timeCreated 倒序取前 20
+4. 对每个 directory 检测 isGitRepo
+5. 构造 WorkbenchRecentDirectoriesResponse 返回
+
+**搜索递归深度**：默认 3 层，避免全量扫描。labs/ref-repos/ 下虽有上千 repo，但深度限制下只扫到 labs/ref-repos 这一层（不进入其子目录）。
 
 **TDD**: true
 
 **Changes**:
-1. 引入 Project.Service 和 Session.Service（yield* 获取）
-2. 实现 realpath 辅助函数（Effect 包裹，失败回退原 path）
-3. 实现 `projects` handler：读 space → realpath → 过滤 project + session 聚合 → 去重 → 返回
-4. 实现 `nonSpaceProjects` handler：读所有 spaces → realpath 集合 → 过滤不在任何空间下的 project + session 聚合 → 返回
-5. 在 handlers.handle 链追加两个新 handler
+1. 引入 Session.Service、Project.Service、归组模块
+2. 实现 spaceOverview handler
+3. 实现 nonSpaceOverview handler
+4. 实现 searchDirectories handler（含递归扫描 + 深度限制 + 模糊匹配 + 前 50 限制）
+5. 实现 recentDirectories handler
+6. 在 handlers.handle 链追加 4 个 handler
 
 **Verify**:
-`cd packages/opencode && bun typecheck` 全部 pass，`rg -c 'realpath' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` ≥ 1，`rg -c 'Project\.Service' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` ≥ 1，`rg -c 'Session\.Service' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` ≥ 1
+`cd packages/opencode && bun typecheck` 全部 pass，`rg -c 'spaceOverview' packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` ≥ 1
 
 **Done**:
-任务产出：projects 和 nonSpaceProjects handler 实现，含 realpath、project+session 聚合、去重
+任务产出：4 个 handler 实现，组合归组工具 + Session.Service + Project.Service
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
-### Task 3: 单元测试
+### Task 4: 单元测试
 
-**Verification Intent**: AC#6
+**Verification Intent**: AC#10
 
-**Behavior**: 单元测试覆盖空间内项目、非空间项目、边界场景。输入测试 fixture → 输出正确的项目列表和会话数聚合。
+**Behavior**: 单元测试覆盖归组/搜索/stale/realpath 全场景。
 
-**Files**: `packages/opencode/test/server/wopal-space-projects.test.ts`
+**Files**: `packages/opencode/test/server/wopal-space-overview.test.ts`
 
-**Pre-read**: `packages/opencode/test/server/`（参考现有 server 测试风格）, `packages/opencode/test/fixture/fixture.ts`（tmpdir 等 fixture）, Task 1 和 Task 2 实现
+**Pre-read**: `packages/opencode/test/server/`（现有 server 测试风格）, `packages/opencode/test/fixture/fixture.ts`（tmpdir）, Task 1-3 实现
 
 **Design**:
-测试用 tmpdir fixture 创建临时目录结构模拟空间和项目：
-- 临时目录下创建 spaceA/、spaceB/、nonSpace/ 三个目录
-- spaceA/ 下创建 projectA1/、projectA2/ 两个项目目录
-- spaceB/ 下创建 projectB1/
-- nonSpace/ 下创建 orphanProject/
-- settings.jsonc 模拟注册 spaceA 和 spaceB
-- 数据库插入 project 记录（worktree 指向上述目录）和 session 记录（directory 指向上述目录，部分有多个 session）
+用 tmpdir fixture 搭建测试目录结构（含 git init、worktree add、session 插入数据库），覆盖：
 
-测试用例：
-1. `projects({ spaceName: "spaceA" })` 返回 projectA1 和 projectA2，sessionCount 正确
-2. `projects({ spaceName: "spaceB" })` 返回 projectB1
-3. `projects({ spaceName: "nonExist" })` 返回空数组
-4. `nonSpaceProjects()` 返回 orphanProject
-5. 边界：项目 worktree 正好等于 spacePath（非 startsWith），应包含
-6. 边界：项目 worktree 为 spacePath 的兄弟目录（如 spaceA-sibling），不应包含（startsWith(spacePath + "/") 不匹配兄弟）
-7. 软链接：space.path 是软链接指向真实目录，realpath 后应正确匹配
+1. 空间内 project 归组：一级 git repo 的 session 归到 rootSessions
+2. 子目录 session 归组：directory=project 子目录 → directories 分组，marker="directory"
+3. worktree session 归组：worktree 下创建 session → 归主项目 worktrees 分组，marker="worktree"
+4. stale worktree：删除 worktree 目录 → stale=true, sessions=[]
+5. 空间根 session（空间根非 git repo）：directory=spacePath → spaceRootSessions
+6. 非空间 session：directory 不在任何空间 → orphanDirectories
+7. realpath：space.path 是软链接，realpath 后匹配
+8. 搜索：query 匹配子目录，限制前 50
+9. 搜索深度限制：深层子目录不被扫描
+10. 边界：空间不存在、空 query、空 session 列表
 
-用 `it.instance(...)` 或 `it.live(...)` + tmpdir fixture，参考现有 server 测试。避免 mock，测真实实现。
+用 `it.live(...)` + tmpdir（含 git 真实操作），避免 mock。
 
 **TDD**: true
 
 **Changes**:
-1. 创建 `test/server/wopal-space-projects.test.ts`，用 tmpdir fixture 搭建测试目录结构
-2. 编写测试用例 1-3（空间内项目列表）
-3. 编写测试用例 4（非空间项目）
-4. 编写测试用例 5-6（边界：等于 spacePath、兄弟目录）
-5. 编写测试用例 7（软链接 realpath）
+1. 创建 `test/server/wopal-space-overview.test.ts`，用 tmpdir fixture 搭建测试结构
+2. 编写测试用例 1-3（project/子目录/worktree 归组）
+3. 编写测试用例 4-5（stale worktree、空间根 session）
+4. 编写测试用例 6-7（非空间、realpath）
+5. 编写测试用例 8-10（搜索、深度限制、边界）
 
 **Verify**:
-`cd packages/opencode && bun test --timeout 30000 test/server/wopal-space-projects.test.ts` 全部 pass
+`cd packages/opencode && bun test --timeout 30000 test/server/wopal-space-overview.test.ts` 全部 pass
 
 **Done**:
-任务产出：wopal-space projects 和 nonSpaceProjects 的单元测试，覆盖空间内/非空间/边界/软链接
+任务产出：归组/搜索/stale/realpath 全场景单元测试
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
-### Task 4: SDK 重新生成 + 类型检查
+### Task 5: SDK 重新生成
 
-**Verification Intent**: AC#7
+**Verification Intent**: AC#11
 
-**Behavior**: 重新生成 SDK 类型，确保 wopalSpace.projects 和 wopalSpace.nonSpaceProjects 类型可用。输入新增端点 → 输出更新后的 SDK 类型文件。
+**Behavior**: 重新生成 SDK 类型，确保 wopalSpace.spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories 可用。
 
 **Files**: `packages/sdk/`（重新生成）
 
-**Pre-read**: `packages/sdk/js/script/build.ts`, Task 1 和 Task 2 完成
+**Pre-read**: `packages/sdk/js/script/build.ts`, Task 1-3 完成
 
 **Design**:
-端点和 handler 实现完成后，运行 SDK 重新生成脚本。生成后检查新类型 `wopalSpace.projects` 和 `wopalSpace.nonSpaceProjects` 是否存在。前端 Plan 的 Task 5 依赖这些 SDK 类型。
+端点和 handler 实现完成后，运行 SDK 重新生成脚本。检查新类型存在。
 
-**TDD**: false（脚本生成，非逻辑代码）
+**TDD**: false（脚本生成）
 
 **Changes**:
-1. 运行 `./packages/sdk/js/script/build.ts` 重新生成 SDK
-2. 检查生成的类型文件包含 wopalSpace.projects 和 wopalSpace.nonSpaceProjects
+1. 运行 `./packages/sdk/js/script/build.ts`
+2. 检查生成的类型含 wopalSpace.spaceOverview/searchDirectories 等
 3. 运行 `cd packages/opencode && bun typecheck` 确认无类型错误
 
 **Verify**:
-`cd packages/opencode && bun typecheck` 全部 pass，`rg -c 'wopalSpace\.projects\|wopalSpace\.nonSpaceProjects' packages/sdk/` ≥ 1
+`cd packages/opencode && bun typecheck` 全部 pass，AC#11 rg 命令 ≥ 1
 
 **Done**:
-任务产出：SDK 重新生成，wopalSpace.projects 和 nonSpaceProjects 类型可用
+任务产出：SDK 重新生成，4 个新端点类型可用
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
@@ -309,11 +494,12 @@ Project.Service 和 Session.Service 通过 `yield*` 获取，与现有 handler �
 
 | Wave | Task | 执行者 | 依赖 | 委派理由 |
 |------|------|--------|------|---------|
-| 1 | Task 1 | fae | 无 | 端点定义独立，先建 schema 和 API 声明 |
-| 1 | Task 2 | fae | Task 1 | handler 依赖端点定义的 schema 和参数 |
-| 2 | Task 3 | fae | Task 1, 2 | 测试依赖实现完成 |
-| 2 | Task 4 | fae | Task 1, 2 | SDK 生成依赖端点定义稳定 |
+| 1 | Task 1 | fae | 无 | 端点定义 + schema 独立先建 |
+| 1 | Task 2 | fae | 无 | 归组工具模块独立，不依赖端点定义 |
+| 2 | Task 3 | fae | Task 1, 2 | handler 依赖端点 schema 和归组工具 |
+| 3 | Task 4 | fae | Task 1, 2, 3 | 测试依赖实现完成 |
+| 3 | Task 5 | fae | Task 1, 3 | SDK 生成依赖端点定义稳定 |
 
-Wave 1 内 Task 1 和 Task 2 有依赖（Task 2 依赖 Task 1 的 schema），按 1→2 顺序执行。Wave 2 内 Task 3 和 Task 4 可并行。
+Wave 1 内 Task 1 和 Task 2 可并行。Wave 3 内 Task 4 和 Task 5 可并行。
 
 不委派 rook 审查（用户指示 rook 不可用）。实施完成后由 Wopal 逐项实证 Agent Verification AC，再进入用户验证。
