@@ -380,6 +380,31 @@ function createWorkspaceTerminalSession(
   }
 }
 
+function createDummyTerminalSession() {
+  return {
+    ready: () => false,
+    all: () => [] as LocalPTY[],
+    active: () => undefined as string | undefined,
+    new() {},
+    update(pty: Partial<LocalPTY> & { id: string }) {},
+    trim(id: string) {},
+    trimAll() {},
+    async clone(id: string) {},
+    bind() {
+      return {
+        trim(id: string) {},
+        update(pty: Partial<LocalPTY> & { id: string }) {},
+        async clone(id: string) {},
+      }
+    },
+    open(id: string) {},
+    next() {},
+    previous() {},
+    async close(id: string) {},
+    move(id: string, to: number) {},
+  }
+}
+
 export const { use: useTerminal, provider: TerminalProvider } = createSimpleContext({
   name: "Terminal",
   gate: false,
@@ -434,7 +459,11 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       return entry.value
     }
 
-    const workspace = createMemo(() => loadWorkspace(params.dir!, params.id, scope()))
+    const dummy = createDummyTerminalSession()
+    const workspace = createMemo(() => {
+      if (!params.dir) return dummy
+      return loadWorkspace(params.dir, params.id, scope())
+    })
 
     createEffect(
       on(

@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view"
 import { Panel } from "./panel"
+import { SDKProvider } from "@/context/sdk"
 
 export function Workspace() {
   const store = useSpaceStore()
@@ -52,23 +53,25 @@ export function Workspace() {
         >
           <For each={panels()}>
             {(panel) => (
-              <Panel
-                panel={panel}
-                isActive={panel.id === activePanelID()}
-                panelCount={panels().length}
-                onActivate={() => {
-                  const path = activePath()
-                  if (path) wb.setActivePanel(path, panel.id)
-                }}
-                onModeChange={(mode) => {
-                  const path = activePath()
-                  if (path) wb.setPanelMode(path, panel.id, mode)
-                }}
-                onRemove={() => {
-                  const path = activePath()
-                  if (path) wb.removePanel(path, panel.id)
-                }}
-              />
+              <SDKProvider directory={panel.directory}>
+                <Panel
+                  panel={panel}
+                  isActive={panel.id === activePanelID()}
+                  panelCount={panels().length}
+                  onActivate={() => {
+                    const path = activePath()
+                    if (path) wb.setActivePanel(path, panel.id)
+                  }}
+                  onModeChange={(mode) => {
+                    const path = activePath()
+                    if (path) wb.setPanelMode(path, panel.id, mode)
+                  }}
+                  onRemove={() => {
+                    const path = activePath()
+                    if (path) wb.removePanel(path, panel.id)
+                  }}
+                />
+              </SDKProvider>
             )}
           </For>
         </Show>

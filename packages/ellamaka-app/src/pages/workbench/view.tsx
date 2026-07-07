@@ -3,13 +3,17 @@ import { batch, createMemo } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 
-export type PanelMode = "tui" | "chat"
+export type PanelMode = "tui" | "chat" | "terminal"
 
 export type WorkbenchPanel = {
   id: string
   mode: PanelMode
   directory: string
   width: number
+  splitTerminal?: boolean
+  tuiPtyId?: string
+  termPtyId?: string
+  splitPtyId?: string
 }
 
 export type SpaceWorkbenchState = {
@@ -114,6 +118,34 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
+    function setPanelPtyId(path: string, id: string, type: "tui" | "term" | "split", ptyId: string | undefined) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === id,
+        produce((panel) => {
+          if (type === "tui") panel.tuiPtyId = ptyId
+          else if (type === "term") panel.termPtyId = ptyId
+          else if (type === "split") panel.splitPtyId = ptyId
+        }),
+      )
+    }
+
+    function setPanelSplitTerminal(path: string, id: string, open: boolean) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === id,
+        produce((panel) => {
+          panel.splitTerminal = open
+        }),
+      )
+    }
+
     function setActivePanel(path: string, id: string) {
       ensureSpace(path)
       setStore("spaces", path, "activePanelID", id)
@@ -148,6 +180,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       addPanel,
       removePanel,
       setPanelMode,
+      setPanelPtyId,
+      setPanelSplitTerminal,
       setActivePanel,
       setPanelDirectory,
       toggleTerminalDock,
