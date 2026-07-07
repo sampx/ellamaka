@@ -468,7 +468,7 @@ TUI 进程恢复：TUI PTY 正常关闭（退出 = PTY 关闭），serve 端状�
 
 **Done**:
 任务产出：拖放恢复机制，含 drag source、drop target、空/open 校验、跨空间拒绝、恢复逻辑
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
