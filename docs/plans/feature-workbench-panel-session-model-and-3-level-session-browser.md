@@ -111,7 +111,7 @@ const viewRegistry: PanelViewDef[] = []
 - 拖放恢复：idle Session 拖入空/open Panel，TUI 走 `--continue`，Chat 走 resume API
 - 关闭 Panel 确认对话框与资源释放（TUI PTY 正常关闭，serve 端状态保留）
 - 视图切换：TUI/Chat/Terminal 单视图切换，过渡动画；open 状态下 TUI/Chat 灰显触发装载器
-- Context Popup（圆环指示器 + popup，复用官方 session-context-usage 数据）+ Context 视图占位（注册到 viewRegistry，后续实现）
+- Context Popup（圆环指示器 + popup，复用官方 session-context-usage 数据）+ Context 视图（封装官方 SessionContextTab，占满 Panel 主视图，详细查看）
 - 拆分菜单重组（Session/Panel/视图三组，禁用项灰显，无快捷键）
 - 左侧 sidebar 重写为完整全景的三级树（所有 Space→Project→Session 始终可见）
 - Space tab 与左侧树联动：切 tab 激活焦点到对应 Space 节点并展开，不过滤树；有 bound Panel 时弹确认（含"不再提示"勾选，偏好持久化）
@@ -154,6 +154,7 @@ const viewRegistry: PanelViewDef[] = []
 1. [ ] `rg -c 'slotState' packages/ellamaka-app/src/pages/workbench/view.tsx` ≥ 1
 2. [ ] `rg -c 'boundSessionId' packages/ellamaka-app/src/pages/workbench/view.tsx` ≥ 1
 3. [ ] `rg -c 'viewRegistry' packages/ellamaka-app/src/pages/workbench/` ≥ 3
+3a. [ ] `rg -c 'SessionContextTab' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1（Context 视图封装官方组件）
 4. [ ] `rg -c 'PanelLoader' packages/ellamaka-app/src/pages/workbench/parts/` ≥ 2
 5. [ ] `rg -c 'SessionTree' packages/ellamaka-app/src/pages/workbench/` ≥ 2
 6. [ ] `rg -c 'ContextPopup' packages/ellamaka-app/src/pages/workbench/` ≥ 2
@@ -330,13 +331,13 @@ render 函数接收 PanelViewCtx（panel、session、directory、sdk 等），�
 2. 注册 TUI 视图（requiresSession=true, availableInOpen=false, render 复用现有 Terminal + PTY 逻辑）
 3. 注册 Terminal 视图（requiresSession=false, availableInOpen=true, render 复用现有 terminal mode 的 PTY 逻辑）
 4. 注册 Chat 视图占位（requiresSession=true, availableInOpen=false, render 返回占位 UI，由 Task 9 填充）
-5. 注册 Context 视图占位（requiresSession=true, availableInOpen=false, showContext=false, render 返回占位 UI，后续 Plan 实现）
+5. 注册 Context 视图（requiresSession=true, availableInOpen=false, showContext=false, render 封装官方 `SessionContextTab` 组件，从 `@app/components/session/session-context-tab` 导入，薄包装适配 Panel 上下文）
 
 **Verify**:
-`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'viewRegistry' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1，`rg -c 'availableInOpen' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1
+`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'viewRegistry' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1，`rg -c 'availableInOpen' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1，`rg -c 'SessionContextTab' packages/ellamaka-app/src/pages/workbench/view-registry.tsx` ≥ 1
 
 **Done**:
-任务产出：viewRegistry 机制 + TUI/Terminal 视图定义 + Chat/Context 占位
+任务产出：viewRegistry 机制 + TUI/Terminal 视图定义 + Chat 占位 + Context 视图（封装官方组件）
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
@@ -386,10 +387,17 @@ PanelLoader 是 empty Panel 的内容区组件，上半部分展示三个选择�
 
 **Files**: `packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx`, `packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx`
 
-**Pre-read**: Task 1 session-store.tsx, `packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx`, `packages/ellamaka-app/src/pages/workbench/space-store.tsx`, `packages/ellamaka-app/src/pages/workbench/view.tsx`
+**Pre-read**: Task 1 session-store.tsx, `packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx`, `packages/ellamaka-app/src/pages/workbench/space-store.tsx`, `packages/ellamaka-app/src/pages/workbench/view.tsx`, `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts`, `packages/opencode/src/server/routes/instance/httpapi/groups/project.ts`, `packages/opencode/src/server/routes/instance/httpapi/groups/session.ts`
 
 **Design**:
 sidebar.tsx 重写为三级树容器，内部渲染 SessionTree 组件。树始终展示所有 Space 的完整层级（Space → Project → Session），不按 tab 过滤。当前 tab 对应的 Space 节点高亮激活，Project 默认展开；其他 Space 节点也可见，用户可手动展开/收起浏览。
+
+**数据源（三个 API 均已存在）**：
+- Space 列表：`sdk.client.wopalSpace.spaces()`，返回 `[{name, path, type}]`（space-store.tsx 已用）
+- Project 列表：`sdk.client.project.list({ directory: <spacePath> })`，返回该 Space 下的项目目录
+- Session 列表：`sdk.client.session.list({ scope: "project", directory: <projectPath> })`，按项目目录过滤会话
+
+数据加载策略：树节点展开时按需加载子节点（懒加载）。Space 节点展开 → 加载 Project 列表；Project 节点展开 → 加载 Session 列表。已加载节点缓存，避免重复请求。session-store 中的本地 Session 实体与 session.list 返回的服务端 Session 合并去重（本地 Session 是 Workbench 创建的引用，服务端 Session 是 ellamaka serve 持有的真实记录，两者通过 session id 关联）。
 
 Tab 切换联动：切换 tab 时，左侧树激活焦点到对应 Space 节点（高亮 + 展开 Project + 滚动可见），其他 Space 节点保持展开/收起状态不变。若当前 tab 有 bound Panel，切换前弹确认对话框，提示"当前空间有会话正在运行，切换空间不会中断它们，切回此 Tab 可继续。是否不再提示？"，提供"不再提示"勾选框，勾选后偏好持久化到 workbench display state。
 
@@ -404,20 +412,21 @@ Panel 不跨空间：当前 tab 的 Panel 只能装该 Space 的 Session，sessi
 **TDD**: false（树渲染，人工验证）
 
 **Changes**:
-1. 创建 `session-tree.tsx`，实现完整全景的 Space→Project→Session 三级树渲染，含展开/收起、状态点、右键菜单
-2. 重写 `sidebar.tsx`，渲染 SessionTree，保持所有 Space 可见，当前 tab Space 高亮激活
-3. 实现 tab 切换联动：激活焦点到对应 Space 节点（高亮 + 展开 + 滚动可见），其他 Space 不变
-4. 实现 tab 切换确认对话框（bound Panel 时弹，含"不再提示"勾选，偏好持久化）
-5. 实现 Project 点击推送目录到空 Panel 装载器（通过回调或 context），无空 Panel 时状态栏提示
-6. 实现 Session 右键菜单（重命名、归档、在新 Panel 中打开）
-7. 实现 Project 右键菜单（新建会话，默认 chat，校验 spaceName=当前 tab）
-8. 实现 Space 节点点击切换 tab 逻辑（非当前 tab Space 点击触发确认）
+1. 创建 `session-tree.tsx`，实现完整全景的 Space→Project→Session 三级树渲染，含展开/收起、状态点、右键菜单、懒加载
+2. 实现数据加载：Space 用 wopalSpace.spaces()、Project 用 project.list({directory: spacePath})、Session 用 session.list({scope:"project", directory: projectPath})；本地 session-store 与服务端 session.list 合并去重
+3. 重写 `sidebar.tsx`，渲染 SessionTree，保持所有 Space 可见，当前 tab Space 高亮激活
+4. 实现 tab 切换联动：激活焦点到对应 Space 节点（高亮 + 展开 + 滚动可见），其他 Space 不变
+5. 实现 tab 切换确认对话框（bound Panel 时弹，含"不再提示"勾选，偏好持久化）
+6. 实现 Project 点击推送目录到空 Panel 装载器（通过回调或 context），无空 Panel 时状态栏提示
+7. 实现 Session 右键菜单（重命名、归档、在新 Panel 中打开）
+8. 实现 Project 右键菜单（新建会话，默认 chat，校验 spaceName=当前 tab）
+9. 实现 Space 节点点击切换 tab 逻辑（非当前 tab Space 点击触发确认）
 
 **Verify**:
-`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'SessionTree' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c '不再提示\|dontRemind\|suppressConfirm' packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx` ≥ 1
+`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'SessionTree' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c 'project\.list\|projectList' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c 'session\.list\|sessionList' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c '不再提示\|dontRemind\|suppressConfirm' packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx` ≥ 1
 
 **Done**:
-任务产出：完整全景三级 Session Browser + tab 联动 + 切换确认 + 右键菜单
+任务产出：完整全景三级 Session Browser + 三 API 数据源 + tab 联动 + 切换确认 + 右键菜单
 - [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---

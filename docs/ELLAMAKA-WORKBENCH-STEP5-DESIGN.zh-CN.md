@@ -113,7 +113,7 @@ type WorkbenchPanel = {
 | `tui` | TUI | Session（ellamaka TUI 进程） | 绑定 Session，走 `--continue` 恢复 | ✅ |
 | `chat` | Chat | Session（官方 MessageTimeline + Composer） | 绑定 Session，走 resume API | ✅ |
 | `terminal` | Terminal | 不走 Session | 不绑 Session（open 状态用 Space 根目录，bound 状态用 boundSession 目录） | ✅ |
-| `context` | Context | Session | 绑定 Session，详细展示 token/usage/cost/压缩历史 | 占位（后续实现） |
+| `context` | Context | Session | 绑定 Session，封装官方 `SessionContextTab` 组件（token/usage/cost/breakdown/消息统计） | ✅（封装官方组件） |
 | `file` | 文件 | 项目目录 | 不绑 Session，基于目录渲染文件树 | 后续 |
 | `diff` | Diff | Session 或文件 | 可绑 Session 的 diff，也可独立文件 diff | 后续 |
 
@@ -218,6 +218,18 @@ Workbench 以 Space Tab 为顶层工作上下文概念：
 - 其他 Space 节点也可见，用户可手动展开/收起浏览。
 - Project 和 Session 的浏览不受 tab 限制，用户可在任何 Space 节点下浏览。
 - 点击树中的 Space 节点（非当前 tab）= 切换 tab（触发上述确认逻辑）。
+
+### 3.4 数据源（三个 API 均已存在）
+
+| 树层级 | 数据源 | API | 参数 |
+|--------|--------|-----|------|
+| Space | `sdk.client.wopalSpace.spaces()` | wopal-space.spaces | 无，返回 `[{name, path, type}]` |
+| Project | `sdk.client.project.list(...)` | project.list | `{ directory: <spacePath> }`，返回该 Space 下的项目目录 |
+| Session | `sdk.client.session.list(...)` | session.list | `{ scope: "project", directory: <projectPath> }`，按项目目录过滤 |
+
+数据加载策略：树节点展开时按需加载子节点（懒加载）。Space 节点展开 → 加载 Project 列表；Project 节点展开 → 加载 Session 列表。已加载节点缓存，避免重复请求。
+
+session-store 中的本地 Session 实体与 session.list 返回的服务端 Session 合并去重：本地 Session 是 Workbench 创建的引用（boundPanelId 等运行时状态），服务端 Session 是 ellamaka serve 持有的真实记录（消息历史、上下文），两者通过 session id 关联。
 
 ### 3.4 Session 节点状态指示
 
