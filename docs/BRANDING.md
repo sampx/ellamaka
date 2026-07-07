@@ -568,7 +568,7 @@ sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中�
 `packages/app` 创建。承接从 `poc/web` 验证的产品形态(三栏 IDE 工作台),
 同时保持与上游 `opencode` 能力更新的同步能力。
 
-**设计决策与架构详见 `docs/DESIGN.md §8`。** 本节记录品牌化实施细节。
+**设计决策与架构详见 [ELLAMAKA-WORKBENCH.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.md) / [ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md) 以及 [DESIGN.md §8](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/DESIGN.md)。** 本节记录品牌化实施细节。
 
 ### 15.1 包级差异(相对于上游 `packages/app`)
 
@@ -646,7 +646,7 @@ bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
 | 文档 | 说明 |
 |------|------|
 | `packages/ellamaka-app/AGENTS.md` | 包级开发规则 |
-| `docs/DESIGN.md §8` | ellamaka-app 架构设计 |
+| `docs/ELLAMAKA-WORKBENCH.zh-CN.md` | ellamaka-app 详细设计与架构设计 |
 | `poc/web/OVERVIEW.md` | PoC 验证结果 |
 
 ---
@@ -740,6 +740,6 @@ ellamaka 的 SDK 由 `packages/sdk/js/script/build.ts` 从后端 OpenAPI spec �
 
 | 文档 | 说明 |
 |------|------|
-| `docs/DESIGN.md §8` | ellamaka-app 架构(workbench 侧栏数据源契约) |
+| `docs/ELLAMAKA-WORKBENCH.zh-CN.md` | ellamaka-app 详细 architecture (workbench 侧栏数据源契约) |
 | `docs/BRANDING.md §2` | 路径体系(`Global.Path.config` = `~/.wopal/config`) |
 | `packages/opencode/src/server/routes/instance/httpapi/AGENTS.md` | HttpApi 路由模式规范 |

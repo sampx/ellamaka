@@ -78,6 +78,71 @@ Ellamaka App
 官方应用布局保持不变。
 Workbench 集成在官方标题栏中添加一个显式的 `Workbench` 按钮，其余官方应用壳保持不变。
 
+### 3.3 架构与目录结构
+
+```
+packages/ellamaka-app/           ← ellamaka 定制 web UI
+  ├── src/pages/workbench/         ← 🆕 三栏 IDE 工作台
+  │   ├── index.tsx                  主布局(top-bar/activity-bar/sidebar/workspace/status-bar)
+  │   ├── view.tsx                   视图切换 Provider(面板状态管理，持久化到 localStorage)
+  │   ├── space-store.tsx            空间列表 + tab 状态 Provider
+  │   ├── surface-route.ts           路由与界面切换辅助逻辑
+  │   └── parts/
+  │       ├── top-bar.tsx            顶栏(品牌/活动空间摘要/返回 Official App)
+  │       ├── sidebar.tsx            活动栏与空间栏(已注册空间、折叠、设置入口)
+  │       ├── workspace.tsx          工作区(标签页管理与 1~3 个 Panel 容器)
+  │       ├── panel.tsx              通用面板组件(模式切换、目录选择)
+  │       ├── bottom-dock.tsx        底部终端坞组件
+  │       ├── status-bar.tsx         底栏(状态/服务器/活动路径)
+  │       └── workbench-settings.tsx 工作台特有设置菜单
+  ├── (其他目录完全继承 app/)
+  └── AGENTS.md                    ← 包级开发规则
+```
+
+### 3.4 与上游同步策略
+
+| 策略 | 说明 |
+|------|------|
+| **目录级 merge=ours** | `.gitattributes` 将 `packages/app/` 标记为 `merge=ours`，上游合并时保留 ellamaka 基线作为对照；`packages/ellamaka-app/` 不受保护，可正常合并上游变更 |
+| **增量同步工作流** | 上游 `packages/app` 有更新时，人工或脚本 review 差异 → 挑选变更 cherry-pick 或重做 → 在 `packages/ellamaka-app/` 同步落地 |
+| **定制区域边界清晰** | 定制集中在新增的 `workbench/`、`view.tsx` 和入口注入；不修改 `app/` 原有结构 |
+| **依赖同步** | `package.json` 中的 `workspace:*` 依赖指向共享包，与上游保持一致 |
+
+### 3.5 从 PoC 正规化的能力
+
+架构决策带入，代码不直接搬运：
+
+| PoC 验证的能力 | ellamaka-app 中的承接 |
+|---------------|----------------------|
+| pty-bridge 独立子进程模式 | 现有：`packages/opencode/src/pty/`（完整 PTY系统，Effect Schema，WebSocket ticket 鉴权） |
+| 多空间 TUI 标签 | 现有：`TerminalProvider` 支持最多 20 tabs；workbench 新增 `useSpaceStore` hook |
+| TUI/Chat 融合视图 | 新增：`panel.tsx` 与面板模式多面板组合 |
+| 命令面板三视图切换(⌘1/2/3) | 新增：注册到 `CommandProvider`，复用现有命令面板 UI |
+| 空间侧栏 + 空间拾取器 | 新增：`sidebar.tsx` 空间列表与切换 |
+
+### 3.6 与 wopal-cli 的协同
+
+ellamaka-app 嵌入 ellamaka 二进制后，`ellamaka serve` 提供 API + Web UI 双能力（同一端口 4096）。`wopal start` 职责简化为：
+
+```
+wopal start
+  ├─ startEngine()  → 启动 ellamaka serve (detached，端口 4096)
+  ├─ open browser   → http://localhost:4096/workbench
+  └─ process.exit(0)← 立即退出，wopal.exe 解锁
+```
+
+与现有 `startEngine()` 架构完全契合——只是从 `spawnSync(ellamaka attach)` 改为 `open browser + exit`。彻底解决 `wopal update` 的 Windows 文件锁问题。
+
+### 3.7 与 poc/web 的关系
+
+| 阶段 | PoC (poc/web) | ellamaka-app |
+|------|--------------|--------------|
+| 现状 | 原型验证中 | 骨架已实现并跑通空间侧栏 |
+| 验证完成后 | 保留作为探索参考 | 承接产品化代码和架构决策 |
+| 后续 | 逐步迁移能力到 ellamaka-app，最终归档 | 唯一 web UI 产品形态 |
+
+**PoC 归档时机**：ellamaka-app 的 workbench 视图稳定运行、覆盖 PoC 全部场景（桌面 TUI、移动 Chat、分屏、命令面板）后，poc/web 进入归档状态。不再新增功能，仅保留为参考实现。
+
 ## 4. Workbench 布局
 
 ### 4.1 桌面布局

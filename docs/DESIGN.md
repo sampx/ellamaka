@@ -123,78 +123,12 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 | 直接修改 `packages/app` | ❌ 否决 | 侵入上游源码,合并上游 `opencode` 更新时冲突面大 |
 | 在 `poc/web` 基础上迭代 | ❌ 否决 | PoC 代码质量和架构无法承接产品化(单文件 1025 行、裸 JSON 协议、CDN 外部依赖) |
 | **Fork `packages/app` → `packages/ellamaka-app`** | ✅ 采纳 | 复用现有基础设施(core/sdk/ui/i18n/terminal/theme);保持上游同步能力;定制与上游解耦 |
+### 8.3 详细规约
 
-### 8.3 架构
+关于 `ellamaka-app` 工作台（Workbench）的具体界面、视图模型（TUI/Chat/Split 面板模型）、详细目录架构、上游同步细节、PoC 能力迁移规约以及与 `wopal-cli` 的协同，请参阅独立的详细设计规范文档：
 
-```
-packages/ellamaka-app/           ← ellamaka 定制 web UI
-  ├── src/pages/workbench/         ← 🆕 三栏 IDE 工作台
-  │   ├── index.tsx                  主布局(top-bar/activity-bar/sidebar/workspace/status-bar)
-  │   ├── views/
-  │   │   ├── tui-view.tsx           TUI 视图(复用 terminal.tsx)
-  │   │   ├── chat-view.tsx          Chat 视图(复用 session 组件)
-  │   │   └── split-view.tsx         分屏视图(TUI + Chat 并排)
-  │   └── parts/
-  │       ├── top-bar.tsx            顶栏(品牌/视图切换/命令面板)
-  │       ├── activity-bar.tsx       活动栏(空间/搜索/历史/设置)
-  │       ├── sidebar.tsx            侧栏(空间列表)
-  │       ├── workspace.tsx          工作区(tab 管理)
-  │       ├── context-panel.tsx      上下文面板(模型/历史/运行时)
-  │       └── status-bar.tsx         底栏(状态/快捷键提示)
-  ├── src/components/workbench/    ← 🆕 工作台专属组件
-  ├── src/hooks/workbench/         ← 🆕 工作台业务 hooks
-  ├── src/context/view.tsx         ← 🆕 视图切换 Provider(TUI/Chat/Split)
-  ├── (其他目录完全继承 app/)
-  └── AGENTS.md                    ← 包级开发规则
-```
-
-**与上游 `packages/app` 共享**:`@opencode-ai/core`/`@opencode-ai/sdk`/`@opencode-ai/ui` 工作区包、SolidJS + Vite + Tailwind 构建栈、现有页面路由、TerminalProvider、Session/Terminal 组件、SDK 客户端、命令面板、i18n、主题系统。
-
-### 8.4 与上游同步策略
-
-| 策略 | 说明 |
-|------|------|
-| **目录级 merge=ours** | `.gitattributes` 将 `packages/app/` 标记为 `merge=ours`,上游合并时保留 ellamaka 基线作为对照;`packages/ellamaka-app/` 不受保护,可正常合并上游变更 |
-| **增量同步工作流** | 上游 `packages/app` 有更新时,人工或脚本 review 差异 → 挑选变更 cherry-pick 或重做 → 在 `packages/ellamaka-app/` 同步落地 |
-| **定制区域边界清晰** | 定制集中在新增的 `workbench/`、`view.tsx` 和入口注入;不修改 `app/` 原有结构 |
-| **依赖同步** | `package.json` 中的 `workspace:*` 依赖指向共享包,与上游保持一致 |
-
-### 8.5 从 PoC 正规化的能力
-
-架构决策带入,代码不直接搬运:
-
-| PoC 验证的能力 | ellamaka-app 中的承接 |
-|---------------|----------------------|
-| pty-bridge 独立子进程模式 | 现有:`packages/opencode/src/pty/`(完整 PTY 系统,Effect Schema,WebSocket ticket 鉴权) |
-| 多空间 TUI 标签 | 现有:`TerminalProvider` 支持最多 20 tabs;workbench 新增 `use-space-tabs` hook |
-| TUI/Chat 融合视图 | 新增:`split-view.tsx` 并排组件 |
-| 命令面板三视图切换(⌘1/2/3) | 新增:注册到 `CommandProvider`,复用现有命令面板 UI |
-| 空间侧栏 + 空间拾取器 | 新增:`sidebar.tsx` + `space-picker.tsx` 弹窗 |
-
-**不搬运的 PoC 内容**:单文件 server.ts、xterm.js(CDN 加载)、裸 JSON 协议、写死 `~/.wopal` 路径、单 Chat session 单例、反馈 JSONL 存储。
-
-### 8.6 与 wopal-cli 的协同
-
-ellamaka-app 嵌入 ellamaka 二进制后,`ellamaka serve` 提供 API + Web UI 双能力(同一端口 4096)。`wopal start` 职责简化为:
-
-```
-wopal start
-  ├─ startEngine()  → 启动 ellamaka serve(detached,端口 4096)
-  ├─ open browser   → http://localhost:4096/workbench
-  └─ process.exit(0)← 立即退出,wopal.exe 解锁
-```
-
-与现有 `startEngine()` 架构完全契合——只是从 `spawnSync(ellamaka attach)` 改为 `open browser + exit`。彻底解决 `wopal update` 的 Windows 文件锁问题。
-
-### 8.7 与 poc/web 的关系
-
-| 阶段 | PoC (poc/web) | ellamaka-app |
-|------|--------------|--------------|
-| 现状 | 原型验证中 | 待创建 |
-| 验证完成后 | 保留作为探索参考 | 承接产品化代码和架构决策 |
-| 后续 | 逐步迁移能力到 ellamaka-app,最终归档或保留为技术债务记录 | 成为 ellamaka 唯一的 web UI 产品形态 |
-
-**PoC 归档时机**:ellamaka-app 的 workbench 视图稳定运行、覆盖 PoC 全部场景(桌面 TUI、移动 Chat、分屏、命令面板)后,poc/web 进入归档状态。不再新增功能,仅保留为参考实现。
+- 英文版：[ELLAMAKA-WORKBENCH.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.md)
+- 中文版：[ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md)
 
 ---
 
@@ -203,7 +137,7 @@ wopal start
 | 文档 | 引用目的 |
 |------|----------|
 | `./BRANDING.md` | 品牌化定制唯一真相源— |
-| `./WORKBENCH-UI-REDESIGN.md` | ellamaka 自定义工作台 app 设计 |
+| `./ELLAMAKA-WORKBENCH.md` | ellamaka 自定义工作台 app 设计 |
 | `./DISTRIBUTION.md` | release、artifact、安装契约 |
 | `../../wopal-cli/docs/DESIGN.md` | wopal-cli 如何消费 ellamaka release |
 | `UPSTREAM-MERGE-LOG.md` | 裁剪边界、合并策略、验证经验 |

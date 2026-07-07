@@ -78,6 +78,71 @@ Entry points:
 Official app layout stays unchanged.
 Workbench integration adds one explicit `Workbench` button into the official titlebar and leaves the rest of the official app shell untouched.
 
+### 3.3 Architecture and Directory Structure
+
+```
+packages/ellamaka-app/           ← ellamaka customized web UI
+  ├── src/pages/workbench/         ← 🆕 Three-column IDE workbench
+  │   ├── index.tsx                  Main layout (top-bar/activity-bar/sidebar/workspace/status-bar)
+  │   ├── view.tsx                   View toggle Provider (panel state management, persisted to localStorage)
+  │   ├── space-store.tsx            Space list + tab state Provider
+  │   ├── surface-route.ts           Route and surface toggle helpers
+  │   └── parts/
+  │       ├── top-bar.tsx            Top bar (brand / active space summary / return to Official App)
+  │       ├── sidebar.tsx            Activity bar & space rail (registered spaces, collapse, settings entry)
+  │       ├── workspace.tsx          Workspace (tab management and 1~3 Panel containers)
+  │       ├── panel.tsx              Common panel component (mode toggle, directory selection)
+  │       ├── bottom-dock.tsx        Bottom terminal dock component
+  │       ├── status-bar.tsx         Status bar (status / server / active path)
+  │       └── workbench-settings.tsx Workbench-specific settings menu
+  ├── (Other directories completely inherited from app/)
+  └── AGENTS.md                    ← Package-level development rules
+```
+
+### 3.4 Upstream Sync Strategy
+
+| Strategy | Description |
+|------|------|
+| **Directory-level merge=ours** | `.gitattributes` marks `packages/app/` as `merge=ours`, preserving the ellamaka baseline as a reference during upstream merges; `packages/ellamaka-app/` is unprotected and can merge upstream changes normally. |
+| **Incremental Sync Workflow** | When upstream `packages/app` is updated, manually or script-review differences → pick changes to cherry-pick or redo → implement in `packages/ellamaka-app/`. |
+| **Clear Customization Boundaries** | Customization is concentrated in the new `workbench/`, `view.tsx`, and entry injections; does not modify the original structure of `app/`. |
+| **Dependency Sync** | `workspace:*` dependencies in `package.json` point to shared packages, remaining consistent with upstream. |
+
+### 3.5 Regularized Capabilities from PoC
+
+Architectural decisions are carried over, code is not directly copied:
+
+| PoC Validated Capability | Adoption in ellamaka-app |
+|---------------|----------------------|
+| pty-bridge independent child process mode | Existing: `packages/opencode/src/pty/` (Complete PTY system, Effect Schema, WebSocket ticket authentication) |
+| Multi-space TUI tabs | Existing: `TerminalProvider` supports up to 20 tabs; workbench adds `useSpaceStore` hook |
+| TUI/Chat unified view | New: `panel.tsx` and multi-panel composition in panel mode |
+| Command palette three-view toggle (⌘1/2/3) | New: Registered in `CommandProvider`, reusing existing command palette UI |
+| Space sidebar + Space picker | New: `sidebar.tsx` space list and switching |
+
+### 3.6 Coordination with wopal-cli
+
+After embedding ellamaka-app into the ellamaka binary, `ellamaka serve` provides both API + Web UI capabilities (on the same port 4096). The responsibility of `wopal start` is simplified to:
+
+```
+wopal start
+  ├─ startEngine()  → Start ellamaka serve (detached, port 4096)
+  ├─ open browser   → http://localhost:4096/workbench
+  └─ process.exit(0)← Exit immediately, unlocking wopal.exe
+```
+
+This perfectly aligns with the existing `startEngine()` architecture—simply changing from `spawnSync(ellamaka attach)` to `open browser + exit`. This completely resolves the Windows file lock issue for `wopal update`.
+
+### 3.7 Relationship with poc/web
+
+| Phase | PoC (poc/web) | ellamaka-app |
+|------|--------------|--------------|
+| Status | In prototype validation | Skeleton implemented, space sidebar wired and running |
+| After Validation | Kept as exploration reference | Carries production code and architectural decisions |
+| Future | Capabilities gradually migrated to ellamaka-app, eventually archived | The sole web UI production form |
+
+**PoC Archiving Timeline**: Once the workbench view of ellamaka-app runs stably and covers all PoC scenarios (desktop TUI, mobile Chat, split-screen, command palette), poc/web will enter the archived state. No new features will be added, keeping it solely as a reference implementation.
+
 ## 4. Workbench layout
 
 ### 4.1 Desktop layout
