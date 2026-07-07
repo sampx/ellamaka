@@ -141,7 +141,7 @@ This perfectly aligns with the existing `startEngine()` architecture—simply ch
 | After Validation | Kept as exploration reference | Carries production code and architectural decisions |
 | Future | Capabilities gradually migrated to ellamaka-app, eventually archived | The sole web UI production form |
 
-**PoC Archiving Timeline**: Once the workbench view of ellamaka-app runs stably and covers all PoC scenarios (desktop TUI, mobile Chat, split-screen, command palette), poc/web will enter the archived state. No new features will be added, keeping it solely as a reference implementation.
+**PoC Archiving Timeline**: Once the workbench view of ellamaka-app runs stably, the mobile `/m` route migration is complete (see Step 6), and all PoC scenarios are covered (desktop TUI, mobile Chat, split-screen, command palette), poc/web will enter the archived state. No new features will be added, keeping it solely as a reference implementation.
 
 ## 4. Workbench layout
 
@@ -438,6 +438,157 @@ The interaction contract should still be panel-directory based from day one.
 - Bind Chat panels to directory-scoped chat state
 - Add agent/model/session controls in panel headers
 - Persist active conversation state per space
+- Use isolated ellamaka-specific wrapper components to avoid upstream merge conflicts (see §12.1)
+
+### Step 6 — Mobile route `/m`
+
+- Add `/m` route providing a phone-dedicated Chat interface (detailed design in §12.1.5)
+- Migrate core Chat interaction logic from poc/web and optimize mobile UX
+- Detect mobile browsers and auto-redirect to `/m`
+- Users can manually switch back to desktop version; preference is persisted
+
+## 12.1 Chat Panel Architecture (Detailed Design)
+
+### 12.1.1 Component Isolation Strategy
+
+To prevent merge conflicts with upstream `packages/app`, all Workbench-specific Chat adaptations live in dedicated ellamaka directories:
+
+```
+packages/ellamaka-app/src/pages/workbench/
+├── parts/
+│   ├── panel-chat.tsx              # ← NEW: Chat panel wrapper (ellamaka-specific)
+│   ├── panel-chat-header.tsx       # ← NEW: Panel-level model/agent/session controls
+│   └── panel-chat-composer.tsx     # ← NEW: Adapted composer for panel context
+├── services/
+│   └── panel-session-service.ts    # ← NEW: Per-panel session state management
+── hooks/
+    └── use-panel-chat-state.ts     # ← NEW: Panel-scoped chat state hook
+```
+
+**Isolation Principles:**
+1. **No modifications to `packages/app`**: All adaptations are additive wrappers
+2. **Reuse official components**: Import from `@app/pages/session/*` without modification
+3. **Adapter pattern**: Thin wrapper layers handle Panel-specific concerns (directory scoping, layout adaptation)
+4. **Clear boundaries**: Ellamaka-specific code clearly separated from inherited app code
+
+### 12.1.2 Official App Chat UI Design Version Analysis
+
+The official app's Chat interface is driven by a single `PromptInput` component (2155 lines) that switches between two visual styles via the global setting `settings.general.newLayoutDesigns()`:
+
+**Design Comparison:**
+
+| Dimension | v1 Old Design (`newLayoutDesigns = false`) | v2 New Design (`newLayoutDesigns = true`) |
+|-----------|-------------------------------------------|------------------------------------------|
+| **UI Library** | `@opencode-ai/ui/*` (v1) | `@opencode-ai/ui/v2/*` (v2) |
+| **Visual Style** | Traditional borders, higher information density | Rounded corners + shadows, visually minimal |
+| **Model Selector** | In bottom dock toolbar | Embedded in composer toolbar |
+| **Agent Display** | Agent name visible in session header and interactions | Agent name display removed, overly sparse UI |
+| **New Session Page** | Logo + title + worktree selector + info text | WordmarkV2 + inline composer, missing information |
+| **Session Header** | Full header (file tree/search/terminal toggles, open-in-app menu) | Simplified controls, reduced functionality |
+| **File Tree** | Visible by default | Hidden by default |
+
+**UX Assessment:**
+- v1 old design provides complete information density and functionality: agent name visible, full-featured header, rich new session page
+- v2 new design is over-simplified: removed agent name display, simplified header, insufficient new session page information — noticeably worse UX
+- `showCustomAgents` setting only applies to v2 and is disabled by default, further limiting v2's agent visibility
+
+**Conclusion: Workbench Chat integration should target the v1 old design.**
+
+**Integration Strategy:**
+- `PromptInput` switches rendering style based on the global `newLayoutDesigns` setting. The Workbench panel wrapper must ensure v1 rendering in the embedded context
+- If the user has globally enabled v2, the Workbench wrapper layer needs to force-override to v1 style, or explicitly set `newLayoutDesigns = false` context in the wrapper
+- Core reuse components `MessageTimeline` and `SessionComposerRegion` are identical across both designs; the difference lies only in `PromptInput`'s visual wrapper
+
+**Context Adaptation Challenges:**
+
+| Dependency | Description | Workbench Challenge |
+|------------|-------------|--------------------|
+| `useParams()` | Session ID from route | Workbench panels are not in session routes |
+| `useSessionLayout()` | Session tabs and view state | Workbench has its own panel state management |
+| `useLayout()` | Global layout context | Workbench has independent layout |
+| `useSDK()` / `useServer()` | SDK and server connection | Reusable but needs correct initialization |
+| `usePrompt()` / `useLocal()` | Prompt and local state | Requires panel-level isolation |
+
+### 12.1.3 Desktop and Mobile Chat Strategy
+
+ellamaka-app hosts both desktop and mobile Chat interfaces within the same application:
+
+| Dimension | Workbench Chat (Desktop/Tablet) | Mobile Chat (Phone/Small Tablet) |
+|-----------|-------------------------------|----------------------------------|
+| **Route** | `/workbench` (embedded in panel) | `/m` (dedicated mobile route) |
+| **Target Device** | Desktop browsers, tablets | Mobile phones, small tablets |
+| **Layout Model** | Multi-Panel workspace (1-3 panels) | Single-column fullscreen, touch-optimized |
+| **Chat Source** | Official app components (wrapped) | Migrated from poc/web Chat + optimized |
+| **Feature Completeness** | 100% (tool calls, permissions, file refs, diffs) | Core chat + mobile UX optimizations |
+| **State Management** | Per-panel session isolation | Single active session |
+| **Route Switching** | User enters manually | Auto-redirect on mobile browser detection |
+
+**Rationale:**
+- Workbench Chat reuses official components, inheriting production-grade features and architecture consistency
+- Mobile Chat is independently implemented within ellamaka-app, not dependent on poc/web at runtime
+- Both share the same backend and session infrastructure, but UI layers are fully independent
+- The `/m` mobile route allows deep UX optimization for touch and small screens, unconstrained by desktop layout
+
+### 12.1.4 Implementation Plan
+
+#### Phase 5.1: Core Wrapper Components
+
+**PanelChat (Chat Panel Container)** — `parts/panel-chat.tsx`
+
+Responsibility: Top-level container for the Chat panel. Orchestrates internal layout (header → message area → composer). Reuses the official `MessageTimeline` for message rendering and `SessionComposerRegion` for input. Disables centered layout and hides the session title for the panel context (replaced by the panel header). Passes the panel's `directory` as the worktree context to the composer.
+
+**PanelChatHeader (Panel Control Header)** — `parts/panel-chat-header.tsx`
+
+Responsibility: Panel-level control bar. Left side displays the current directory path indicator. Right side provides a model selector (dropdown), an agent selector (dropdown), and a new session button. Visual style consistent with existing workbench panel headers.
+
+**PanelChatComposer (Panel Composer Adapter)** — `parts/panel-chat-composer.tsx`
+
+Responsibility: Thin panel-level adaptation of the official `SessionComposerRegion`. Disables centered mode, sets placement to `inline`, passes the panel's directory context and submission callbacks.
+
+**usePanelChatState (Panel Chat State Hook)** — `hooks/use-panel-chat-state.ts`
+
+Responsibility: Creates isolated Chat state per panel. Core behavior:
+- Generates a unique session key from `spaceId + panelId + directory` combination, ensuring session reuse for the same panel-directory pair
+- Creates composer state using the official `createSessionComposerState` factory
+- Exposes reactive accessors: `sessionKey`, `ready`, `composerState`, `inputRef`
+- Provides `handleSubmit` and `handleResponse` callbacks
+- On mount, ensures the session exists (creates a new one if absent)
+
+#### Phase 5.2: State Persistence Layer
+
+**PanelSessionService (Panel Session Persistence Service)** — `services/panel-session-service.ts`
+
+Responsibility: Manages persistent storage for panel-level sessions. Each panel+directory combination persists: current session ID, selected model, selected agent, and last active timestamp. Uses the existing `Persist` utility with per-space granularity. Retains the most recent 50 session records per space; older records are automatically pruned.
+
+#### Phase 5.3: Integration with Panel Workspace
+
+In `view.tsx` panel rendering logic, when panel mode is `chat`, conditionally render the `PanelChat` component, passing the panel ID, directory accessor, and current space ID. This change replaces the current Chat panel placeholder UI.
+
+### 12.1.5 Mobile Route `/m` Design Overview (Step 6 Scope)
+
+Mobile Chat is not part of the Workbench. Instead, ellamaka-app introduces a dedicated `/m` route providing an optimized Chat experience for phones and small tablets.
+
+**Routing and Redirection:**
+- New `/m` route with its own mobile shell, not wrapped in workbench or official Layout
+- On app startup, detect User-Agent and viewport width; mobile browsers auto-redirect to `/m`
+- Users can manually switch to the desktop version (`/workbench`); preference is persisted
+
+**Chat Feature Origin:**
+- Migrate core interaction logic from poc/web Chat (SSE streaming, message list, input box)
+- Further optimize mobile UX: touch gestures, virtual keyboard adaptation, safe area awareness
+- Reuse ellamaka-app session infrastructure (shared backend with Workbench Chat)
+
+**Mobile UX Optimization Directions:**
+1. **Touch Gestures**: Swipe to switch sessions, long-press for message actions
+2. **Input Optimization**: Larger tap targets, auto-layout adjustment when virtual keyboard appears
+3. **Safe Areas**: Adapt to notch, bottom safe area, and other mobile-specific screen regions
+4. **Performance**: Optimize first-screen loading and message stream rendering for mobile networks
+
+**Code Isolation:**
+- Mobile components live in `packages/ellamaka-app/src/pages/mobile/`
+- Fully separated from workbench and official app code at the directory level
+
+This belongs to a future step (Step 6) and is not within the current Step 5 implementation scope.
 
 ## 13. First implementation slice
 
@@ -468,26 +619,33 @@ It creates the right container for the real TUI and Chat integrations that follo
 - The space rail is always present and can collapse to a narrow strip
 - The workbench settings entry lives at the bottom of the space rail
 - Titlebar and statusbar visibility are already user-toggleable and persist across refreshes
+- PoC terminal flow migrated to TUI panels with on-demand activation and cross-space session persistence
+- Panel width resize handles and constraints (minimum 280px width) fully implemented with double-click reset
+- Panel-internal vertical split terminal with drag height resizing and top/bottom height constraints fully implemented
 
 ### 14.2 Not yet implemented
 
-- TUI panels are still placeholder UI
-- Chat panels are still placeholder UI
-- PoC terminal flow not yet migrated into panel model
+- Chat panels are still placeholder UI (detailed design in §12.1)
 - PoC chat flow not yet migrated into panel model
 - Panel directory selection UI not yet wired
-- Panel width resize handles not yet wired
-- Panel width constraints (minimum 280px, viewport check) not yet implemented
-- Panel-internal vertical split terminal (§6.5) not yet implemented
 - Bottom dock not yet using real terminal
+- Mobile route `/m` not yet implemented (Step 6, design overview in §12.1.5)
 
 ### 14.3 Continuation point for next session
 
-Continue from real content integration, not more shell work.
+1. **Implement Panel Chat wrapper components** (§12.1.4, Phase 5.1)
+   - Create `panel-chat.tsx`, `panel-chat-header.tsx`, `use-panel-chat-state.ts`
+   - Integrate with existing panel workspace in `view.tsx`
 
-1. Migrate PoC terminal flow to TUI panels
-2. Migrate PoC chat flow to Chat panels
-3. Panel width constraints + resize handles
-4. Panel-internal vertical split terminal (panel menu → Open Terminal)
-5. Wire per-panel directory targeting
-6. Wire bottom dock to real terminal implementation
+2. **Wire per-panel directory targeting**
+   - Add directory selector UI to panel headers
+   - Connect to space's project discovery API
+
+3. **Wire bottom dock to real terminal implementation**
+   - Reuse official app's web terminal capability
+   - Add space-level terminal state management
+
+4. **Mobile route `/m` implementation** (Step 6)
+   - Migrate Chat core logic from poc/web to `pages/mobile/`
+   - Implement mobile browser auto-detection and redirection
+   - Mobile UX optimization (touch, keyboard, safe areas)

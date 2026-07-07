@@ -141,7 +141,7 @@ wopal start
 | 验证完成后 | 保留作为探索参考 | 承接产品化代码和架构决策 |
 | 后续 | 逐步迁移能力到 ellamaka-app，最终归档 | 唯一 web UI 产品形态 |
 
-**PoC 归档时机**：ellamaka-app 的 workbench 视图稳定运行、覆盖 PoC 全部场景（桌面 TUI、移动 Chat、分屏、命令面板）后，poc/web 进入归档状态。不再新增功能，仅保留为参考实现。
+**PoC 归档时机**：ellamaka-app 的 workbench 视图稳定运行、移动端 `/m` 路由完成迁移（见步骤 6）、覆盖 PoC 全部场景（桌面 TUI、移动 Chat、分屏、命令面板）后，poc/web 进入归档状态。不再新增功能，仅保留为参考实现。
 
 ## 4. Workbench 布局
 
@@ -438,6 +438,158 @@ Workbench 特定的开关：
 - 将 Chat 面板绑定到目录作用域的对话状态
 - 在面板头部添加智能体/模型/会话控制
 - 按空间持久化活动对话状态
+- 使用 ellamaka 隔离的包装组件，避免上游合并冲突（详见 §12.1）
+
+### 步骤 6 — 移动端路由 `/m`
+
+- 新增 `/m` 路由，提供手机专属 Chat 界面（详细设计见 §12.1.5）
+- 从 poc/web 的 Chat 实现迁移核心交互逻辑并优化移动 UX
+- 检测手机浏览器自动重定向到 `/m`
+- 用户可手动切换回桌面版，偏好持久化
+
+## 12.1 Chat 面板架构详细设计
+
+### 12.1.1 组件隔离策略
+
+为防止与上游 `packages/app` 产生合并冲突，所有 Workbench 级别的 Chat 适配代码存放在 ellamaka 专属目录中：
+
+```
+packages/ellamaka-app/src/pages/workbench/
+├── parts/
+│   ├── panel-chat.tsx              # Chat 面板容器
+│   ├── panel-chat-header.tsx       # 面板级控制头部
+│   └── panel-chat-composer.tsx     # 面板上下文适配的输入区
+├── services/
+│   └── panel-session-service.ts    # 面板级会话状态持久化
+└── hooks/
+    └── use-panel-chat-state.ts     # 面板作用域 Chat 状态钩子
+```
+
+**隔离原则：**
+
+1. **零侵入**：不修改 `packages/app` 中的任何文件，所有适配均为叠加式包装
+2. **复用官方组件**：直接从 `@app/pages/session/*` 导入 `MessageTimeline`、`SessionComposerRegion` 等核心组件，不做修改
+3. **适配器模式**：薄包装层处理面板级关注点（目录作用域、布局适配、标题隐藏）
+4. **边界清晰**：ellamaka 特有代码与继承的 app 代码在目录层面完全分离
+
+### 12.1.2 官方 App Chat UI 设计版本分析
+
+官方应用的 Chat 界面由同一个 `PromptInput` 组件（2155 行）通过全局设置 `settings.general.newLayoutDesigns()` 在两种视觉风格之间切换：
+
+**两种设计对比：**
+
+| 维度 | v1 老设计（`newLayoutDesigns = false`） | v2 新设计（`newLayoutDesigns = true`） |
+|------|-------------------------------------|-------------------------------------|
+| **UI 组件库** | `@opencode-ai/ui/*`（v1） | `@opencode-ai/ui/v2/*`（v2） |
+| **视觉风格** | 传统边框，信息密度较高 | 圆角+阴影，视觉更简洁 |
+| **模型选择器** | 底部 dock 工具栏中 | 嵌入 composer 工具栏内 |
+| **Agent 显示** | 在会话头部和交互中可见 agent 名称 | 去掉了 agent 名称显示，界面过于简陋 |
+| **新会话页** | Logo + 标题 + worktree 选择器 + 信息文本 | WordmarkV2 + 内联 composer，信息缺失 |
+| **Session 头部** | 完整头部（文件树/搜索/终端切换、打开编辑器菜单） | 简化的控制栏，功能缺失 |
+| **文件树** | 默认显示 | 默认隐藏 |
+
+**UX 评估：**
+- v1 老设计提供更完整的信息密度和功能性，agent 名称可见、头部功能完整、新会话页信息丰富
+- v2 新设计过度精简，去掉了 agent 名称显示、简化了头部、新会话页信息不足，用户体验明显下降
+- `showCustomAgents` 设置仅对 v2 生效，且默认关闭，进一步限制了 v2 的 agent 可见性
+
+**结论：Workbench Chat 集成应以 v1 老设计为目标。**
+
+**集成策略：**
+- `PromptInput` 组件根据全局 `newLayoutDesigns` 设置切换渲染风格。Workbench 面板需要确保在嵌入场景下使用 v1 渲染路径
+- 如果用户全局开启了 v2，Workbench 包装层需要强制覆盖为 v1 风格，或在包装层中显式设置 `newLayoutDesigns = false` 的上下文
+- 核心复用组件 `MessageTimeline` 和 `SessionComposerRegion` 在两种设计下相同，差异仅在 `PromptInput` 的视觉包装
+
+**上下文适配挑战：**
+
+| 依赖 | 说明 | Workbench 挑战 |
+|------|------|---------------|
+| `useParams()` | 从路由获取 session ID | Workbench 面板不在 session 路由中 |
+| `useSessionLayout()` | 获取 session 标签页和视图状态 | Workbench 有自己的面板状态管理 |
+| `useLayout()` | 全局布局上下文 | Workbench 有独立布局 |
+| `useSDK()` / `useServer()` | SDK 和服务器连接 | 可复用，但需确保正确初始化 |
+| `usePrompt()` / `useLocal()` | 提示词和本地状态 | 需要面板级隔离 |
+
+### 12.1.3 桌面与移动端 Chat 策略
+
+ellamaka-app 统一承载桌面和移动端两套 Chat 界面，均位于同一应用内：
+
+| 维度 | Workbench Chat（桌面/平板） | Mobile Chat（手机/小平板） |
+|------|------------------------|--------------------------|
+| **路由** | `/workbench`（面板内嵌） | `/m`（独立移动路由） |
+| **目标设备** | 桌面浏览器、平板 | 手机、小平板 |
+| **布局模型** | 多面板工作区（1~3 面板） | 单列全屏，触控优化 |
+| **Chat 来源** | 官方应用组件（包装适配） | 基于 poc/web Chat 迁移并优化 |
+| **功能完整度** | 100%（工具调用、权限、文件引用、差异对比） | 核心对话 + 移动 UX 优化 |
+| **状态管理** | 面板级会话隔离 | 单一活动会话 |
+| **路由切换** | 用户手动进入 | 检测手机浏览器自动重定向 |
+
+**策略依据：**
+- Workbench Chat 复用官方组件，继承生产级功能和架构一致性
+- Mobile Chat 在 ellamaka-app 内独立实现，不依赖 poc/web 运行
+- 两者共享同一后端和会话基础设施，但 UI 层完全独立
+- 移动端路由 `/m` 允许针对触控和小屏做深度 UX 优化，不受桌面布局约束
+
+### 12.1.4 实施计划
+
+#### 阶段 5.1：核心包装组件
+
+**PanelChat（面板 Chat 容器）** — `parts/panel-chat.tsx`
+
+职责：作为 Chat 面板的顶层容器，编排内部布局（头部 → 消息区 → 输入区）。直接复用官方的 `MessageTimeline` 渲染消息时间线，复用 `SessionComposerRegion` 渲染输入区域。针对面板上下文禁用居中布局、隐藏会话标题（由面板头部替代），并将面板的 `directory` 作为工作树上下文传递给输入区。
+
+**PanelChatHeader（面板控制头部）** — `parts/panel-chat-header.tsx`
+
+职责：面板级的控制栏。左侧显示当前目录路径指示器；右侧提供模型选择器（下拉菜单）、智能体选择器（下拉菜单）和新建会话按钮。视觉风格与现有 workbench 面板头部保持一致。
+
+**PanelChatComposer（面板输入区适配）** — `parts/panel-chat-composer.tsx`
+
+职责：对官方 `SessionComposerRegion` 的面板级薄适配。禁用居中模式，将放置方式设为 `inline`，传递面板的目录上下文和提交回调。
+
+**usePanelChatState（面板 Chat 状态钩子）** — `hooks/use-panel-chat-state.ts`
+
+职责：为每个面板创建隔离的 Chat 状态。核心行为：
+- 根据 `spaceId + panelId + directory` 组合生成唯一的会话键（session key），确保同一面板同一目录复用会话
+- 使用官方 `createSessionComposerState` 工厂创建输入区状态
+- 暴露响应式访问器：`sessionKey`、`ready`、`composerState`、`inputRef`
+- 提供 `handleSubmit` 和 `handleResponse` 回调
+- 挂载时确保会话存在（不存在则创建新会话）
+
+#### 阶段 5.2：状态持久化层
+
+**PanelSessionService（面板会话持久化服务）** — `services/panel-session-service.ts`
+
+职责：管理面板级会话的持久化存储。每个面板+目录组合持久化以下信息：当前会话 ID、选中的模型、选中的智能体、最后活动时间。使用现有的 `Persist` 工具按空间粒度存储，每个空间保留最近 50 条会话记录，超出部分自动清理。
+
+#### 阶段 5.3：与面板工作区集成
+
+在 `view.tsx` 的面板渲染逻辑中，当面板模式为 `chat` 时，条件渲染 `PanelChat` 组件，传入面板 ID、目录访问器和当前空间 ID。此改动替换当前 Chat 面板的占位 UI。
+
+### 12.1.5 移动端路由 `/m` 设计概要（步骤 6 范围）
+
+移动端 Chat 不作为 Workbench 的一部分，而是在 ellamaka-app 内新增独立的 `/m` 路由，专为手机和小平板提供优化的 Chat 体验。
+
+**路由与重定向：**
+- 新增 `/m` 路由，使用独立的移动端壳（mobile shell），不包裹在 workbench 或官方 Layout 中
+- 应用启动时检测用户代理（User-Agent）和视口宽度，手机浏览器自动重定向到 `/m`
+- 用户可手动切换到桌面版（`/workbench`），偏好设置持久化
+
+**Chat 功能来源：**
+- 从 poc/web 的 Chat 实现迁移核心交互逻辑（SSE 流式响应、消息列表、输入框）
+- 在此基础上进一步优化移动 UX：触控手势、虚拟键盘适配、安全区域感知
+- 复用 ellamaka-app 的会话基础设施（与 Workbench Chat 共享后端）
+
+**移动 UX 优化方向：**
+1. **触控手势**：滑动切换会话、长按消息操作
+2. **输入优化**：更大的触控目标、虚拟键盘弹起时自动调整布局
+3. **安全区域**：适配刘海屏、底部安全区等移动端特殊区域
+4. **性能**：针对移动网络优化首屏加载和消息流渲染
+
+**代码隔离：**
+- 移动端组件放在 `packages/ellamaka-app/src/pages/mobile/` 目录下
+- 与 workbench 和官方 app 代码在目录层面完全分离
+
+此部分属于后续步骤（步骤 6），不在当前步骤 5 的实施范围内。
 
 ## 13. 第一个实现切片
 
@@ -471,23 +623,27 @@ Workbench 特定的开关：
 
 ### 14.2 尚未实现
 
-- TUI 面板仍然是占位界面
-- Chat 面板仍然是占位界面
-- PoC 终端流程尚未迁移到面板模型中
+- Chat 面板仍然是占位界面（详细设计见 §12.1）
 - PoC 对话流程尚未迁移到面板模型中
 - 面板目录选择 UI 尚未接线
-- 面板宽度 resize 手柄尚未接线
-- 面板宽度约束（最小 280px、视口校验）尚未实现
-- 面板内垂直 Split 终端（§6.5）尚未实现
 - 底部坞尚未使用真实终端
+- 移动端路由 `/m` 尚未实现（步骤 6，设计概要见 §12.1.5）
 
 ### 14.3 下次会话的续做点
 
-从真实内容集成继续，而非更多壳工作。
+1. **实现面板 Chat 包装组件**（§12.1.4，阶段 5.1）
+   - 创建 `panel-chat.tsx`、`panel-chat-header.tsx`、`use-panel-chat-state.ts`
+   - 与 `view.tsx` 中现有的面板工作区集成
 
-1. 将 PoC 终端流程迁移到 TUI 面板
-2. 将 PoC 对话流程迁移到 Chat 面板
-3. 面板宽度约束 + resize 手柄
-4. 面板内垂直 Split 终端（面板菜单 → Open Terminal）
-5. 接线每个面板的目录定位
-6. 将底部坞接线到真实终端实现
+2. **接线面板级目录定位**
+   - 在面板头部添加目录选择器 UI
+   - 对接空间的项目发现 API
+
+3. **将底部坞接线到真实终端实现**
+   - 复用官方应用的 Web 终端能力
+   - 添加空间级终端状态管理
+
+4. **移动端路由 `/m` 实现**（步骤 6）
+   - 从 poc/web 迁移 Chat 核心逻辑到 `pages/mobile/`
+   - 实现手机浏览器自动检测和重定向
+   - 移动 UX 优化（触控、键盘、安全区域）
