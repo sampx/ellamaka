@@ -343,7 +343,7 @@ render 函数接收 PanelViewCtx（panel、session、directory、sdk 等），�
 
 **Done**:
 任务产出：viewRegistry 机制 + TUI/Terminal 视图定义 + Chat 占位 + Context 视图（封装官方组件）
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
@@ -622,7 +622,7 @@ open Panel（裸 Terminal）关闭无需确认，直接：termPtyId kill → rem
 
 **Done**:
 任务产出：关闭 Panel 确认对话框与资源释放逻辑，bound 确认、open/empty 直接关闭
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
