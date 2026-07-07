@@ -428,11 +428,11 @@ Panel 不跨空间：当前 tab 的 Panel 只能装该 Space 的 Session，sessi
 9. 实现 Space 节点点击切换 tab 逻辑（非当前 tab Space 点击触发确认）
 
 **Verify**:
-`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'SessionTree' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c 'project\.list\|projectList' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c 'session\.list\|sessionList' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c '不再提示\|dontRemind\|suppressConfirm' packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx` ≥ 1
+`cd packages/ellamaka-app && bun run typecheck` 全部 pass，`rg -c 'SessionTree' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c 'spaceOverview' packages/ellamaka-app/src/pages/workbench/parts/session-tree.tsx` ≥ 1，`rg -c '不再提示\|dontRemind\|suppressConfirm' packages/ellamaka-app/src/pages/workbench/parts/sidebar.tsx` ≥ 1
 
 **Done**:
-任务产出：完整全景三级 Session Browser + 三 API 数据源 + tab 联动 + 切换确认 + 右键菜单
-- [ ] 实施 Agent 已完成上述功能开发和验证的所有步骤
+任务产出：完整全景三级 Session Browser + spaceOverview API 数据源 + tab 联动 + 切换确认 + 右键菜单
+- [x] 实施 Agent 已完成上述功能开发和验证的所有步骤
 
 ---
 
