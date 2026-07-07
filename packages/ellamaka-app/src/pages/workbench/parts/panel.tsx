@@ -3,7 +3,6 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { MenuV2 } from "@opencode-ai/ui/v2/components/menu-v2.jsx"
 import { Show, createSignal, createEffect, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useParams } from "@solidjs/router"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view"
@@ -19,7 +18,6 @@ export function Panel(props: {
 }) {
   const language = useLanguage()
   const t = (k: string) => language.t(k)
-  const params = useParams()
   const sdk = useSDK()
   const { setPanelPtyId, setPanelSplitTerminal } = useWorkbenchState()
   const [menuOpen, setMenuOpen] = createSignal(false)
@@ -37,7 +35,7 @@ export function Panel(props: {
   createEffect(() => {
     const mode = props.panel.mode
     const directory = props.panel.directory
-    const spacePath = params.dir
+    const spacePath = props.panel.directory || "/"
 
     if (!spacePath) return
 
@@ -46,7 +44,7 @@ export function Panel(props: {
         .create({
           command: "/Users/sam/.wopal/bin/ellamaka",
           cwd: directory,
-          title: "ellamaka tui",
+          title: `ellamaka tui (${props.panel.id})`,
         })
         .then((res) => {
           const ptyId = res.data?.id
@@ -61,7 +59,7 @@ export function Panel(props: {
       sdk.client.pty
         .create({
           cwd: directory,
-          title: "Terminal",
+          title: `Terminal (${props.panel.id})`,
         })
         .then((res) => {
           const ptyId = res.data?.id
@@ -79,7 +77,7 @@ export function Panel(props: {
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
     const directory = props.panel.directory
-    const spacePath = params.dir
+    const spacePath = props.panel.directory || "/"
 
     if (!spacePath) return
 
@@ -87,7 +85,7 @@ export function Panel(props: {
       sdk.client.pty
         .create({
           cwd: directory,
-          title: "Split Terminal",
+          title: `Split Terminal (${props.panel.id})`,
         })
         .then((res) => {
           const ptyId = res.data?.id
@@ -115,7 +113,7 @@ export function Panel(props: {
   })
 
   const handleToggleSplit = () => {
-    const spacePath = params.dir
+    const spacePath = props.panel.directory || "/"
     if (!spacePath) return
 
     if (props.panel.splitTerminal) {
@@ -235,6 +233,7 @@ export function Panel(props: {
                 <Terminal
                   pty={{ id: ptyId(), title: "ellamaka tui", titleNumber: 1 }}
                   class="w-full h-full"
+                  onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "tui", undefined)}
                 />
               )}
             </Show>
@@ -254,6 +253,7 @@ export function Panel(props: {
                 <Terminal
                   pty={{ id: ptyId(), title: "Terminal", titleNumber: 2 }}
                   class="w-full h-full"
+                  onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "term", undefined)}
                 />
               )}
             </Show>
@@ -293,6 +293,7 @@ export function Panel(props: {
                   <Terminal
                     pty={{ id: ptyId(), title: "split terminal", titleNumber: 3 }}
                     class="w-full h-full"
+                    onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "split", undefined)}
                   />
                 )}
               </Show>
