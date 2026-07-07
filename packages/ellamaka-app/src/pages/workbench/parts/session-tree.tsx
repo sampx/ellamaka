@@ -25,6 +25,36 @@ type MergedSession = {
   boundPanelId?: string
 }
 
+type OverviewSession = {
+  id: string
+  title: string
+  directory: string
+  marker: "" | "directory" | "worktree"
+  agent?: string
+  timeCreated: number
+  timeUpdated: number
+  timeArchived?: number
+}
+
+type OverviewProject = {
+  path: string
+  displayPath: string
+  name?: string
+  vcs?: "git"
+  sessionCount: number
+  rootSessions: OverviewSession[]
+  directories: { path: string; sessionCount: number; sessions: OverviewSession[] }[]
+  worktrees: { worktreePath: string; branch?: string; stale: boolean; sessionCount: number; sessions: OverviewSession[] }[]
+}
+
+type SpaceOverview = {
+  spaceName: string
+  spacePath: string
+  spaceRootSessionCount: number
+  spaceRootSessions: OverviewSession[]
+  projects: OverviewProject[]
+}
+
 export function SessionTree(props: {
   spaces: WopalSpace[]
   activeSpaceName: string | undefined
@@ -42,9 +72,21 @@ export function SessionTree(props: {
   const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(new Set([props.activeSpaceName].filter(Boolean) as string[]))
   const [expandedProjects, setExpandedProjects] = createSignal<Set<string>>(new Set())
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
-  const [projectCache, setProjectCache] = createStore<Record<string, any[]>>({})
-  const [sessionCache, setSessionCache] = createStore<Record<string, MergedSession[]>>({})
+  const [overviewCache, setOverviewCache] = createStore<Record<string, SpaceOverview>>({})
   const [loading, setLoading] = createStore<Record<string, boolean>>({})
+
+  function mergeSessions(serverSessions: OverviewSession[], spaceName: string): MergedSession[] {
+    const localMap = new Map(sessionStore.spaceSessions(spaceName).map((s) => [s.id, s]))
+    return serverSessions.map((ss) => {
+      const local = localMap.get(ss.id)
+      return {
+        id: ss.id,
+        title: ss.title || ss.id,
+        status: local?.status ?? (ss.timeArchived ? "archived" as const : "idle" as const),
+        boundPanelId: local?.boundPanelId,
+      }
+    })
+  }
 
   onMount(() => {
     const handler = () => setContextMenu(null)
@@ -83,42 +125,16 @@ export function SessionTree(props: {
     })
   }
 
-  async function loadProjects(spacePath: string) {
-    if (projectCache[spacePath]) return
-    setLoading(spacePath, true)
+  async function loadSpaceOverview(spaceName: string) {
+    if (overviewCache[spaceName]) return
+    setLoading(spaceName, true)
     try {
-      const res = await sdk.client.project.list({ directory: spacePath })
-      setProjectCache(spacePath, (res as any).data ?? [])
+      const res = await sdk.client.wopalSpace.spaceOverview({ spaceName })
+      setOverviewCache(spaceName, (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
     } catch {
-      setProjectCache(spacePath, [])
+      setOverviewCache(spaceName, { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
     } finally {
-      setLoading(spacePath, false)
-    }
-  }
-
-  async function loadSessions(spaceName: string, projectPath: string) {
-    const key = `${spaceName}::${projectPath}`
-    if (sessionCache[key]) return
-    setLoading(key, true)
-    try {
-      const res = await sdk.client.session.list({ directory: projectPath })
-      const serverSessions = (res as any).data ?? []
-      const localSessions = sessionStore.spaceSessions(spaceName)
-      const localMap = new Map(localSessions.map((s) => [s.id, s]))
-      const merged: MergedSession[] = serverSessions.map((ss: any) => {
-        const local = localMap.get(ss.id)
-        return {
-          id: ss.id,
-          title: ss.title || ss.id,
-          status: local?.status ?? (ss.time?.archived ? "archived" as const : "idle" as const),
-          boundPanelId: local?.boundPanelId,
-        }
-      })
-      setSessionCache(key, merged)
-    } catch {
-      setSessionCache(key, [])
-    } finally {
-      setLoading(key, false)
+      setLoading(spaceName, false)
     }
   }
 
@@ -166,9 +182,7 @@ export function SessionTree(props: {
             } else {
               sessionStore.archiveSession(session.id)
             }
-            // Invalidate session cache
-            const key = `${spaceName}::${projectPath}`
-            setSessionCache(key, undefined!)
+            setOverviewCache(spaceName, undefined!)
           },
         },
         {
@@ -200,8 +214,7 @@ export function SessionTree(props: {
           label: t("workbench.tree.newSession"),
           action: () => {
             sessionStore.createSession(spaceName, projectPath, "chat", t("workbench.tree.newSession"))
-            const key = `${spaceName}::${projectPath}`
-            setSessionCache(key, undefined!)
+            setOverviewCache(spaceName, undefined!)
           },
         },
       ],
@@ -214,6 +227,98 @@ export function SessionTree(props: {
     return "bg-v2-icon-icon-muted"
   }
 
+  function renderSessionRow(session: MergedSession, spaceName: string, projectPath: string) {
+    return (
+      <button
+        type="button"
+        class="group flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
+        onClick={() => handleSessionClick(session.id)}
+        onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
+      >
+        <span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />
+        <span class="flex-1 truncate">{session.title}</span>
+      </button>
+    )
+  }
+
+  function renderProject(project: OverviewProject, spaceName: string) {
+    const projectPath = project.path
+    const projectLabel = project.name || projectPath.split("/").pop() || projectPath
+    const projectKey = `${spaceName}/${projectPath}`
+    const isProjExpanded = () => expandedProjects().has(projectKey)
+
+    const rootSessions = mergeSessions(project.rootSessions, spaceName)
+
+    return (
+      <div>
+        <button
+          type="button"
+          class="group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
+          onClick={() => handleProjectClick(spaceName, projectPath)}
+          onContextMenu={(e) => showProjectMenu(e, spaceName, projectPath)}
+        >
+          <IconV2
+            name={isProjExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
+            class={`size-2.5 shrink-0 ${isProjExpanded() ? "" : "-rotate-90"}`}
+          />
+          <span class="flex-1 truncate">{projectLabel}</span>
+          <Show when={project.vcs === "git"}>
+            <span class="text-9-regular text-v2-text-text-faint">git</span>
+          </Show>
+        </button>
+
+        <Show when={isProjExpanded()}>
+          <div class="ml-4">
+            <For each={rootSessions}>
+              {(session) => renderSessionRow(session, spaceName, projectPath)}
+            </For>
+
+            <For each={project.directories}>
+              {(dir) => {
+                const dirSessions = mergeSessions(dir.sessions, spaceName)
+                return (
+                  <div>
+                    <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
+                      <span class="truncate">{dir.path.split("/").pop() || dir.path}</span>
+                      <span class="text-v2-text-text-faint/50">({dir.sessionCount})</span>
+                    </div>
+                    <div class="ml-2">
+                      <For each={dirSessions}>
+                        {(session) => renderSessionRow(session, spaceName, projectPath)}
+                      </For>
+                    </div>
+                  </div>
+                )
+              }}
+            </For>
+
+            <For each={project.worktrees}>
+              {(wt) => {
+                if (wt.stale) return null
+                const wtSessions = mergeSessions(wt.sessions, spaceName)
+                return (
+                  <div>
+                    <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
+                      <span class="truncate">{wt.worktreePath.split("/").pop() || wt.worktreePath}</span>
+                      <Show when={wt.branch}>
+                        <span class="text-v2-text-text-faint/50">({wt.branch})</span>
+                      </Show>
+                    </div>
+                    <div class="ml-2">
+                      <For each={wtSessions}>
+                        {(session) => renderSessionRow(session, spaceName, projectPath)}
+                      </For>
+                    </div>
+                  </div>
+                )
+              }}
+            </For>
+          </div>
+        </Show>
+      </div>
+    )
+  }
+
   return (
     <div class="flex-1 overflow-y-auto px-1.5">
       <For each={props.spaces}>
@@ -221,13 +326,13 @@ export function SessionTree(props: {
           const isActive = space.name === props.activeSpaceName
           const isExpanded = () => expandedSpaces().has(space.name)
 
-          // Trigger project load when expanded
+          // Trigger overview load when expanded
           createMemo(() => {
-            if (isExpanded()) loadProjects(space.path)
+            if (isExpanded()) loadSpaceOverview(space.name)
           })
 
-          const projects = () => projectCache[space.path] ?? []
-          const spaceLoading = () => loading[space.path] ?? false
+          const overview = () => overviewCache[space.name]
+          const spaceLoading = () => loading[space.name] ?? false
 
           return (
             <div>
@@ -241,8 +346,8 @@ export function SessionTree(props: {
                 onClick={() => handleSpaceClick(space)}
               >
                 <IconV2
-                  name={isExpanded() ? "chevron-down" : "chevron-right"}
-                  class="size-3 shrink-0 text-v2-text-text-muted"
+                  name={isExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
+                  class={`size-3 shrink-0 text-v2-text-text-muted ${isExpanded() ? "" : "-rotate-90"}`}
                 />
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
                 <Show when={space.type}>
@@ -260,64 +365,21 @@ export function SessionTree(props: {
                   }
                 >
                   <div class="ml-3">
-                    <For each={projects()}>
-                      {(project: any) => {
-                        const projectPath = project.worktree || project.id
-                        const projectLabel = project.name || projectPath.split("/").pop() || projectPath
-                        const projectKey = `${space.name}/${projectPath}`
-                        const isProjExpanded = () => expandedProjects().has(projectKey)
-
-                        createMemo(() => {
-                          if (isProjExpanded()) loadSessions(space.name, projectPath)
-                        })
-
-                        const sessions = () => sessionCache[`${space.name}::${projectPath}`] ?? []
-                        const sessLoading = () => loading[`${space.name}::${projectPath}`] ?? false
-
+                    <Show when={overview()}>
+                      {(ov) => {
+                        const rootSessions = mergeSessions(ov().spaceRootSessions, space.name)
                         return (
-                          <div>
-                            <button
-                              type="button"
-                              class="group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
-                              onClick={() => handleProjectClick(space.name, projectPath)}
-                              onContextMenu={(e) => showProjectMenu(e, space.name, projectPath)}
-                            >
-                              <IconV2
-                                name={isProjExpanded() ? "chevron-down" : "chevron-right"}
-                                class="size-2.5 shrink-0"
-                              />
-                              <IconV2 name="folder" class="size-3 shrink-0" />
-                              <span class="flex-1 truncate">{projectLabel}</span>
-                            </button>
-
-                            <Show when={isProjExpanded()}>
-                              <Show
-                                when={!sessLoading()}
-                                fallback={
-                                  <div class="ml-6 py-1 text-10-regular text-v2-text-text-faint">{t("common.loading")}</div>
-                                }
-                              >
-                                <div class="ml-4">
-                                  <For each={sessions()}>
-                                    {(session) => (
-                                      <button
-                                        type="button"
-                                        class="group flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
-                                        onClick={() => handleSessionClick(session.id)}
-                                        onContextMenu={(e) => showSessionMenu(e, session, space.name, projectPath)}
-                                      >
-                                        <span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />
-                                        <span class="flex-1 truncate">{session.title}</span>
-                                      </button>
-                                    )}
-                                  </For>
-                                </div>
-                              </Show>
-                            </Show>
-                          </div>
+                          <>
+                            <For each={rootSessions}>
+                              {(session) => renderSessionRow(session, space.name, space.path)}
+                            </For>
+                            <For each={ov().projects}>
+                              {(project) => renderProject(project, space.name)}
+                            </For>
+                          </>
                         )
                       }}
-                    </For>
+                    </Show>
                   </div>
                 </Show>
               </Show>
