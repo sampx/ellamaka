@@ -71,18 +71,18 @@ created → idle → bound(running) → idle → archived
 Panel 是工作区的视图槽位，本身不拥有会话，只持有对 Session 的临时引用。
 
 ```ts
-type PanelSlotState = "empty" | "configuring" | "bound"
+type PanelSlotState = "empty" | "open" | "bound"
 
-// 视图类型可扩展，第一阶段内置三种，后续可加 file/diff 等
-type PanelViewMode = string   // "tui" | "chat" | "terminal" | "file" | "diff" | ...
+// 视图类型可扩展，第一阶段内置三种，后续可加 file/diff/context 等
+type PanelViewMode = string   // "tui" | "chat" | "terminal" | "file" | "diff" | "context" | ...
 
 type WorkbenchPanel = {
   id: string
   slotState: PanelSlotState
-  boundSessionId?: string      // bound 时指向 Session
-  viewMode?: PanelViewMode     // bound 时的当前视图
+  boundSessionId?: string      // bound 时指向 Session（open 时为空）
+  viewMode?: PanelViewMode     // 当前视图
   width: number
-  // 运行时 PTY 句柄（仅 bound 时存在）
+  // 运行时 PTY 句柄
   tuiPtyId?: string
   termPtyId?: string            // terminal 视图的裸 PTY
   splitTerminal?: boolean
@@ -91,25 +91,46 @@ type WorkbenchPanel = {
 }
 ```
 
-视图模式采用可扩展设计，通过视图注册表（View Registry）管理可用视图，而非硬编码联合类型。第一阶段内置三种视图，后续可扩展文件视图、diff 视图等：
+三种槽位状态：
+
+| 状态 | 含义 | 视图能力 | boundSessionId |
+|------|------|----------|----------------|
+| `empty` | 完全空，无内容 | 显示装载器 + 快速 Terminal 按钮 | 无 |
+| `open` | 有裸 Terminal（无 Session） | Terminal 视图为主；TUI/Chat 按钮可点，点击触发装载器 | 无 |
+| `bound` | 绑了 Session | TUI/Chat/Terminal 三视图完整切换 | 有 |
+
+状态转换：
+- empty → 点"快速 Terminal" → open（Terminal 用当前 Space 根目录开裸 PTY）
+- empty → 装载器选完 + 开始会话 → bound
+- open → 切 TUI/Chat → 弹装载器 → 选完 Session → bound
+- bound → 关闭/解绑 Session → empty
+- open → 关闭 Terminal → empty
+
+视图模式采用可扩展设计，通过视图注册表（View Registry）管理可用视图，而非硬编码联合类型。第一阶段内置三种视图，后续可扩展文件视图、diff 视图、context 视图等：
 
 | 视图 id | 名称 | 数据来源 | 与 Session 关系 | 第一阶段 |
 |---------|------|----------|-----------------|----------|
 | `tui` | TUI | Session（ellamaka TUI 进程） | 绑定 Session，走 `--continue` 恢复 | ✅ |
 | `chat` | Chat | Session（官方 MessageTimeline + Composer） | 绑定 Session，走 resume API | ✅ |
-| `terminal` | Terminal | 不走 Session | 不绑 Session，复用 boundSession 的目录开裸 PTY | ✅ |
-| `file` | 文件 | 项目目录 | 不绑 Session，基于 boundSession 目录渲染文件树 | 后续 |
+| `terminal` | Terminal | 不走 Session | 不绑 Session（open 状态用 Space 根目录，bound 状态用 boundSession 目录） | ✅ |
+| `context` | Context | Session | 绑定 Session，详细展示 token/usage/cost/压缩历史 | 占位（后续实现） |
+| `file` | 文件 | 项目目录 | 不绑 Session，基于目录渲染文件树 | 后续 |
 | `diff` | Diff | Session 或文件 | 可绑 Session 的 diff，也可独立文件 diff | 后续 |
+
+Context 有两种展现方式共存：
+- **Popup**（头部圆环指示器，快速瞄一眼）：保留，日常使用
+- **Context 视图**（注册到 viewRegistry，占满 Panel 主视图）：详细查看 token 构成、消息历史统计、压缩历史等，适合深度检查
 
 视图注册表设计：
 
 ```ts
 type PanelViewDef = {
-  id: string                   // "tui" | "chat" | "terminal" | "file" | ...
+  id: string                   // "tui" | "chat" | "terminal" | "context" | "file" | ...
   label: string                // 头部按钮和菜单的显示名
   icon?: string                // 头部按钮图标
-  requiresSession: boolean     // 是否必须绑 Session（tui/chat=true, terminal/file=false）
-  showContext: boolean         // 是否显示 Context 指示器（tui/chat=true, terminal/file=false）
+  requiresSession: boolean     // 是否必须绑 Session（tui/chat/context=true, terminal/file=false）
+  showContext: boolean         // 是否显示 ContextPopup 指示器（tui/chat=true, terminal/context/file=false）
+  availableInOpen: boolean     // open 状态（裸 Terminal 无 Session）下是否可用（terminal=true, tui/chat=false）
   render: (ctx: PanelViewCtx) => JSX   // 视图渲染函数
 }
 
@@ -117,7 +138,9 @@ type PanelViewDef = {
 const viewRegistry: PanelViewDef[] = []
 ```
 
-Panel 头部的视图切换按钮、菜单的视图组都从 `viewRegistry` 动态渲染，新增视图只需注册一项，无需改头部和菜单逻辑。
+Panel 头部的视图切换按钮、菜单的视图组都从 `viewRegistry` 动态渲染：
+- bound 状态：显示所有 `requiresSession` 匹配当前状态的视图
+- open 状态：只显示 `availableInOpen=true` 的视图（terminal），TUI/Chat 按钮灰显，点击触发装载器
 
 三种槽位状态：
 
@@ -148,35 +171,53 @@ Panel（视图容器，独立于层级树）
 
 ### 3.1 结构
 
-左侧栏从"空间列表"升级为"会话浏览器"，呈现三级树：
+左侧栏从"空间列表"升级为"会话浏览器"，呈现完整全景的三级树（所有 Space 始终可见）：
 
 ```
-▾ wopal-workspace                    [Space]
-  ▾ ellamaka                         [Project]
-      分析 Panel 会话展示方案          [Session · 运行中]
+▾ wopal-workspace  ← 当前 tab 激活（高亮）
+  ▾ ellamaka
+      分析 Panel 会话展示方案          [Session · 运行中 #1]
       修复 Windows 插件加载失败        [Session]
-  ▸ wopal-site                        [Project]
-  ▸ space-flow                        [Project]
-▾ gesp-workspace                      [Space]
-  ▸ gesp                              [Project]
+  ▸ wopal-site
+  ▸ space-flow
+▸ gesp-workspace    ← 其他 Space 也可见，可展开浏览
+  ▸ gesp
+▸ other-space
 ```
 
 ### 3.2 交互语义
 
 | 点击对象 | 行为 |
 |----------|------|
-| Space | 展开/收起其下 Project；不联动右侧 Panel |
+| Space | 展开/收起其下 Project |
 | Project | 展开/收起其下 Session；**同时**把该目录信息推送给第一个空 Panel 的装载器（决策 E） |
-| Session（idle） | 选中高亮；不自动装载，需拖入空 Panel |
+| Session（idle） | 选中高亮；不自动装载，需拖入空/open Panel |
 | Session（bound） | 选中高亮并聚焦其所在 Panel；不改变 Panel 内容 |
 
 关键原则：**点击 Session 不自动覆盖任何 Panel**。装载是显式操作（拖放或装载器选择）。
 
-### 3.3 与右侧 Panel 的解耦
+### 3.3 空间 Tab 与左侧树的联动
 
-- 去掉当前 `sidebar.tsx` 中 `store.openTab(space)` 联动右侧 Panel 的行为。
-- 左侧切换 Space 只改变树的浏览上下文，不影响已运行的 Panel。
-- Project 点击推送目录到空 Panel 装载器是"辅助输入"，不是"强制切换"——如果没有空 Panel，状态栏提示"请先添加 Panel"。
+Workbench 以 Space Tab 为顶层工作上下文概念：
+
+- 每个 Tab 对应一个 Space，持有独立的 `SpaceWorkbenchState`（panels、activePanelID 等）。
+- **左侧树始终展示完整全景**：所有 Space → Project → Session 三级结构都可见，不按 tab 过滤。
+- 切换 Tab = 切换 Space 工作上下文，左侧树同步：
+  - 激活焦点到对应 Space 节点（高亮）
+  - 自动展开该 Space 的 Project 子节点
+  - 滚动到该 Space 节点可见位置
+  - 其他 Space 节点保持当前展开/收起状态不变，不隐藏
+- **Panel 不跨空间**：当前 Tab 的 Panel 只能装该 Space 的 Session，不允许跨空间装载。
+- **Tab 切换确认**：如果当前 Tab 有 bound Panel（运行中的会话），切换到其他 Tab 时弹确认对话框，提示"当前空间有会话正在运行，切换空间不会中断它们，切回此 Tab 可继续。是否不再提示？"，提供"不再提示"勾选框，勾选后此偏好持久化。确认后切换，原 Tab 的 Panel 状态保留。
+- 无 bound Panel 时切换 Tab 无需确认。
+
+左侧树与 Tab 的关系：
+
+- 树始终展示所有 Space 的完整层级（Space → Project → Session）。
+- 当前 tab 对应的 Space 节点高亮激活，其 Project 默认展开。
+- 其他 Space 节点也可见，用户可手动展开/收起浏览。
+- Project 和 Session 的浏览不受 tab 限制，用户可在任何 Space 节点下浏览。
+- 点击树中的 Space 节点（非当前 tab）= 切换 tab（触发上述确认逻辑）。
 
 ### 3.4 Session 节点状态指示
 
@@ -184,7 +225,7 @@ Panel（视图容器，独立于层级树）
 
 | 状态 | 颜色 | 含义 |
 |------|------|------|
-| idle | 灰 | 可拖入空 Panel 恢复 |
+| idle | 灰 | 可拖入空/open Panel 恢复 |
 | bound | 绿 | 正在某 Panel 运行，显示所在 Panel 编号 |
 | archived | 暗灰 | 已归档，默认折叠 |
 
@@ -230,12 +271,17 @@ Space 节点右键菜单（后续）：
 │                              │
 │      [ 开始会话 ]             │
 │                              │
+│   ── 或 ──                   │
+│                              │
+│   [ 快速打开当前空间 Terminal ]│
+│                              │
 └─────────────────────────────┘
 ```
 
 - 空间与项目目录可手动选择，也会被左侧 Project 点击预填（决策 E）。
-- 类型选择 TUI 或 Chat。
-- 点击"开始会话"后：创建 Session → 绑定 Panel → 启动 PTY/Chat → Session 出现在左侧树。
+- 类型选择 TUI 或 Chat，默认 Chat（决策 5）。
+- 点击"开始会话"后：创建 Session → 绑定 Panel → 启动 PTY/Chat → Session 出现在左侧树 → Panel 进入 bound 状态。
+- 点击"快速打开当前空间 Terminal"后：不创建 Session，用当前 Space 根目录开裸 PTY → Panel 进入 open 状态，viewMode=terminal。这是零摩擦入口，适合快速跑命令。
 
 ### 4.2 拖放恢复
 
@@ -284,17 +330,25 @@ Panel 按从左到右顺序编号：
 
 ---
 
-## 5. Session 视图模式切换（决策 D）
+## 5. 视图切换（决策 D）
 
 ### 5.1 模型
 
-Session 有固定的 `type`（tui 或 chat），但 Panel 内可在多种视图间切换。视图类型由视图注册表（§2.2）管理，可扩展。第一阶段内置 TUI / Chat / Terminal 三种，后续可加文件视图、diff 视图等。
+Session 有固定的 `type`（tui 或 chat），但 Panel 内可在多种视图间切换。视图类型由视图注册表（§2.2）管理，可扩展。第一阶段内置 TUI / Chat / Terminal 三种，后续可加 context / file / diff 等。
+
+视图切换的可用性取决于 Panel 的 slotState：
+
+| slotState | 可用视图 | 不可用视图（灰显，点击触发引导） |
+|-----------|----------|-------------------------------|
+| `empty` | 无（显示装载器） | 所有视图（用户需先装载或快速打开 Terminal） |
+| `open` | `availableInOpen=true` 的视图（terminal） | tui/chat/context（灰显，点击弹装载器选 Session） |
+| `bound` | 所有 `requiresSession` 匹配的视图 + terminal | — |
 
 ```ts
-// Panel bound 时
-panel.viewMode: string   // 从 viewRegistry 中选一个，当前为 "tui" | "chat" | "terminal"
-// panel.boundSessionId 指向的 Session.type 不变
-// requiresSession=false 的视图（terminal/file/diff）不绑 Session，复用 boundSession 的目录
+panel.viewMode: string   // 从 viewRegistry 中选一个
+// panel.slotState 决定哪些视图可用
+// panel.boundSessionId 指向的 Session.type 不变（bound 时）
+// terminal 视图：open 状态用 Space 根目录，bound 状态用 boundSession 的 projectPath
 ```
 
 ### 5.2 切换体验
@@ -304,19 +358,22 @@ panel.viewMode: string   // 从 viewRegistry 中选一个，当前为 "tui" | "c
 - Panel 头部提供视图切换分段按钮，按钮项从 `viewRegistry` 动态渲染（第一阶段为 TUI | Chat | Terminal，后续新增视图自动出现在按钮区）。
 - 切换时有一个短暂的过渡动画（淡入淡出 150ms），避免突兀。
 - 切换不重建 Session，只切换渲染层，调用目标视图的 `render` 函数：
-  - TUI 视图：复用已有 PTY（若 TUI 进程已 detach 则重新 `--continue` 恢复）。
+  - TUI 视图：复用已有 PTY（若 TUI 进程已退出则重新 `--continue` 恢复，serve 端状态保留）。
   - Chat 视图：用 session id 加载官方 `MessageTimeline` + `SessionComposerRegion`。
-  - Terminal 视图：基于 boundSession 的 projectPath 创建/复用裸 PTY，与 Session 无交互。
+  - Terminal 视图：基于当前目录（open 用 Space 根，bound 用 boundSession 的 projectPath）创建/复用裸 PTY，与 Session 无交互。
+  - Context 视图（后续）：展示详细 token/usage/cost/压缩历史。
   - 后续视图（file/diff 等）：按各自 `render` 函数实现。
 
 ### 5.3 切换的约束
 
-- TUI → Chat：TUI 进程 detach（不杀），Chat 接管 session。
-- Chat → TUI：Chat 视图卸载，TUI 通过 `--continue` 恢复同一 session。
-- 任意视图 → Terminal（或 requiresSession=false 的视图）：保留原视图状态（TUI detach 或 Chat 卸载），新视图用独立资源。
+- TUI → Chat：TUI 进程正常退出（PTY 关闭），serve 端会话状态保留，Chat 接管 session。
+- Chat → TUI：Chat 视图卸载，TUI 通过 `--continue` 重新连接 serve 恢复同一 session。
+- 任意视图 → Terminal：保留原视图状态（TUI PTY 关闭或 Chat 卸载），Terminal 用独立 PTY。
 - Terminal → 任意视图：释放或保留 Terminal PTY（保留可让用户切回继续用），恢复 TUI/Chat。
-- 切换期间 Session 的 `boundPanelId` 不变，只是 `viewMode` 变化。
-- 视图的 `showContext=false` 时（如 terminal/file），Context 指示器隐藏。
+- bound → open：解绑 Session（回 idle），保留 Terminal PTY，Panel 退化为裸 Terminal。
+- open → bound：通过装载器选 Session 后绑定，Terminal PTY 可保留或关闭。
+- 切换期间 Session 的 `boundPanelId` 不变（bound 状态内切换），只是 `viewMode` 变化。
+- 视图的 `showContext=false` 时（如 terminal/context/file），头部 Context Popup 指示器隐藏。
 
 ---
 
@@ -568,7 +625,8 @@ empty 状态头部简化：
 | C | 新建会话落点 | 落在第一个空 Panel；无空 Panel 时提示用户添加 | 用户确认（口误已纠正） |
 | C' | Panel 布局与拆分 | 横向最多 3 Panel，每个可上下拆分内嵌终端，合计最多 6 视图 | 用户确认：复用 splitTerminal 机制，菜单重新设计 |
 | D | 视图切换 | Panel 内单视图切换，可扩展；第一阶段 TUI/Chat/Terminal，后续加 file/diff 等 | 用户确认，扩展性要求追加 |
-| E | 左侧联动 | 去掉 Space 联动；保留 Project 点击推送目录到空 Panel 装载器 | 用户确认 |
+| E | 左侧联动 | 左侧树始终展示完整全景（所有 Space→Project→Session）；切换 tab 激活焦点到对应 Space 节点并展开，不过滤树；Project 点击推送目录到空 Panel 装载器；tab 切换有 bound Panel 时弹确认（含"不再提示"勾选，偏好持久化） | 用户确认：每空间一 tab 不交叉，树完整全景，切换确认可持久化 |
+| 7 | Panel 三态 | empty/open/bound；open=有裸 Terminal 无 Session（快速入口）；bound=绑 Session 三视图完整切换；open 下 TUI/Chat 灰显触发装载器 | 用户确认：开 Terminal 不算 bound，其余视图应可用 |
 | 1 | Context 展现 | Popup/Popover，不占 Panel 布局 | 用户确认 |
 | 2 | 官方菜单 | 保留 `...` 展开菜单 | 用户确认 |
 | 3 | Terminal 视图定位 | 第三种视图，不绑 Session，复用 boundSession 目录开裸 PTY | 用户确认：作为视图而非独立 Session type |
