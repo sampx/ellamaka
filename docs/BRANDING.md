@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-07 | Updated | §16 扩展项目目录聚合端点：新增 `/wopal-space/projects` 和 `/wopal-space/non-space-projects`，按空间路径过滤 project 表 ∪ session 表并聚合会话数；realpath 统一匹配；为 Workbench 三级 Session Browser 提供数据源 |
 | 2026-07-07 | Updated | 新增 §16 WopalSpace 空间注册表 API;§15.2/§15.6 更新为实际实施文件清单和进度 |
 | 2026-07-06 | Updated | §7.5 新增 WopalSpace 模式下 `/help` 命令覆盖机制：TUI palette 的 `help.show` 在空间模式下不注册 `slashName`，使 `/help` 回落到服务端命令系统，由 `commands/help.md` 接管 |
 | 2026-06-22 | Updated | §6.2 补充普通模式插件依赖安装机制说明（复用 `localPluginInstallDeps`） |
@@ -664,8 +665,10 @@ ellamaka-app workbench 侧栏需要展示用户通过 `wopal-cli` 注册的 Wopa
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/wopal-space/spaces` | 返回 `~/.wopal/config/settings.jsonc` 中所有注册的 WopalSpace 空间 |
+| `GET` | `/wopal-space/projects` | 返回指定空间下的项目目录列表（含会话数聚合），query: `spaceName` |
+| `GET` | `/wopal-space/non-space-projects` | 返回不在任何已注册空间路径下的项目目录列表（含会话数聚合） |
 
-响应体 schema:
+`/wopal-space/spaces` 响应体 schema:
 
 ```ts
 {
@@ -675,6 +678,26 @@ ellamaka-app workbench 侧栏需要展示用户通过 `wopal-cli` 注册的 Wopa
     type?: string     // 空间类型:"coding" | "common" 等(wopal CLI 定义)
   }>
 }
+```
+
+`/wopal-space/projects` 和 `/wopal-space/non-space-projects` 响应体 schema:
+
+```ts
+{
+  projects: Array<{
+    path: string            // 真实路径(realpath 后,用于 session.list 的 directory 参数)
+    displayPath: string      // 显示路径(当前=真实路径,预留软链接友好显示)
+    name?: string            // 项目名(从 Project.Info.name 取,可能为空)
+    hasSessions: boolean     // 是否有会话
+    sessionCount: number     // 会话数
+  }>
+}
+```
+
+`/wopal-space/projects` query:
+
+```ts
+{ spaceName: string }   // 空间名(对应 spaces 端点返回的 name)
 ```
 
 ### 16.2 实现位置
@@ -736,10 +759,67 @@ ellamaka 的 SDK 由 `packages/sdk/js/script/build.ts` 从后端 OpenAPI spec �
 
 如果上游未来也加同类型 endpoint,需在合并时评估是否替换为本实现。
 
-### 16.7 相关文档
+### 16.7 项目目录聚合端点
+
+`projects` 和 `nonSpaceProjects` 两个端点为 Workbench 三级 Session Browser 提供项目目录数据。返回的是项目**目录列表**（含会话数聚合），不返回 session 列表——session 列表由前端展开项目节点时复用现有 `session.list({ directory })` 懒加载。
+
+#### 项目目录来源
+
+项目目录是 `project 表`与 `session 表`的并集，按空间路径过滤后去重：
+
+- **project 表**：曾用 opencode 打开过的项目，`Project.Info.worktree` 字段记录项目根路径
+- **session 表**：所有会话记录，`Session.Info.directory` 字段记录会话所在目录
+
+两者并集确保：空项目（打开过但无会话）和纯会话目录（没注册 project 但有 session）都能在树里显示。
+
+#### 软链接 realpath 处理
+
+opencode 在存储 project 和 session 时已对路径做 realpath 处理，数据库里都是真实路径。但 `space.path` 来自 `~/.wopal/config/settings.jsonc`，用户可能填软链接路径。因此后端匹配前必须 realpath 统一：
+
+- `space.path` → `fs.realpath()` → `spaceRealPath`（realpath 失败时容错回退用原 path）
+- `project.worktree` / `session.directory` → 直接用（已是真实路径）
+- 匹配规则：`worktree === spaceRealPath || worktree.startsWith(spaceRealPath + "/")`
+
+返回结构含 `path`（真实路径，用于匹配和 session.list 参数）和 `displayPath`（显示路径，当前阶段两者相同，为未来软链接友好显示预留）。
+
+#### 实现位置
+
+复用现有 wopal-space.ts 文件，handler 内引入 `Project.Service` 和 `Session.Service`：
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `packages/opencode/src/server/routes/instance/httpapi/groups/wopal-space.ts` | 修改 | 追加 `projects` / `nonSpaceProjects` 端点定义 + `WopalSpaceProject` schema |
+| `packages/opencode/src/server/routes/instance/httpapi/handlers/wopal-space.ts` | 修改 | 追加两个 handler：读空间 → realpath → 过滤 project+session 聚合 → 去重 → 返回 |
+
+#### 路由层级
+
+与 `spaces` 端点一致，挂在 `RootHttpApi`，只需 `Authorization` middleware，不挂 `InstanceContextMiddleware` / `WorkspaceRoutingMiddleware`。原因是 `projects` 端点的 `spaceName` 是 wopal 概念，不依赖 instance directory/workspace 路由。
+
+#### handler 逻辑
+
+`projects({ spaceName })`：
+1. 复用现有 `readSpaces()` 找到 spaceName 对应的 space.path
+2. `realpath(space.path)` → spaceRealPath
+3. `Project.Service.list()` → 过滤 `worktree === spaceRealPath || worktree.startsWith(spaceRealPath + "/")`
+4. `Session.Service.list()` → 按 `directory` 分组 count → 过滤落在 spaceRealPath 下的
+5. 两来源目录去重 → 每个构造 `WopalSpaceProject` → 返回
+
+`nonSpaceProjects()`：
+1. `readSpaces()` → 所有 space.path → realpath 集合 spaceRealPaths
+2. `Project.Service.list()` → 过滤 `worktree` 不在任何 spaceRealPaths 下
+3. `Session.Service.list()` → 按 directory 分组 count → 过滤不在任何 spaceRealPaths 下
+4. 同样合并去重 → 返回
+
+#### 上游隔离
+
+与 `spaces` 端点一致，wopal-space group/handler 是 ellamaka 定制，上游 opencode 不存在。新增端点只追加到现有文件，不触碰上游 project/session handler。
+
+### 16.8 相关文档
 
 | 文档 | 说明 |
 |------|------|
 | `docs/ELLAMAKA-WORKBENCH.zh-CN.md` | ellamaka-app 详细 architecture (workbench 侧栏数据源契约) |
+| `docs/ELLAMAKA-WORKBENCH-STEP5-DESIGN.zh-CN.md` | Step 5 补充设计 §3.4 数据源 |
+| `docs/plans/feature-workbench-wopal-space-projects-and-non-space-projects-api.md` | 后端 API 实现 Plan |
 | `docs/BRANDING.md §2` | 路径体系(`Global.Path.config` = `~/.wopal/config`) |
 | `packages/opencode/src/server/routes/instance/httpapi/AGENTS.md` | HttpApi 路由模式规范 |
