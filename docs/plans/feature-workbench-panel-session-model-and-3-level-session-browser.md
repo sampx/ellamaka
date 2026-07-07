@@ -14,6 +14,8 @@
 - **Complexity**: High
 - **Confidence**: High
 
+> **⚠️ NOTE（上下文压缩后必读）**：本次实施**不委派 rook 评审**，rook 生病无法工作。所有 Agent Verification AC 由 **Wopal 自行逐项实证**（运行命令、检查输出），不调 wopal_task 委派 rook。Plan 推进时跳过 rook 审查环节，直接 complete。
+
 ## Goal
 
 将 Workbench 的 Panel 从直接持有 PTY/directory 的模型重构为"Session 持久资源 + Panel 视图容器"模型，左侧导航升级为 Space→Project→Session 三级会话浏览器，Panel 头部引入可扩展视图注册表（TUI/Chat/Terminal），新增 Context Popup 与重组拆分菜单。

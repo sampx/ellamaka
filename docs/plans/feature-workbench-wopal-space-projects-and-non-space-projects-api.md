@@ -14,6 +14,8 @@
 - **Complexity**: High
 - **Confidence**: Medium
 
+> **⚠️ NOTE（上下文压缩后必读）**：本次实施**不委派 rook 评审**，rook 生病无法工作。所有 Agent Verification AC 由 **Wopal 自行逐项实证**（运行命令、检查输出），不调 wopal_task 委派 rook。Plan 推进时跳过 rook 审查环节，直接 complete。
+
 ## Goal
 
 为 wopal-space API 组新增端点，支持 Workbench 左侧"Space → Project → Session"三级会话浏览器和空 Panel 目录搜索。**完全按 Workbench 自有的归组逻辑重新组织**，不沿用 opencode 的 project_id 归组——所有会话按"空间→项目（一级 git repo）→[子目录 | worktree]→会话"归组，并标注会话来源（目录/工作树）。
