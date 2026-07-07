@@ -30,6 +30,19 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       return { spaces: list }
     })
 
-    return handlers.handle("spaces", spaces)
+    const spaceOverview = () => Effect.die("not implemented")
+
+    const nonSpaceOverview = () => Effect.die("not implemented")
+
+    const searchDirectories = () => Effect.die("not implemented")
+
+    const recentDirectories = () => Effect.die("not implemented")
+
+    return handlers
+      .handle("spaces", spaces)
+      .handle("spaceOverview", spaceOverview)
+      .handle("nonSpaceOverview", nonSpaceOverview)
+      .handle("searchDirectories", searchDirectories)
+      .handle("recentDirectories", recentDirectories)
   }),
 )
