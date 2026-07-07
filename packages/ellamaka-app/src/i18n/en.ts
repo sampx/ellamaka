@@ -1009,4 +1009,12 @@ export const dict = {
   "workbench.settings.showStatusbar": "Show Statusbar",
   "workbench.settings.showSpaceRail": "Show Space Rail",
   "workbench.status.panels": "{{count}} panel(s)",
+  "workbench.tree.rename": "Rename",
+  "workbench.tree.archive": "Archive",
+  "workbench.tree.unarchive": "Unarchive",
+  "workbench.tree.openInNewPanel": "Open in New Panel",
+  "workbench.tree.noEmptyPanel": "Please add a Panel first",
+  "workbench.tree.newSession": "New Session",
+  "workbench.tabSwitch.confirm": "Sessions are running in the current space. Switching tabs will not interrupt them — you can switch back to continue. Don't show again?",
+  "workbench.tabSwitch.dontRemind": "Don't show again",
 }

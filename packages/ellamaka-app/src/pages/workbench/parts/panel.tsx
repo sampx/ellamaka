@@ -4,12 +4,13 @@ import { MenuV2 } from "@opencode-ai/ui/v2/components/menu-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, createSignal, createEffect, onCleanup } from "solid-js"
+import { Show, createSignal, createEffect, onCleanup, For } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
+import { listViews } from "../view-registry"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -29,19 +30,38 @@ export function Panel(props: {
   const dialog = useDialog()
   const [menuOpen, setMenuOpen] = createSignal(false)
 
-  const modeLabel = () => {
-    if (props.panel.mode === "tui") return "TUI"
-    if (props.panel.mode === "chat") return "CHAT"
-    return "TERMINAL"
-  }
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
     return true
   }
   const removeLabel = () => {
-    if (props.panel.slotState === "bound") return "关闭会话"
-    if (props.panel.slotState === "open") return "关闭终端"
-    return "移除面板"
+    if (props.panel.slotState === "bound") return "关闭会话并移除"
+    if (props.panel.slotState === "open") return "关闭 Terminal"
+    return "关闭 Panel"
+  }
+  const title = () => {
+    if (props.panel.slotState === "bound") {
+      const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
+      return session?.title ?? "Session"
+    }
+    if (props.panel.slotState === "open") return props.panel.directory
+    const parts = props.panel.id.split("-")
+    return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
+  }
+  const headerViews = () => {
+    const all = listViews()
+    if (props.panel.slotState === "empty") return []
+    if (props.panel.slotState === "open") {
+      return all.map((v) => ({ ...v, disabled: !v.availableInOpen }))
+    }
+    return all
+      .filter((v) => v.requiresSession || v.id === "terminal")
+      .map((v) => ({ ...v, disabled: false }))
+  }
+  const showContextIndicator = () => {
+    if (props.panel.slotState !== "bound") return false
+    const view = listViews().find((v) => v.id === props.panel.viewMode)
+    return view?.showContext === true
   }
 
   // Effect to manage active main PTY lifecycle based on the current mode
