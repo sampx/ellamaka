@@ -210,8 +210,8 @@ export function Panel(props: {
       </div>
 
       {/* Main Mode View Area */}
-      <div class="flex flex-1 flex-col min-h-0 overflow-hidden bg-v2-background-bg-deep">
-        <div class="flex-1 min-h-0 overflow-hidden relative">
+      <div class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
+        <div class="flex-1 min-h-0 min-w-0 overflow-hidden relative">
           <Show when={props.panel.mode === "tui"}>
             <Show
               when={props.panel.tuiPtyId}
@@ -271,7 +271,7 @@ export function Panel(props: {
 
         {/* Lower Split Terminal Area */}
         <Show when={props.panel.splitTerminal}>
-          <div class="h-1/3 min-h-[140px] flex flex-col border-t border-v2-border-border-base relative overflow-hidden">
+          <div class="flex-1 min-h-[140px] max-h-[50%] min-w-0 flex flex-col border-t border-v2-border-border-base relative overflow-hidden">
             <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
               <span class="uppercase tracking-wider">Terminal (Split)</span>
               <button
@@ -281,7 +281,7 @@ export function Panel(props: {
                 ✕
               </button>
             </div>
-            <div class="flex-1 min-h-0 overflow-hidden bg-v2-background-bg-deep">
+            <div class="flex-1 min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
               <Show
                 when={props.panel.splitPtyId}
                 fallback={

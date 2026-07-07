@@ -32,7 +32,7 @@ export function Workspace() {
   const activePanelID = createMemo(() => space()?.activePanelID ?? panels()[0]?.id ?? "")
 
   return (
-    <main class="flex min-w-0 flex-1 flex-col bg-v2-background-bg-base">
+    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-v2-background-bg-base">
       <StageHeader
         activePath={activePath()}
         panelCount={panels().length}
@@ -62,7 +62,7 @@ export function Workspace() {
         }}
       />
 
-      <div class="flex min-h-0 flex-1">
+      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Show
           when={panels().length > 0}
           fallback={
