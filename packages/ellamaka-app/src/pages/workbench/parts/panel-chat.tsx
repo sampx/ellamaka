@@ -1,27 +1,37 @@
-import { createMemo, createSignal, onCleanup } from "solid-js"
+import { createMemo, createResource, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { MemoryRouter, createMemoryHistory, Route } from "@solidjs/router"
+import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
+import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
+import { DataProvider } from "@opencode-ai/ui/context"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { SDKProvider } from "@/context/sdk"
+import { useSync } from "@/context/sync"
 import { PromptProvider } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
 import { CommentsProvider } from "@/context/comments"
+import { LocalProvider } from "@/context/local"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
-import { PanelChatHeader } from "./panel-chat-header"
+import { createSessionHistoryLoader } from "./panel-chat-helpers"
+import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
+import { WorkbenchChatProvider } from "./workbench-chat-context"
 import type { WorkbenchPanel } from "../view"
 import type { Session } from "../session-store"
 
-const emptyUserMessages: any[] = []
+const emptyUserMessages: UserMessage[] = []
 
 function PanelChatInner(props: {
   panel: WorkbenchPanel
   session: Session
   directory: string
+  spacePath: string
+  spaceName: string
 }) {
+  const sync = useSync()
+
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
 
@@ -33,6 +43,7 @@ function PanelChatInner(props: {
   let content: HTMLDivElement | undefined
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
+  let revealMessage = (_id: string) => {}
 
   const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
 
@@ -89,32 +100,57 @@ function PanelChatInner(props: {
   let inputRef: HTMLDivElement | undefined
   let promptDockRef: HTMLDivElement | undefined
 
+  const messages = createMemo(() => (sync.data.message[props.session.id] ?? []) as Message[])
+  const messagesReady = createMemo(() => sync.data.message[props.session.id] !== undefined)
+
+  const userMessages = createMemo(
+    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    emptyUserMessages,
+    { equals: same },
+  )
+
+  const historyMore = () => sync.session.history.more(props.session.id)
+  const historyLoading = () => sync.session.history.loading(props.session.id)
+
+  const historyLoader = createSessionHistoryLoader({
+    sessionID: () => props.session.id,
+    loaded: () => messages().length,
+    visibleUserMessages: userMessages,
+    historyMore,
+    historyLoading,
+    loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
+    userScrolled: autoScroll.userScrolled,
+    scroller: () => scroller,
+  })
+
   return (
     <div class="flex flex-col h-full min-h-0 bg-v2-background-bg-deep">
-      <PanelChatHeader directory={props.directory} />
       <div class="flex-1 min-h-0 overflow-hidden">
-        <MessageTimeline
-          scroll={ui.scroll}
-          onResumeScroll={resumeScroll}
-          setScrollRef={setScrollRef}
-          onScheduleScrollState={scheduleScrollState}
-          onAutoScrollHandleScroll={autoScroll.handleScroll}
-          onMarkScrollGesture={() => {}}
-          hasScrollGesture={hasScrollGesture}
-          onUserScroll={markUserScroll}
-          onHistoryScroll={() => {}}
-          onAutoScrollInteraction={autoScroll.handleInteraction}
-          shouldAnchorBottom={() => true}
-          centered={false}
-          setContentRef={setContentRef}
-          historyShift={false}
-          userMessages={emptyUserMessages}
-          anchor={() => "#"}
-        />
+        <Show when={messagesReady()}>
+          <MessageTimeline
+            scroll={ui.scroll}
+            onResumeScroll={resumeScroll}
+            setScrollRef={setScrollRef}
+            onScheduleScrollState={scheduleScrollState}
+            onAutoScrollHandleScroll={autoScroll.handleScroll}
+            onMarkScrollGesture={() => {}}
+            hasScrollGesture={hasScrollGesture}
+            onUserScroll={markUserScroll}
+            onHistoryScroll={historyLoader.onScrollerScroll}
+            onAutoScrollInteraction={autoScroll.handleInteraction}
+            shouldAnchorBottom={() => !autoScroll.userScrolled()}
+            centered={false}
+            setContentRef={setContentRef}
+            historyShift={historyLoader.shift()}
+            userMessages={historyLoader.userMessages()}
+            anchor={() => "#"}
+            setRevealMessage={(fn) => { revealMessage = fn }}
+          />
+        </Show>
       </div>
       <PanelChatComposer
         state={composer}
-        ready={true}
+        ready={messagesReady()}
         directory={props.directory}
         inputRef={(el) => { inputRef = el }}
         setPromptDockRef={(el) => { promptDockRef = el }}
@@ -125,20 +161,45 @@ function PanelChatInner(props: {
   )
 }
 
-/**
- * Panel Chat — Chat view container for the workbench panel system.
- *
- * Wraps the official MessageTimeline + SessionComposerRegion in the required
- * provider tree (SDKProvider, PromptProvider, FileProvider, TerminalProvider,
- * CommentsProvider) and a MemoryRouter so that useParams() resolves correctly.
- *
- * Uses v1 old design (centered=false, no newLayoutDesigns).
- */
+function PanelChatRoute(props: {
+  panel: WorkbenchPanel
+  session: Session
+  directory: string
+  spacePath: string
+  spaceName: string
+}) {
+  return (
+    <SDKProvider directory={props.directory}>
+      <PanelChatDataProvider session={props.session} directory={props.directory}>
+        <TerminalProvider>
+          <FileProvider>
+            <PromptProvider>
+              <CommentsProvider>
+                <WorkbenchChatProvider>
+                  <PanelChatInner
+                    panel={props.panel}
+                    session={props.session}
+                    directory={props.directory}
+                    spacePath={props.spacePath}
+                    spaceName={props.spaceName}
+                  />
+                </WorkbenchChatProvider>
+              </CommentsProvider>
+            </PromptProvider>
+          </FileProvider>
+        </TerminalProvider>
+      </PanelChatDataProvider>
+    </SDKProvider>
+  )
+}
+
 export function PanelChat(props: {
   panel: WorkbenchPanel
   session: Session
   directory: string
   sdk: any
+  spacePath: string
+  spaceName: string
 }) {
   const dirSlug = createMemo(() => base64Encode(props.directory))
   const history = createMemo(() => {
@@ -152,23 +213,39 @@ export function PanelChat(props: {
       <Route
         path="/:dir/session/:id"
         component={() => (
-          <SDKProvider directory={props.directory}>
-            <PromptProvider>
-              <FileProvider>
-                <TerminalProvider>
-                  <CommentsProvider>
-                    <PanelChatInner
-                      panel={props.panel}
-                      session={props.session}
-                      directory={props.directory}
-                    />
-                  </CommentsProvider>
-                </TerminalProvider>
-              </FileProvider>
-            </PromptProvider>
-          </SDKProvider>
+          <PanelChatRoute
+            panel={props.panel}
+            session={props.session}
+            directory={props.directory}
+            spacePath={props.spacePath}
+            spaceName={props.spaceName}
+          />
         )}
       />
     </MemoryRouter>
+  )
+}
+
+function PanelChatDataProvider(props: { session: Session; directory: string; children: any }) {
+  const sync = useSync()
+
+  // KEY: trigger session data + message sync when session id changes.
+  // Mirrors DirectoryDataProvider's createResource(() => params.id, (id) => sync.session.sync(id)).
+  // Without this, sync.data.message[id] stays undefined (no history) and
+  // sync.session.get(id) returns undefined (can't send — PromptInput falls back to new session).
+  const [sessionSync] = createResource(
+    () => props.session.id,
+    (id) => sync.session.sync(id),
+  )
+
+  return (
+    <DataProvider
+      data={sync.data}
+      directory={props.directory}
+      onNavigateToSession={() => {}}
+      onSessionHref={() => ""}
+    >
+      <LocalProvider>{props.children}</LocalProvider>
+    </DataProvider>
   )
 }

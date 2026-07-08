@@ -4,7 +4,9 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 /**
  * Panel Chat Composer — thin adapter wrapping the official SessionComposerRegion.
  *
- * Disables centered layout, uses inline placement, and passes directory context.
+ * Uses placement="dock" (not "inline") so the composer renders in normal mode
+ * rather than "new-session" variant. The "inline" placement forces variant="new-session"
+ * which is only correct for new sessions, not resumed existing sessions.
  */
 export function PanelChatComposer(props: {
   state: SessionComposerState
@@ -20,7 +22,7 @@ export function PanelChatComposer(props: {
       state={props.state}
       ready={props.ready}
       centered={false}
-      placement="inline"
+      placement="dock"
       inputRef={props.inputRef}
       newSessionWorktree={props.directory}
       onNewSessionWorktreeReset={() => {}}

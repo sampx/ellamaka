@@ -1017,4 +1017,13 @@ export const dict = {
   "workbench.tree.newSession": "New Session",
   "workbench.tabSwitch.confirm": "Sessions are running in the current space. Switching tabs will not interrupt them — you can switch back to continue. Don't show again?",
   "workbench.tabSwitch.dontRemind": "Don't show again",
+  "workbench.tabClose.title": "Close Space Tab",
+  "workbench.tabClose.confirmPrefix": "Close space ",
+  "workbench.tabClose.confirmSuffix": "? This will release all resources in this tab.",
+  "workbench.tabClose.consequencePanelsPrefix": "All ",
+  "workbench.tabClose.consequencePanelsSuffix": " panel state(s) will be destroyed (layout, widths, etc.)",
+  "workbench.tabClose.consequenceSessionsPrefix": "All ",
+  "workbench.tabClose.consequenceSessionsSuffix": " bound session(s) will be unbound (recoverable from the session tree)",
+  "workbench.tabClose.consequenceTerminals": "All terminals (TUI/Terminal/split) will be closed",
+  "workbench.tabClose.confirmButton": "Close & Release",
 }

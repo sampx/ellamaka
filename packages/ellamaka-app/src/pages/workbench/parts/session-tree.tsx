@@ -190,13 +190,18 @@ export function SessionTree(props: {
           action: () => {
             const space = props.spaces.find((s) => s.name === spaceName)
             if (!space) return
+            // Ensure local reference exists (may be a server session)
+            let localSession = sessionStore.getSession(session.id)
+            if (!localSession) {
+              localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
+            }
             const panelId = wb.addPanel(space.path)
             if (!panelId) {
               props.onStatusMessage(t("workbench.tree.noEmptyPanel"))
               return
             }
-            wb.bindSessionToPanel(space.path, panelId, session.id)
             sessionStore.bindPanel(session.id, panelId)
+            wb.bindSessionToPanel(space.path, panelId, session.id)
           },
         },
       ],
@@ -236,6 +241,8 @@ export function SessionTree(props: {
         onDragStart={(e) => {
           e.dataTransfer!.setData("text/sessionId", session.id)
           e.dataTransfer!.setData("text/spaceName", spaceName)
+          e.dataTransfer!.setData("text/projectPath", projectPath)
+          e.dataTransfer!.setData("text/sessionTitle", session.title)
         }}
         onClick={() => handleSessionClick(session.id)}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}

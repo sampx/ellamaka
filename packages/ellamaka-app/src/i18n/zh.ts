@@ -962,4 +962,13 @@ export const dict = {
   "workbench.tree.newSession": "新建会话",
   "workbench.tabSwitch.confirm": "当前空间有会话正在运行，切换空间不会中断它们，切回此 Tab 可继续。是否不再提示？",
   "workbench.tabSwitch.dontRemind": "不再提示",
+  "workbench.tabClose.title": "关闭空间标签页",
+  "workbench.tabClose.confirmPrefix": "确定关闭空间「",
+  "workbench.tabClose.confirmSuffix": "」？这将释放该标签页内的所有资源。",
+  "workbench.tabClose.consequencePanelsPrefix": "全部 ",
+  "workbench.tabClose.consequencePanelsSuffix": " 个 Panel 状态将被销毁（布局、宽度等）",
+  "workbench.tabClose.consequenceSessionsPrefix": "全部 ",
+  "workbench.tabClose.consequenceSessionsSuffix": " 个已绑定会话将被解绑（可从左侧会话树恢复）",
+  "workbench.tabClose.consequenceTerminals": "所有终端（TUI/Terminal/分屏）将被关闭",
+  "workbench.tabClose.confirmButton": "关闭并释放",
 } satisfies Partial<Record<Keys, string>>

@@ -12,6 +12,8 @@ export type PanelViewCtx = {
   session?: Session
   directory: string
   sdk: any
+  spaceName: string
+  spacePath: string
 }
 
 export type PanelViewDef = {
@@ -44,10 +46,10 @@ registerView({
   id: "tui",
   label: "TUI",
   requiresSession: true,
-  showContext: true,
+  showContext: false,
   availableInOpen: false,
   render: (ctx) => {
-    const [ptyId, setPtyId] = createSignal<string | undefined>(ctx.panel.tuiPtyId)
+    const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
 
     const startTui = () => {
       ctx.sdk.client.pty
@@ -62,6 +64,12 @@ registerView({
         .catch(console.error)
     }
 
+    // Auto-start TUI when view mounts
+    createEffect(() => {
+      if (ptyId()) return
+      startTui()
+    })
+
     onCleanup(() => {
       const id = ptyId()
       if (id) ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
@@ -71,22 +79,9 @@ registerView({
       <Show
         when={ptyId()}
         fallback={
-          <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-4 px-4 text-center bg-v2-background-bg-base">
-            <IconV2 name="terminal" class="size-8 opacity-40 text-v2-text-text-muted" />
-            <span class="text-13-medium text-v2-text-text-base">
-              是否在{" "}
-              <code class="bg-v2-background-bg-deep px-1.5 py-0.5 rounded text-12-regular select-all break-all">
-                {ctx.directory}
-              </code>{" "}
-              目录打开 ellamaka tui 界面？
-            </span>
-            <button
-              type="button"
-              class="px-4 py-1.5 rounded-md bg-v2-overlay-simple-overlay-hover hover:bg-v2-overlay-simple-overlay-hover/80 text-v2-text-text-base text-12-medium border border-v2-border-border-base cursor-pointer transition-colors"
-              onClick={startTui}
-            >
-              确认打开
-            </button>
+          <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
+            <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+            <span class="text-11-regular">Starting TUI...</span>
           </div>
         }
       >
@@ -170,7 +165,7 @@ registerView({
         </div>
       )
     }
-    return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} sdk={ctx.sdk} />
+    return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} sdk={ctx.sdk} spacePath={ctx.spacePath} spaceName={ctx.spaceName} />
   },
 })
 

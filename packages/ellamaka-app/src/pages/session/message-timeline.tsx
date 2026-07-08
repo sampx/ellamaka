@@ -68,6 +68,8 @@ import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
+// WopalSpace workbench injection — minimal import + early-return guard (see AGENTS.md)
+import { useWorkbenchChat } from "@/pages/workbench/parts/workbench-chat-context"
 import { makeTimer } from "@solid-primitives/timer"
 import { MessageComment, SummaryDiff, Timeline, TimelineRow, TimelineRowMap } from "./message-timeline.data"
 
@@ -368,6 +370,8 @@ export function MessageTimeline(props: {
     if (!id) return
     return sync.session.get(id)
   })
+  // WopalSpace workbench injection: detect workbench context for directory display
+  const workbench = useWorkbenchChat()
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
@@ -394,6 +398,17 @@ export function MessageTimeline(props: {
       .findLast((value): value is string => !!value)
   })
   const childTitle = createMemo(() => {
+    // WopalSpace workbench injection: show directory path instead of session title
+    // to avoid duplication with panel header
+    if (workbench) {
+      const dir = info()?.directory
+      if (dir) {
+        // Truncate path, keep tail (last 2-3 segments)
+        const segments = dir.split("/").filter(Boolean)
+        if (segments.length <= 3) return segments.join("/")
+        return "…/" + segments.slice(-3).join("/")
+      }
+    }
     if (!parentID()) return titleLabel() ?? ""
     if (childTaskDescription()) return childTaskDescription()
     const value = titleLabel()?.replace(/\s+\(@[^)]+ subagent\)$/, "")

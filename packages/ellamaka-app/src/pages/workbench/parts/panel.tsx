@@ -10,8 +10,7 @@ import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
-import { listViews } from "../view-registry"
-import { ContextPopup } from "./context-popup"
+import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
@@ -32,6 +31,7 @@ export function Panel(props: {
   const sessionStore = useSessionStore()
   const dialog = useDialog()
   const [menuOpen, setMenuOpen] = createSignal(false)
+  const [panelChatPrefill, setPanelChatPrefill] = createSignal<string | undefined>(undefined)
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
@@ -61,39 +61,7 @@ export function Panel(props: {
       .filter((v) => v.requiresSession || v.id === "terminal")
       .map((v) => ({ ...v, disabled: false }))
   }
-  const showContextIndicator = () => {
-    if (props.panel.slotState !== "bound") return false
-    const view = listViews().find((v) => v.id === props.panel.viewMode)
-    return view?.showContext === true
-  }
-
-  // Effect to manage active main PTY lifecycle based on the current mode
-  createEffect(() => {
-    const mode = props.panel.mode
-    const directory = props.panel.directory
-    const spacePath = props.panel.directory || "/"
-
-    if (!spacePath) return
-
-    if (mode === "terminal" && !props.panel.termPtyId) {
-      sdk.client.pty
-        .create({
-          cwd: directory,
-          title: `Terminal (${props.panel.id})`,
-        })
-        .then((res) => {
-          const ptyId = res.data?.id
-          if (ptyId) {
-            setPanelPtyId(spacePath, props.panel.id, "term", ptyId)
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to create terminal pty:", err)
-        })
-    }
-  })
-
-  // Effect to manage split terminal PTY lifecycle
+  // Split terminal PTY is managed by panel.tsx (separate from view-registry main view PTY)
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
     const directory = props.panel.directory
@@ -119,27 +87,13 @@ export function Panel(props: {
     }
   })
 
-  const startTui = () => {
-    const directory = props.panel.directory
-    const spacePath = props.panel.directory || "/"
-    if (!spacePath) return
-
-    sdk.client.pty
-      .create({
-        command: "/Users/sam/.wopal/bin/ellamaka",
-        cwd: directory,
-        title: `ellamaka tui (${props.panel.id})`,
-      })
-      .then((res) => {
-        const ptyId = res.data?.id
-        if (ptyId) {
-          setPanelPtyId(spacePath, props.panel.id, "tui", ptyId)
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to create TUI pty:", err)
-      })
-  }
+  // Safety net: when Panel unmounts (tab close, panel remove, space switch),
+  // kill split PTY if still alive. Main view PTY cleanup handled by view-registry onCleanup.
+  onCleanup(() => {
+    if (props.panel.splitPtyId) {
+      sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(() => {})
+    }
+  })
 
   const handleToggleSplit = () => {
     const spacePath = props.panel.directory || "/"
@@ -168,18 +122,17 @@ export function Panel(props: {
       return
     }
 
-    // open Panel: kill PTYs and remove
+    // open Panel: kill split PTY (main view PTY handled by view-registry onCleanup)
     if (slotState === "open") {
-      if (props.panel.termPtyId) {
-        sdk.client.pty.remove({ ptyID: props.panel.termPtyId }).catch(console.error)
-      }
       if (props.panel.splitPtyId) {
         sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
+        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
+      }
+      if (props.panel.splitTerminal) {
+        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
       }
       if (props.panelCount <= 1) {
         wb.setPanelSlotState(spacePath, props.panel.id, "empty")
-        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
-        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
         return
       }
       wb.removePanel(spacePath, props.panel.id)
@@ -215,22 +168,24 @@ export function Panel(props: {
     // Only empty or open Panel can accept drop
     if (props.panel.slotState !== "empty" && props.panel.slotState !== "open") return
 
-    const session = sessionStore.getSession(sessionId)
+    // Try local session store first; if not found, it's a server session — create a local reference
+    let session = sessionStore.getSession(sessionId)
     if (!session) {
-      alert("会话不存在")
-      return
+      const projectPath = e.dataTransfer?.getData("text/projectPath") || props.panel.directory
+      const sessionTitle = e.dataTransfer?.getData("text/sessionTitle") || sessionId
+      session = sessionStore.ensureSessionReference(sessionId, dragSpaceName, projectPath, "chat", sessionTitle)
     }
 
     // If session is already bound to another panel, unbind first
     if (session.boundPanelId && session.boundPanelId !== props.panel.id) {
       if (!confirm(`已在 Panel 中运行,是否移动到此 Panel?`)) return
       sessionStore.unbindPanel(sessionId)
+      wb.unbindSessionFromPanel(spacePath, session.boundPanelId)
     }
 
     // Bind session to this panel
     sessionStore.bindPanel(sessionId, props.panel.id)
     wb.bindSessionToPanel(spacePath, props.panel.id, sessionId)
-    wb.setPanelViewMode(spacePath, props.panel.id, session.type)
   }
 
   function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
@@ -241,13 +196,19 @@ export function Panel(props: {
       const spacePath = props.spacePath
       const sessionId = props.panel.boundSessionId
       if (sessionId) sessionStore.unbindPanel(sessionId)
+      wb.unbindSessionFromPanel(spacePath, props.panel.id)
+
+      // Kill split PTY if open
+      if (props.panel.splitPtyId) {
+        sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
+      }
+      if (props.panel.splitTerminal) {
+        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
+      }
 
       if (props.panelCount <= 1) {
         // Last panel: clear to empty instead of removing
         wb.setPanelSlotState(spacePath, props.panel.id, "empty")
-        wb.setPanelPtyId(spacePath, props.panel.id, "tui", undefined)
-        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
-        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
         dialog.close()
         return
       }
@@ -391,14 +352,6 @@ export function Panel(props: {
           }}
         </For>
 
-        {/* Context indicator */}
-        <Show when={showContextIndicator()}>
-          <ContextPopup
-            sessionId={props.panel.boundSessionId}
-            directory={props.panel.directory}
-          />
-        </Show>
-
         {/* ... menu */}
         <MenuV2 gutter={4} modal={false} placement="bottom-end" open={menuOpen()} onOpenChange={setMenuOpen}>
           <MenuV2.Trigger
@@ -411,22 +364,6 @@ export function Panel(props: {
           />
           <MenuV2.Portal>
             <MenuV2.Content>
-              {/* Session group (bound only) */}
-              <Show when={props.panel.slotState === "bound"}>
-                <MenuV2.Group>
-                  <MenuV2.GroupLabel>Session</MenuV2.GroupLabel>
-                  <MenuV2.Item disabled>重命名</MenuV2.Item>
-                  <MenuV2.Item disabled>
-                    {sessionStore.getSession(props.panel.boundSessionId ?? "")?.status === "archived"
-                      ? "取消归档"
-                      : "归档"}
-                  </MenuV2.Item>
-                  <MenuV2.Item disabled>复制链接</MenuV2.Item>
-                  <MenuV2.Item disabled>在新 Panel 中打开</MenuV2.Item>
-                </MenuV2.Group>
-                <MenuV2.Separator />
-              </Show>
-
               {/* Panel group */}
               <MenuV2.Group>
                 <MenuV2.GroupLabel>Panel</MenuV2.GroupLabel>
@@ -467,70 +404,40 @@ export function Panel(props: {
         </MenuV2>
       </div>
 
-      {/* Main Mode View Area */}
+      {/* Main View Area */}
       <div
         class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep"
         ref={panelContainerRef}
       >
         <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
           <Show when={props.panel.slotState === "empty"}>
-            <PanelLoader panel={props.panel} />
+            <PanelLoader panel={props.panel} prefill={{ projectPath: panelChatPrefill() }} />
           </Show>
-
-          <Show when={props.panel.mode === "tui"}> 
-            <Show
-              when={props.panel.tuiPtyId}
-              fallback={
-                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-4 px-4 text-center bg-v2-background-bg-base">
-                  <IconV2 name="terminal" class="size-8 opacity-40 text-v2-text-text-muted" />
-                  <span class="text-13-medium text-v2-text-text-base">
-                    是否在 <code class="bg-v2-background-bg-deep px-1.5 py-0.5 rounded text-12-regular select-all break-all">{props.panel.directory}</code> 目录打开 ellamaka tui 界面？
-                  </span>
-                  <button
-                    type="button"
-                    class="px-4 py-1.5 rounded-md bg-v2-overlay-simple-overlay-hover hover:bg-v2-overlay-simple-overlay-hover/80 text-v2-text-text-base text-12-medium border border-v2-border-border-base cursor-pointer transition-colors"
-                    onClick={startTui}
-                  >
-                    确认打开
-                  </button>
-                </div>
+          <Show
+            when={props.panel.slotState !== "empty" ? props.panel.viewMode : undefined}
+            keyed
+          >
+            {(vm) => {
+              const viewDef = getView(vm)
+              if (!viewDef) {
+                return (
+                  <div class="flex items-center justify-center h-full text-v2-text-text-muted text-12-regular">
+                    Unknown view: {vm}
+                  </div>
+                )
               }
-            >
-              {(ptyId) => (
-                <Terminal
-                  pty={{ id: ptyId(), title: "ellamaka tui", titleNumber: 1 }}
-                  class="w-full h-full"
-                  onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "tui", undefined)}
-                />
-              )}
-            </Show>
-          </Show>
-
-          <Show when={props.panel.mode === "terminal"}>
-            <Show
-              when={props.panel.termPtyId}
-              fallback={
-                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-                  <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-                  <span class="text-11-regular">Starting terminal session...</span>
-                </div>
-              }
-            >
-              {(ptyId) => (
-                <Terminal
-                  pty={{ id: ptyId(), title: "Terminal", titleNumber: 2 }}
-                  class="w-full h-full"
-                  onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "term", undefined)}
-                />
-              )}
-            </Show>
-          </Show>
-
-          <Show when={props.panel.mode === "chat"}>
-            <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
-              <IconV2 name="edit" class="size-6 opacity-40" />
-              <span class="text-12-regular">{t("workbench.view.chat.placeholder")}</span>
-            </div>
+              const session = props.panel.boundSessionId
+                ? sessionStore.getSession(props.panel.boundSessionId)
+                : undefined
+              return viewDef.render({
+                panel: props.panel,
+                session,
+                directory: props.panel.directory,
+                sdk,
+                spaceName: props.spaceName,
+                spacePath: props.panel.directory,
+              })
+            }}
           </Show>
         </div>
 

@@ -135,7 +135,8 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       }
     }
 
-    function archiveSession(id: string) {
+    function archiveSession(id: string, archive: boolean = true) {
+      const next = archive ? "archived" : "idle"
       for (const spaceName of Object.keys(store.spaces)) {
         const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
         if (idx === -1) continue
@@ -144,8 +145,25 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
           spaceName,
           idx,
           produce((s: Session) => {
-            s.status = "archived"
-            s.boundPanelId = undefined
+            s.status = next
+            if (archive) s.boundPanelId = undefined
+            s.lastActiveAt = Date.now()
+          }),
+        )
+        return
+      }
+    }
+
+    function renameSession(id: string, title: string) {
+      for (const spaceName of Object.keys(store.spaces)) {
+        const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
+        if (idx === -1) continue
+        setStore(
+          "spaces",
+          spaceName,
+          idx,
+          produce((s: Session) => {
+            s.title = title
             s.lastActiveAt = Date.now()
           }),
         )
@@ -159,6 +177,37 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         if (found) return found
       }
       return undefined
+    }
+
+    function ensureSessionReference(
+      id: string,
+      spaceName: string,
+      projectPath: string,
+      type: SessionType,
+      title: string,
+    ): Session {
+      const existing = getSession(id)
+      if (existing) return existing
+      ensureSpace(spaceName)
+      const now = Date.now()
+      const session: Session = {
+        id,
+        spaceName,
+        projectPath,
+        type,
+        title,
+        status: "idle",
+        createdAt: now,
+        lastActiveAt: now,
+      }
+      setStore(
+        "spaces",
+        spaceName,
+        produce((list: Session[]) => {
+          list.push(session)
+        }),
+      )
+      return session
     }
 
     function trimSessions(spaceName: string) {
@@ -178,7 +227,9 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       bindPanel,
       unbindPanel,
       archiveSession,
+      renameSession,
       getSession,
+      ensureSessionReference,
       trimSessions,
     }
   },

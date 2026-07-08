@@ -278,10 +278,21 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
+    function removeSpace(path: string) {
+      if (!store.spaces[path]) return
+      setStore(
+        "spaces",
+        produce((spaces) => {
+          delete spaces[path]
+        }),
+      )
+    }
+
     function bindSessionToPanel(path: string, panelId: string, sessionId: string) {
       ensureSpace(path)
       const session = sessionStore.getSession(sessionId)
       if (!session) return
+      const sessionDir = session.projectPath || path
       setStore(
         "spaces",
         path,
@@ -292,6 +303,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
           panel.boundSessionId = sessionId
           panel.viewMode = session.type
           panel.mode = session.type as PanelMode
+          panel.directory = sessionDir
         }),
       )
     }
@@ -334,6 +346,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         (p) => p.id === panelId,
         produce((panel) => {
           panel.viewMode = mode
+          panel.mode = mode as PanelMode
         }),
       )
     }
@@ -348,6 +361,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         produce((panel) => {
           panel.slotState = "open"
           panel.viewMode = "terminal"
+          panel.mode = "terminal" as PanelMode
           panel.directory = directory
         }),
       )
@@ -368,6 +382,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       toggleTerminalDock,
       setDisplay,
       clearSpacePtyIds,
+      removeSpace,
       setPanelWidth,
       setPanelSplitHeight,
       resetPanelWidths,

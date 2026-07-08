@@ -11,6 +11,9 @@ import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
+// WopalSpace workbench injection — minimal import + early-return guard (see AGENTS.md)
+import { useWorkbenchChat } from "@/pages/workbench/parts/workbench-chat-context"
+import { ContextPopup } from "@/pages/workbench/parts/context-popup"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -35,6 +38,10 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const language = useLanguage()
   const providers = useProviders()
   const { params, tabs, view } = useSessionLayout()
+  // WopalSpace workbench injection: workbench 上下文中圆环点击应弹 popup 而不是打开侧边 tab。
+  // 官方 Layout 的 reviewPanel/fileTree/tabs 基础设施在 workbench PanelChat 中不存在，
+  // 调用 openSessionContext 会失败。用 ContextPopup popover 替代。
+  const workbench = useWorkbenchChat()
 
   const variant = createMemo(() => props.variant ?? "button")
   const tabState = createSessionTabs({
@@ -103,22 +110,27 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   return (
     <Show when={params.id}>
-      <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
-        <Switch>
-          <Match when={variant() === "indicator"}>{circle()}</Match>
-          <Match when={true}>
-            <Button
-              type="button"
-              variant="ghost"
-              class="size-6"
-              onClick={openContext}
-              aria-label={language.t("context.usage.view")}
-            >
-              {circle()}
-            </Button>
-          </Match>
-        </Switch>
-      </Tooltip>
+      {/* WopalSpace workbench injection: workbench 上下文中弹 popup 替代打开侧边 tab */}
+      <Show when={workbench} fallback={
+        <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
+          <Switch>
+            <Match when={variant() === "indicator"}>{circle()}</Match>
+            <Match when={true}>
+              <Button
+                type="button"
+                variant="ghost"
+                class="size-6"
+                onClick={openContext}
+                aria-label={language.t("context.usage.view")}
+              >
+                {circle()}
+              </Button>
+            </Match>
+          </Switch>
+        </Tooltip>
+      }>
+        <ContextPopup sessionId={params.id} />
+      </Show>
     </Show>
   )
 }

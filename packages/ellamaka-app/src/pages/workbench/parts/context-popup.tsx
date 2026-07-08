@@ -1,13 +1,28 @@
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Popover } from "@opencode-ai/ui/popover"
-import { Button } from "@opencode-ai/ui/button"
-import { createMemo, createSignal, Show } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useSync } from "@/context/sync"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 
-export function ContextPopup(props: { sessionId?: string; directory?: string }) {
+/**
+ * ContextPopup — context usage 浮层入口。
+ *
+ * 渲染一个圆形进度环 trigger + popover 浮层（tokens / usage bar / cost / metrics）。
+ * 圆环填充度反映 token 使用率。
+ *
+ * Trigger 配置：
+ * - 默认：自带一个带 ProgressCircle 的 button
+ * - `children` slot：传入 JSX.Element 作为外部 trigger（保持视觉与官方 `SessionContextUsage`
+ *   圆环一致，但点击行为切到弹出 popover 而不是打开侧边 tab）。
+ *   外部 trigger 必须是可点击元素且能被 Popover 的 trigger ref 接管（一般为 Button）。
+ */
+export function ContextPopup(props: {
+  sessionId?: string
+  directory?: string
+  children?: JSX.Element
+}) {
   const sync = useSync()
   const language = useLanguage()
   const providers = useProviders()
@@ -35,6 +50,13 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
 
   const usage = createMemo(() => context()?.usage ?? 0)
 
+  const counts = createMemo(() => {
+    const all = messages()
+    const user = all.reduce((count, x) => count + (x.role === "user" ? 1 : 0), 0)
+    const assistant = all.reduce((count, x) => count + (x.role === "assistant" ? 1 : 0), 0)
+    return { user, assistant }
+  })
+
   const ringColor = createMemo(() => {
     const u = usage()
     if (u >= 100) return "[&_[data-slot=progress-circle-progress]]:stroke-red-500"
@@ -42,14 +64,20 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
     return ""
   })
 
-  const barColor = createMemo(() => {
-    const u = usage()
-    if (u >= 100) return "bg-red-500"
-    if (u >= 80) return "bg-amber-400"
-    return "bg-v2-icon-icon-muted"
-  })
-
-  const barWidth = createMemo(() => `${Math.min(usage(), 100)}%`)
+  const defaultTrigger = (
+    <button
+      type="button"
+      class="flex items-center justify-center cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover p-0.5"
+      aria-label="Context usage"
+    >
+      <ProgressCircle
+        size={16}
+        strokeWidth={2}
+        percentage={usage()}
+        class={ringColor()}
+      />
+    </button>
+  )
 
   return (
     <Show when={props.sessionId}>
@@ -58,20 +86,7 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
         onOpenChange={setOpen}
         placement="bottom-start"
         gutter={4}
-        trigger={
-          <button
-            type="button"
-            class="flex items-center justify-center cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover p-0.5"
-            aria-label="Context usage"
-          >
-            <ProgressCircle
-              size={16}
-              strokeWidth={2}
-              percentage={usage()}
-              class={ringColor()}
-            />
-          </button>
-        }
+        trigger={props.children ?? defaultTrigger}
         class="w-72"
       >
         <Show
@@ -93,28 +108,18 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
                 </span>
               </div>
 
-              <div class="flex flex-col gap-1">
-                <div class="flex items-center justify-between">
-                  <span class="text-11-regular text-v2-text-text-muted">
-                    Tokens
-                  </span>
-                  <span class="text-11-medium text-v2-text-text-base">
-                    {ctx().total.toLocaleString(language.intl())}
-                    <Show when={ctx().limit}>
-                      {" / "}
-                      {ctx().limit!.toLocaleString(language.intl())}
-                    </Show>
-                  </span>
-                </div>
-                <div class="h-1.5 rounded-full bg-v2-background-bg-deep overflow-hidden">
-                  <div
-                    class={barColor()}
-                    classList={{
-                      "h-full rounded-full transition-all": true,
-                    }}
-                    style={{ width: barWidth() }}
-                  />
-                </div>
+              <div class="flex items-center justify-between">
+                <span class="text-11-medium text-v2-text-text-base">
+                  {Math.round(usage())}% usage
+                </span>
+                <span class="text-11-regular text-v2-text-text-muted">
+                  {ctx().total.toLocaleString(language.intl())}
+                  <Show when={ctx().limit}>
+                    {" / "}
+                    {ctx().limit!.toLocaleString(language.intl())}
+                  </Show>
+                  {" tokens"}
+                </span>
               </div>
 
               <div class="flex flex-col gap-0.5 text-11-regular">
@@ -127,16 +132,16 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
                   value={ctx().output.toLocaleString(language.intl())}
                 />
                 <MetricRow
-                  label="Reasoning"
-                  value={ctx().reasoning.toLocaleString(language.intl())}
+                  label="Cache R/W"
+                  value={`${ctx().cacheRead.toLocaleString(language.intl())} / ${ctx().cacheWrite.toLocaleString(language.intl())}`}
                 />
                 <MetricRow
-                  label="Cache Read"
-                  value={ctx().cacheRead.toLocaleString(language.intl())}
+                  label="User Messages"
+                  value={counts().user.toLocaleString(language.intl())}
                 />
                 <MetricRow
-                  label="Cache Write"
-                  value={ctx().cacheWrite.toLocaleString(language.intl())}
+                  label="Assistant Messages"
+                  value={counts().assistant.toLocaleString(language.intl())}
                 />
               </div>
 
@@ -147,25 +152,6 @@ export function ContextPopup(props: { sessionId?: string; directory?: string }) 
                 <span class="text-11-medium text-v2-text-text-base">
                   {usd().format(cost())}
                 </span>
-              </div>
-
-              <div class="flex items-center gap-2 border-t border-v2-border-border-base pt-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="small"
-                  class="text-11-regular h-7"
-                >
-                  Compress
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="small"
-                  class="text-11-regular h-7"
-                >
-                  Clear
-                </Button>
               </div>
             </div>
           )}

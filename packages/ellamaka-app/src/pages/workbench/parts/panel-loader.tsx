@@ -59,6 +59,7 @@ export function PanelLoader(props: {
     const title = project.split("/").pop() ?? project
     batch(() => {
       const session = sessionStore.createSession(space, project, sessionType(), `${title} ${sessionType()}`)
+      sessionStore.bindPanel(session.id, props.panel.id)
       wb.bindSessionToPanel(spacePath(), props.panel.id, session.id)
     })
   }

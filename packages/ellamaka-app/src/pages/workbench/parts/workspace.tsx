@@ -1,9 +1,13 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
+import { Button } from "@opencode-ai/ui/button"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { For, Show, createEffect, createMemo, batch } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view"
+import { useSessionStore } from "../session-store"
 import { Panel } from "./panel"
 import { SDKProvider } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -14,6 +18,9 @@ export function Workspace() {
   const language = useLanguage()
   const sdk = useServerSDK()
   const t = (k: string) => language.t(k)
+
+  const sessionStore = useSessionStore()
+  const dialog = useDialog()
 
   const activePath = createMemo(() => store.activeTab()?.path ?? "")
 
@@ -98,6 +105,10 @@ export function Workspace() {
     }
   }
 
+  const handleCloseTab = (name: string, path: string) => {
+    dialog.show(() => <DialogCloseTab name={name} path={path} />)
+  }
+
   return (
     <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-v2-background-bg-base">
       <StageHeader
@@ -109,24 +120,7 @@ export function Workspace() {
           const id = wb.addPanel(path)
           if (id) wb.setActivePanel(path, id)
         }}
-        onCloseTab={(name, path) => {
-          const space = wb.spaceState(path)
-          if (space) {
-            space.panels.forEach((panel) => {
-              if (panel.tuiPtyId) {
-                sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
-              }
-              if (panel.termPtyId) {
-                sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(console.error)
-              }
-              if (panel.splitPtyId) {
-                sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(console.error)
-              }
-            })
-            wb.clearSpacePtyIds(path)
-          }
-          store.closeTab(name)
-        }}
+        onCloseTab={handleCloseTab}
       />
 
       <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden" ref={containerRef}>
@@ -230,5 +224,87 @@ function StageHeader(props: {
         />
       </Show>
     </div>
+  )
+}
+
+function DialogCloseTab(props: { name: string; path: string }) {
+  const store = useSpaceStore()
+  const wb = useWorkbenchState()
+  const sessionStore = useSessionStore()
+  const sdk = useServerSDK()
+  const language = useLanguage()
+  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k, params)
+  const dialog = useDialog()
+
+  const spaceName = () => props.name
+  const panelCount = () => wb.spaceState(props.path)?.panels.length ?? 0
+  const boundCount = () =>
+    wb.spaceState(props.path)?.panels.filter((p) => p.slotState === "bound").length ?? 0
+
+  const handleConfirm = () => {
+    const path = props.path
+    const name = props.name
+    const space = wb.spaceState(path)
+
+    // 1. Kill all PTYs owned by this space's panels
+    if (space) {
+      space.panels.forEach((panel) => {
+        // Split PTY (managed by panel.tsx)
+        if (panel.splitPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(() => {})
+        }
+        // Legacy field PTYs (tuiPtyId/termPtyId) — may still exist from old persisted state
+        if (panel.tuiPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(() => {})
+        }
+        if (panel.termPtyId) {
+          sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(() => {})
+        }
+      })
+    }
+
+    // 2. Unbind all sessions bound to panels in this space
+    if (space) {
+      space.panels.forEach((panel) => {
+        if (panel.boundSessionId) {
+          sessionStore.unbindPanel(panel.boundSessionId)
+        }
+      })
+    }
+
+    // 3. Destroy the entire space state from persisted store
+    wb.removeSpace(path)
+
+    // 4. Close the tab
+    store.closeTab(name)
+
+    dialog.close()
+  }
+
+  return (
+    <Dialog title={t("workbench.tabClose.title")} fit>
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <div class="flex flex-col gap-1.5">
+          <span class="text-14-regular text-text-strong">
+            {t("workbench.tabClose.confirmPrefix")}「{spaceName()}」？{t("workbench.tabClose.confirmSuffix")}
+          </span>
+          <div class="flex flex-col gap-0.5 text-12-regular text-text-muted">
+            <span>• {t("workbench.tabClose.consequencePanelsPrefix")}{panelCount()}{t("workbench.tabClose.consequencePanelsSuffix")}</span>
+            <Show when={boundCount() > 0}>
+              <span>• {t("workbench.tabClose.consequenceSessionsPrefix")}{boundCount()}{t("workbench.tabClose.consequenceSessionsSuffix")}</span>
+            </Show>
+            <span>• {t("workbench.tabClose.consequenceTerminals")}</span>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" size="large" onClick={handleConfirm}>
+            {t("workbench.tabClose.confirmButton")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
