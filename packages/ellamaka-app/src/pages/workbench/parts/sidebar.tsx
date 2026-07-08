@@ -11,6 +11,11 @@ import { WorkbenchSettingsMenu } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
 import { Persist, persisted } from "@/utils/persist"
 
+const MIN_WIDTH = 200
+const MAX_WIDTH = 500
+const DEFAULT_WIDTH = 300
+const COLLAPSED_WIDTH = 44
+
 export function SpaceRail() {
   const store = useSpaceStore()
   const wb = useWorkbenchState()
@@ -27,6 +32,44 @@ export function SpaceRail() {
     Persist.global("workbench.suppressTabConfirm", []),
     createStore({ suppress: false }),
   )
+
+  const [widthStore, setWidthStore] = persisted(
+    Persist.global("workbench.sidebarWidth", []),
+    createStore({ width: DEFAULT_WIDTH }),
+  )
+
+  const sidebarWidth = () => (expanded() ? widthStore.width : COLLAPSED_WIDTH)
+
+  let resizing = false
+  function startResize(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    resizing = true
+    const startX = e.clientX
+    const startWidth = widthStore.width
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!resizing) return
+      const delta = moveEvent.clientX - startX
+      let newWidth = startWidth + delta
+      if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH
+      if (newWidth > MAX_WIDTH) newWidth = MAX_WIDTH
+      setWidthStore("width", newWidth)
+    }
+
+    const onMouseUp = () => {
+      resizing = false
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", onMouseUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mouseup", onMouseUp)
+  }
 
   const hasBoundPanels = createMemo(() => {
     const tab = store.activeTab()
@@ -86,13 +129,14 @@ export function SpaceRail() {
   }
 
   return (
-    <aside
-      classList={{
-        "flex shrink-0 flex-col border-r border-v2-border-border-base bg-v2-background-bg-deep transition-[width] duration-150": true,
-        "w-48": expanded(),
-        "w-11 items-center": !expanded(),
-      }}
-    >
+    <>
+      <aside
+        classList={{
+          "flex shrink-0 flex-col border-r border-v2-border-border-base bg-v2-background-bg-deep": true,
+          "items-center": !expanded(),
+        }}
+        style={{ width: `${sidebarWidth()}px`, transition: resizing ? "none" : "width 0.15s" }}
+      >
       <header
         classList={{
           "flex h-7 shrink-0 items-center": true,
@@ -219,5 +263,14 @@ export function SpaceRail() {
         </div>
       </Show>
     </aside>
+    <Show when={expanded()}>
+      <div
+        class="absolute top-0 bottom-0 w-1 cursor-col-resize bg-transparent hover:bg-v2-icon-icon-brand/30 z-30"
+        style={{ left: `${sidebarWidth()}px` }}
+        onMouseDown={startResize}
+        title="拖动调整宽度"
+      />
+    </Show>
+    </>
   )
 }
