@@ -144,6 +144,7 @@ export function Workspace() {
                 <SDKProvider directory={panel.directory}>
                   <Panel
                     panel={panel}
+                    spaceName={store.activeTab()?.name ?? ""}
                     isActive={panel.id === activePanelID()}
                     panelCount={panels().length}
                     onActivate={() => {

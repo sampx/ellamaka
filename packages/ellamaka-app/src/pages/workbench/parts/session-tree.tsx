@@ -232,6 +232,11 @@ export function SessionTree(props: {
       <button
         type="button"
         class="group flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
+        draggable={true}
+        onDragStart={(e) => {
+          e.dataTransfer!.setData("text/sessionId", session.id)
+          e.dataTransfer!.setData("text/spaceName", spaceName)
+        }}
         onClick={() => handleSessionClick(session.id)}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
       >
