@@ -101,7 +101,8 @@ export function scanFirstLevelGitRepos(spaceRealPath: string): string[] {
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "ignore"],
       }).trim()
-      if (toplevel) repos.add(toplevel)
+      // Exclude the space root itself — it is not a project (D-02)
+      if (toplevel && toplevel !== spaceRealPath) repos.add(toplevel)
     } catch {
       // Not a git repo, skip
     }
@@ -307,17 +308,21 @@ export function groupSessionsBySpace(
     const worktrees = projectWorktrees.get(root) || []
     const projInfo = projectByPath.get(root)
 
-    const wtGroups: WorkbenchWorktreeGroup[] = worktrees.map((wt) => {
-      const stale = checkWorktreeStale(wt.worktreePath)
-      const sessions = stale ? [] : (accum.worktreeSessions.get(wt.worktreePath) || [])
-      return {
-        worktreePath: wt.worktreePath,
-        branch: wt.branch,
-        stale,
-        sessionCount: stale ? 0 : sessions.length,
-        sessions,
-      }
-    })
+    // Only show worktrees under this space path; exclude main worktree (path === repoRoot) and cross-space worktrees
+    const wtGroups: WorkbenchWorktreeGroup[] = worktrees
+      .filter((wt) => wt.worktreePath !== root)
+      .filter((wt) => wt.worktreePath === spaceRealPath || wt.worktreePath.startsWith(spaceRealPath + "/"))
+      .map((wt) => {
+        const stale = checkWorktreeStale(wt.worktreePath)
+        const sessions = stale ? [] : (accum.worktreeSessions.get(wt.worktreePath) || [])
+        return {
+          worktreePath: wt.worktreePath,
+          branch: wt.branch,
+          stale,
+          sessionCount: stale ? 0 : sessions.length,
+          sessions,
+        }
+      })
 
     const dirGroups: WorkbenchDirectoryGroup[] = [...accum.dirGroups.entries()].map(([p, s]) => ({
       path: p,
