@@ -308,7 +308,7 @@ export function groupSessionsBySpace(
     const worktrees = projectWorktrees.get(root) || []
     const projInfo = projectByPath.get(root)
 
-    // Only show worktrees under this space path; exclude main worktree (path === repoRoot) and cross-space worktrees
+    // Only show worktrees under this space path; exclude main worktree and cross-space worktrees; hide empty ones
     const wtGroups: WorkbenchWorktreeGroup[] = worktrees
       .filter((wt) => wt.worktreePath !== root)
       .filter((wt) => wt.worktreePath === spaceRealPath || wt.worktreePath.startsWith(spaceRealPath + "/"))
@@ -323,17 +323,24 @@ export function groupSessionsBySpace(
           sessions,
         }
       })
+      .filter((g) => g.sessionCount > 0)
 
-    const dirGroups: WorkbenchDirectoryGroup[] = [...accum.dirGroups.entries()].map(([p, s]) => ({
-      path: p,
-      sessionCount: s.length,
-      sessions: s,
-    }))
+    // Only show directories that have sessions
+    const dirGroups: WorkbenchDirectoryGroup[] = [...accum.dirGroups.entries()]
+      .map(([p, s]) => ({
+        path: p,
+        sessionCount: s.length,
+        sessions: s,
+      }))
+      .filter((g) => g.sessionCount > 0)
 
     const totalCount =
       accum.rootSessions.length +
       dirGroups.reduce((sum, g) => sum + g.sessionCount, 0) +
       wtGroups.reduce((sum, g) => sum + g.sessionCount, 0)
+
+    // Skip projects with no sessions at all
+    if (totalCount === 0) continue
 
     resultProjects.push({
       path: root,
