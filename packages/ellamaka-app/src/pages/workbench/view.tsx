@@ -3,11 +3,17 @@ import { batch, createMemo } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
+import { useSessionStore } from "./session-store"
 
 export type PanelMode = "tui" | "chat" | "terminal"
+export type PanelSlotState = "empty" | "open" | "bound"
+export type PanelViewMode = string
 
 export type WorkbenchPanel = {
   id: string
+  slotState: PanelSlotState
+  boundSessionId?: string
+  viewMode?: PanelViewMode
   mode: PanelMode
   directory: string
   width: number
@@ -38,7 +44,7 @@ type PersistedWorkbench = {
 function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
   const firstID = uniqueID()
   return {
-    panels: [{ id: firstID, mode: "tui", directory, width: 1 }],
+    panels: [{ id: firstID, slotState: "empty", mode: "" as PanelMode, directory, width: 1 }],
     activePanelID: firstID,
     terminalDockOpen: false,
   }
@@ -66,6 +72,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
   name: "WorkbenchState",
   init: () => {
     const sdk = useServerSDK()
+    const sessionStore = useSessionStore()
     const [store, setStore] = persisted(
       Persist.global("workbench.v2", ["workbench", "workbench.v1"]),
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
@@ -78,7 +85,32 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     }
 
     function ensureSpace(path: string) {
-      if (!store.spaces[path]) setStore("spaces", path, defaultSpaceState(path))
+      if (!store.spaces[path]) {
+        setStore("spaces", path, defaultSpaceState(path))
+        return
+      }
+      migrateLegacyPanels(path)
+    }
+
+    function migrateLegacyPanels(path: string) {
+      const space = store.spaces[path]
+      if (!space) return
+      const needsMigration = space.panels.some(
+        (p) => (p as Record<string, unknown>).slotState === undefined,
+      )
+      if (!needsMigration) return
+      setStore("spaces", path, "panels", (panels) =>
+        panels.map((panel) => {
+          if ((panel as Record<string, unknown>).slotState !== undefined) return panel
+          if (panel.tuiPtyId) {
+            return { ...panel, slotState: "bound" as PanelSlotState, viewMode: "tui" }
+          }
+          if (panel.termPtyId) {
+            return { ...panel, slotState: "open" as PanelSlotState, viewMode: "terminal" }
+          }
+          return { ...panel, slotState: "empty" as PanelSlotState }
+        }),
+      )
     }
 
     function addPanel(path: string): string | undefined {
@@ -88,7 +120,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       const id = uniqueID()
       setStore("spaces", path, "panels", (panels) => [
         ...panels,
-        { id, mode: "tui" as PanelMode, directory: path, width: 1 },
+        { id, slotState: "empty" as PanelSlotState, mode: "" as PanelMode, directory: path, width: 1 },
       ])
       return id
     }
@@ -99,7 +131,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
       const panel = space.panels.find((p) => p.id === id)
       if (panel) {
-        if (panel.tuiPtyId) {
+        // Skip tuiPtyId for bound panels — let TUI process exit naturally
+        if (panel.tuiPtyId && panel.slotState !== "bound") {
           sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
         }
         if (panel.termPtyId) {
@@ -131,6 +164,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         (p) => p.id === id,
         produce((panel) => {
           panel.mode = mode
+          panel.viewMode = mode
         }),
       )
     }
@@ -244,6 +278,81 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
+    function bindSessionToPanel(path: string, panelId: string, sessionId: string) {
+      ensureSpace(path)
+      const session = sessionStore.getSession(sessionId)
+      if (!session) return
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === panelId,
+        produce((panel) => {
+          panel.slotState = "bound"
+          panel.boundSessionId = sessionId
+          panel.viewMode = session.type
+          panel.mode = session.type as PanelMode
+        }),
+      )
+    }
+
+    function unbindSessionFromPanel(path: string, panelId: string) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === panelId,
+        produce((panel) => {
+          panel.slotState = "empty"
+          panel.boundSessionId = undefined
+          panel.viewMode = undefined
+          panel.mode = "" as PanelMode
+        }),
+      )
+    }
+
+    function setPanelSlotState(path: string, panelId: string, state: PanelSlotState) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === panelId,
+        produce((panel) => {
+          panel.slotState = state
+        }),
+      )
+    }
+
+    function setPanelViewMode(path: string, panelId: string, mode: PanelViewMode) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === panelId,
+        produce((panel) => {
+          panel.viewMode = mode
+        }),
+      )
+    }
+
+    function openTerminalInPanel(path: string, panelId: string, directory: string) {
+      ensureSpace(path)
+      setStore(
+        "spaces",
+        path,
+        "panels",
+        (p) => p.id === panelId,
+        produce((panel) => {
+          panel.slotState = "open"
+          panel.viewMode = "terminal"
+          panel.directory = directory
+        }),
+      )
+    }
+
     return {
       display,
       get spaces() { return store.spaces },
@@ -262,6 +371,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setPanelWidth,
       setPanelSplitHeight,
       resetPanelWidths,
+      bindSessionToPanel,
+      unbindSessionFromPanel,
+      setPanelSlotState,
+      setPanelViewMode,
+      openTerminalInPanel,
     }
   },
 })

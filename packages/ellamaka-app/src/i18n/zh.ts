@@ -954,4 +954,12 @@ export const dict = {
   "workbench.settings.showStatusbar": "显示状态栏",
   "workbench.settings.showSpaceRail": "显示空间栏",
   "workbench.status.panels": "{{count}} 个面板",
+  "workbench.tree.rename": "重命名",
+  "workbench.tree.archive": "归档",
+  "workbench.tree.unarchive": "取消归档",
+  "workbench.tree.openInNewPanel": "在新面板中打开",
+  "workbench.tree.noEmptyPanel": "请先添加面板",
+  "workbench.tree.newSession": "新建会话",
+  "workbench.tabSwitch.confirm": "当前空间有会话正在运行，切换空间不会中断它们，切回此 Tab 可继续。是否不再提示？",
+  "workbench.tabSwitch.dontRemind": "不再提示",
 } satisfies Partial<Record<Keys, string>>
