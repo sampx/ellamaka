@@ -4,16 +4,73 @@ import { existsSync, readdirSync, statSync } from "fs"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { ConfigParse } from "@/config/parse"
-import { Session } from "@/session/session"
-import { Project } from "@/project/project"
+import { Database } from "@/storage/db"
+import { SessionTable } from "@/session/session.sql"
+import { ProjectTable } from "@/project/project.sql"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
 import type { WopalSpaceEntry } from "../groups/wopal-space"
 import { realpathSafe, groupSessionsBySpace } from "./wopal-space-grouping"
+import type { Session } from "@/session/session"
+import type { Project } from "@/project/project"
 
 const SPACES_FILE = path.join(Global.Path.config, "settings.jsonc")
+
+// Query all sessions directly from the database (no InstanceRef needed)
+function queryAllSessions(): Session.Info[] {
+  return Database.use((db) =>
+    db
+      .select({
+        id: SessionTable.id,
+        title: SessionTable.title,
+        directory: SessionTable.directory,
+        agent: SessionTable.agent,
+        projectID: SessionTable.project_id,
+        time_created: SessionTable.time_created,
+        time_updated: SessionTable.time_updated,
+        time_archived: SessionTable.time_archived,
+      })
+      .from(SessionTable)
+      .all(),
+  ).map((row) => ({
+    id: row.id,
+    title: row.title,
+    directory: row.directory,
+    agent: row.agent ?? undefined,
+    projectID: row.projectID,
+    slug: "",
+    version: "",
+    time: {
+      created: row.time_created ?? 0,
+      updated: row.time_updated ?? 0,
+      archived: row.time_archived ?? undefined,
+    },
+  })) as Session.Info[]
+}
+
+// Query all projects directly from the database (no InstanceRef needed)
+function queryAllProjects(): Project.Info[] {
+  return Database.use((db) =>
+    db
+      .select({
+        id: ProjectTable.id,
+        worktree: ProjectTable.worktree,
+        name: ProjectTable.name,
+        vcs: ProjectTable.vcs,
+      })
+      .from(ProjectTable)
+      .all(),
+  ).map((row) => ({
+    id: row.id,
+    worktree: row.worktree,
+    name: row.name ?? undefined,
+    vcs: row.vcs as "git" | undefined,
+    sandboxes: [],
+    time: { created: 0, updated: 0 },
+  })) as Project.Info[]
+}
 
 const readSpaces = Effect.fn("WopalSpaceHttpApi.readSpaces")(function* () {
   const fs = yield* AppFileSystem.Service
@@ -69,9 +126,6 @@ const scanDirectories = (root: string, maxDepth: number): string[] => {
 
 export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space", (handlers) =>
   Effect.gen(function* () {
-    const sessionSvc = yield* Session.Service
-    const projectSvc = yield* Project.Service
-
     const spaces = Effect.fn("WopalSpaceHttpApi.spaces")(function* () {
       const list = yield* readSpaces()
       return { spaces: list }
@@ -84,8 +138,8 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       const entry = list.find((s) => s.name === ctx.query.spaceName)
       if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
       const spaceRealPath = realpathSafe(entry.path)
-      const sessions = yield* sessionSvc.list()
-      const projects = yield* projectSvc.list()
+      const sessions = queryAllSessions()
+      const projects = queryAllProjects()
       const { projects: groupedProjects, spaceRootSessions } = groupSessionsBySpace(
         spaceRealPath,
         sessions,
@@ -103,7 +157,7 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
     const nonSpaceOverview = Effect.fn("WopalSpaceHttpApi.nonSpaceOverview")(function* () {
       const list = yield* readSpaces()
       const spaceRealPaths = new Set(list.map((s) => realpathSafe(s.path)))
-      const sessions = yield* sessionSvc.list()
+      const sessions = queryAllSessions()
       const active = sessions.filter((s) => s.time.archived == null)
       const orphan = active.filter((s) => {
         for (const sp of spaceRealPaths) {
@@ -161,7 +215,7 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       const entry = list.find((s) => s.name === ctx.query.spaceName)
       if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
       const spaceRealPath = realpathSafe(entry.path)
-      const sessions = yield* sessionSvc.list()
+      const sessions = queryAllSessions()
       const active = sessions.filter(
         (s) =>
           s.time.archived == null &&
