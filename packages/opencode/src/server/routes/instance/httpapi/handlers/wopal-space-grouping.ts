@@ -308,7 +308,8 @@ export function groupSessionsBySpace(
     const worktrees = projectWorktrees.get(root) || []
     const projInfo = projectByPath.get(root)
 
-    // Only show worktrees under this space path; exclude main worktree and cross-space worktrees; hide empty ones
+    // Only show worktrees under this space path; exclude main worktree and cross-space worktrees;
+    // stale worktrees kept (sessionCount=0, sessions=[]) so UI can show stale marker.
     const wtGroups: WorkbenchWorktreeGroup[] = worktrees
       .filter((wt) => wt.worktreePath !== root)
       .filter((wt) => wt.worktreePath === spaceRealPath || wt.worktreePath.startsWith(spaceRealPath + "/"))
@@ -323,7 +324,6 @@ export function groupSessionsBySpace(
           sessions,
         }
       })
-      .filter((g) => g.sessionCount > 0)
 
     // Only show directories that have sessions
     const dirGroups: WorkbenchDirectoryGroup[] = [...accum.dirGroups.entries()]
@@ -339,8 +339,10 @@ export function groupSessionsBySpace(
       dirGroups.reduce((sum, g) => sum + g.sessionCount, 0) +
       wtGroups.reduce((sum, g) => sum + g.sessionCount, 0)
 
-    // Skip projects with no sessions at all
-    if (totalCount === 0) continue
+    // Skip projects with no sessions and no stale worktrees.
+    // Stale worktrees alone keep project visible (so UI can show stale marker).
+    const hasStaleWorktrees = wtGroups.some((g) => g.stale)
+    if (totalCount === 0 && !hasStaleWorktrees) continue
 
     resultProjects.push({
       path: root,

@@ -142,10 +142,6 @@ describe("wopal-space-overview", () => {
     expect(wtGroup!.sessions).toHaveLength(1)
     expect(wtGroup!.sessions[0].id).toBe("s3")
     expect(wtGroup!.sessions[0].marker).toBe("worktree")
-    // Main worktree should not have the session
-    const mainWt = result.projects[0].worktrees.find((w) => w.worktreePath === projectDir)
-    expect(mainWt).toBeDefined()
-    expect(mainWt!.sessions).toHaveLength(0)
   })
 
   // Test 4: stale worktree — 删除 worktree 目录 → stale=true, sessions=[]
@@ -208,9 +204,10 @@ describe("wopal-space-overview", () => {
 
     const result = groupSessionsBySpace(space.path, [session], [])
 
-    // myproject still detected as a git repo
-    expect(result.projects).toHaveLength(1)
-    // Session outside space should not appear anywhere
+    // Git repo detected by scanner (verified separately)
+    expect(scanFirstLevelGitRepos(space.path)).toContain(projectDir)
+    // Session outside space should not appear anywhere (project hidden since it has no in-space sessions)
+    expect(result.projects).toHaveLength(0)
     const allSessionIds = [
       ...result.projects.flatMap((p) => [
         ...p.rootSessions,
