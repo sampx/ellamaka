@@ -52,9 +52,14 @@ registerView({
     const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
 
     const startTui = () => {
+      const args = ctx.session?.id
+        ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", ctx.session.id]
+        : undefined
+
       ctx.sdk.client.pty
         .create({
           command: "/Users/sam/.wopal/bin/ellamaka",
+          args,
           cwd: ctx.directory,
           title: `ellamaka tui (${ctx.panel.id})`,
         })
@@ -89,6 +94,8 @@ registerView({
           <Terminal
             pty={{ id: id(), title: "ellamaka tui", titleNumber: 1 }}
             class="w-full h-full"
+            noPadding={true}
+            isTui={true}
             onConnectError={() => setPtyId(undefined)}
           />
         )}
@@ -140,6 +147,7 @@ registerView({
           <Terminal
             pty={{ id: id(), title: "Terminal", titleNumber: 2 }}
             class="w-full h-full"
+            noPadding={true}
             onConnectError={() => setPtyId(undefined)}
           />
         )}
