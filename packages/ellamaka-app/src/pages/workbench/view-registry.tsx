@@ -58,7 +58,7 @@ registerView({
 
       ctx.sdk.client.pty
         .create({
-          command: "/Users/sam/.wopal/bin/ellamaka",
+          command: "ellamaka",
           args,
           cwd: ctx.directory,
           title: `ellamaka tui (${ctx.panel.id})`,
