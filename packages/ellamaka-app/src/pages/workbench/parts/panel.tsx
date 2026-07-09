@@ -1,10 +1,9 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { MenuV2 } from "@opencode-ai/ui/v2/components/menu-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, createSignal, createEffect, onCleanup, For } from "solid-js"
+import { Show, createEffect, onCleanup, For } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
@@ -31,16 +30,10 @@ export function Panel(props: {
   const { setPanelPtyId, setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
-  const [menuOpen, setMenuOpen] = createSignal(false)
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
     return true
-  }
-  const removeLabel = () => {
-    if (props.panel.slotState === "bound") return "关闭会话并移除"
-    if (props.panel.slotState === "open") return "关闭 Terminal"
-    return "关闭 Panel"
   }
   const title = () => {
     if (props.panel.slotState === "bound") {
@@ -464,72 +457,19 @@ export function Panel(props: {
           }}
         </For>
 
-        {/* ... menu */}
-        <MenuV2 gutter={4} modal={false} placement="bottom-end" open={menuOpen()} onOpenChange={setMenuOpen}>
-          <MenuV2.Trigger
-            as={IconButtonV2}
+        {/* Close Button */}
+        <Show when={canRemove()}>
+          <IconButtonV2
             variant="ghost-muted"
             size="small"
-            icon={<IconV2 name="outline-dots" />}
-            aria-label={t("common.moreOptions")}
-            onClick={(e: MouseEvent) => e.stopPropagation()}
+            icon={<IconV2 name="xmark-small" />}
+            aria-label="关闭"
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation()
+              handleClose()
+            }}
           />
-          <MenuV2.Portal>
-            <MenuV2.Content>
-              {/* Panel group */}
-              <MenuV2.Group>
-                <MenuV2.GroupLabel>Panel</MenuV2.GroupLabel>
-                <Show when={props.panel.slotState !== "empty"}>
-                  <MenuV2.Item onSelect={handleToggleSplit}>
-                    {props.panel.splitTerminal ? "关闭内嵌终端" : "垂直拆分终端"}
-                  </MenuV2.Item>
-                </Show>
-                <MenuV2.Item disabled>向右添加 Panel</MenuV2.Item>
-                <MenuV2.Item disabled={!canRemove()} onSelect={handleClose}>
-                  {removeLabel()}
-                </MenuV2.Item>
-              </MenuV2.Group>
-
-              {/* View group (open/bound only) */}
-              <Show when={props.panel.slotState !== "empty"}>
-                <MenuV2.Separator />
-                <MenuV2.Group>
-                  <MenuV2.GroupLabel>视图</MenuV2.GroupLabel>
-                  <For each={listViews()}>
-                    {(view) => {
-                      const active = props.panel.viewMode === view.id
-                      const spacePath = props.spacePath
-                      return (
-                        <MenuV2.Item
-                          disabled={active}
-                          onSelect={() => wb.setPanelViewMode(spacePath, props.panel.id, view.id)}
-                        >
-                          切换为 {view.label}
-                        </MenuV2.Item>
-                      )
-                    }}
-                  </For>
-                </MenuV2.Group>
-              </Show>
-
-              {/* Session group (bound only) */}
-              <Show when={props.panel.slotState === "bound"}>
-                <MenuV2.Separator />
-                <MenuV2.Group>
-                  <MenuV2.GroupLabel>Session</MenuV2.GroupLabel>
-                  <MenuV2.Item onSelect={handleRename}>重命名</MenuV2.Item>
-                  <MenuV2.Item onSelect={handleArchiveToggle}>
-                    {isArchived() ? "取消归档" : "归档"}
-                  </MenuV2.Item>
-                  <MenuV2.Item onSelect={handleCopyLink}>复制链接</MenuV2.Item>
-                  <MenuV2.Item onSelect={handleOpenInNewPanel}>在新 Panel 中打开</MenuV2.Item>
-                  <MenuV2.Separator />
-                  <MenuV2.Item onSelect={handleDeleteSession}>删除</MenuV2.Item>
-                </MenuV2.Group>
-              </Show>
-            </MenuV2.Content>
-          </MenuV2.Portal>
-        </MenuV2>
+        </Show>
       </div>
 
       {/* Main View Area */}
