@@ -26,6 +26,8 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onCleanup?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
+  noPadding?: boolean
+  isTui?: boolean
 }
 
 let shared: Promise<{ mod: typeof import("ghostty-web"); ghostty: Ghostty }> | undefined
@@ -169,7 +171,7 @@ export const Terminal = (props: TerminalProps) => {
   const password = auth?.password ?? ""
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError"])
+  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError", "noPadding", "isTui"])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
@@ -358,9 +360,30 @@ export const Terminal = (props: TerminalProps) => {
         allowTransparency: false,
         convertEol: false,
         theme: terminalColors(),
-        scrollback: 10_000,
+        scrollback: local.isTui ? 0 : 10_000,
         ghostty: g,
       })
+
+      if (local.isTui) {
+        t["customWheelEventHandler"] = (e: WheelEvent) => {
+          e.preventDefault()
+          e.stopPropagation()
+          e.stopImmediatePropagation()
+
+          const delta = e.deltaY
+          if (delta === 0) return true
+
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            const count = Math.min(5, Math.ceil(Math.abs(delta) / 40))
+            const seq = delta < 0 ? "\x1b\x19" : "\x1b\x05"
+            for (let i = 0; i < count; i++) {
+              ws.send(seq)
+            }
+          }
+          return true
+        }
+      }
+
       cleanups.push(() => t.dispose())
       if (disposed) {
         cleanup()
@@ -398,6 +421,46 @@ export const Terminal = (props: TerminalProps) => {
       serializeAddon = serializer
 
       t.open(container)
+
+      // ghostty-web has no option to disable its canvas scrollbar, and its hidden
+      // IME <textarea> is not repositioned on cursor moves. Both only affect the
+      // embedded TUI view; address them here through the public API.
+      if (local.isTui) {
+        const renderer = t.renderer
+
+        // Suppress the canvas scrollbar. renderScrollbar is the single draw entry
+        // point called from the renderer's render() loop; no-op it so nothing draws.
+        type ScrollbarRenderer = { renderScrollbar: (opacity: number) => void }
+        const withScrollbar = renderer as unknown as ScrollbarRenderer | undefined
+        if (withScrollbar && typeof withScrollbar.renderScrollbar === "function") {
+          withScrollbar.renderScrollbar = () => {}
+        }
+
+        // Glue the hidden IME textarea to the caret so the OS candidate window
+        // tracks the cursor instead of falling back to the container origin.
+        const textarea = t.textarea
+        if (renderer && textarea) {
+          const syncImeTextarea = () => {
+            if (disposed || !document.contains(container)) return
+            const metrics = renderer.getMetrics()
+            const cellW = metrics.width || 8
+            const cellH = metrics.height || 18
+            const buf = t.buffer.active
+            textarea.style.left = `${buf.cursorX * cellW}px`
+            textarea.style.top = `${buf.cursorY * cellH}px`
+            textarea.style.width = `${cellW}px`
+            textarea.style.height = `${cellH}px`
+            // opacity:0 can hide the element from the IME on some platforms; a
+            // near-zero value stays invisible yet keeps the box focusable/positionable.
+            textarea.style.opacity = "0.01"
+          }
+          syncImeTextarea()
+          const cursorSub = t.onCursorMove(syncImeTextarea)
+          cleanups.push(() => disposeIfDisposable(cursorSub))
+          const resizeSub = t.onResize(syncImeTextarea)
+          cleanups.push(() => disposeIfDisposable(resizeSub))
+        }
+      }
       useTerminalUiBindings({
         container,
         term: t,
@@ -658,7 +721,8 @@ export const Terminal = (props: TerminalProps) => {
       classList={{
         ...local.classList,
         "select-text": true,
-        "size-full px-6 py-3 font-mono relative overflow-hidden": true,
+        "size-full font-mono relative overflow-hidden": true,
+        "px-6 py-3": !local.noPadding,
         [local.class ?? ""]: !!local.class,
       }}
       {...others}
