@@ -99,7 +99,12 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         setStore(
           "spaces",
           spaceName,
-          produce((list: Session[]) => list.filter((s) => s.id !== id)),
+          produce((list: Session[]) => {
+            const index = list.findIndex((s) => s.id === id)
+            if (index !== -1) {
+              list.splice(index, 1)
+            }
+          }),
         )
         triggerRefresh()
         return

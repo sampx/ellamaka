@@ -141,7 +141,7 @@ export function SessionTree(props: {
 
   function mergeSessions(serverSessions: OverviewSession[], spaceName: string): MergedSession[] {
     const localMap = new Map(sessionStore.spaceSessions(spaceName).map((s) => [s.id, s]))
-    return serverSessions.map((ss) => {
+    const mergedList = serverSessions.map((ss) => {
       const local = localMap.get(ss.id)
       const bound = isSessionBound(ss.id)
       return {
@@ -150,6 +150,26 @@ export function SessionTree(props: {
         status: bound ? ("bound" as const) : (ss.timeArchived ? "archived" as const : "idle" as const),
         boundPanelId: local?.boundPanelId,
       }
+    })
+
+    const seenIds = new Set<string>()
+    const seenTimestamps = new Set<string>()
+    return mergedList.filter((s) => {
+      if (seenIds.has(s.id)) return false
+      seenIds.add(s.id)
+
+      const match = s.title.match(/(?:New session|新会话)?\s*-\s*(.+)$/)
+      if (match && match[1]) {
+        const ts = match[1].trim()
+        if (seenTimestamps.has(ts)) {
+          if (s.title.includes("New session") || s.title.includes("新会话")) {
+            return false
+          }
+        }
+        seenTimestamps.add(ts)
+      }
+
+      return true
     })
   }
 
