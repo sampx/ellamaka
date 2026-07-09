@@ -533,7 +533,7 @@ export function Panel(props: {
                         directory: props.panel.directory,
                         sdk,
                         spaceName: props.spaceName,
-                        spacePath: props.panel.directory,
+                        spacePath: props.spacePath,
                       })
                     })()}
                   </div>
