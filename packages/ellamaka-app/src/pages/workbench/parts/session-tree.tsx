@@ -1,5 +1,5 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
-import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount } from "solid-js"
+import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -422,12 +422,21 @@ export function SessionTree(props: {
       <For each={props.spaces}>
         {(space) => {
           const isActive = space.name === props.activeSpaceName
-          const isExpanded = () => expandedSpaces().has(space.name)
+          const isExpanded = createMemo(() => expandedSpaces().has(space.name))
 
-          // Trigger overview load when expanded (also re-fetches when refreshKey changes)
+          // Trigger overview load only when expanded status flips from false to true and we do not have cached overview data
+          createEffect(() => {
+            if (isExpanded() && !overview()) {
+              untrack(() => loadSpaceOverview(space.name))
+            }
+          })
+
+          // Trigger overview load when session store requires a refresh (e.g. session created/deleted)
           createEffect(() => {
             void sessionStore.refreshKey()
-            if (isExpanded()) loadSpaceOverview(space.name)
+            if (untrack(isExpanded)) {
+              untrack(() => loadSpaceOverview(space.name))
+            }
           })
 
           const overview = () => overviewCache[space.name]

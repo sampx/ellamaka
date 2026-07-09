@@ -172,7 +172,7 @@ export function SpaceRail() {
         </Show>
       </header>
 
-      <Show when={expanded()}>
+      <div class="flex-1 min-h-0 flex flex-col min-w-0" classList={{ "hidden": !expanded() }}>
         <Show
           when={store.spaces().length > 0}
           fallback={
@@ -195,7 +195,7 @@ export function SpaceRail() {
             onStatusMessage={showStatus}
           />
         </Show>
-      </Show>
+      </div>
 
       <Show when={statusMsg()}>
         <div class="shrink-0 border-t border-v2-border-border-base px-2 py-1 text-10-regular text-v2-text-text-muted">

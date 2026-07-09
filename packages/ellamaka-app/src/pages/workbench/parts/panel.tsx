@@ -487,13 +487,13 @@ export function Panel(props: {
           </div>
 
           {/* 2. Main View wrapper container (physically kept but visually toggled via hidden class) */}
-          <Show when={props.panel.viewMode}>
+          <Show when={props.panel.viewMode} keyed>
             {(vm) => {
-              const viewDef = getView(vm())
+              const viewDef = getView(vm)
               if (!viewDef) {
                 return (
                   <div class="flex items-center justify-center h-full text-v2-text-text-muted text-12-regular">
-                    Unknown view: {vm()}
+                    Unknown view: {vm}
                   </div>
                 )
               }
