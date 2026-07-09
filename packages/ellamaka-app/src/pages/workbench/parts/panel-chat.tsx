@@ -116,7 +116,8 @@ function PanelChatInner(props: {
   createEffect(() => {
     const sessions = sync.data.session as any[]
     const stillExists = sessions?.some((s: any) => s.id === props.session.id)
-    if (sync.data.status === "complete" && !stillExists && props.panel.boundSessionId === props.session.id) {
+    const isRecentlyCreated = Date.now() - (props.session.createdAt ?? 0) < 5000
+    if (sync.data.status === "complete" && !stillExists && !isRecentlyCreated && props.panel.boundSessionId === props.session.id) {
       sessionStore.deleteSession(props.session.id)
       wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
     }

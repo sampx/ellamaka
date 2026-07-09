@@ -30,6 +30,7 @@ function WorkbenchShell() {
   const sdk = useServerSDK()
 
   onMount(() => {
+    console.log("=== WORKBENCH MOUNTED ===", Date.now())
     const unsub = sdk.event.listen((e) => {
       const type = e.details?.type
       if (type === "session.created" || type === "session.deleted") {

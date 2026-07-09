@@ -129,14 +129,25 @@ export function SessionTree(props: {
     return true
   }
 
+  function isSessionBound(sessionId: string): boolean {
+    for (const spacePath of Object.keys(wb.spaces)) {
+      const space = wb.spaces[spacePath]
+      if (space?.panels?.some((p) => p.boundSessionId === sessionId)) {
+        return true
+      }
+    }
+    return false
+  }
+
   function mergeSessions(serverSessions: OverviewSession[], spaceName: string): MergedSession[] {
     const localMap = new Map(sessionStore.spaceSessions(spaceName).map((s) => [s.id, s]))
     return serverSessions.map((ss) => {
       const local = localMap.get(ss.id)
+      const bound = isSessionBound(ss.id)
       return {
         id: ss.id,
         title: local?.title ?? ss.title ?? ss.id,
-        status: local?.status ?? (ss.timeArchived ? "archived" as const : "idle" as const),
+        status: bound ? ("bound" as const) : (ss.timeArchived ? "archived" as const : "idle" as const),
         boundPanelId: local?.boundPanelId,
       }
     })
@@ -317,7 +328,12 @@ export function SessionTree(props: {
         onClick={() => handleSessionClick(session.id)}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
       >
-        <span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />
+        <Show
+          when={session.status === "bound"}
+          fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
+        >
+          <div class="size-2.5 rounded-[2px] bg-gradient-to-br from-v2-icon-icon-brand to-v2-icon-icon-accent shrink-0" />
+        </Show>
         <span class="flex-1 truncate">{session.title}</span>
       </button>
     )
@@ -441,30 +457,30 @@ export function SessionTree(props: {
               </button>
 
               <Show when={isExpanded()}>
-                <Show
-                  when={!spaceLoading()}
-                  fallback={
-                    <div class="ml-5 py-1 text-10-regular text-v2-text-text-faint">{t("common.loading")}</div>
-                  }
-                >
-                  <div class="ml-3">
-                    <Show when={overview()}>
-                      {(ov) => {
-                        const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions, space.name))
-                        return (
-                          <>
-                            <For each={rootSessions()}>
-                              {(session) => renderSessionRow(session, space.name, space.path)}
-                            </For>
-                            <For each={ov().projects}>
-                              {(project) => renderProject(project, space.name)}
-                            </For>
-                          </>
-                        )
-                      }}
-                    </Show>
-                  </div>
-                </Show>
+                <div class="ml-3">
+                  <Show
+                    when={overview()}
+                    fallback={
+                      <Show when={spaceLoading()}>
+                        <div class="py-1 text-10-regular text-v2-text-text-faint">{t("common.loading")}</div>
+                      </Show>
+                    }
+                  >
+                    {(ov) => {
+                      const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions, space.name))
+                      return (
+                        <>
+                          <For each={rootSessions()}>
+                            {(session) => renderSessionRow(session, space.name, space.path)}
+                          </For>
+                          <For each={ov().projects}>
+                            {(project) => renderProject(project, space.name)}
+                          </For>
+                        </>
+                      )
+                    }}
+                  </Show>
+                </div>
               </Show>
             </div>
           )

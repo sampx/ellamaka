@@ -325,8 +325,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         produce((panel) => {
           panel.slotState = "empty"
           panel.boundSessionId = undefined
-          panel.viewMode = undefined
-          panel.mode = "" as PanelMode
+          // Retain viewMode and mode for rendering toggles to avoid destroying nested routes
         }),
       )
     }

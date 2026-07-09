@@ -134,7 +134,7 @@ export function Workspace() {
         >
           <For each={panels()}>
             {(panel, index) => (
-              <>
+              <div class="contents">
                 <SDKProvider directory={panel.directory}>
                   <Panel
                     panel={panel}
@@ -164,7 +164,7 @@ export function Workspace() {
                     title="双击恢复等宽"
                   />
                 </Show>
-              </>
+              </div>
             )}
           </For>
         </Show>

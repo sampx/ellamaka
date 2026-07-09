@@ -175,9 +175,11 @@ export function Panel(props: {
 
     const slotState = props.panel.slotState
 
-    // bound Panel: show confirmation dialog
+    // bound Panel: directly unbind session and make panel empty
     if (slotState === "bound") {
-      dialog.show(() => <DialogClosePanel panel={props.panel} spacePath={spacePath} panelCount={props.panelCount} />)
+      const sessionId = props.panel.boundSessionId
+      if (sessionId) sessionStore.unbindPanel(sessionId)
+      wb.unbindSessionFromPanel(spacePath, props.panel.id)
       return
     }
 
@@ -466,7 +468,8 @@ export function Panel(props: {
             aria-label="关闭"
             onClick={(e: MouseEvent) => {
               e.stopPropagation()
-              handleClose()
+              e.preventDefault()
+              setTimeout(() => handleClose(), 0)
             }}
           />
         </Show>
@@ -478,33 +481,37 @@ export function Panel(props: {
         ref={panelContainerRef}
       >
         <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
-          <Show when={props.panel.slotState === "empty"}>
+          {/* 1. PanelLoader wrapper container (physically kept but visually toggled via hidden class) */}
+          <div class="w-full h-full" classList={{ "hidden": props.panel.slotState !== "empty" }}>
             <PanelLoader panel={props.panel} spaceName={props.spaceName} spacePath={props.spacePath} />
-          </Show>
-          <Show
-            when={props.panel.slotState !== "empty" ? props.panel.viewMode : undefined}
-            keyed
-          >
+          </div>
+
+          {/* 2. Main View wrapper container (physically kept but visually toggled via hidden class) */}
+          <Show when={props.panel.viewMode}>
             {(vm) => {
-              const viewDef = getView(vm)
+              const viewDef = getView(vm())
               if (!viewDef) {
                 return (
                   <div class="flex items-center justify-center h-full text-v2-text-text-muted text-12-regular">
-                    Unknown view: {vm}
+                    Unknown view: {vm()}
                   </div>
                 )
               }
               const session = props.panel.boundSessionId
                 ? sessionStore.getSession(props.panel.boundSessionId)
                 : undefined
-              return viewDef.render({
-                panel: props.panel,
-                session,
-                directory: props.panel.directory,
-                sdk,
-                spaceName: props.spaceName,
-                spacePath: props.panel.directory,
-              })
+              return (
+                <div class="w-full h-full" classList={{ "hidden": props.panel.slotState === "empty" }}>
+                  {viewDef.render({
+                    panel: props.panel,
+                    session,
+                    directory: props.panel.directory,
+                    sdk,
+                    spaceName: props.spaceName,
+                    spacePath: props.panel.directory,
+                  })}
+                </div>
+              )
             }}
           </Show>
         </div>
