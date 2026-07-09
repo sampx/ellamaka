@@ -199,3 +199,24 @@ function requireConfig(input: unknown) {
 - 不要从 helper 返回 `Effect`，除非它们确实执行有副作用的工作。同步的解析、验证和选项构建应保持同步。
 - 解析不可信 JSON 字符串时，优先使用 Effect schema 辅助方法（`Schema.UnknownFromJsonString`、`Schema.decodeUnknownOption`）而非手写 `JSON.parse` 包裹在 `Effect.try` 中。
 - 为非显而易见的约束和意外行为添加注释，不要为明显的赋值或控制流添加注释。
+
+## 5. UI 状态管理与持久化规范 (State & Persistence)
+
+为了防止多 Panel 结构下界面状态丢失和高频重绘闪烁，所有 Agent 进行前端定制开发时，必须遵守以下持久化与状态更新规则：
+
+### 5.1 空间路径 (Space Path) 与面板 CWD 语义隔离
+
+- **Space Path** 是全局 Store 的主键（即 Tab 绝对路径，如 `/Volumes/U500G/coding/wopal-workspace`），用于检索空间面板状态。
+- **Panel.directory** 是面板内的 CWD 上下文，可被用户更改定位到子项目目录中。
+- **强制规则**：**禁止**使用 `panel.directory` 或空间名称（`spaceName`）充当 Space Path Key 传递给 Store 的读写 API。面板容器必须接收外部透传的 `spacePath` prop，确保状态数据在正确的空间索引下持久化。
+
+### 5.2 异步同步桥 (Sync Bridge) 竞态安全保护
+
+- 引入监听服务端列表（如 `sync.data.session`）的 `createEffect` 自动解绑机制时，**必须**做初始化就绪判定。
+- **强制规则**：只有在数据加载完毕（如 `sync.data.status === "complete"`）后，才允许执行本地与服务端的非一致性解绑/删除判断。在就绪前，不得因初始列表为空而对本地持久化状态进行擦除。
+
+### 5.3 响应式副作用与性能控制
+
+- **强制规则**：`createMemo` 必须是纯函数，**禁止**在 Memo 内部发起 API 异步请求或写入 Store 的副作用行为，必须使用 `createEffect`。
+- **高频更新限频**：连接 SSE 总线时，只有结构性变动（如 `created`、`deleted`）才允许更新 `triggerRefresh()` 引发树组件重新获取。状态内容的高频变动（如 `updated` 块生成）必须通过 Sync 机制在渲染组件内部局部响应，禁止引起全局列表频繁重绘。
+

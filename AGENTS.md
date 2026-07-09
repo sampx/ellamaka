@@ -197,3 +197,24 @@ function requireConfig(input: unknown) {
 - Do not return `Effect` from helpers unless they actually perform effectful work. Synchronous parsing, validation, and option building should stay synchronous.
 - Prefer Effect schema helpers such as `Schema.UnknownFromJsonString` and `Schema.decodeUnknownOption` over manual `JSON.parse` wrapped in `Effect.try` when parsing untrusted JSON strings.
 - Add comments for non-obvious constraints and surprising behavior, not for obvious assignments or control flow.
+
+## 5. UI State Management and Persistence (State & Persistence)
+
+To prevent state loss and UI flickering in multi-panel structures, all agents doing frontend development must follow these rules:
+
+### 5.1 Space Path and Panel CWD Segregation
+
+- **Space Path** is the store's primary key (immutable identifier for workspaces).
+- **Panel.directory** is the panel's active CWD context, which can change when a user switches directories.
+- **Rule**: **Never** use `panel.directory` or space names (`spaceName`) as a replacement for Space Path in store read/write calls. Pass a dedicated `spacePath` prop to panels to ensure correct store slot state persistence.
+
+### 5.2 Async Sync Bridge Initialization Guard
+
+- When implementing `createEffect` sync bridges that unbind/delete local state on remote mismatch, you **must** check that remote loading has completed.
+- **Rule**: Only run non-identity unbinding checks after data synchronizer reaches completed status (e.g., `sync.data.status === "complete"`). Never unbind slots due to temporary empty states during initialization.
+
+### 5.3 Reactivity Control and Side-Effect Hygiene
+
+- **Rule**: `createMemo` must be a pure function. **Do not** write to stores or trigger API requests inside a memo; use `createEffect` for side effects.
+- **Flicker Prevention**: SSE event subscriptions should only trigger global refetches/re-renders (`triggerRefresh()`) on structural events (e.g., `created`, `deleted`). High-frequency property changes (such as chat `updated` stream chunks) must be handled locally inside rendering components.
+
