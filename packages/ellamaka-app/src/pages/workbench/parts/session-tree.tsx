@@ -259,7 +259,6 @@ export function SessionTree(props: {
   function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string, projectPath: string) {
     e.preventDefault()
     e.stopPropagation()
-    const isArchived = session.status === "archived"
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -275,15 +274,27 @@ export function SessionTree(props: {
           },
         },
         {
-          label: isArchived ? t("workbench.tree.unarchive") : t("workbench.tree.archive"),
-          action: () => {
-            if (isArchived) {
+          label: t("workbench.tree.archive"),
+          action: async () => {
+            try {
+              await sdk.client.session.update({
+                sessionID: session.id,
+                time: { archived: Date.now() },
+              })
+              for (const sp of Object.keys(wb.spaces)) {
+                const space = wb.spaces[sp]
+                if (!space) continue
+                for (const panel of space.panels) {
+                  if (panel.boundSessionId === session.id) {
+                    wb.unbindSessionFromPanel(sp, panel.id)
+                  }
+                }
+              }
               sessionStore.deleteSession(session.id)
-              sessionStore.createSession(spaceName, projectPath, "chat", session.title)
-            } else {
-              sessionStore.archiveSession(session.id)
+              setOverviewCache(spaceName, undefined!)
+            } catch (err) {
+              console.error("Failed to archive session:", err)
             }
-            setOverviewCache(spaceName, undefined!)
           },
         },
         {

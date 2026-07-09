@@ -1,4 +1,4 @@
-import { createMemo, createResource, createEffect, onCleanup, Show } from "solid-js"
+import { createMemo, createEffect, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -112,15 +112,30 @@ function PanelChatInner(props: {
     }
   })
 
-  // Sync bridge: watch for session deletion/archive in official store
+  // Archive/delete sync: official archiveSession (in MessageTimeline) only
+  // mutates the official sync store — it splices the session out of
+  // sync.data.session and evicts caches. It does not know about workbench's
+  // sessionStore or panel binding, so the panel stays bound and the tree
+  // cache stays stale after an archive. Detect the session disappearing from
+  // sync.data.session (only after it was present, i.e. session.sync injected
+  // it) and clean up the workbench side: drop the local reference, unbind the
+  // panel (slotState -> empty, PanelChat unmounts), and trigger a tree refresh
+  // so spaceOverview refetches and the archived session vanishes from the tree.
+  let wasPresent = false
+  let cleanupHandled = false
   createEffect(() => {
+    if (cleanupHandled) return
     const sessions = sync.data.session as any[]
-    const stillExists = sessions?.some((s: any) => s.id === props.session.id)
-    const isRecentlyCreated = Date.now() - (props.session.createdAt ?? 0) < 5000
-    if (sync.data.status === "complete" && !stillExists && !isRecentlyCreated && props.panel.boundSessionId === props.session.id) {
-      sessionStore.deleteSession(props.session.id)
-      wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+    const present = sessions?.some((s: any) => s.id === props.session.id) ?? false
+    if (present) {
+      wasPresent = true
+      return
     }
+    if (!wasPresent) return
+    cleanupHandled = true
+    sessionStore.deleteSession(props.session.id)
+    wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+    sessionStore.triggerRefresh()
   })
 
   let inputRef: HTMLDivElement | undefined
@@ -255,10 +270,15 @@ export function PanelChat(props: {
 function PanelChatDataProvider(props: { session: Session; directory: string; children: any }) {
   const sync = useSync()
 
-  const [sessionSync] = createResource(
-    () => props.session.id,
-    (id) => sync.session.sync(id),
-  )
+  // createResource only fires its fetcher when the returned signal is read.
+  // PanelChatInner reads sync.data.message[id], but nothing consumed the
+  // resource, so sync.session.sync(id) never ran and messages never loaded.
+  // Drive the load explicitly via createEffect keyed on the session id.
+  createEffect(() => {
+    const id = props.session.id
+    if (!id) return
+    void sync.session.sync(id)
+  })
 
   return (
     <DataProvider

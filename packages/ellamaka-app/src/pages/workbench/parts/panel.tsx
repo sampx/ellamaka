@@ -3,7 +3,7 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, createEffect, onCleanup, For, createSignal, untrack } from "solid-js"
+import { Show, createEffect, onCleanup, For, createSignal, on } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
@@ -11,6 +11,7 @@ import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
 import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
+import { reconcileMountedViews } from "./panel-mounted-views"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -33,26 +34,19 @@ export function Panel(props: {
 
   const [mountedViews, setMountedViews] = createSignal<Set<string>>(new Set())
 
-  // Clean cached views when session changes to release terminals
-  createEffect(() => {
-    void props.panel.boundSessionId
-    untrack(() => {
-      setMountedViews(new Set<string>())
-    })
-  })
-
-  // Lazy track active viewMode
-  createEffect(() => {
-    const currentMode = props.panel.viewMode
-    if (currentMode && props.panel.slotState !== "empty") {
-      setMountedViews((prev) => {
-        if (prev.has(currentMode)) return prev
-        const next = new Set(prev)
-        next.add(currentMode)
-        return next
-      })
-    }
-  })
+  createEffect(
+    on(
+      () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode] as const,
+      ([nextBoundSessionId, slotState, viewMode], previous) => {
+        setMountedViews((prev) => reconcileMountedViews(prev, {
+          prevBoundSessionId: previous?.[0],
+          nextBoundSessionId,
+          slotState,
+          viewMode,
+        }))
+      },
+    ),
+  )
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
@@ -114,7 +108,6 @@ export function Panel(props: {
   // --- Session operations ---
   const sessionId = () => props.panel.boundSessionId
   const sessionInfo = () => sessionId() ? sessionStore.getSession(sessionId()!) : undefined
-  const isArchived = () => sessionInfo()?.status === "archived"
 
   const handleRename = () => {
     const id = sessionId()
@@ -125,23 +118,6 @@ export function Panel(props: {
     const directory = props.panel.directory
     sessionStore.renameSession(id, next)
     void sdk.client.session.update({ sessionID: id, title: next, directory }).catch(() => {})
-  }
-
-  const handleArchiveToggle = () => {
-    const id = sessionId()
-    if (!id) return
-    const directory = props.panel.directory
-    const archive = !isArchived()
-    const archived = archive ? Date.now() : undefined
-    void sdk.client.session.update({ sessionID: id, time: { archived }, directory })
-      .then(() => {
-        sessionStore.archiveSession(id, archive)
-        if (archive) {
-          sessionStore.unbindPanel(id)
-          wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
-        }
-      })
-      .catch(() => {})
   }
 
   const handleCopyLink = () => {
@@ -161,20 +137,6 @@ export function Panel(props: {
     sessionStore.bindPanel(id, newPanelId)
     wb.bindSessionToPanel(props.spacePath, newPanelId, id)
     wb.setActivePanel(props.spacePath, newPanelId)
-  }
-
-  const handleDeleteSession = () => {
-    const id = sessionId()
-    if (!id) return
-    const session = sessionInfo()
-    if (!confirm(`确定要删除会话 "${session?.title ?? id}" 吗？此操作不可撤销。`)) return
-    const directory = props.panel.directory
-    void sdk.client.session.delete({ sessionID: id, directory })
-      .then(() => {
-        sessionStore.deleteSession(id)
-        wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
-      })
-      .catch(() => {})
   }
 
   const handleToggleSplit = () => {

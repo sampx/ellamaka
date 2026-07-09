@@ -1,0 +1,24 @@
+import type { PanelSlotState, PanelViewMode } from "../view"
+
+type ReconcileMountedViewsInput = {
+  prevBoundSessionId?: string
+  nextBoundSessionId?: string
+  slotState: PanelSlotState
+  viewMode?: PanelViewMode
+}
+
+export function reconcileMountedViews(prev: Set<string>, input: ReconcileMountedViewsInput): Set<string> {
+  const next = input.prevBoundSessionId !== input.nextBoundSessionId || input.slotState === "empty"
+    ? new Set<string>()
+    : new Set(prev)
+
+  if (input.slotState !== "empty" && input.viewMode) {
+    next.add(input.viewMode)
+  }
+
+  if (prev.size === next.size && [...prev].every((item) => next.has(item))) {
+    return prev
+  }
+
+  return next
+}
