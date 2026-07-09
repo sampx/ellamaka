@@ -11,7 +11,9 @@ import { useWorkbenchState } from "../view"
 import { useSessionStore } from "../session-store"
 import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
+import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
+import { reconcileSplitTerminalState } from "./panel-split-terminal"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -61,16 +63,18 @@ export function Panel(props: {
     const parts = props.panel.id.split("-")
     return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
   }
-  const headerViews = () => {
-    const all = listViews()
-    if (props.panel.slotState === "empty") return []
-    if (props.panel.slotState === "open") {
-      return all.map((v) => ({ ...v, disabled: !v.availableInOpen }))
+  const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState)
+
+  createEffect(() => {
+    const spacePath = props.spacePath
+    if (!spacePath) return
+    if (props.panel.slotState !== "bound") return
+    if (props.panel.viewMode !== "terminal") return
+    if (!props.panel.splitTerminal) {
+      setPanelSplitTerminal(spacePath, props.panel.id, true)
     }
-    return all
-      .filter((v) => v.requiresSession || v.id === "terminal")
-      .map((v) => ({ ...v, disabled: false }))
-  }
+    wb.setPanelViewMode(spacePath, props.panel.id, "tui")
+  })
   // Split terminal PTY is managed by panel.tsx (separate from view-registry main view PTY)
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
@@ -142,16 +146,11 @@ export function Panel(props: {
   const handleToggleSplit = () => {
     const spacePath = props.spacePath
     if (!spacePath) return
-
-    if (props.panel.splitTerminal) {
-      setPanelSplitTerminal(spacePath, props.panel.id, false)
-      if (props.panel.splitPtyId) {
-        sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
-        setPanelPtyId(spacePath, props.panel.id, "split", undefined)
-      }
-    } else {
-      setPanelSplitTerminal(spacePath, props.panel.id, true)
-    }
+    const next = reconcileSplitTerminalState({
+      open: !!props.panel.splitTerminal,
+      ptyId: props.panel.splitPtyId,
+    }, props.panel.splitTerminal ? "hide" : "show")
+    setPanelSplitTerminal(spacePath, props.panel.id, next.open)
   }
 
   const handleClose = () => {
@@ -413,6 +412,22 @@ export function Panel(props: {
 
         <div class="grow" />
 
+        <Show when={props.panel.slotState === "bound"}>
+          <IconButtonV2
+            variant="ghost-muted"
+            size="small"
+            state={props.panel.splitTerminal ? "pressed" : undefined}
+            icon={<IconV2 name="terminal" />}
+            aria-label={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
+            title={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation()
+              e.preventDefault()
+              handleToggleSplit()
+            }}
+          />
+        </Show>
+
         {/* View switch buttons */}
         <For each={headerViews()}>
           {(view) => {
@@ -510,7 +525,7 @@ export function Panel(props: {
           <div
             class="h-1 hover:h-1.5 z-20 cursor-row-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"
             onMouseDown={handleSplitResizeStart}
-            title="拖动调整终端高度"
+            title={t("workbench.panel.splitTerminal.resize")}
           />
         </Show>
 
@@ -521,7 +536,7 @@ export function Panel(props: {
             style={{ height: `${splitHeight()}px` }}
           >
             <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
-              <span class="uppercase tracking-wider">Terminal (Split)</span>
+              <span class="uppercase tracking-wider">{t("workbench.panel.splitTerminal.title")}</span>
               <button
                 class="hover:text-v2-text-text-base cursor-pointer p-0.5 rounded transition-colors"
                 onClick={handleToggleSplit}
@@ -535,7 +550,7 @@ export function Panel(props: {
                 fallback={
                   <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
                     <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-                    <span class="text-10-regular">Starting split shell...</span>
+                    <span class="text-10-regular">{t("workbench.panel.splitTerminal.loading")}</span>
                   </div>
                 }
               >
@@ -543,6 +558,7 @@ export function Panel(props: {
                   <Terminal
                     pty={{ id: ptyId(), title: "split terminal", titleNumber: 3 }}
                     class="w-full h-full"
+                    noPadding={true}
                     onConnectError={() => setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)}
                   />
                 )}

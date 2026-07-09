@@ -103,7 +103,7 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
 |------|------|----------|----------------|
 | `empty` | 槽位为空，等待装载 | 显示 `PanelLoader` 装载器和快速 Terminal 按钮 | 无 |
 | `open` | 槽位激活了裸 Terminal | 仅支持 Terminal 视图；TUI/Chat 视图点击时会触发装载器 | 无 |
-| `bound` | 槽位绑定了持久化 Session | 支持 TUI / Chat / Terminal / Context 视图间自由切换 | 有 |
+| `bound` | 槽位绑定了持久化 Session | 支持 TUI / Chat / Context 主视图切换，并可在面板底部展开拆分 Terminal | 有 |
 
 每个面板的结构定义：
 
@@ -150,7 +150,7 @@ type PanelViewDef = {
 }
 ```
 
-目前系统已默认注册 `tui`、`terminal`、`chat` 和 `context` 视图。面板头部工具栏和切换菜单会读取 `viewRegistry` 自动进行渲染，已禁用的视图在对应槽位状态下会置灰。
+目前系统已默认注册 `tui`、`terminal`、`chat` 和 `context` 视图。`terminal` 仍是合法视图类型，供 `open` 槽位直接承载裸终端。`bound` 槽位的头部仅呈现 `TUI / Chat / Context` 主视图按钮，并在 `TUI` 左侧提供一个小型终端图标，用于切换面板底部的拆分 Terminal。
 
 ---
 
@@ -215,9 +215,9 @@ Workbench 状态持久化的核心目标是保证**全局刷新不丢失面板�
 3. 执行 `sessionStore.bindPanel` 将会话与该面板 ID 绑定，并调用 `wb.bindSessionToPanel` 修改持久化槽位状态，恢复会话。
 
 ### 6.3 切换视图模式
-1. 在 `bound` 状态的面板中，点击头部 `TUI | Chat | Terminal` 分段按钮。
-2. 前端切换 `panel.viewMode`。
-3. 若从 TUI 切到 Chat，PTY 会进行安全 `detach`，TUI 进程保持后台挂起，前端挂载 `PanelChat` 导入聊天数据；切回 TUI 时通过 `--continue <id>` 重连复用。
+1. 在 `bound` 状态的面板中，点击头部 `TUI | Chat | Context` 主视图按钮，或点击 `TUI` 左侧的终端图标展开 / 收起下方拆分 Terminal。
+2. 主视图按钮仅切换 `panel.viewMode`。终端图标仅切换 `panel.splitTerminal`，不会抢占当前主视图。图标收起时只隐藏下方区域，保留原有 PTY 与终端上下文；再次展开时复用同一终端状态。
+3. 若从 TUI 切到 Chat，PTY 会进行安全 `detach`，TUI 进程保持后台挂起，前端挂载 `PanelChat` 导入聊天数据；切回 TUI 时通过 `--continue <id>` 重连复用。拆分 Terminal 始终作为当前面板的辅助终端存在于底部区域。
 
 ### 6.4 关闭面板与会话解绑
 1. 面板头部右侧提供直观的 "关闭" 按钮（使用 `IconButtonV2` 及 `xmark-small` 图标），完全取代复杂的 ellipsis `...` 菜单，保持头部极其清爽。

@@ -13,6 +13,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
+import { getTerminalImeFrame } from "@/components/terminal-ime-frame"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
@@ -422,12 +423,8 @@ export const Terminal = (props: TerminalProps) => {
 
       t.open(container)
 
-      // ghostty-web has no option to disable its canvas scrollbar, and its hidden
-      // IME <textarea> is not repositioned on cursor moves. Both only affect the
-      // embedded TUI view; address them here through the public API.
+      const renderer = t.renderer
       if (local.isTui) {
-        const renderer = t.renderer
-
         // Suppress the canvas scrollbar. renderScrollbar is the single draw entry
         // point called from the renderer's render() loop; no-op it so nothing draws.
         type ScrollbarRenderer = { renderScrollbar: (opacity: number) => void }
@@ -435,31 +432,38 @@ export const Terminal = (props: TerminalProps) => {
         if (withScrollbar && typeof withScrollbar.renderScrollbar === "function") {
           withScrollbar.renderScrollbar = () => {}
         }
+      }
 
-        // Glue the hidden IME textarea to the caret so the OS candidate window
-        // tracks the cursor instead of falling back to the container origin.
-        const textarea = t.textarea
-        if (renderer && textarea) {
-          const syncImeTextarea = () => {
-            if (disposed || !document.contains(container)) return
-            const metrics = renderer.getMetrics()
-            const cellW = metrics.width || 8
-            const cellH = metrics.height || 18
-            const buf = t.buffer.active
-            textarea.style.left = `${buf.cursorX * cellW}px`
-            textarea.style.top = `${buf.cursorY * cellH}px`
-            textarea.style.width = `${cellW}px`
-            textarea.style.height = `${cellH}px`
-            // opacity:0 can hide the element from the IME on some platforms; a
-            // near-zero value stays invisible yet keeps the box focusable/positionable.
-            textarea.style.opacity = "0.01"
-          }
-          syncImeTextarea()
-          const cursorSub = t.onCursorMove(syncImeTextarea)
-          cleanups.push(() => disposeIfDisposable(cursorSub))
-          const resizeSub = t.onResize(syncImeTextarea)
-          cleanups.push(() => disposeIfDisposable(resizeSub))
+      // ghostty-web does not move its hidden IME <textarea> with the caret in
+      // embedded layouts. Keep it glued to the cursor so the OS candidate window
+      // follows the actual input position for both TUI and terminal panels.
+      const textarea = t.textarea
+      if (renderer && textarea) {
+        const computed = getComputedStyle(container)
+        const paddingLeft = Number.parseFloat(computed.paddingLeft) || 0
+        const paddingTop = Number.parseFloat(computed.paddingTop) || 0
+        const syncImeTextarea = () => {
+          if (disposed || !document.contains(container)) return
+          const metrics = renderer.getMetrics()
+          const frame = getTerminalImeFrame({
+            cursorX: t.buffer.active.cursorX,
+            cursorY: t.buffer.active.cursorY,
+            cellWidth: metrics.width || 8,
+            cellHeight: metrics.height || 18,
+            paddingLeft,
+            paddingTop,
+          })
+          textarea.style.left = frame.left
+          textarea.style.top = frame.top
+          textarea.style.width = frame.width
+          textarea.style.height = frame.height
+          textarea.style.opacity = frame.opacity
         }
+        syncImeTextarea()
+        const cursorSub = t.onCursorMove(syncImeTextarea)
+        cleanups.push(() => disposeIfDisposable(cursorSub))
+        const resizeSub = t.onResize(syncImeTextarea)
+        cleanups.push(() => disposeIfDisposable(resizeSub))
       }
       useTerminalUiBindings({
         container,
