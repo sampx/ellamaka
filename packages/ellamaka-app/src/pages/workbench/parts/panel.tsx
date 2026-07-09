@@ -3,7 +3,7 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, createEffect, onCleanup, For } from "solid-js"
+import { Show, createEffect, onCleanup, For, createSignal, untrack } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
@@ -30,6 +30,29 @@ export function Panel(props: {
   const { setPanelPtyId, setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
+
+  const [mountedViews, setMountedViews] = createSignal<Set<string>>(new Set())
+
+  // Clean cached views when session changes to release terminals
+  createEffect(() => {
+    void props.panel.boundSessionId
+    untrack(() => {
+      setMountedViews(new Set<string>())
+    })
+  })
+
+  // Lazy track active viewMode
+  createEffect(() => {
+    const currentMode = props.panel.viewMode
+    if (currentMode && props.panel.slotState !== "empty") {
+      setMountedViews((prev) => {
+        if (prev.has(currentMode)) return prev
+        const next = new Set(prev)
+        next.add(currentMode)
+        return next
+      })
+    }
+  })
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
@@ -401,6 +424,7 @@ export function Panel(props: {
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
       data-panel-id={props.panel.id}
+      data-component="panel"
     >
       {/* Panel Header */}
       <div
@@ -486,34 +510,37 @@ export function Panel(props: {
             <PanelLoader panel={props.panel} spaceName={props.spaceName} spacePath={props.spacePath} />
           </div>
 
-          {/* 2. Main View wrapper container (physically kept but visually toggled via hidden class) */}
-          <Show when={props.panel.viewMode} keyed>
+          {/* 2. Main Views (lazily mounted and hidden-toggled to preserve rendering state) */}
+          <For each={["chat", "tui", "terminal", "context"]}>
             {(vm) => {
+              const isMounted = () => mountedViews().has(vm)
               const viewDef = getView(vm)
-              if (!viewDef) {
-                return (
-                  <div class="flex items-center justify-center h-full text-v2-text-text-muted text-12-regular">
-                    Unknown view: {vm}
-                  </div>
-                )
-              }
-              const session = props.panel.boundSessionId
-                ? sessionStore.getSession(props.panel.boundSessionId)
-                : undefined
+
               return (
-                <div class="w-full h-full" classList={{ "hidden": props.panel.slotState === "empty" }}>
-                  {viewDef.render({
-                    panel: props.panel,
-                    session,
-                    directory: props.panel.directory,
-                    sdk,
-                    spaceName: props.spaceName,
-                    spacePath: props.panel.directory,
-                  })}
-                </div>
+                <Show when={isMounted() && viewDef}>
+                  <div
+                    class="absolute inset-0 flex flex-col min-h-0 min-w-0 overflow-hidden"
+                    classList={{ "hidden": props.panel.slotState === "empty" || props.panel.viewMode !== vm }}
+                  >
+                    {(() => {
+                      if (!viewDef) return null
+                      const session = () => props.panel.boundSessionId
+                        ? sessionStore.getSession(props.panel.boundSessionId)
+                        : undefined
+                      return viewDef.render({
+                        panel: props.panel,
+                        session: session(),
+                        directory: props.panel.directory,
+                        sdk,
+                        spaceName: props.spaceName,
+                        spacePath: props.panel.directory,
+                      })
+                    })()}
+                  </div>
+                </Show>
               )
             }}
-          </Show>
+          </For>
         </div>
 
         {/* Split Divider Handle */}
@@ -562,6 +589,16 @@ export function Panel(props: {
           </div>
         </Show>
       </div>
+      <style>
+        {`
+          div[data-component="panel"] ::-webkit-scrollbar,
+          div[data-component="panel"]::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+          }
+        `}
+      </style>
     </div>
   )
 }

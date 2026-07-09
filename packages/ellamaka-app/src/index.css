@@ -15,6 +15,17 @@
   font-style: normal;
 }
 
+/* 彻底隐藏所有的原生 WebKit 滚动条，杜绝任何弹性高度微调在页面右侧或内部产生隐蔽的滚动条轨道 */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+html, body, #root {
+  overflow: hidden !important;
+}
+
 @layer components {
   @keyframes session-progress-whip {
     0% {
