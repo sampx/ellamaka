@@ -9,6 +9,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 
 - DESIGN: `docs/DESIGN.md` — architecture overview, config contract, ontology loading
 - BRANDING: `docs/BRANDING.md` — single source of truth for all upstream injection changes (per-file, per-line, per-pattern)
+- WORKBENCH: [docs/ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md) — Workbench design specification, covering multi-panel layout, session browser, and state persistence
 - `.gitattributes` — fork-specific file merge protection (`merge=ours`); upstream merges automatically preserve ellamaka versions
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
