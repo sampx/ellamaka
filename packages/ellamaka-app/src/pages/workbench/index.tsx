@@ -1,7 +1,7 @@
 import { Show, createMemo, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider, useSpaceStore } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view"
-import { SessionStoreProvider } from "./session-store"
+import { SessionStoreProvider, useSessionStore } from "./session-store"
 import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
@@ -25,10 +25,18 @@ function BottomDockController() {
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
+  const sessionStore = useSessionStore()
   const display = () => wb.display()
   const sdk = useServerSDK()
 
   onMount(() => {
+    const unsub = sdk.event.listen((e) => {
+      const type = e.details?.type
+      if (type === "session.created" || type === "session.deleted") {
+        sessionStore.triggerRefresh()
+      }
+    })
+
     const handleUnload = () => {
       Object.keys(wb.spaces).forEach((path) => {
         const space = wb.spaces[path]
@@ -50,6 +58,7 @@ function WorkbenchShell() {
     }
     window.addEventListener("beforeunload", handleUnload)
     onCleanup(() => {
+      unsub()
       window.removeEventListener("beforeunload", handleUnload)
     })
   })

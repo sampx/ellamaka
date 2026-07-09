@@ -139,6 +139,7 @@ export function Workspace() {
                   <Panel
                     panel={panel}
                     spaceName={store.activeTab()?.name ?? ""}
+                    spacePath={activePath()}
                     isActive={panel.id === activePanelID()}
                     panelCount={panels().length}
                     onActivate={() => {

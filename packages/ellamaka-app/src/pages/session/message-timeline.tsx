@@ -375,7 +375,7 @@ export function MessageTimeline(props: {
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
-  const shareEnabled = createMemo(() => sync.data.config.share !== "disabled")
+  const shareEnabled = createMemo(() => sync.data.config.share !== "disabled" && !workbench)
   const parentID = createMemo(() => info()?.parentID)
   const parent = createMemo(() => {
     const id = parentID()

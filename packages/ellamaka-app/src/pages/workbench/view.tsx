@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo } from "solid-js"
+import { batch, createMemo, onMount } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
@@ -79,6 +79,13 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     )
 
     const display = createMemo(() => store.display)
+
+    // PTY instances don't survive page refresh — clear stale IDs on mount.
+    // slotState, boundSessionId, directory etc. are preserved; view-registry
+    // will recreate PTY connections as needed via createEffect.
+    onMount(() => {
+      Object.keys(store.spaces).forEach((path) => clearSpacePtyIds(path))
+    })
 
     function spaceState(path: string): SpaceWorkbenchState | undefined {
       return store.spaces[path]

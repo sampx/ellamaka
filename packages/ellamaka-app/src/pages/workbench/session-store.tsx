@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo } from "solid-js"
+import { batch, createMemo, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSessionPersist, limitSessions } from "./services/session-store-service"
 
@@ -28,6 +28,11 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
   name: "SessionStore",
   init: () => {
     const [store, setStore] = createSessionPersist()
+    const [refreshKey, setRefreshKey] = createSignal(0)
+
+    function triggerRefresh() {
+      setRefreshKey((k) => k + 1)
+    }
 
     function spaceSessions(spaceName: string): Session[] {
       return store.spaces[spaceName] ?? []
@@ -64,6 +69,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
           list.push(session)
         }),
       )
+      triggerRefresh()
       return session
     }
 
@@ -95,6 +101,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
           spaceName,
           produce((list: Session[]) => list.filter((s) => s.id !== id)),
         )
+        triggerRefresh()
         return
       }
     }
@@ -150,6 +157,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
             s.lastActiveAt = Date.now()
           }),
         )
+        triggerRefresh()
         return
       }
     }
@@ -167,6 +175,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
             s.lastActiveAt = Date.now()
           }),
         )
+        triggerRefresh()
         return
       }
     }
@@ -231,6 +240,8 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       getSession,
       ensureSessionReference,
       trimSessions,
+      refreshKey,
+      triggerRefresh,
     }
   },
 })

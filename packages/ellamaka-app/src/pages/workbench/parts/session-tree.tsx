@@ -1,5 +1,5 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
-import { For, Show, createSignal, createMemo, onCleanup, onMount } from "solid-js"
+import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -69,11 +69,65 @@ export function SessionTree(props: {
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
 
-  const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(new Set([props.activeSpaceName].filter(Boolean) as string[]))
-  const [expandedProjects, setExpandedProjects] = createSignal<Set<string>>(new Set())
+  const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
+
+  function loadExpanded(): { spaces: string[]; projects: string[] } {
+    try {
+      const raw = localStorage.getItem(EXPAND_STORAGE_KEY)
+      if (!raw) return { spaces: [], projects: [] }
+      const parsed = JSON.parse(raw)
+      return { spaces: parsed.spaces ?? [], projects: parsed.projects ?? [] }
+    } catch {
+      return { spaces: [], projects: [] }
+    }
+  }
+
+  const saved = loadExpanded()
+  const initialSpaces = new Set(saved.spaces)
+  if (props.activeSpaceName) initialSpaces.add(props.activeSpaceName)
+
+  const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(initialSpaces)
+  const [expandedProjects, setExpandedProjects] = createSignal<Set<string>>(new Set(saved.projects))
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
   const [overviewCache, setOverviewCache] = createStore<Record<string, SpaceOverview>>({})
   const [loading, setLoading] = createStore<Record<string, boolean>>({})
+  const fetchVersions = new Map<string, number>()
+
+  // Shallow structural comparison — ignores timestamps to avoid unnecessary re-renders
+  // when session.updated only bumped timeUpdated (e.g. during chat conversation).
+  function overviewStructurallyEqual(a: SpaceOverview, b: SpaceOverview): boolean {
+    if (a.spaceRootSessionCount !== b.spaceRootSessionCount) return false
+    if (a.projects.length !== b.projects.length) return false
+    if (!sessionListEqual(a.spaceRootSessions, b.spaceRootSessions)) return false
+    for (let i = 0; i < a.projects.length; i++) {
+      const ap = a.projects[i], bp = b.projects[i]
+      if (ap.path !== bp.path || ap.sessionCount !== bp.sessionCount) return false
+      if (ap.directories.length !== bp.directories.length) return false
+      if (ap.worktrees.length !== bp.worktrees.length) return false
+      if (!sessionListEqual(ap.rootSessions, bp.rootSessions)) return false
+      for (let j = 0; j < ap.directories.length; j++) {
+        const ad = ap.directories[j], bd = bp.directories[j]
+        if (ad.path !== bd.path || ad.sessionCount !== bd.sessionCount) return false
+        if (!sessionListEqual(ad.sessions, bd.sessions)) return false
+      }
+      for (let j = 0; j < ap.worktrees.length; j++) {
+        const aw = ap.worktrees[j], bw = bp.worktrees[j]
+        if (aw.worktreePath !== bw.worktreePath || aw.stale !== bw.stale || aw.sessionCount !== bw.sessionCount) return false
+        if (!sessionListEqual(aw.sessions, bw.sessions)) return false
+      }
+    }
+    return true
+  }
+
+  function sessionListEqual(a: OverviewSession[], b: OverviewSession[]): boolean {
+    if (a.length !== b.length) return false
+    for (let i = 0; i < a.length; i++) {
+      const as = a[i], bs = b[i]
+      if (as.id !== bs.id || as.title !== bs.title || as.marker !== bs.marker) return false
+      if ((as.timeArchived ? 1 : 0) !== (bs.timeArchived ? 1 : 0)) return false
+    }
+    return true
+  }
 
   function mergeSessions(serverSessions: OverviewSession[], spaceName: string): MergedSession[] {
     const localMap = new Map(sessionStore.spaceSessions(spaceName).map((s) => [s.id, s]))
@@ -81,7 +135,7 @@ export function SessionTree(props: {
       const local = localMap.get(ss.id)
       return {
         id: ss.id,
-        title: ss.title || ss.id,
+        title: local?.title ?? ss.title ?? ss.id,
         status: local?.status ?? (ss.timeArchived ? "archived" as const : "idle" as const),
         boundPanelId: local?.boundPanelId,
       }
@@ -94,7 +148,15 @@ export function SessionTree(props: {
     onCleanup(() => document.removeEventListener("click", handler))
   })
 
-  // Auto-expand active space
+  // Persist expand state to localStorage
+  createEffect(() => {
+    const spaces = [...expandedSpaces()]
+    const projects = [...expandedProjects()]
+    try {
+      localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects }))
+    } catch {}
+  })
+
   const activeName = () => props.activeSpaceName
   createMemo(() => {
     const name = activeName()
@@ -126,11 +188,18 @@ export function SessionTree(props: {
   }
 
   async function loadSpaceOverview(spaceName: string) {
-    if (overviewCache[spaceName]) return
+    const currentKey = sessionStore.refreshKey()
+    const lastKey = fetchVersions.get(spaceName) ?? -1
+    if (overviewCache[spaceName] && currentKey === lastKey) return
+    fetchVersions.set(spaceName, currentKey)
     setLoading(spaceName, true)
     try {
       const res = await sdk.client.wopalSpace.spaceOverview({ spaceName })
-      setOverviewCache(spaceName, (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
+      const next = (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] }
+      const prev = overviewCache[spaceName]
+      // Skip update if structurally identical — prevents tree flicker on session.updated
+      if (prev && overviewStructurallyEqual(prev, next)) return
+      setOverviewCache(spaceName, next)
     } catch {
       setOverviewCache(spaceName, { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
     } finally {
@@ -168,9 +237,10 @@ export function SessionTree(props: {
           label: t("workbench.tree.rename"),
           action: () => {
             const newTitle = prompt(t("workbench.tree.rename"), session.title)
-            if (newTitle && newTitle.trim()) {
-              sessionStore.updateSession(session.id, { title: newTitle.trim() })
-            }
+            if (!newTitle || !newTitle.trim() || newTitle.trim() === session.title) return
+            const trimmed = newTitle.trim()
+            sessionStore.renameSession(session.id, trimmed)
+            void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
           },
         },
         {
@@ -259,7 +329,7 @@ export function SessionTree(props: {
     const projectKey = `${spaceName}/${projectPath}`
     const isProjExpanded = () => expandedProjects().has(projectKey)
 
-    const rootSessions = mergeSessions(project.rootSessions, spaceName)
+    const rootSessions = createMemo(() => mergeSessions(project.rootSessions, spaceName))
 
     return (
       <div>
@@ -281,13 +351,13 @@ export function SessionTree(props: {
 
         <Show when={isProjExpanded()}>
           <div class="ml-4">
-            <For each={rootSessions}>
+            <For each={rootSessions()}>
               {(session) => renderSessionRow(session, spaceName, projectPath)}
             </For>
 
             <For each={project.directories}>
               {(dir) => {
-                const dirSessions = mergeSessions(dir.sessions, spaceName)
+                const dirSessions = createMemo(() => mergeSessions(dir.sessions, spaceName))
                 return (
                   <div>
                     <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
@@ -295,7 +365,7 @@ export function SessionTree(props: {
                       <span class="text-v2-text-text-faint/50">({dir.sessionCount})</span>
                     </div>
                     <div class="ml-2">
-                      <For each={dirSessions}>
+                      <For each={dirSessions()}>
                         {(session) => renderSessionRow(session, spaceName, projectPath)}
                       </For>
                     </div>
@@ -307,7 +377,7 @@ export function SessionTree(props: {
             <For each={project.worktrees}>
               {(wt) => {
                 if (wt.stale) return null
-                const wtSessions = mergeSessions(wt.sessions, spaceName)
+                const wtSessions = createMemo(() => mergeSessions(wt.sessions, spaceName))
                 return (
                   <div>
                     <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
@@ -317,7 +387,7 @@ export function SessionTree(props: {
                       </Show>
                     </div>
                     <div class="ml-2">
-                      <For each={wtSessions}>
+                      <For each={wtSessions()}>
                         {(session) => renderSessionRow(session, spaceName, projectPath)}
                       </For>
                     </div>
@@ -338,8 +408,9 @@ export function SessionTree(props: {
           const isActive = space.name === props.activeSpaceName
           const isExpanded = () => expandedSpaces().has(space.name)
 
-          // Trigger overview load when expanded
-          createMemo(() => {
+          // Trigger overview load when expanded (also re-fetches when refreshKey changes)
+          createEffect(() => {
+            void sessionStore.refreshKey()
             if (isExpanded()) loadSpaceOverview(space.name)
           })
 
@@ -379,10 +450,10 @@ export function SessionTree(props: {
                   <div class="ml-3">
                     <Show when={overview()}>
                       {(ov) => {
-                        const rootSessions = mergeSessions(ov().spaceRootSessions, space.name)
+                        const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions, space.name))
                         return (
                           <>
-                            <For each={rootSessions}>
+                            <For each={rootSessions()}>
                               {(session) => renderSessionRow(session, space.name, space.path)}
                             </For>
                             <For each={ov().projects}>

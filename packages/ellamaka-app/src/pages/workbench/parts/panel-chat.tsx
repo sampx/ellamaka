@@ -1,4 +1,4 @@
-import { createMemo, createResource, onCleanup, Show } from "solid-js"
+import { createMemo, createResource, createEffect, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -18,6 +18,8 @@ import { createSessionHistoryLoader } from "./panel-chat-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
 import { WorkbenchChatProvider } from "./workbench-chat-context"
+import { useSessionStore } from "../session-store"
+import { useWorkbenchState } from "../view"
 import type { WorkbenchPanel } from "../view"
 import type { Session } from "../session-store"
 
@@ -31,6 +33,8 @@ function PanelChatInner(props: {
   spaceName: string
 }) {
   const sync = useSync()
+  const sessionStore = useSessionStore()
+  const wb = useWorkbenchState()
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
@@ -95,6 +99,27 @@ function PanelChatInner(props: {
 
   onCleanup(() => {
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
+  })
+
+  // Sync bridge: watch official sync.data.session for title changes
+  createEffect(() => {
+    const sessions = sync.data.session as any[]
+    const officialSession = sessions?.find((s: any) => s.id === props.session.id)
+    if (!officialSession) return
+    const local = sessionStore.getSession(props.session.id)
+    if (local && officialSession.title && officialSession.title !== local.title) {
+      sessionStore.renameSession(props.session.id, officialSession.title)
+    }
+  })
+
+  // Sync bridge: watch for session deletion/archive in official store
+  createEffect(() => {
+    const sessions = sync.data.session as any[]
+    const stillExists = sessions?.some((s: any) => s.id === props.session.id)
+    if (sync.data.status === "complete" && !stillExists && props.panel.boundSessionId === props.session.id) {
+      sessionStore.deleteSession(props.session.id)
+      wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+    }
   })
 
   let inputRef: HTMLDivElement | undefined
@@ -229,10 +254,6 @@ export function PanelChat(props: {
 function PanelChatDataProvider(props: { session: Session; directory: string; children: any }) {
   const sync = useSync()
 
-  // KEY: trigger session data + message sync when session id changes.
-  // Mirrors DirectoryDataProvider's createResource(() => params.id, (id) => sync.session.sync(id)).
-  // Without this, sync.data.message[id] stays undefined (no history) and
-  // sync.session.get(id) returns undefined (can't send — PromptInput falls back to new session).
   const [sessionSync] = createResource(
     () => props.session.id,
     (id) => sync.session.sync(id),
@@ -240,7 +261,7 @@ function PanelChatDataProvider(props: { session: Session; directory: string; chi
 
   return (
     <DataProvider
-      data={sync.data}
+      data={sync.data as any}
       directory={props.directory}
       onNavigateToSession={() => {}}
       onSessionHref={() => ""}

@@ -1,6 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createResource, createSignal } from "solid-js"
+import { batch, createEffect, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
+import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
 
 export type WopalSpace = {
@@ -13,8 +14,16 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
   name: "SpaceStore",
   init: () => {
     const sdk = useServerSDK()
-    const [tabs, setTabs] = createStore<WopalSpace[]>([])
-    const [activeName, setActiveName] = createSignal<string | undefined>(undefined)
+    const [tabs, setTabs] = persisted(
+      Persist.global("workbench.spacetabs", []),
+      createStore<WopalSpace[]>([]),
+    )
+    const [activeStore, setActiveStore] = persisted(
+      Persist.global("workbench.activespace", []),
+      createStore<{ name: string | undefined }>({ name: undefined }),
+    )
+    const activeName = () => activeStore.name
+    const setActiveName = (name: string | undefined) => setActiveStore("name", name)
 
     const [spacesResource, spacesActions] = createResource(async () => {
       try {
@@ -26,6 +35,23 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
     })
 
     const spaces = createMemo(() => spacesResource() ?? [])
+
+    // Validate persisted tabs against actual spaces list after fetch
+    createEffect(() => {
+      const list = spaces()
+      if (list.length === 0) return
+      const validNames = new Set(list.map((s) => s.name))
+      setTabs((prev) => {
+        const filtered = prev.filter((t) => validNames.has(t.name))
+        return filtered.length === prev.length ? prev : filtered
+      })
+      const current = activeName()
+      if (current && !validNames.has(current)) {
+        setActiveName(tabs[0]?.name)
+      } else if (!current && tabs.length > 0) {
+        setActiveName(tabs[0].name)
+      }
+    })
 
     function openTab(space: WopalSpace) {
       batch(() => {

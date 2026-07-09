@@ -1,5 +1,4 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
-import { ButtonV2 } from "@opencode-ai/ui/v2/components/button-v2.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -162,14 +161,6 @@ export function SpaceRail() {
             </span>
           </div>
           <div class="flex items-center gap-0.5">
-            <ButtonV2
-              variant="ghost"
-              size="normal"
-              class="h-6 px-1.5 text-v2-text-text-muted"
-              onClick={() => store.reload()}
-            >
-              {t("workbench.sidebar.refreshShort")}
-            </ButtonV2>
             <IconButtonV2
               variant="ghost-muted"
               size="small"

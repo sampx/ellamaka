@@ -17,6 +17,7 @@ import type { WorkbenchPanel, PanelMode } from "../view"
 export function Panel(props: {
   panel: WorkbenchPanel
   spaceName: string
+  spacePath: string
   isActive: boolean
   panelCount: number
   onActivate: () => void
@@ -24,14 +25,13 @@ export function Panel(props: {
   onRemove: () => void
 }) {
   const language = useLanguage()
-  const t = (k: string) => language.t(k)
+  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as any, params)
   const sdk = useSDK()
   const wb = useWorkbenchState()
   const { setPanelPtyId, setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
   const [menuOpen, setMenuOpen] = createSignal(false)
-  const [panelChatPrefill, setPanelChatPrefill] = createSignal<string | undefined>(undefined)
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
@@ -65,7 +65,7 @@ export function Panel(props: {
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
     const directory = props.panel.directory
-    const spacePath = props.panel.directory || "/"
+    const spacePath = props.spacePath
 
     if (!spacePath) return
 
@@ -78,7 +78,7 @@ export function Panel(props: {
         .then((res) => {
           const ptyId = res.data?.id
           if (ptyId) {
-            setPanelPtyId(spacePath, props.panel.id, "split", ptyId)
+            setPanelPtyId(props.spacePath, props.panel.id, "split", ptyId)
           }
         })
         .catch((err) => {
@@ -95,8 +95,74 @@ export function Panel(props: {
     }
   })
 
+  // --- Session operations ---
+  const sessionId = () => props.panel.boundSessionId
+  const sessionInfo = () => sessionId() ? sessionStore.getSession(sessionId()!) : undefined
+  const isArchived = () => sessionInfo()?.status === "archived"
+
+  const handleRename = () => {
+    const id = sessionId()
+    if (!id) return
+    const current = sessionInfo()?.title ?? ""
+    const next = prompt("重命名会话", current)
+    if (!next || next === current) return
+    const directory = props.panel.directory
+    sessionStore.renameSession(id, next)
+    void sdk.client.session.update({ sessionID: id, title: next, directory }).catch(() => {})
+  }
+
+  const handleArchiveToggle = () => {
+    const id = sessionId()
+    if (!id) return
+    const directory = props.panel.directory
+    const archive = !isArchived()
+    const archived = archive ? Date.now() : undefined
+    void sdk.client.session.update({ sessionID: id, time: { archived }, directory })
+      .then(() => {
+        sessionStore.archiveSession(id, archive)
+        if (archive) {
+          sessionStore.unbindPanel(id)
+          wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+        }
+      })
+      .catch(() => {})
+  }
+
+  const handleCopyLink = () => {
+    const id = sessionId()
+    if (!id) return
+    const url = `${window.location.origin}${window.location.pathname}#/${btoa(props.panel.directory)}/session/${id}`
+    void navigator.clipboard.writeText(url).catch(() => {})
+  }
+
+  const handleOpenInNewPanel = () => {
+    const id = sessionId()
+    if (!id) return
+    const newPanelId = wb.addPanel(props.spacePath)
+    if (!newPanelId) return
+    // Unbind from current panel first to avoid double-binding
+    wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+    sessionStore.bindPanel(id, newPanelId)
+    wb.bindSessionToPanel(props.spacePath, newPanelId, id)
+    wb.setActivePanel(props.spacePath, newPanelId)
+  }
+
+  const handleDeleteSession = () => {
+    const id = sessionId()
+    if (!id) return
+    const session = sessionInfo()
+    if (!confirm(`确定要删除会话 "${session?.title ?? id}" 吗？此操作不可撤销。`)) return
+    const directory = props.panel.directory
+    void sdk.client.session.delete({ sessionID: id, directory })
+      .then(() => {
+        sessionStore.deleteSession(id)
+        wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
+      })
+      .catch(() => {})
+  }
+
   const handleToggleSplit = () => {
-    const spacePath = props.panel.directory || "/"
+    const spacePath = props.spacePath
     if (!spacePath) return
 
     if (props.panel.splitTerminal) {
@@ -111,7 +177,7 @@ export function Panel(props: {
   }
 
   const handleClose = () => {
-    const spacePath = props.panel.directory || "/"
+    const spacePath = props.spacePath
     if (!spacePath) return
 
     const slotState = props.panel.slotState
@@ -151,7 +217,7 @@ export function Panel(props: {
     const dragSpaceName = e.dataTransfer?.getData("text/spaceName")
     if (!sessionId || !dragSpaceName) return
 
-    const spacePath = props.panel.directory || "/"
+    const spacePath = props.spacePath
 
     // Cross-space check
     if (dragSpaceName !== props.spaceName) {
@@ -176,16 +242,34 @@ export function Panel(props: {
       session = sessionStore.ensureSessionReference(sessionId, dragSpaceName, projectPath, "chat", sessionTitle)
     }
 
-    // If session is already bound to another panel, unbind first
+    // If session is already bound to another panel, check if binding is still valid
     if (session.boundPanelId && session.boundPanelId !== props.panel.id) {
-      if (!confirm(`已在 Panel 中运行,是否移动到此 Panel?`)) return
-      sessionStore.unbindPanel(sessionId)
-      wb.unbindSessionFromPanel(spacePath, session.boundPanelId)
+      const boundPanel = wb.spaceState(spacePath)?.panels.find((p) => p.id === session.boundPanelId)
+      // Dangling reference: panel no longer exists or no longer bound to this session
+      if (!boundPanel || boundPanel.boundSessionId !== sessionId) {
+        sessionStore.unbindPanel(sessionId)
+      } else {
+        // Real binding to another panel — ask user via styled dialog
+        dialog.show(() => (
+          <DialogMoveSession
+            sessionTitle={session.title}
+            onConfirm={() => {
+              sessionStore.unbindPanel(sessionId)
+              wb.unbindSessionFromPanel(spacePath, session.boundPanelId!)
+              bindSessionToThisPanel()
+            }}
+          />
+        ))
+        return
+      }
     }
 
-    // Bind session to this panel
-    sessionStore.bindPanel(sessionId, props.panel.id)
-    wb.bindSessionToPanel(spacePath, props.panel.id, sessionId)
+    bindSessionToThisPanel()
+
+    function bindSessionToThisPanel() {
+      sessionStore.bindPanel(sessionId!, props.panel.id)
+      wb.bindSessionToPanel(spacePath, props.panel.id, sessionId!)
+    }
   }
 
   function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
@@ -240,6 +324,34 @@ export function Panel(props: {
     )
   }
 
+  function DialogMoveSession(props: { sessionTitle: string; onConfirm: () => void }) {
+    return (
+      <Dialog title={t("workbench.panel.moveSession.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {t("workbench.panel.moveSession.message", { title: props.sessionTitle })}
+            </span>
+            <span class="text-12-regular text-text-muted">
+              {t("workbench.panel.moveSession.hint")}
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="large" onClick={() => {
+              props.onConfirm()
+              dialog.close()
+            }}>
+              {t("workbench.panel.moveSession.confirm")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   let panelContainerRef: HTMLDivElement | undefined
 
   const splitHeight = () => props.panel.splitHeight ?? 180
@@ -269,7 +381,7 @@ export function Panel(props: {
         newHeight = maxHeight
       }
 
-      const spacePath = props.panel.directory || "/"
+      const spacePath = props.spacePath
       if (spacePath) {
         wb.setPanelSplitHeight(spacePath, props.panel.id, newHeight)
       }
@@ -324,7 +436,7 @@ export function Panel(props: {
         <For each={headerViews()}>
           {(view) => {
             const active = props.panel.viewMode === view.id
-            const spacePath = props.panel.directory || "/"
+            const spacePath = props.spacePath
             return (
               <button
                 type="button"
@@ -386,7 +498,7 @@ export function Panel(props: {
                   <For each={listViews()}>
                     {(view) => {
                       const active = props.panel.viewMode === view.id
-                      const spacePath = props.panel.directory || "/"
+                      const spacePath = props.spacePath
                       return (
                         <MenuV2.Item
                           disabled={active}
@@ -397,6 +509,22 @@ export function Panel(props: {
                       )
                     }}
                   </For>
+                </MenuV2.Group>
+              </Show>
+
+              {/* Session group (bound only) */}
+              <Show when={props.panel.slotState === "bound"}>
+                <MenuV2.Separator />
+                <MenuV2.Group>
+                  <MenuV2.GroupLabel>Session</MenuV2.GroupLabel>
+                  <MenuV2.Item onSelect={handleRename}>重命名</MenuV2.Item>
+                  <MenuV2.Item onSelect={handleArchiveToggle}>
+                    {isArchived() ? "取消归档" : "归档"}
+                  </MenuV2.Item>
+                  <MenuV2.Item onSelect={handleCopyLink}>复制链接</MenuV2.Item>
+                  <MenuV2.Item onSelect={handleOpenInNewPanel}>在新 Panel 中打开</MenuV2.Item>
+                  <MenuV2.Separator />
+                  <MenuV2.Item onSelect={handleDeleteSession}>删除</MenuV2.Item>
                 </MenuV2.Group>
               </Show>
             </MenuV2.Content>
@@ -411,7 +539,7 @@ export function Panel(props: {
       >
         <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
           <Show when={props.panel.slotState === "empty"}>
-            <PanelLoader panel={props.panel} prefill={{ projectPath: panelChatPrefill() }} />
+            <PanelLoader panel={props.panel} spaceName={props.spaceName} spacePath={props.spacePath} />
           </Show>
           <Show
             when={props.panel.slotState !== "empty" ? props.panel.viewMode : undefined}
@@ -479,7 +607,7 @@ export function Panel(props: {
                   <Terminal
                     pty={{ id: ptyId(), title: "split terminal", titleNumber: 3 }}
                     class="w-full h-full"
-                    onConnectError={() => setPanelPtyId(props.panel.directory || "/", props.panel.id, "split", undefined)}
+                    onConnectError={() => setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)}
                   />
                 )}
               </Show>
