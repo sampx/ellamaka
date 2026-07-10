@@ -16,6 +16,12 @@ export function PanelChatComposer(props: {
   setPromptDockRef: (el: HTMLDivElement) => void
   onSubmit: () => void
   onResponseSubmit: () => void
+  revert?: {
+    items: Array<{ id: string; text: string }>
+    restoring?: string
+    disabled: boolean
+    onRestore: (id: string) => void
+  }
 }) {
   return (
     <SessionComposerRegion
@@ -29,6 +35,7 @@ export function PanelChatComposer(props: {
       onSubmit={props.onSubmit}
       onResponseSubmit={props.onResponseSubmit}
       setPromptDockRef={props.setPromptDockRef}
+      revert={props.revert}
     />
   )
 }

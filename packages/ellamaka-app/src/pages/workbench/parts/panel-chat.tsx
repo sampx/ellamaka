@@ -1,17 +1,22 @@
-import { createMemo, createEffect, onCleanup, Show } from "solid-js"
+import { createMemo, createEffect, onCleanup, Show, batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
+import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { DataProvider } from "@opencode-ai/ui/context"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { SDKProvider } from "@/context/sdk"
+import { SDKProvider, useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { PromptProvider } from "@/context/prompt"
+import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
 import { CommentsProvider } from "@/context/comments"
 import { LocalProvider } from "@/context/local"
+import { useLanguage } from "@/context/language"
+import { showToast } from "@opencode-ai/ui/toast"
+import { formatServerError } from "@/utils/server-errors"
+import { extractPromptFromParts } from "@/utils/prompt"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { createSessionHistoryLoader } from "./panel-chat-helpers"
@@ -35,6 +40,9 @@ function PanelChatInner(props: {
   const sync = useSync()
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
+  const sdk = useSDK()
+  const prompt = usePrompt()
+  const language = useLanguage()
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
@@ -118,8 +126,21 @@ function PanelChatInner(props: {
   const messages = createMemo(() => (sync.data.message[props.session.id] ?? []) as Message[])
   const messagesReady = createMemo(() => sync.data.message[props.session.id] !== undefined)
 
+  const info = createMemo(() => (sync.data.session as any[]).find((item) => item.id === props.session.id))
+  const revertMessageID = createMemo(() => info()?.revert?.messageID)
+
   const userMessages = createMemo(
     () => messages().filter((m) => m.role === "user") as UserMessage[],
+    emptyUserMessages,
+    { equals: same },
+  )
+
+  const visibleUserMessages = createMemo(
+    () => {
+      const revert = revertMessageID()
+      if (!revert) return userMessages()
+      return userMessages().filter((m) => m.id < revert)
+    },
     emptyUserMessages,
     { equals: same },
   )
@@ -130,12 +151,144 @@ function PanelChatInner(props: {
   const historyLoader = createSessionHistoryLoader({
     sessionID: () => props.session.id,
     loaded: () => messages().length,
-    visibleUserMessages: userMessages,
+    visibleUserMessages: visibleUserMessages,
     historyMore,
     historyLoading,
     loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
     userScrolled: autoScroll.userScrolled,
     scroller: () => scroller,
+  })
+
+  const draft = (id: string) =>
+    extractPromptFromParts(sync.data.part[id] ?? [], {
+      directory: props.directory,
+      attachmentName: language.t("common.attachment"),
+    })
+
+  const line = (id: string) => {
+    const text = draft(id)
+      .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (text) return text
+    return `[${language.t("common.attachment")}]`
+  }
+
+  const fail = (err: unknown) => {
+    showToast({
+      variant: "error",
+      title: language.t("common.requestFailed"),
+      description: formatServerError(err, language.t),
+    })
+  }
+
+  const merge = (next: NonNullable<ReturnType<typeof info>>) =>
+    sync.set("session", (list) => {
+      const idx = list.findIndex((item) => item.id === next.id)
+      if (idx < 0) return list
+      const out = list.slice()
+      out[idx] = next
+      return out
+    })
+
+  const roll = (sessionID: string, next: NonNullable<ReturnType<typeof info>>["revert"]) =>
+    sync.set("session", (list) => {
+      const idx = list.findIndex((item) => item.id === sessionID)
+      if (idx < 0) return list
+      const out = list.slice()
+      out[idx] = { ...out[idx], revert: next }
+      return out
+    })
+
+  const busy = (sessionID: string) => sync.data.session_working(sessionID)
+  const halt = (sessionID: string) =>
+    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+
+  const revertMutation = useMutation(() => ({
+    mutationFn: async (input: { sessionID: string; messageID: string }) => {
+      const prev = prompt.current().slice()
+      const last = info()?.revert
+      const value = draft(input.messageID)
+      batch(() => {
+        roll(input.sessionID, { messageID: input.messageID })
+        prompt.set(value)
+      })
+      await halt(input.sessionID)
+        .then(() => sdk.client.session.revert(input))
+        .then((result) => {
+          if (result.data) merge(result.data)
+        })
+        .catch((err) => {
+          batch(() => {
+            roll(input.sessionID, last)
+            prompt.set(prev)
+          })
+          fail(err)
+        })
+    },
+  }))
+
+  const restoreMutation = useMutation(() => ({
+    mutationFn: async (id: string) => {
+      const sessionID = props.session.id
+      if (!sessionID) return
+
+      const next = userMessages().find((item) => item.id > id)
+      const prev = prompt.current().slice()
+      const last = info()?.revert
+
+      batch(() => {
+        roll(sessionID, next ? { messageID: next.id } : undefined)
+        if (next) {
+          prompt.set(draft(next.id))
+          return
+        }
+        prompt.reset()
+      })
+
+      const task = !next
+        ? halt(sessionID).then(() => sdk.client.session.unrevert({ sessionID }))
+        : halt(sessionID).then(() =>
+            sdk.client.session.revert({
+              sessionID,
+              messageID: next.id,
+            }),
+          )
+
+      await task
+        .then((result) => {
+          if (result.data) merge(result.data)
+        })
+        .catch((err) => {
+          batch(() => {
+            roll(sessionID, last)
+            prompt.set(prev)
+          })
+          fail(err)
+        })
+    },
+  }))
+
+  const reverting = createMemo(() => revertMutation.isPending || restoreMutation.isPending)
+  const restoring = createMemo(() => (restoreMutation.isPending ? restoreMutation.variables : undefined))
+
+  const revert = (input: { sessionID: string; messageID: string }) => {
+    if (reverting()) return
+    return revertMutation.mutateAsync(input)
+  }
+
+  const restore = (id: string) => {
+    if (!props.session.id || reverting()) return
+    return restoreMutation.mutateAsync(id)
+  }
+
+  const rolled = createMemo(() => {
+    const id = revertMessageID()
+    if (!id) return []
+    return userMessages()
+      .filter((item) => item.id >= id)
+      .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
   return (
@@ -160,6 +313,7 @@ function PanelChatInner(props: {
             userMessages={historyLoader.userMessages()}
             anchor={() => "#"}
             setRevealMessage={(fn) => { revealMessage = fn }}
+            actions={{ revert }}
           />
         </Show>
       </div>
@@ -171,6 +325,12 @@ function PanelChatInner(props: {
         setPromptDockRef={(el) => { promptDockRef = el }}
         onSubmit={resumeScroll}
         onResponseSubmit={resumeScroll}
+        revert={{
+          items: rolled(),
+          restoring: restoring(),
+          disabled: reverting(),
+          onRestore: restore,
+        }}
       />
     </div>
   )

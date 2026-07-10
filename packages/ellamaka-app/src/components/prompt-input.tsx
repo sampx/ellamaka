@@ -1348,7 +1348,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!search) return projects()
     return projects().filter((project) => displayName(project).toLowerCase().includes(search))
   })
-  const showAgentControl = createMemo(() => settings.general.showCustomAgents() && agentNames().length > 0)
+  const showAgentControl = createMemo(() => (settings.general.showCustomAgents() || props.variant === "dock") && agentNames().length > 0)
   const selectProject = (worktree: string) => {
     setPicker({
       projectOpen: false,
@@ -1569,6 +1569,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     <ComposerPickerTrigger state={newProjectTriggerState()} />
                   </Show>
                   <ComposerModelControl state={modelControlState()} />
+                  <Show when={variants().length > 1}>
+                    <ComposerVariantControl
+                      variants={variants}
+                      current={() => local.model.variant.current()}
+                      onSelect={(value) => {
+                        local.model.variant.set(value === "default" ? undefined : value)
+                        restoreFocus()
+                      }}
+                      t={language.t}
+                      keybind={command.keybind("model.variant.cycle")}
+                      title={language.t("command.model.variant.cycle")}
+                      style={control()}
+                    />
+                  </Show>
                 </div>
                 <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
@@ -2087,6 +2101,33 @@ function ComposerAgentControl(props: { state: ComposerAgentControlState }) {
         />
       </TooltipKeybind>
     </div>
+  )
+}
+
+function ComposerVariantControl(props: {
+  variants: () => string[]
+  current: () => string | undefined
+  onSelect: (value: string | undefined) => void
+  t: (key: string) => string
+  keybind?: string
+  title?: string
+  style?: JSX.CSSProperties
+}) {
+  return (
+    <TooltipKeybind placement="top" gutter={4} title={props.title ?? ""} keybind={props.keybind ?? ""}>
+      <Select
+        size="normal"
+        options={props.variants()}
+        current={props.current() ?? "default"}
+        label={(x) => (x === "default" ? props.t("common.default") : x)}
+        onSelect={props.onSelect}
+        class="capitalize max-w-[120px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
+        valueClass="truncate text-[13px] font-[440] leading-5 text-v2-text-text-faint"
+        triggerStyle={props.style}
+        triggerProps={{ "data-action": "prompt-model-variant" }}
+        variant="ghost"
+      />
+    </TooltipKeybind>
   )
 }
 

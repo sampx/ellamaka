@@ -261,7 +261,7 @@ export function SessionComposerRegion(props: {
                 fallback={
                   <Show when={!props.state.blocked()}>
                     <PromptInput
-                      variant={props.placement === "inline" ? "new-session" : undefined}
+                      variant={props.placement === "inline" ? "new-session" : props.placement === "dock" ? "dock" : undefined}
                       ref={props.inputRef}
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
