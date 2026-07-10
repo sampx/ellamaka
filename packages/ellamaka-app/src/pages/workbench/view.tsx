@@ -73,7 +73,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
   init: () => {
     const sdk = useServerSDK()
     const sessionStore = useSessionStore()
-    const [store, setStore] = persisted(
+    const [store, setStore, _, ready] = persisted(
       Persist.global("workbench.v2", ["workbench", "workbench.v1"]),
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
     )
@@ -374,6 +374,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     }
 
     return {
+      ready,
       display,
       get spaces() { return store.spaces },
       spaceState,

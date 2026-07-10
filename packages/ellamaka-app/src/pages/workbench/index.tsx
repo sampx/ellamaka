@@ -87,18 +87,27 @@ function WorkbenchShell() {
 
   return (
     <div class="flex h-dvh flex-col bg-v2-background-bg-deep text-v2-text-text-base overflow-hidden">
-      <Show when={display().showTitlebar}>
-        <WorkbenchTitlebar />
-      </Show>
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <SpaceRail />
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <Workspace />
-          <BottomDockController />
+      <Show
+        when={wb.ready()}
+        fallback={
+          <div class="flex h-full items-center justify-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-2 border-v2-text-text-muted border-t-transparent" />
+          </div>
+        }
+      >
+        <Show when={display().showTitlebar}>
+          <WorkbenchTitlebar />
+        </Show>
+        <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <SpaceRail />
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <Workspace />
+            <BottomDockController />
+          </div>
         </div>
-      </div>
-      <Show when={display().showStatusbar}>
-        <StatusBar />
+        <Show when={display().showStatusbar}>
+          <StatusBar />
+        </Show>
       </Show>
     </div>
   )
