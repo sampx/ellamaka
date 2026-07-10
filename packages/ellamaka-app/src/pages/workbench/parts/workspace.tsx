@@ -256,7 +256,7 @@ function DialogCloseTab(props: { name: string; path: string }) {
     const name = props.name
 
     // 1. Kill all PTYs owned by this space's panels
-    ptyManager.disposeSpace(path, sdk)
+    void ptyManager.disposeSpace(path, sdk, wb.spaceState(path)?.panels ?? [])
 
     // 2. Destroy the entire space state from persisted store (will also trigger tab closure)
     wb.removeSpace(path)

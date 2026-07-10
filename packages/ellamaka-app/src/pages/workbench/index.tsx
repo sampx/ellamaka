@@ -40,7 +40,14 @@ function WorkbenchShell() {
     })
 
     const handleUnload = () => {
-      ptyManager.disposeAllSyncOnUnload(sdk.url)
+      ptyManager.disposeAllSyncOnUnload(
+        sdk.url,
+        Object.values(wb.spaces).flatMap((space) =>
+          space.panels.flatMap((panel) =>
+            [panel.tuiPtyId, panel.termPtyId, panel.splitPtyId].filter((ptyId): ptyId is string => !!ptyId),
+          ),
+        ),
+      )
     }
     window.addEventListener("beforeunload", handleUnload)
     onCleanup(() => {

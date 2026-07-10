@@ -50,6 +50,10 @@ registerView({
   render: (ctx) => {
     const wb = useWorkbenchState()
     const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
+    let disposed = false
+    onCleanup(() => {
+      disposed = true
+    })
 
     createEffect(() => {
       if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return
@@ -77,6 +81,7 @@ registerView({
           return res.data.id
         }
       }).then((id) => {
+        if (disposed) return
         setPtyId(id)
         if (id !== existingId) {
           wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", id)

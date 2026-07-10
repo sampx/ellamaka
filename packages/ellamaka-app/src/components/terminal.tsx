@@ -30,6 +30,7 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
   onClose?: () => void
+  onTitleChange?: (title: string) => void
   noPadding?: boolean
   isTui?: boolean
 }
@@ -175,7 +176,7 @@ export const Terminal = (props: TerminalProps) => {
   const password = auth?.password ?? ""
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError", "onClose", "noPadding", "isTui"])
+  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError", "onClose", "onTitleChange", "noPadding", "isTui"])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
@@ -472,6 +473,7 @@ export const Terminal = (props: TerminalProps) => {
       disableTerminalScrollbar(renderer)
 
       const titleSub = t.onTitleChange((title) => {
+        local.onTitleChange?.(title)
         isEllamakaTui = isEllamakaTuiTitle(title)
         syncTuiMode()
       })

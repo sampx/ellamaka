@@ -1,14 +1,44 @@
+export type PtyKind = "tui" | "term" | "split"
+
 type PtyKey = string // `spacePath::panelId::kind`
 
-class PtyManagerImpl {
+type PtySDK = {
+  client: {
+    pty: {
+      get: (input: { ptyID: string }) => Promise<unknown>
+      remove: (input: { ptyID: string }) => Promise<unknown>
+    }
+  }
+}
+
+export type PtyReferences = Partial<Record<PtyKind, string | undefined>>
+
+export type PtyPanel = {
+  id: string
+  tuiPtyId?: string
+  termPtyId?: string
+  splitPtyId?: string
+}
+
+const kinds: PtyKind[] = ["tui", "term", "split"]
+
+export function ptyReferences(panel: PtyPanel): PtyReferences {
+  return {
+    tui: panel.tuiPtyId,
+    term: panel.termPtyId,
+    split: panel.splitPtyId,
+  }
+}
+
+export class PtyManager {
   private activePtys = new Map<PtyKey, string>()
   private pendingEnsures = new Map<PtyKey, Promise<string>>()
 
-  private makeKey(spacePath: string, panelId: string, kind: "tui" | "term" | "split"): PtyKey {
+  private makeKey(spacePath: string, panelId: string, kind: PtyKind): PtyKey {
     return `${spacePath}::${panelId}::${kind}`
   }
 
-  delete(spacePath: string, panelId: string, kind: "tui" | "term" | "split") {
+  delete(spacePath: string, panelId: string, kind: PtyKind) {
     const key = this.makeKey(spacePath, panelId, kind)
     this.activePtys.delete(key)
     this.pendingEnsures.delete(key)
@@ -17,9 +47,9 @@ class PtyManagerImpl {
   async ensure(opts: {
     spacePath: string
     panelId: string
-    kind: "tui" | "term" | "split"
+    kind: PtyKind
     existingPtyId: string | undefined
-    sdk: any
+    sdk: PtySDK
     createFn: () => Promise<string>
   }): Promise<string> {
     const key = this.makeKey(opts.spacePath, opts.panelId, opts.kind)
@@ -63,37 +93,49 @@ class PtyManagerImpl {
     try {
       return await promise
     } finally {
-      this.pendingEnsures.delete(key)
-    }
-  }
-
-  async disposePanel(spacePath: string, panelId: string, sdk: any): Promise<void> {
-    const kinds: ("tui" | "term" | "split")[] = ["tui", "term", "split"]
-    for (const kind of kinds) {
-      const key = this.makeKey(spacePath, panelId, kind)
-      const ptyId = this.activePtys.get(key)
-      if (ptyId) {
-        this.activePtys.delete(key)
-        try {
-          await sdk.client.pty.remove({ ptyID: ptyId })
-        } catch (err) {
-          console.error(`Failed to dispose PTY ${ptyId}`, err)
-        }
+      if (this.pendingEnsures.get(key) === promise) {
+        this.pendingEnsures.delete(key)
       }
     }
   }
 
-  async disposeSpace(spacePath: string, sdk: any): Promise<void> {
-    for (const [key, ptyId] of this.activePtys.entries()) {
-      if (key.startsWith(spacePath + "::")) {
-        this.activePtys.delete(key)
-        try {
-          await sdk.client.pty.remove({ ptyID: ptyId })
-        } catch (err) {
-          console.error(`Failed to dispose PTY ${ptyId} in space ${spacePath}`, err)
-        }
+  async disposePty(opts: {
+    spacePath: string
+    panelId: string
+    kind: PtyKind
+    sdk: PtySDK
+    knownPtyId?: string
+  }): Promise<void> {
+    await this.disposeKey(this.makeKey(opts.spacePath, opts.panelId, opts.kind), opts.sdk, opts.knownPtyId)
+  }
+
+  async disposePanel(spacePath: string, panelId: string, sdk: PtySDK, known: PtyReferences = {}): Promise<void> {
+    await Promise.all(kinds.map((kind) => this.disposePty({
+      spacePath,
+      panelId,
+      kind,
+      sdk,
+      knownPtyId: known[kind],
+    })))
+  }
+
+  async disposeSpace(spacePath: string, sdk: PtySDK, panels: PtyPanel[] = []): Promise<void> {
+    const known = new Map<PtyKey, string>()
+    for (const panel of panels) {
+      const refs = ptyReferences(panel)
+      for (const kind of kinds) {
+        const ptyId = refs[kind]
+        if (ptyId) known.set(this.makeKey(spacePath, panel.id, kind), ptyId)
       }
     }
+
+    const prefix = `${spacePath}::`
+    const keys = new Set([
+      ...Array.from(this.activePtys.keys()).filter((key) => key.startsWith(prefix)),
+      ...Array.from(this.pendingEnsures.keys()).filter((key) => key.startsWith(prefix)),
+      ...known.keys(),
+    ])
+    await Promise.all(Array.from(keys, (key) => this.disposeKey(key, sdk, known.get(key))))
   }
 
   clearMemoryOnly() {
@@ -101,9 +143,10 @@ class PtyManagerImpl {
     this.pendingEnsures.clear()
   }
 
-  disposeAllSyncOnUnload(sdkUrl: string) {
+  disposeAllSyncOnUnload(sdkUrl: string, knownPtyIds: Iterable<string> = []) {
     const urlBase = sdkUrl || window.location.origin
-    for (const ptyId of Array.from(this.activePtys.values())) {
+    const ptyIds = new Set([...this.activePtys.values(), ...knownPtyIds])
+    for (const ptyId of ptyIds) {
       const targetUrl = `${urlBase.replace(/\/$/, "")}/api/pty/${ptyId}`
       try {
         // 使用 keepalive 保证即使页面卸载/标签页关闭，DELETE 销毁请求也能在后台发出并完成
@@ -117,7 +160,33 @@ class PtyManagerImpl {
       }
     }
     this.activePtys.clear()
+    this.pendingEnsures.clear()
+  }
+
+  private async disposeKey(key: PtyKey, sdk: PtySDK, knownPtyId?: string): Promise<void> {
+    const ptyIds = new Set<string>()
+    if (knownPtyId) ptyIds.add(knownPtyId)
+
+    const activePtyId = this.activePtys.get(key)
+    if (activePtyId) ptyIds.add(activePtyId)
+    this.activePtys.delete(key)
+
+    const pending = this.pendingEnsures.get(key)
+    this.pendingEnsures.delete(key)
+    if (pending) {
+      const pendingPtyId = await pending.catch(() => undefined)
+      if (pendingPtyId) ptyIds.add(pendingPtyId)
+      this.activePtys.delete(key)
+    }
+
+    await Promise.all(Array.from(ptyIds, async (ptyId) => {
+      try {
+        await sdk.client.pty.remove({ ptyID: ptyId })
+      } catch (err) {
+        console.error(`Failed to dispose PTY ${ptyId}`, err)
+      }
+    }))
   }
 }
 
-export const ptyManager = new PtyManagerImpl()
+export const ptyManager = new PtyManager()

@@ -4,7 +4,7 @@ import { createStore, produce } from "solid-js/store"
 import { makePersisted } from "@solid-primitives/storage"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSessionStore } from "./session-store"
-import { ptyManager } from "./pty-manager"
+import { ptyManager, ptyReferences } from "./pty-manager"
 
 export type PanelMode = "tui" | "chat"
 export type PanelSlotState = "empty" | "bound"
@@ -226,7 +226,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
       const panel = space.panels.find((p) => p.id === id)
       if (panel) {
-        ptyManager.disposePanel(path, id, sdk)
+        void ptyManager.disposePanel(path, id, sdk, ptyReferences(panel))
       }
 
       batch(() => {

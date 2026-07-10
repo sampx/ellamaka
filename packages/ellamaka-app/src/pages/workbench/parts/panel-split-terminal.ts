@@ -3,6 +3,10 @@ type SplitTerminalState = {
   ptyId?: string
 }
 
+export function splitTerminalTitle(title: string | undefined, fallback: string) {
+  return title?.trim() || fallback
+}
+
 export function reconcileSplitTerminalState(
   state: SplitTerminalState,
   action: "show" | "hide" | "teardown",

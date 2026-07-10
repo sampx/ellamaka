@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { reconcileSplitTerminalState } from "./panel-split-terminal"
+import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
 
 describe("reconcileSplitTerminalState", () => {
   test("hides the split terminal without clearing the running PTY", () => {
@@ -21,5 +21,15 @@ describe("reconcileSplitTerminalState", () => {
       open: false,
       ptyId: undefined,
     })
+  })
+})
+
+describe("splitTerminalTitle", () => {
+  test("uses the title emitted by the terminal", () => {
+    expect(splitTerminalTitle("ellamaka", "Terminal")).toBe("ellamaka")
+  })
+
+  test("falls back when the terminal has not emitted a title", () => {
+    expect(splitTerminalTitle("   ", "终端")).toBe("终端")
   })
 })

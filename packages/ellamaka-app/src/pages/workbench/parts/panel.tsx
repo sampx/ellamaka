@@ -4,18 +4,18 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, onCleanup, For, createSignal, on } from "solid-js"
+import { Show, createEffect, onCleanup, For, createSignal, on, batch } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
-import { ptyManager } from "../pty-manager"
+import { ptyManager, ptyReferences } from "../pty-manager"
 import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
-import { reconcileSplitTerminalState } from "./panel-split-terminal"
+import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
 import { sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
@@ -38,6 +38,11 @@ export function Panel(props: {
   const dialog = useDialog()
 
   const [mountedViews, setMountedViews] = createSignal<Set<string>>(new Set())
+  const [terminalTitle, setTerminalTitle] = createSignal<string>()
+  let unmounted = false
+  onCleanup(() => {
+    unmounted = true
+  })
 
   createEffect(
     on(
@@ -66,6 +71,7 @@ export function Panel(props: {
     return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
   }
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState)
+  const splitTitle = () => splitTerminalTitle(terminalTitle(), t("terminal.title"))
   const restoringSessionIDs = new Set<string>()
 
   createEffect(() => {
@@ -110,6 +116,7 @@ export function Panel(props: {
     if (!spacePath) return
 
     if (splitOpen) {
+      if (!existingId) setTerminalTitle(undefined)
       ptyManager.ensure({
         spacePath,
         panelId: props.panel.id,
@@ -119,12 +126,13 @@ export function Panel(props: {
         createFn: async () => {
           const res = await sdk.client.pty.create({
             cwd: directory,
-            title: `Split Terminal (${props.panel.id})`,
+            title: t("terminal.title"),
           })
           if (!res.data?.id) throw new Error("No PTY ID returned")
           return res.data.id
         }
       }).then((id) => {
+        if (unmounted || !props.panel.splitTerminal) return
         if (id !== existingId) {
           wb.setPanelPtyId(spacePath, props.panel.id, "split", id)
         }
@@ -177,6 +185,25 @@ export function Panel(props: {
     setPanelSplitTerminal(spacePath, props.panel.id, next.open)
   }
 
+  const handleCloseSplit = () => {
+    const spacePath = props.spacePath
+    if (!spacePath) return
+    const ptyId = props.panel.splitPtyId
+    const next = reconcileSplitTerminalState({ open: !!props.panel.splitTerminal, ptyId }, "teardown")
+    batch(() => {
+      setPanelSplitTerminal(spacePath, props.panel.id, next.open)
+      setPanelPtyId(spacePath, props.panel.id, "split", next.ptyId)
+      setTerminalTitle(undefined)
+    })
+    void ptyManager.disposePty({
+      spacePath,
+      panelId: props.panel.id,
+      kind: "split",
+      knownPtyId: ptyId,
+      sdk,
+    })
+  }
+
   const handleClose = () => {
     const spacePath = props.spacePath
     if (!spacePath) return
@@ -185,16 +212,17 @@ export function Panel(props: {
 
     // bound Panel: unbind session, dispose PTYs and optionally remove panel
     if (slotState === "bound") {
+      if (props.panelCount > 1) {
+        wb.removePanel(spacePath, props.panel.id)
+        return
+      }
       wb.unbindSessionFromPanel(spacePath, props.panel.id)
-      ptyManager.disposePanel(spacePath, props.panel.id, sdk)
-      if (props.panelCount <= 1) return
-      wb.removePanel(spacePath, props.panel.id)
+      void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
       return
     }
 
     // empty Panel: direct remove if multiple exist
     if (props.panelCount <= 1) return
-    ptyManager.disposePanel(spacePath, props.panel.id, sdk)
     wb.removePanel(spacePath, props.panel.id)
   }
 
@@ -254,14 +282,16 @@ export function Panel(props: {
 
     const handleConfirm = () => {
       const spacePath = props.spacePath
-      wb.unbindSessionFromPanel(spacePath, props.panel.id)
-
-      // 无论后面是 removePanel 还是将 slotState 设为 empty，这个面板关联的所有 PTY（TUI/Split）都应该被注销销毁
-      ptyManager.disposePanel(spacePath, props.panel.id, sdk)
-
-      if (props.panel.splitTerminal) {
-        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
+      if (props.panelCount > 1) {
+        wb.removePanel(spacePath, props.panel.id)
+        dialog.close()
+        return
       }
+
+      wb.unbindSessionFromPanel(spacePath, props.panel.id)
+      void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
+      wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
+      wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
 
       if (props.panelCount <= 1) {
         // Last panel: clear to empty instead of removing
@@ -269,8 +299,6 @@ export function Panel(props: {
         dialog.close()
         return
       }
-      wb.removePanel(spacePath, props.panel.id)
-      dialog.close()
     }
 
     return (
@@ -523,10 +551,10 @@ export function Panel(props: {
             style={{ height: `${splitHeight()}px` }}
           >
             <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
-              <span class="uppercase tracking-wider">{t("workbench.panel.splitTerminal.title")}</span>
+              <span class="tracking-wider">{splitTitle()}</span>
               <button
                 class="hover:text-v2-text-text-base cursor-pointer p-0.5 rounded transition-colors"
-                onClick={handleToggleSplit}
+                onClick={handleCloseSplit}
               >
                 ✕
               </button>
@@ -544,10 +572,22 @@ export function Panel(props: {
               >
                 {(ptyId) => (
                   <Terminal
-                    pty={{ id: ptyId, title: "split terminal", titleNumber: 3 }}
+                    pty={{ id: ptyId, title: splitTitle(), titleNumber: 3 }}
                     class="w-full h-full"
                     noPadding={true}
-                    onConnectError={() => setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)}
+                    onConnectError={() => {
+                      setTerminalTitle(undefined)
+                      setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
+                    }}
+                    onTitleChange={(title) => setTerminalTitle(title)}
+                    onClose={() => {
+                      batch(() => {
+                        setTerminalTitle(undefined)
+                        setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
+                        setPanelSplitTerminal(props.spacePath, props.panel.id, false)
+                        ptyManager.delete(props.spacePath, props.panel.id, "split")
+                      })
+                    }}
                   />
                 )}
               </Show>
