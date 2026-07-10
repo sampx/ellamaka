@@ -352,9 +352,11 @@ export function Panel(props: {
 
   return (
     <div
-      class={`flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 transition-all duration-200 ${
-        props.isActive ? "" : "opacity-90"
-      }`}
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 transition-all duration-200"
+      classList={{
+        "opacity-100": props.isActive,
+        "opacity-65": !props.isActive,
+      }}
       style={{ flex: props.panel.width }}
       onClick={props.onActivate}
       onDragOver={(e) => e.preventDefault()}
@@ -364,12 +366,16 @@ export function Panel(props: {
     >
       {/* Panel Header */}
       <div
-        class={`flex h-7 shrink-0 items-center gap-1 px-2 border-b ${
-          props.isActive
-            ? "bg-v2-background-bg-deep border-v2-border-border-base"
-            : "bg-v2-background-bg-base border-v2-border-border-base"
-        }`}
+        class="flex h-7 shrink-0 items-center gap-1 px-2 border-b relative"
+        classList={{
+          "bg-v2-background-bg-deep border-v2-border-border-base": props.isActive,
+          "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
+        }}
       >
+        <Show when={props.isActive}>
+          <div class="absolute top-0 inset-x-0 h-[2px] bg-v2-border-border-brand-strong" />
+        </Show>
+
         {/* Status dot */}
         <span
           class="size-2 rounded-full shrink-0"
@@ -405,22 +411,17 @@ export function Panel(props: {
         {/* View switch buttons */}
         <For each={headerViews()}>
           {(view) => {
-            const active = props.panel.viewMode === view.id
             const spacePath = props.spacePath
             return (
               <button
                 type="button"
-                class={`px-1.5 py-0.5 rounded text-10-regular transition-colors ${
-                  view.disabled
-                    ? "text-v2-text-text-faint cursor-not-allowed"
-                    : "cursor-pointer"
-                } ${
-                  active && !view.disabled
-                    ? "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base"
-                    : !view.disabled
-                      ? "text-v2-text-text-muted hover:text-v2-text-text-base"
-                      : ""
-                }`}
+                class="px-1.5 py-0.5 rounded text-10-regular transition-colors"
+                classList={{
+                  "text-v2-text-text-faint cursor-not-allowed": view.disabled,
+                  "cursor-pointer": !view.disabled,
+                  "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base": props.panel.viewMode === view.id && !view.disabled,
+                  "text-v2-text-text-muted hover:text-v2-text-text-base": props.panel.viewMode !== view.id && !view.disabled,
+                }}
                 disabled={view.disabled}
                 onClick={(e) => {
                   e.stopPropagation()
