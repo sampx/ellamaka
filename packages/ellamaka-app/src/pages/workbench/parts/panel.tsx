@@ -463,7 +463,7 @@ export function Panel(props: {
           </div>
 
           {/* 2. Main Views (lazily mounted and hidden-toggled to preserve rendering state) */}
-          <For each={["chat", "tui", "terminal", "context"]}>
+          <For each={["chat", "tui", "context"]}>
             {(vm) => {
               const isMounted = () => mountedViews().has(vm)
               const viewDef = getView(vm)

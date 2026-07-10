@@ -6,7 +6,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useSessionStore } from "./session-store"
 import { ptyManager } from "./pty-manager"
 
-export type PanelMode = "tui" | "chat" | "terminal"
+export type PanelMode = "tui" | "chat"
 export type PanelSlotState = "empty" | "bound"
 export type PanelViewMode = string
 

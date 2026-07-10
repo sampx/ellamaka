@@ -111,7 +111,7 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
 面板的持久化结构定义：
 
 ```ts
-type PanelMode = "tui" | "chat" | "terminal"
+type PanelMode = "tui" | "chat"
 type PanelSlotState = "empty" | "bound"
 type PanelViewMode = string // "tui" | "chat" | "context"
 
