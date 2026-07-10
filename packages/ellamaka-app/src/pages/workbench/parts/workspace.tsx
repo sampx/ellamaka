@@ -84,17 +84,24 @@ export function Workspace() {
       const newLeftFlex = (newLeftWidth / totalWidth) * flexSum
       const newRightFlex = (newRightWidth / totalWidth) * flexSum
 
-      if (path) {
-        batch(() => {
-          wb.setPanelWidth(path, leftPanelID, newLeftFlex)
-          wb.setPanelWidth(path, rightPanelID, newRightFlex)
-        })
-      }
+      // Bypass SolidJS reactivity and localStorage writes during high-frequency dragging
+      leftPanelEl.style.flex = `${newLeftFlex}`
+      rightPanelEl.style.flex = `${newRightFlex}`
     }
 
     const onMouseUp = () => {
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
+
+      const finalLeftFlex = parseFloat(leftPanelEl.style.flex)
+      const finalRightFlex = parseFloat(rightPanelEl.style.flex)
+
+      if (path && !isNaN(finalLeftFlex) && !isNaN(finalRightFlex)) {
+        batch(() => {
+          wb.setPanelWidth(path, leftPanelID, finalLeftFlex)
+          wb.setPanelWidth(path, rightPanelID, finalRightFlex)
+        })
+      }
     }
 
     document.addEventListener("mousemove", onMouseMove)
