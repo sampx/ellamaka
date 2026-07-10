@@ -375,7 +375,7 @@ export function Panel(props: {
 
   return (
     <div
-      class={`flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 ${
+      class={`flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 transition-all duration-200 ${
         props.isActive ? "" : "opacity-90"
       }`}
       style={{ flex: props.panel.width }}

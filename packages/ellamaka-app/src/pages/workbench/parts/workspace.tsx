@@ -3,7 +3,7 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { For, Show, createEffect, createMemo, batch } from "solid-js"
+import { For, Show, createEffect, createMemo, batch, onMount, onCleanup, Suspense } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view"
@@ -31,13 +31,13 @@ export function Workspace() {
     if (path) wb.ensureSpace(path)
   })
 
-  const currentSpace = createMemo(() => {
+  const currentSpace = () => {
     const path = activePath()
     if (!path) return undefined
     return wb.spaceState(path)
-  })
+  }
 
-  const currentPanels = createMemo(() => currentSpace()?.panels ?? [])
+  const currentPanels = () => currentSpace()?.panels ?? []
 
   const handlePanelResizeStart = (
     e: MouseEvent,
@@ -134,10 +134,10 @@ export function Workspace() {
         </Show>
         <For each={store.tabs}>
           {(tab) => {
-            const isTabActive = createMemo(() => tab.path === activePath())
-            const tabSpace = createMemo(() => wb.spaceState(tab.path))
-            const tabPanels = createMemo(() => tabSpace()?.panels ?? [])
-            const tabActivePanelID = createMemo(() => tabSpace()?.activePanelID ?? tabPanels()[0]?.id ?? "")
+            const isTabActive = () => tab.path === activePath()
+            const tabSpace = () => wb.spaceState(tab.path)
+            const tabPanels = () => tabSpace()?.panels ?? []
+            const tabActivePanelID = () => tabSpace()?.activePanelID ?? tabPanels()[0]?.id ?? ""
 
             return (
               <div
@@ -151,18 +151,20 @@ export function Workspace() {
                 <For each={tabPanels()}>
                   {(panel, index) => (
                     <div class="contents">
-                      <SDKProvider directory={panel.directory}>
-                        <Panel
-                          panel={panel}
-                          spaceName={tab.name}
-                          spacePath={tab.path}
-                          isActive={panel.id === tabActivePanelID()}
-                          panelCount={tabPanels().length}
-                          onActivate={() => wb.setActivePanel(tab.path, panel.id)}
-                          onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
-                          onRemove={() => wb.removePanel(tab.path, panel.id)}
-                        />
-                      </SDKProvider>
+                      <Suspense>
+                        <SDKProvider directory={panel.directory}>
+                          <Panel
+                            panel={panel}
+                            spaceName={tab.name}
+                            spacePath={tab.path}
+                            isActive={panel.id === tabActivePanelID()}
+                            panelCount={tabPanels().length}
+                            onActivate={() => wb.setActivePanel(tab.path, panel.id)}
+                            onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
+                            onRemove={() => wb.removePanel(tab.path, panel.id)}
+                          />
+                        </SDKProvider>
+                      </Suspense>
                       <Show when={index() < tabPanels().length - 1}>
                         <div
                           class="w-1 hover:w-1.5 z-20 cursor-col-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"

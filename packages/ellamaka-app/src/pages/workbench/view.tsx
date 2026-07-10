@@ -125,9 +125,14 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       const space = store.spaces[path]
       if (!space || space.panels.length >= 3) return
       const id = uniqueID()
-      setStore("spaces", path, "panels", produce((panels) => {
-        panels.push({ id, slotState: "empty" as PanelSlotState, mode: "" as PanelMode, directory: path, width: 1 })
-      }))
+      setStore("spaces", path, "panels", space.panels.length, {
+        id,
+        slotState: "empty" as PanelSlotState,
+        mode: "" as PanelMode,
+        viewMode: "chat",
+        directory: path,
+        width: 1,
+      })
       return id
     }
 
