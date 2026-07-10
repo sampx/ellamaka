@@ -25,6 +25,7 @@ SolidJS + Vite + Tailwind CSS, identical to upstream `packages/app`.
 - Workbench-specific code lives in `src/pages/workbench/`
 - Do not modify upstream page components; extend them instead
 - Backend API consumption stays in upstream style (no new abstractions)
+- Workbench `session-store` owns UI projection only. Server-owned fields such as session titles must reconcile to backend truth and must not permanently override backend responses from persisted local state.
 
 ## Upstream Sync
 

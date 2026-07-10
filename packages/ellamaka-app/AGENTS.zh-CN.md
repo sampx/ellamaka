@@ -1,11 +1,11 @@
 ---
-name: app package AGENT RULES
-description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CSS
+name: ellamaka-app 代理规则
+description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI 前端
 ---
 
-# Agent Development Rules
+# 代理开发规则
 
-## 1. Canonical References
+## 1. 权威参考
 
 权威引用：
 
@@ -14,7 +14,7 @@ description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CS
 - Backend Rules: `../opencode/AGENTS.md`
 - UI Library: `../ui/` (`@opencode-ai/ui` workspace package)
 
-## 2. Architecture and Directories
+## 2. 架构与目录
 
 执行链：Vite dev server → SolidJS SPA → `@opencode-ai/sdk` → backend (`packages/opencode`) HTTP/WS API。
 
@@ -36,15 +36,15 @@ description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CS
 | `public/` | 静态资源 |
 | `script/` | 构建和开发辅助脚本 |
 
-## 3. Development Commands (build format test)
+## 3. 开发命令（构建 / 类型检查 / 测试）
 
 | 场景 | 命令 | 何时 |
 |---|---|---|
-| Dev server | `bun dev -- --port 4444` | 本地前端开发；需先启动 backend |
+| Dev server | `bun run dev` | 本地前端开发；需先启动 backend |
 | Backend | `bun run --conditions=browser ./src/index.ts serve --port 4096` (from `packages/opencode`) | 本地前端开发时的 API 后端 |
 | Build | `bun run build` | 生产构建 |
 | Preview | `bun run serve` | 本地预览生产构建 |
-| Typecheck | `bun typecheck` | 修改 TypeScript 后 |
+| Typecheck | `bun run typecheck` | 修改 TypeScript 后 |
 | Unit test | `bun run test:unit` | 修改组件、hook 或 util 后 |
 | Unit test watch | `bun run test:unit:watch` | 开发中持续运行 |
 | E2E test | `bun run test:e2e` | 修改页面/路由或用户流程后 |
@@ -52,9 +52,9 @@ description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CS
 | E2E report | `bun run test:e2e:report` | 查看 e2e 测试报告 |
 | CI test | `bun run test:ci` | CI 环境 |
 
-所有前端命令从 `packages/app` 目录运行。`opencode dev web` 会 proxy 到线上 `https://app.opencode.ai`，本地 CSS/UI 修改不会生效；本地 UI 开发必须分离运行 backend 和 app dev server。
+所有前端命令从 `packages/ellamaka-app` 目录运行。`opencode dev web` 会 proxy 到线上 `https://app.opencode.ai`，本地 CSS/UI 修改不会生效；本地 UI 开发必须分离运行 backend 和 app dev server。
 
-## 4. Implementation Rules
+## 4. 实现规则
 
 - 遵循父级 `../../AGENTS.md` 的 Bun、TypeScript 风格规则和并行工具偏好。
 - 技术栈：SolidJS 1.x + Vite 7 + Tailwind CSS 4 + @kobalte/core + @solidjs/router + @tanstack/solid-query。
@@ -68,23 +68,24 @@ description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CS
 - 类型检查使用 `tsgo -b`（TypeScript native preview），不直接运行 `tsc`。
 - 构建使用 Vite，配置在 `vite.config.ts`；生产构建 target 为 `esnext`。
 - `packages/ui/` (`@opencode-ai/ui`) 是本项目的共享 UI 库；跨 package 复用的 UI 原语放在那里。
+- Workbench 的 `session-store` 只拥有 UI 投影状态。会话标题等服务端字段必须回归后端真相，不能让持久化的本地状态长期覆盖服务端返回结果。
 
-## 5. Testing
+## 5. 测试
 
 - 代码类变更遵循 TDD：先写能失败的测试，再实现代码使其通过。
 - Unit tests 使用 bun test + happydom preload（`./happydom.ts`），提供 DOM 环境。
-- Unit tests 从 `packages/app` 运行，使用 `bun run test:unit`。
-- E2E tests 使用 Playwright，配置在 `playwright.config.ts`；从 `packages/app` 运行 `bun run test:e2e`。
+- Unit tests 从 `packages/ellamaka-app` 运行，使用 `bun run test:unit`。
+- E2E tests 使用 Playwright，配置在 `playwright.config.ts`；从 `packages/ellamaka-app` 运行 `bun run test:e2e`。
 - E2E tests 覆盖用户可见流程：页面导航、交互、后端通信。
 - 避免 mocks；测试真实组件行为。
 - CI 环境使用 `bun run test:ci` 生成 junit output。
 
-## 6. User-Supplied Rules
+## 6. 用户补充规则
 
 - 绝对不要尝试重启 app 或 server 进程，永远不要。
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
 
-### Browser Automation
+### 浏览器自动化
 
 使用 `agent-browser` 进行 Web 自动化。运行 `agent-browser --help` 查看所有命令。
 
@@ -94,4 +95,3 @@ description: OpenCode web app frontend built with SolidJS, Vite, and Tailwind CS
 2. `agent-browser snapshot -i` - 获取可交互元素及其 refs (@e1, @e2)
 3. `agent-browser click @e1` / `fill @e2 "text"` - 使用 refs 进行交互
 4. 页面变化后重新 snapshot
-
