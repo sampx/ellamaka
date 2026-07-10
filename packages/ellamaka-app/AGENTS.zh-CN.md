@@ -69,6 +69,7 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 - 构建使用 Vite，配置在 `vite.config.ts`；生产构建 target 为 `esnext`。
 - `packages/ui/` (`@opencode-ai/ui`) 是本项目的共享 UI 库；跨 package 复用的 UI 原语放在那里。
 - Workbench 的 `session-store` 只拥有 UI 投影状态。会话标题等服务端字段必须回归后端真相，不能让持久化的本地状态长期覆盖服务端返回结果。
+- 嵌入式 terminal/TUI 不显示 `ghostty-web` 的 canvas 滚动条，也不能沿用 `FitAddon` 固定预留的滚动条宽度；终端列数必须按容器完整内容宽度计算。TUI 需要优先消除可见 gutter：允许按最近字符网格取整，并依赖容器裁掉不足半格的溢出；禁止用全局滚动条 CSS 掩盖尺寸预留问题。
 
 ## 5. 测试
 

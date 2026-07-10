@@ -14,6 +14,7 @@ import { useServer } from "@/context/server"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { getTerminalImeFrame } from "@/components/terminal-ime-frame"
+import { disableTerminalScrollbar, terminalColumnsWithoutScrollbar, terminalRowsForContainer, type TerminalFitMode } from "@/components/terminal-scrollbar"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
@@ -414,6 +415,31 @@ export const Terminal = (props: TerminalProps) => {
       })
 
       const fit = new mod.FitAddon()
+      const proposeDimensions = fit.proposeDimensions.bind(fit)
+      fit.proposeDimensions = () => {
+        const dimensions = proposeDimensions()
+        const metrics = t.renderer?.getMetrics()
+        if (!dimensions || !metrics) return dimensions
+
+        const styles = getComputedStyle(container)
+        const fitMode: TerminalFitMode = local.isTui ? "full-bleed" : "strict"
+        const cols = terminalColumnsWithoutScrollbar({
+          containerWidth: container.clientWidth,
+          paddingLeft: Number.parseFloat(styles.paddingLeft) || 0,
+          paddingRight: Number.parseFloat(styles.paddingRight) || 0,
+          cellWidth: metrics.width,
+          fitMode,
+        })
+        const rows = terminalRowsForContainer({
+          containerHeight: container.clientHeight,
+          paddingTop: Number.parseFloat(styles.paddingTop) || 0,
+          paddingBottom: Number.parseFloat(styles.paddingBottom) || 0,
+          cellHeight: metrics.height,
+          fitMode,
+        })
+        if (!cols || !rows) return dimensions
+        return { cols, rows }
+      }
       const serializer = new SerializeAddon()
       cleanups.push(() => disposeIfDisposable(fit))
       t.loadAddon(serializer)
@@ -424,15 +450,7 @@ export const Terminal = (props: TerminalProps) => {
       t.open(container)
 
       const renderer = t.renderer
-      if (local.isTui) {
-        // Suppress the canvas scrollbar. renderScrollbar is the single draw entry
-        // point called from the renderer's render() loop; no-op it so nothing draws.
-        type ScrollbarRenderer = { renderScrollbar: (opacity: number) => void }
-        const withScrollbar = renderer as unknown as ScrollbarRenderer | undefined
-        if (withScrollbar && typeof withScrollbar.renderScrollbar === "function") {
-          withScrollbar.renderScrollbar = () => {}
-        }
-      }
+      disableTerminalScrollbar(renderer)
 
       // ghostty-web does not move its hidden IME <textarea> with the caret in
       // embedded layouts. Keep it glued to the cursor so the OS candidate window
