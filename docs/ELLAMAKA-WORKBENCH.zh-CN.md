@@ -171,6 +171,29 @@ type PanelViewDef = {
 
 **视图组件不拥有 PTY 生命周期**。视图通过 `ctx.ptyManager` 获取或复用 PTY 实例。PTY 的创建、复用、释放由运行时管理器统一负责。视图的 `onCleanup` 只能断开前端连接（WebSocket 等），不得调用 `pty.remove` 杀止进程。
 
+### 4.4 Canvas 终端的无缝贴边尺寸规则
+
+Workbench 内嵌终端由 `ghostty-web` 的 canvas 渲染。canvas 只能按完整的字符列和字符行绘制，而 Panel 的可用宽高可以是任意像素值。因此，不能把 `FitAddon` 的默认尺寸结果直接作为 Workbench 的视觉尺寸：它会固定预留 canvas 滚动条宽度，并在按字符格向下取整后，于右侧或底部留下可见的深色空带。
+
+**渲染约束**：
+
+1. `<Terminal>` 容器必须是无 padding 的满尺寸、`overflow: hidden` 容器；不要用全局滚动条 CSS 或额外 margin 来遮挡空带。
+2. 禁用 `ghostty-web` canvas 自带的滚动条绘制，并以容器的完整内容宽度计算列数，不保留默认的滚动条宽度。
+3. 终端尺寸必须从容器实际 `clientWidth` / `clientHeight` 扣除 CSS padding 后计算，不允许写死字符宽高、滚动条宽度或补偿像素。
+4. **TUI（`isTui`）采用 full-bleed 策略**：列数与行数向上取整（`ceil`）到完整字符网格。这样 canvas 的宽高始终覆盖容器；超出边缘的不足一格部分由容器裁切，右侧和底部不留下任何正向余量。
+5. **普通 terminal 和 Split Terminal 采用 strict 策略**：列数与行数向下取整（`floor`），保证所有字符格完整可见。该策略不继承 TUI 的裁切行为。
+
+用户也可以在普通 terminal 或 Split Terminal 内手动启动 `ellamaka`。此时该终端不能仅凭 alternate screen 判断为 TUI（vim、less 等也会使用 alternate screen）；必须同时满足：TUI 通过 OSC 标题将终端标为 `Ellamaka` / `ellamaka | …`，且 `ghostty-web` 当前 buffer 为 alternate。满足后动态切换为 full-bleed，并把滚轮映射为 TUI 的 `Ctrl+Alt+Y` / `Ctrl+Alt+E` 消息历史滚动命令；退出 TUI 切回 normal buffer 后立即恢复普通 terminal 行为。
+
+该规则集中在 `src/components/terminal-scrollbar.ts`，并由 `src/components/terminal.tsx` 对 `FitAddon.proposeDimensions()` 注入。禁止在 Panel、TUI 视图或主题 CSS 中重复实现尺寸补偿。
+
+**回归验收**：
+
+- 打开 TUI 后，Panel 的右边和底边不得出现由字符网格或 canvas 滚动条预留造成的可见空带。
+- 改变浏览器窗口、Panel 列宽、Split Terminal 高度后，TUI 仍贴齐右边与底边。
+- 普通 terminal 与 Split Terminal 不出现横向/纵向滚动条，也不因 TUI 的满铺规则裁切字符行。
+- 单元测试至少覆盖：默认滚动条预留被移除、TUI 在小于半格余量时仍向上补足一行/列，以及普通 terminal 保持向下取整。
+
 ---
 
 ## 5. 状态管理与持久化设计 (关键机制)
@@ -367,4 +390,3 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 1. 用户点击 Tab 上的关闭按钮。
 2. 弹出确认框，列出资源释放清单：面板数量、绑定会话数量、终端实例。
 3. 确认后：`ptyManager.disposeSpace(spacePath)` 释放该 Space 全部 PTY，解绑所有 Session，销毁 `SpaceWorkspace` DOM 及子组件，从持久化状态中移除该 Space 布局，关闭 Tab。
-

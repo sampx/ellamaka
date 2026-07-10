@@ -15,6 +15,7 @@ import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
 import { getTerminalImeFrame } from "@/components/terminal-ime-frame"
 import { disableTerminalScrollbar, terminalColumnsWithoutScrollbar, terminalRowsForContainer, type TerminalFitMode } from "@/components/terminal-scrollbar"
+import { isEllamakaTuiTitle, shouldUseTuiTerminalMode } from "@/components/terminal-tui-mode"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
 import { terminalWriter } from "@/utils/terminal-writer"
 import { terminalWebSocketURL } from "@/utils/terminal-websocket-url"
@@ -367,25 +368,42 @@ export const Terminal = (props: TerminalProps) => {
         ghostty: g,
       })
 
-      if (local.isTui) {
-        t["customWheelEventHandler"] = (e: WheelEvent) => {
-          e.preventDefault()
-          e.stopPropagation()
-          e.stopImmediatePropagation()
-
-          const delta = e.deltaY
-          if (delta === 0) return true
-
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            const count = Math.min(5, Math.ceil(Math.abs(delta) / 40))
-            const seq = delta < 0 ? "\x1b\x19" : "\x1b\x05"
-            for (let i = 0; i < count; i++) {
-              ws.send(seq)
-            }
-          }
-          return true
-        }
+      // Ghostty maps alternate-screen wheel gestures to arrow keys. Require the
+      // Ellamaka OSC title as well so vim, less, and other TUIs keep their own input.
+      let isEllamakaTui = false
+      let wasTuiMode = !!local.isTui
+      const usesTuiMode = () =>
+        shouldUseTuiTerminalMode({
+          isDedicatedTui: !!local.isTui,
+          isEllamakaTitle: isEllamakaTui,
+          isAlternateBuffer: t.buffer.active.type === "alternate",
+        })
+      const syncTuiMode = () => {
+        const next = usesTuiMode()
+        if (next === wasTuiMode) return
+        wasTuiMode = next
+        scheduleFit()
       }
+
+      t.attachCustomWheelEventHandler((e) => {
+        if (!usesTuiMode()) return false
+
+        e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+
+        const delta = e.deltaY
+        if (delta === 0) return true
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const count = Math.min(5, Math.ceil(Math.abs(delta) / 40))
+          const seq = delta < 0 ? "\x1b\x19" : "\x1b\x05"
+          for (let i = 0; i < count; i++) {
+            ws.send(seq)
+          }
+        }
+        return true
+      })
 
       cleanups.push(() => t.dispose())
       if (disposed) {
@@ -423,7 +441,7 @@ export const Terminal = (props: TerminalProps) => {
         if (!dimensions || !metrics) return dimensions
 
         const styles = getComputedStyle(container)
-        const fitMode: TerminalFitMode = local.isTui ? "full-bleed" : "strict"
+        const fitMode: TerminalFitMode = usesTuiMode() ? "full-bleed" : "strict"
         const cols = terminalColumnsWithoutScrollbar({
           containerWidth: container.clientWidth,
           paddingLeft: Number.parseFloat(styles.paddingLeft) || 0,
@@ -452,6 +470,14 @@ export const Terminal = (props: TerminalProps) => {
 
       const renderer = t.renderer
       disableTerminalScrollbar(renderer)
+
+      const titleSub = t.onTitleChange((title) => {
+        isEllamakaTui = isEllamakaTuiTitle(title)
+        syncTuiMode()
+      })
+      cleanups.push(() => disposeIfDisposable(titleSub))
+      const renderSub = t.onRender(syncTuiMode)
+      cleanups.push(() => disposeIfDisposable(renderSub))
 
       // ghostty-web does not move its hidden IME <textarea> with the caret in
       // embedded layouts. Keep it glued to the cursor so the OS candidate window

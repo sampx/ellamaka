@@ -13,7 +13,7 @@ const terminalGridCount = (input: {
   if (!Number.isFinite(input.cellSize) || input.cellSize <= 0) return
 
   const ratio = input.availableSize / input.cellSize
-  const units = input.fitMode === "full-bleed" ? Math.round(ratio) : Math.floor(ratio)
+  const units = input.fitMode === "full-bleed" ? Math.ceil(ratio) : Math.floor(ratio)
   return Math.max(input.minimum, units)
 }
 

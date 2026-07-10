@@ -13,7 +13,7 @@ describe("terminal scrollbar removal", () => {
     ).toBe(39)
   })
 
-  test("lets tui fit to the nearest grid when a half-cell gutter would remain", () => {
+  test("lets tui fill the character grid without a right or bottom gutter", () => {
     expect(
       terminalColumnsWithoutScrollbar({
         containerWidth: 357.5,
@@ -27,6 +27,28 @@ describe("terminal scrollbar removal", () => {
     expect(
       terminalRowsForContainer({
         containerHeight: 759,
+        paddingTop: 0,
+        paddingBottom: 0,
+        cellHeight: 20,
+        fitMode: "full-bleed",
+      }),
+    ).toBe(38)
+
+    expect(
+      terminalColumnsWithoutScrollbar({
+        containerWidth: 354,
+        paddingLeft: 0,
+        paddingRight: 0,
+        cellWidth: 9,
+        fitMode: "full-bleed",
+      }),
+    ).toBe(40)
+  })
+
+  test("lets tui overflow by a row instead of leaving a small bottom gutter", () => {
+    expect(
+      terminalRowsForContainer({
+        containerHeight: 745,
         paddingTop: 0,
         paddingBottom: 0,
         cellHeight: 20,
