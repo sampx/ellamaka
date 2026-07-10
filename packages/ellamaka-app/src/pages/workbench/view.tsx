@@ -125,10 +125,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       const space = store.spaces[path]
       if (!space || space.panels.length >= 3) return
       const id = uniqueID()
-      setStore("spaces", path, "panels", (panels) => [
-        ...panels,
-        { id, slotState: "empty" as PanelSlotState, mode: "" as PanelMode, directory: path, width: 1 },
-      ])
+      setStore("spaces", path, "panels", produce((panels) => {
+        panels.push({ id, slotState: "empty" as PanelSlotState, mode: "" as PanelMode, directory: path, width: 1 })
+      }))
       return id
     }
 
@@ -155,7 +154,10 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
           "spaces",
           path,
           produce((s) => {
-            s.panels = s.panels.filter((p) => p.id !== id)
+            const index = s.panels.findIndex((p) => p.id === id)
+            if (index !== -1) {
+              s.panels.splice(index, 1)
+            }
             if (s.activePanelID === id) s.activePanelID = s.panels[0]?.id ?? ""
           }),
         )
