@@ -8,6 +8,12 @@ class PtyManagerImpl {
     return `${spacePath}::${panelId}::${kind}`
   }
 
+  delete(spacePath: string, panelId: string, kind: "tui" | "term" | "split") {
+    const key = this.makeKey(spacePath, panelId, kind)
+    this.activePtys.delete(key)
+    this.pendingEnsures.delete(key)
+  }
+
   async ensure(opts: {
     spacePath: string
     panelId: string
@@ -17,6 +23,10 @@ class PtyManagerImpl {
     createFn: () => Promise<string>
   }): Promise<string> {
     const key = this.makeKey(opts.spacePath, opts.panelId, opts.kind)
+
+    if (!opts.existingPtyId) {
+      this.activePtys.delete(key)
+    }
 
     // 1. If we already have a PTY active in memory for this key
     const active = this.activePtys.get(key)
@@ -89,6 +99,24 @@ class PtyManagerImpl {
   clearMemoryOnly() {
     this.activePtys.clear()
     this.pendingEnsures.clear()
+  }
+
+  disposeAllSyncOnUnload(sdkUrl: string) {
+    const urlBase = sdkUrl || window.location.origin
+    for (const ptyId of Array.from(this.activePtys.values())) {
+      const targetUrl = `${urlBase.replace(/\/$/, "")}/api/pty/${ptyId}`
+      try {
+        // 使用 keepalive 保证即使页面卸载/标签页关闭，DELETE 销毁请求也能在后台发出并完成
+        fetch(targetUrl, {
+          method: "DELETE",
+          keepalive: true,
+          mode: "cors",
+        }).catch(() => {})
+      } catch (err) {
+        console.error("Failed to send keepalive unload delete for PTY", ptyId, err)
+      }
+    }
+    this.activePtys.clear()
   }
 }
 

@@ -1,7 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, onMount } from "solid-js"
+import { batch, createMemo, onMount, createEffect, createSignal, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { Persist, persisted } from "@/utils/persist"
+import { makePersisted } from "@solid-primitives/storage"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSessionStore } from "./session-store"
 import { ptyManager } from "./pty-manager"
@@ -28,7 +28,6 @@ export type WorkbenchPanel = {
 export type SpaceWorkbenchState = {
   panels: WorkbenchPanel[]
   activePanelID: string
-  terminalDockOpen: boolean
 }
 
 export type WorkbenchDisplayState = {
@@ -37,9 +36,17 @@ export type WorkbenchDisplayState = {
   showSpaceRail: boolean
 }
 
+export type WopalSpace = {
+  name: string
+  path: string
+  type?: string
+}
+
 type PersistedWorkbench = {
   display: WorkbenchDisplayState
   spaces: Record<string, SpaceWorkbenchState>
+  tabs: WopalSpace[]
+  activeSpaceName?: string
 }
 
 function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
@@ -47,7 +54,6 @@ function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
   return {
     panels: [{ id: firstID, slotState: "empty", mode: "" as PanelMode, directory, width: 1 }],
     activePanelID: firstID,
-    terminalDockOpen: false,
   }
 }
 
@@ -67,6 +73,8 @@ const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
 const PERSISTED_DEFAULTS: PersistedWorkbench = {
   display: { ...DISPLAY_DEFAULTS },
   spaces: {},
+  tabs: [],
+  activeSpaceName: undefined,
 }
 
 export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = createSimpleContext({
@@ -74,10 +82,95 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
   init: () => {
     const sdk = useServerSDK()
     const sessionStore = useSessionStore()
-    const [store, setStore, _, ready] = persisted(
-      Persist.global("workbench.v2", ["workbench", "workbench.v1"]),
+
+    // 物理擦除历史 Key 债务，干净无污染
+    if (typeof window !== "undefined" && window.localStorage) {
+      const dirtyKeys = ["workbench.v2", "workbench.v1", "workbench.spacetabs", "workbench.activespace"]
+      for (const key of dirtyKeys) {
+        try {
+          window.localStorage.removeItem(key)
+        } catch (e) {
+          console.error("Failed to remove legacy storage key", key, e)
+        }
+      }
+    }
+
+    // 1. 使用 sessionStorage 进行多 Tab 隔离存储
+    const [persistedStore, setPersistedStore] = makePersisted(
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
+      {
+        name: "workbench",
+        storage: typeof window !== "undefined" ? window.sessionStorage : undefined,
+      }
     )
+
+    // 2. 内存工作 Store - 支持 0 延迟实时交互
+    const [store, setStore] = createStore<PersistedWorkbench>(JSON.parse(JSON.stringify(PERSISTED_DEFAULTS)))
+    const [storeHydrated, setStoreHydrated] = createSignal(false)
+
+    // 在 mounted 时，一次性同步复制 sessionStorage 的数据至运行 Store
+    onMount(() => {
+      const snapshot = JSON.parse(JSON.stringify(persistedStore))
+      batch(() => {
+        setStore("display", snapshot.display)
+        setStore("spaces", snapshot.spaces)
+        setStore("tabs", snapshot.tabs || [])
+        setStore("activeSpaceName", snapshot.activeSpaceName)
+      })
+      setStoreHydrated(true)
+    })
+
+    const ready = () => storeHydrated()
+
+    // 3. 150ms debounce 防抖优化写入
+    let saveTimer: any = null
+    let isDirty = false
+
+    const syncToPersisted = () => {
+      if (!isDirty) return
+      isDirty = false
+      if (saveTimer) {
+        clearTimeout(saveTimer)
+        saveTimer = null
+      }
+      const snapshot = JSON.parse(JSON.stringify(store))
+      batch(() => {
+        setPersistedStore("display", snapshot.display)
+        setPersistedStore("spaces", snapshot.spaces)
+        setPersistedStore("tabs", snapshot.tabs)
+        setPersistedStore("activeSpaceName", snapshot.activeSpaceName)
+      })
+    }
+
+    const queueSave = () => {
+      isDirty = true
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(syncToPersisted, 150)
+    }
+
+    createEffect(() => {
+      // 建立深度响应式依赖
+      JSON.stringify(store)
+      if (ready() && storeHydrated()) {
+        queueSave()
+      }
+    })
+
+    // 4. visibilitychange/pagehide 事件同步 Flush 门禁
+    onMount(() => {
+      const handleVisibility = () => {
+        if (document.visibilityState === "hidden") {
+          syncToPersisted()
+        }
+      }
+      window.addEventListener("visibilitychange", handleVisibility)
+      window.addEventListener("pagehide", syncToPersisted)
+      onCleanup(() => {
+        window.removeEventListener("visibilitychange", handleVisibility)
+        window.removeEventListener("pagehide", syncToPersisted)
+        if (saveTimer) clearTimeout(saveTimer)
+      })
+    })
 
     const display = createMemo(() => store.display)
 
@@ -211,11 +304,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
-    function toggleTerminalDock(path: string) {
-      ensureSpace(path)
-      setStore("spaces", path, "terminalDockOpen", (v) => !v)
-    }
-
     function setDisplay<K extends keyof WorkbenchDisplayState>(key: K, value: WorkbenchDisplayState[K]) {
       setStore("display", key, value)
     }
@@ -276,6 +364,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     function removeSpace(path: string) {
       if (!store.spaces[path]) return
+      // 同时在 Tabs 中关闭对应的 tab
+      const foundTab = store.tabs.find((t) => t.path === path)
+      if (foundTab) {
+        closeTab(foundTab.name)
+      }
       setStore(
         "spaces",
         produce((spaces) => {
@@ -314,7 +407,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         produce((panel) => {
           panel.slotState = "empty"
           panel.boundSessionId = undefined
-          // Retain viewMode and mode for rendering toggles to avoid destroying nested routes
         }),
       )
     }
@@ -360,8 +452,74 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
+    // 5. 动态计算 Session 状态派生，实现单向解耦
+    function isSessionBound(sessionId: string): boolean {
+      for (const spacePath of Object.keys(store.spaces)) {
+        const space = store.spaces[spacePath]
+        if (!space) continue
+        const found = space.panels.some((p) => p.boundSessionId === sessionId && p.slotState === "bound")
+        if (found) return true
+      }
+      return false
+    }
+
+    function boundPanelIdForSession(sessionId: string): string | undefined {
+      for (const spacePath of Object.keys(store.spaces)) {
+        const space = store.spaces[spacePath]
+        if (!space) continue
+        const found = space.panels.find((p) => p.boundSessionId === sessionId && p.slotState === "bound")
+        if (found) return found.id
+      }
+      return undefined
+    }
+
+    // 6. Tabs 和 Active Space 逻辑合并
+    const activeTab = createMemo(() => store.tabs.find((t) => t.name === store.activeSpaceName))
+
+    function openTab(space: WopalSpace) {
+      batch(() => {
+        if (!store.tabs.find((t) => t.name === space.name)) {
+          setStore("tabs", store.tabs.length, { name: space.name, path: space.path, type: space.type })
+        }
+        setStore("activeSpaceName", space.name)
+      })
+    }
+
+    function closeTab(name: string) {
+      batch(() => {
+        const idx = store.tabs.findIndex((t) => t.name === name)
+        if (idx === -1) return
+        setStore("tabs", (arr) => arr.filter((t) => t.name !== name))
+        if (store.activeSpaceName === name) {
+          const next = store.tabs[idx + 1] ?? store.tabs[idx - 1]
+          setStore("activeSpaceName", next?.name)
+        }
+      })
+    }
+
+    function setActive(name: string) {
+      if (store.tabs.find((t) => t.name === name)) {
+        setStore("activeSpaceName", name)
+      }
+    }
+
+    function validateTabs(validNames: Set<string>) {
+      batch(() => {
+        setStore("tabs", (prev) => {
+          const filtered = prev.filter((t) => validNames.has(t.name))
+          return filtered.length === prev.length ? prev : filtered
+        })
+        const current = store.activeSpaceName
+        if (current && !validNames.has(current)) {
+          setStore("activeSpaceName", store.tabs[0]?.name)
+        } else if (!current && store.tabs.length > 0) {
+          setStore("activeSpaceName", store.tabs[0].name)
+        }
+      })
+    }
+
     return {
-      ready,
+      ready: storeHydrated,
       display,
       get spaces() { return store.spaces },
       spaceState,
@@ -373,7 +531,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setPanelSplitTerminal,
       setActivePanel,
       setPanelDirectory,
-      toggleTerminalDock,
       setDisplay,
       clearSpacePtyIds,
       removeSpace,
@@ -385,6 +542,15 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       unbindSessionGlobal,
       setPanelSlotState,
       setPanelViewMode,
+      isSessionBound,
+      boundPanelIdForSession,
+      get tabs() { return store.tabs },
+      activeTab,
+      get activeSpaceName() { return store.activeSpaceName },
+      openTab,
+      closeTab,
+      setActive,
+      validateTabs,
     }
   },
 })

@@ -50,7 +50,6 @@ export function PanelLoader(props: {
       }
       const title = serverSession.title ?? `${targetDir.split("/").pop() ?? "New"} chat`
       sessionStore.ensureSessionReference(serverSession.id, props.spaceName, targetDir, "chat", title)
-      sessionStore.bindPanel(serverSession.id, props.panel.id)
       wb.bindSessionToPanel(props.spacePath, props.panel.id, serverSession.id)
       sessionStore.triggerRefresh()
     } catch (err) {

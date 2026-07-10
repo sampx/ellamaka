@@ -163,7 +163,6 @@ export function Panel(props: {
     if (!newPanelId) return
     // Unbind from current panel first to avoid double-binding
     wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
-    sessionStore.bindPanel(id, newPanelId)
     wb.bindSessionToPanel(props.spacePath, newPanelId, id)
     wb.setActivePanel(props.spacePath, newPanelId)
   }
@@ -186,8 +185,6 @@ export function Panel(props: {
 
     // bound Panel: unbind session, dispose PTYs and optionally remove panel
     if (slotState === "bound") {
-      const sessionId = props.panel.boundSessionId
-      if (sessionId) sessionStore.unbindPanel(sessionId)
       wb.unbindSessionFromPanel(spacePath, props.panel.id)
       ptyManager.disposePanel(spacePath, props.panel.id, sdk)
       if (props.panelCount <= 1) return
@@ -197,6 +194,7 @@ export function Panel(props: {
 
     // empty Panel: direct remove if multiple exist
     if (props.panelCount <= 1) return
+    ptyManager.disposePanel(spacePath, props.panel.id, sdk)
     wb.removePanel(spacePath, props.panel.id)
   }
 
@@ -229,8 +227,9 @@ export function Panel(props: {
       session = sessionStore.ensureSessionReference(sessionId, dragSpaceName, projectPath, "chat", sessionTitle)
     }
 
-    const boundPanel = session.boundPanelId && session.boundPanelId !== props.panel.id
-      ? wb.spaceState(spacePath)?.panels.find((panel) => panel.id === session.boundPanelId)
+    const sessionBoundPanelId = wb.boundPanelIdForSession(sessionId)
+    const boundPanel = sessionBoundPanelId && sessionBoundPanelId !== props.panel.id
+      ? wb.spaceState(spacePath)?.panels.find((panel) => panel.id === sessionBoundPanelId)
       : undefined
     const sourceHasLiveBinding = !!boundPanel && boundPanel.boundSessionId === sessionId
     const sessionDrop = { targetSlotState: props.panel.slotState, sourceHasLiveBinding }
@@ -242,14 +241,9 @@ export function Panel(props: {
       return
     }
 
-    if (session.boundPanelId && !sourceHasLiveBinding) {
-      sessionStore.unbindPanel(sessionId)
-    }
-
     bindSessionToThisPanel()
 
     function bindSessionToThisPanel() {
-      sessionStore.bindPanel(sessionId!, props.panel.id)
       wb.bindSessionToPanel(spacePath, props.panel.id, sessionId!)
     }
   }
@@ -260,14 +254,11 @@ export function Panel(props: {
 
     const handleConfirm = () => {
       const spacePath = props.spacePath
-      const sessionId = props.panel.boundSessionId
-      if (sessionId) sessionStore.unbindPanel(sessionId)
       wb.unbindSessionFromPanel(spacePath, props.panel.id)
 
-      // Kill split PTY if open
-      if (props.panel.splitPtyId) {
-        sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
-      }
+      // 无论后面是 removePanel 还是将 slotState 设为 empty，这个面板关联的所有 PTY（TUI/Split）都应该被注销销毁
+      ptyManager.disposePanel(spacePath, props.panel.id, sdk)
+
       if (props.panel.splitTerminal) {
         wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
       }
@@ -543,6 +534,7 @@ export function Panel(props: {
             <div class="flex-1 min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
               <Show
                 when={props.panel.splitPtyId}
+                keyed
                 fallback={
                   <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
                     <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
@@ -552,7 +544,7 @@ export function Panel(props: {
               >
                 {(ptyId) => (
                   <Terminal
-                    pty={{ id: ptyId(), title: "split terminal", titleNumber: 3 }}
+                    pty={{ id: ptyId, title: "split terminal", titleNumber: 3 }}
                     class="w-full h-full"
                     noPadding={true}
                     onConnectError={() => setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)}

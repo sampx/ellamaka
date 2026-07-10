@@ -1,4 +1,4 @@
-import { type JSX, createSignal, createEffect, onCleanup, Show } from "solid-js"
+import { type JSX, createSignal, createEffect, onCleanup, Show, batch } from "solid-js"
 import { MemoryRouter, createMemoryHistory, Route } from "@solidjs/router"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Terminal } from "@/components/terminal"
@@ -52,6 +52,8 @@ registerView({
     const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
 
     createEffect(() => {
+      if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return
+
       const existingId = ctx.panel.tuiPtyId
       const sessionId = ctx.session?.id
       const args = sessionId
@@ -85,6 +87,7 @@ registerView({
     return (
       <Show
         when={ptyId()}
+        keyed
         fallback={
           <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
             <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
@@ -94,13 +97,25 @@ registerView({
       >
         {(id) => (
           <Terminal
-            pty={{ id: id(), title: "ellamaka tui", titleNumber: 1 }}
+            pty={{ id, title: "ellamaka tui", titleNumber: 1 }}
             class="w-full h-full"
             noPadding={true}
             isTui={true}
             onConnectError={() => {
-              setPtyId(undefined)
-              wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+              batch(() => {
+                setPtyId(undefined)
+                wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+                ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
+              })
+            }}
+            onClose={() => {
+              batch(() => {
+                setPtyId(undefined)
+                wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+                ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
+                ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
+                wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
+              })
             }}
           />
         )}

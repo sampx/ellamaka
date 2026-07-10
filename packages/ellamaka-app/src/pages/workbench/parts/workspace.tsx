@@ -16,16 +16,14 @@ import { ptyManager } from "../pty-manager"
 import type { WorkbenchPanel } from "../view-store"
 
 export function Workspace() {
-  const store = useSpaceStore()
   const wb = useWorkbenchState()
   const language = useLanguage()
   const sdk = useServerSDK()
   const t = (k: string) => language.t(k)
 
-  const sessionStore = useSessionStore()
   const dialog = useDialog()
 
-  const activePath = createMemo(() => store.activeTab()?.path ?? "")
+  const activePath = createMemo(() => wb.activeTab()?.path ?? "")
 
   createEffect(() => {
     const path = activePath()
@@ -128,12 +126,12 @@ export function Workspace() {
       />
 
       <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Show when={store.tabs.length === 0}>
+        <Show when={wb.tabs.length === 0}>
           <div class="flex flex-1 items-center justify-center text-v2-text-text-muted">
             <span class="text-12-regular">{t("workbench.workspace.empty")}</span>
           </div>
         </Show>
-        <For each={store.tabs}>
+        <For each={wb.tabs}>
           {(tab) => {
             const isTabActive = () => tab.path === activePath()
             const tabSpace = () => wb.spaceState(tab.path)
@@ -192,23 +190,23 @@ function StageHeader(props: {
   onAddPanel: () => void
   onCloseTab: (name: string, path: string) => void
 }) {
-  const store = useSpaceStore()
+  const wb = useWorkbenchState()
   const language = useLanguage()
   const t = (k: string) => language.t(k)
 
   return (
     <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-v2-border-border-base bg-v2-background-bg-base px-2">
-      <Show when={store.tabs.length > 0}>
-        <For each={store.tabs}>
+      <Show when={wb.tabs.length > 0}>
+        <For each={wb.tabs}>
           {(tab) => (
             <button
               type="button"
               class={`group flex items-center gap-1.5 rounded-t-md px-2.5 py-1 text-12-regular transition-colors ${
-                store.activeName() === tab.name
+                wb.activeSpaceName === tab.name
                   ? "bg-v2-background-bg-deep text-v2-text-text-strong border-x border-t border-v2-border-border-base -mb-px"
                   : "text-v2-text-text-muted hover:text-v2-text-text-base"
               }`}
-              onClick={() => store.setActive(tab.name)}
+              onClick={() => wb.setActive(tab.name)}
             >
               <span class="max-w-32 truncate">{tab.name}</span>
               <span
@@ -242,9 +240,7 @@ function StageHeader(props: {
 }
 
 function DialogCloseTab(props: { name: string; path: string }) {
-  const store = useSpaceStore()
   const wb = useWorkbenchState()
-  const sessionStore = useSessionStore()
   const sdk = useServerSDK()
   const language = useLanguage()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k, params)
@@ -258,25 +254,12 @@ function DialogCloseTab(props: { name: string; path: string }) {
   const handleConfirm = () => {
     const path = props.path
     const name = props.name
-    const space = wb.spaceState(path)
 
     // 1. Kill all PTYs owned by this space's panels
     ptyManager.disposeSpace(path, sdk)
 
-    // 2. Unbind all sessions bound to panels in this space
-    if (space) {
-      space.panels.forEach((panel) => {
-        if (panel.boundSessionId) {
-          sessionStore.unbindPanel(panel.boundSessionId)
-        }
-      })
-    }
-
-    // 3. Destroy the entire space state from persisted store
+    // 2. Destroy the entire space state from persisted store (will also trigger tab closure)
     wb.removeSpace(path)
-
-    // 4. Close the tab
-    store.closeTab(name)
 
     dialog.close()
   }

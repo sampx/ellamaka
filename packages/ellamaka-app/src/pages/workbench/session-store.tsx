@@ -11,8 +11,7 @@ export type Session = {
   projectPath: string
   type: SessionType
   title: string
-  status: "idle" | "bound" | "archived"
-  boundPanelId?: string
+  timeArchived?: number
   createdAt: number
   lastActiveAt: number
 }
@@ -66,7 +65,6 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         projectPath,
         type,
         title,
-        status: "idle",
         createdAt: now,
         lastActiveAt: now,
       }
@@ -128,44 +126,8 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       }
     }
 
-    function bindPanel(sessionId: string, panelId: string) {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === sessionId)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          idx,
-          produce((s: Session) => {
-            s.status = "bound"
-            s.boundPanelId = panelId
-            s.lastActiveAt = Date.now()
-          }),
-        )
-        return
-      }
-    }
-
-    function unbindPanel(sessionId: string) {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === sessionId)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          idx,
-          produce((s: Session) => {
-            s.status = "idle"
-            s.boundPanelId = undefined
-            s.lastActiveAt = Date.now()
-          }),
-        )
-        return
-      }
-    }
-
     function archiveSession(id: string, archive: boolean = true) {
-      const next = archive ? "archived" : "idle"
+      const now = Date.now()
       for (const spaceName of Object.keys(store.spaces)) {
         const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
         if (idx === -1) continue
@@ -174,9 +136,8 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
           spaceName,
           idx,
           produce((s: Session) => {
-            s.status = next
-            if (archive) s.boundPanelId = undefined
-            s.lastActiveAt = Date.now()
+            s.timeArchived = archive ? now : undefined
+            s.lastActiveAt = now
           }),
         )
         triggerRefresh()
@@ -188,6 +149,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       applySessionUpdates(id, { title })
     }
 
+    // sync session updates without touching lastActiveAt or triggering heavy rerenders
     function syncSessionReference(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
       applySessionUpdates(id, updates, { touch: false, refresh: false })
     }
@@ -220,7 +182,6 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         projectPath,
         type,
         title,
-        status: "idle",
         createdAt: now,
         lastActiveAt: now,
       }
@@ -248,8 +209,6 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       createSession,
       updateSession,
       deleteSession,
-      bindPanel,
-      unbindPanel,
       archiveSession,
       renameSession,
       syncSessionReference,

@@ -71,27 +71,27 @@ export function SpaceRail() {
   }
 
   const hasBoundPanels = createMemo(() => {
-    const tab = store.activeTab()
+    const tab = wb.activeTab()
     if (!tab) return false
     const state = wb.spaceState(tab.path)
     return state?.panels.some((p) => p.slotState === "bound") ?? false
   })
 
   function handleSpaceClick(space: { name: string; path: string; type?: string }) {
-    if (space.name === store.activeName()) return
+    if (space.name === wb.activeSpaceName) return
     if (hasBoundPanels() && !dontRemindStore.suppress) {
       setPendingSpace(space)
       setConfirmDialog(true)
       return
     }
-    store.openTab(space)
+    wb.openTab(space)
   }
 
   function confirmSwitch() {
     const space = pendingSpace()
     setConfirmDialog(false)
     setPendingSpace(null)
-    if (space) store.openTab(space)
+    if (space) wb.openTab(space)
   }
 
   function cancelSwitch() {
@@ -100,7 +100,7 @@ export function SpaceRail() {
   }
 
   function handleProjectClick(spaceName: string, projectPath: string) {
-    const tab = store.tabs.find((t) => t.name === spaceName)
+    const tab = wb.tabs.find((t) => t.name === spaceName)
     if (!tab) return
     const state = wb.spaceState(tab.path)
     if (!state) return
@@ -116,9 +116,11 @@ export function SpaceRail() {
   function handleSessionClick(sessionId: string) {
     const session = sessionStore.getSession(sessionId)
     if (!session) return
-    if (session.status === "bound" && session.boundPanelId) {
-      const tab = store.tabs.find((t) => t.name === session.spaceName)
-      if (tab) wb.setActivePanel(tab.path, session.boundPanelId)
+    const isBound = wb.isSessionBound(sessionId)
+    const boundPanelId = wb.boundPanelIdForSession(sessionId)
+    if (isBound && boundPanelId) {
+      const tab = wb.tabs.find((t) => t.name === session.spaceName)
+      if (tab) wb.setActivePanel(tab.path, boundPanelId)
     }
   }
 
@@ -188,7 +190,7 @@ export function SpaceRail() {
         >
           <SessionTree
             spaces={store.spaces()}
-            activeSpaceName={store.activeName()}
+            activeSpaceName={wb.activeSpaceName}
             onSpaceClick={handleSpaceClick}
             onProjectClick={handleProjectClick}
             onSessionClick={handleSessionClick}

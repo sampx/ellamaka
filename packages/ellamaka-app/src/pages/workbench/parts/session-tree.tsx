@@ -305,7 +305,6 @@ export function SessionTree(props: {
               props.onStatusMessage(t("workbench.tree.noEmptyPanel"))
               return
             }
-            sessionStore.bindPanel(session.id, panelId)
             wb.bindSessionToPanel(space.path, panelId, session.id)
           },
         },

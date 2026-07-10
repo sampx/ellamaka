@@ -6,29 +6,15 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
-import { BottomDock } from "./parts/bottom-dock"
 import { shouldUnbindSessionFromEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
-
-function BottomDockController() {
-  const store = useSpaceStore()
-  const wb = useWorkbenchState()
-
-  const terminalOpen = createMemo(() => {
-    const tab = store.activeTab()
-    if (!tab) return false
-    const state = wb.spaceState(tab.path)
-    return state?.terminalDockOpen ?? false
-  })
-
-  return <BottomDock open={terminalOpen()} />
-}
+import { ptyManager } from "./pty-manager"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
   const spaceStore = useSpaceStore()
   const sessionStore = useSessionStore()
-  const allStoresReady = () => wb.ready() && spaceStore.ready()
+  const allStoresReady = () => wb.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
 
@@ -54,23 +40,7 @@ function WorkbenchShell() {
     })
 
     const handleUnload = () => {
-      Object.keys(wb.spaces).forEach((path) => {
-        const space = wb.spaces[path]
-        if (space) {
-          space.panels.forEach((panel) => {
-            if (panel.tuiPtyId) {
-              sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
-            }
-            if (panel.termPtyId) {
-              sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(console.error)
-            }
-            if (panel.splitPtyId) {
-              sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(console.error)
-            }
-          })
-          wb.clearSpacePtyIds(path)
-        }
-      })
+      ptyManager.disposeAllSyncOnUnload(sdk.url)
     }
     window.addEventListener("beforeunload", handleUnload)
     onCleanup(() => {
@@ -96,7 +66,6 @@ function WorkbenchShell() {
           <SpaceRail />
           <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Workspace />
-            <BottomDockController />
           </div>
         </div>
         <Show when={display().showStatusbar}>

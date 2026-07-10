@@ -41,7 +41,6 @@ Ellamaka App
    ├─ Space Tabs（顶部空间标签页）
    ├─ Panel Workspace（面板工作区：支持 1~3 个水平面板）
    │  └─ 每个 Panel 可选包含 Split Terminal（底部辅助终端子区域）
-   ├─ Bottom Terminal Dock（底部空间级终端坞）
    └─ Workbench Statusbar（工作台状态栏）
 ```
 
@@ -80,7 +79,6 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   │       ├── panel-loader.tsx        空面板装载器（提供会话选择与快速终端）
   │       ├── panel-chat.tsx           面板级 Chat 视图容器（桥接官方 timeline/composer）
   │       ├── panel-chat-composer.tsx  面板上下文适配的输入区
-  │       ├── bottom-dock.tsx          底部终端坞
   │       ├── status-bar.tsx           底栏状态与路径提示
   │       └── workbench-settings.tsx  工作台特有设置菜单
   ├── (其他目录完全继承 app/)
@@ -256,11 +254,25 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 | Panel 关闭 | `disposePanel()`：释放该面板所有 PTY，清除持久化 ID。 |
 | Space Tab 关闭 | `disposeSpace()`：释放该 Space 全部 PTY，清除持久化 ID。 |
 | Workbench 退出 | `disposeAll()`：释放所有 PTY。 |
-| 浏览器刷新 | PTY 进程在服务端可能仍存活。刷新后水合完成，PTY Manager 探测持久化的 PTY ID，存活则重连（TUI 状态保留），已死则创建新 PTY。 |
+| 浏览器刷新 | **防泄露强物理销毁**。刷新或关闭页面时，通过 `beforeunload` 事件监听，调用 `disposeAllSyncOnUnload` 发送 `keepalive: true` 的 fetch DELETE 请求通知后端立即杀死并销毁所有活跃的 PTY 进程，不保持后台存活。 |
 | Panel 绑定到新 Session | 释放旧 Session 的 TUI PTY，清除旧 ID，为新 Session 创建新 PTY。 |
-| `beforeunload` | 清理所有可释放的 PTY 进程。 |
+| 浏览器页面卸载 (`beforeunload` / `pagehide`) | **同步销毁**。利用 `keepalive: true` 的 fetch 强行同步向后端发送 PTY DELETE 请求，确保浏览器标签页被关闭时所有后台 PTY 进程（包含终端及 TUI）彻底死亡，防僵尸进程堆积。 |
 
 **异步安全**：创建 PTY 的 Promise 必须携带 generation token。若 Promise resolve 时 Panel 已关闭或 Session 已变更，立即释放该 PTY，禁止将失效 ID 写入持久化状态。
+
+### 5.5 TUI 进程关闭与自愈机制
+
+为了防止 TUI 意外挂起或用户在交互式终端中输入 `exit` 退出时导致界面卡死，系统设计了终端自动关闭与恢复自愈机制：
+
+- **正常/异常关闭事件派发**：`<Terminal>` 组件在底层 WebSocket 触发 `close` 时（包括网络故障或正常敲入 `exit`），均会向外派发 `onClose` 事件。
+- **原子批处理（Batch）状态回退**：在接收到 `onClose` 回调时，前端通过 SolidJS 的 `batch` 进行状态原子化同步提交：
+  1. 重置前台 PTY 关联的信号（`setPtyId(undefined)`）以强制卸载该终端。
+  2. 清除 `ptyManager` 内存哈希缓存，并将 `tuiPtyId` 置空。
+  3. 异步发送 `pty.remove` 告知后端彻底物理杀死并注销此 PTY 连接进程。
+  4. 将当前面板视图模式（`viewMode`）同步回退至 `"chat"`（聊天）模式。
+- **Effect 竞态守卫拦截**：在 TUI 视图的 `createEffect` 挂载器顶部设有严密的防重复拉起守卫：`if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return`。结合 `batch` 的微任务更新特性，能完美在切出 TUI 视图时将其截断，彻底避免在退出时因 `tuiPtyId` 被置空而误触发 `createFn` 的重新拉起，从而保证进程被彻底释放。
+- **组件 Keyed 实例化隔离**：所有渲染终端的 `<Show>` 包装组件均带有 `keyed` 属性。这保证了当 PTY ID 发生变化或重建时，旧的含有内部复杂 WebSocket 连线与 xterm 对象的 Terminal 实例会被彻底物理卸载，并创建全新实例，防止连接状态复用卡死。
+
 
 ### 5.5 Session 状态收敛
 
@@ -356,41 +368,3 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 2. 弹出确认框，列出资源释放清单：面板数量、绑定会话数量、终端实例。
 3. 确认后：`ptyManager.disposeSpace(spacePath)` 释放该 Space 全部 PTY，解绑所有 Session，销毁 `SpaceWorkspace` DOM 及子组件，从持久化状态中移除该 Space 布局，关闭 Tab。
 
----
-
-## 7. 实施路线图与当前状态
-
-### 已完成
-1. **独立壳与入口注入**
-2. **多面板容器与 Resize 列宽/行高**
-3. **TUI 视图集成**
-4. **Session/Panel 模型重构、三级树与 Chat 视图集成**
-5. **Panel 状态模型设计** — 字段命名为 `slotState` / `boundSessionId` / `viewMode` / `mode`，保持代码显式性，不简化为 `slot` + `sessionId`。`mode` 持久化必需，`viewMode` 可选向前兼容。PTY ID 作为重连提示持久化。
-
-### 待重构
-6. **统一状态 Store 与水合门控** — 合并分散的 Store 为单 Store，建立 Bootstrap Gate，迁移旧持久化数据。
-7. **Space Keep-Alive 容器** — 重构 `workspace.tsx`，所有 Tab 保持挂载，切换只改可见性。
-8. **PTY 运行时管理器** — 从 `view-registry.tsx` 和 `panel.tsx` 中提取 PTY 生命周期，集中到 `pty-manager.tsx`。视图不持有 PTY 生命周期。
-9. **Session 状态收敛** — 移除本地持久化的 `status` / `boundPanelId` / title 副本，改为从布局派生。
-10. **持久化性能优化** — 拖拽 debounce 提交、串行写队列、`visibilitychange` flush。
-
-### 待开发
-11. **移动端路由 `/m` 集成与触控键盘适配**
-12. **底部终端坞真实接线**
-
-### 测试与验证
-
-每个阶段必须先写失败测试再实现：
-
-- 异步水合期间不写入默认状态。
-- Space A → B → A 不卸载 Panel、不释放 PTY。
-- View 切换不释放 PTY（TUI PTY 复用验证）。
-- Split Terminal 收起/展开复用同一 PTY。
-- Panel 关闭只释放该 Panel 资源。
-- Tab 关闭只释放该 Space 资源。
-- resize 只在 pointerup 持久化一次。
-- session.deleted/archived 精准解绑对应 Panel。
-- 浏览器刷新后一次性恢复布局，不闪烁。
-- 浏览器刷新后 TUI PTY 探测存活则重连，终端状态保留；已死则创建新 PTY。
-
-开发环境加入生命周期诊断日志：Workbench mount、Panel mount/unmount、PTY create/reuse/dispose、hydration ready、persistence write。

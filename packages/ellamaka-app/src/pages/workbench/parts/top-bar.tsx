@@ -2,16 +2,16 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/components/button-v2.jsx"
 import { Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
-import { useSpaceStore } from "../space-store"
+import { useWorkbenchState } from "../view-store"
 import { resolveOfficialRoute } from "../surface-route"
 
 export function WorkbenchTitlebar() {
-  const store = useSpaceStore()
+  const wb = useWorkbenchState()
   const language = useLanguage()
   const navigate = useNavigate()
   const t = (k: string) => language.t(k)
 
-  const activeName = () => store.activeTab()?.name ?? ""
+  const activeName = () => wb.activeTab()?.name ?? ""
 
   return (
     <header class="flex h-10 shrink-0 items-center gap-3 px-3 bg-v2-background-bg-base border-b border-v2-border-border-base">

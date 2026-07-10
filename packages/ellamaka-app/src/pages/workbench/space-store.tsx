@@ -1,8 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createMemo, createResource } from "solid-js"
-import { createStore } from "solid-js/store"
-import { Persist, persisted } from "@/utils/persist"
+import { createEffect, createMemo, createResource } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
+import { useWorkbenchState } from "./view-store"
 
 export type WopalSpace = {
   name: string
@@ -14,17 +13,7 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
   name: "SpaceStore",
   init: () => {
     const sdk = useServerSDK()
-    const [tabs, setTabs, _1, tabsReady] = persisted(
-      Persist.global("workbench.spacetabs", []),
-      createStore<WopalSpace[]>([]),
-    )
-    const [activeStore, setActiveStore, _2, activeStoreReady] = persisted(
-      Persist.global("workbench.activespace", []),
-      createStore<{ name: string | undefined }>({ name: undefined }),
-    )
-    const ready = () => tabsReady() && activeStoreReady()
-    const activeName = () => activeStore.name
-    const setActiveName = (name: string | undefined) => setActiveStore("name", name)
+    const wb = useWorkbenchState()
 
     const [spacesResource, spacesActions] = createResource(async () => {
       try {
@@ -37,61 +26,18 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
 
     const spaces = createMemo(() => spacesResource() ?? [])
 
-    // Validate persisted tabs against actual spaces list after fetch
+    // 在 spaces 列表加载完毕后，校验 wb 中的 tabs 列表
     createEffect(() => {
       const list = spaces()
       if (list.length === 0) return
       const validNames = new Set(list.map((s) => s.name))
-      setTabs((prev) => {
-        const filtered = prev.filter((t) => validNames.has(t.name))
-        return filtered.length === prev.length ? prev : filtered
-      })
-      const current = activeName()
-      if (current && !validNames.has(current)) {
-        setActiveName(tabs[0]?.name)
-      } else if (!current && tabs.length > 0) {
-        setActiveName(tabs[0].name)
-      }
+      wb.validateTabs(validNames)
     })
 
-    function openTab(space: WopalSpace) {
-      batch(() => {
-        if (!tabs.find((t) => t.name === space.name)) {
-          setTabs(tabs.length, { name: space.name, path: space.path, type: space.type })
-        }
-        setActiveName(space.name)
-      })
-    }
-
-    function closeTab(name: string) {
-      batch(() => {
-        const idx = tabs.findIndex((t) => t.name === name)
-        if (idx === -1) return
-        setTabs((arr) => arr.filter((t) => t.name !== name))
-        if (activeName() === name) {
-          const next = tabs[idx + 1] ?? tabs[idx - 1]
-          setActiveName(next?.name)
-        }
-      })
-    }
-
-    const activeTab = createMemo(() => tabs.find((t) => t.name === activeName()))
-
-    function setActive(name: string) {
-      if (tabs.find((t) => t.name === name)) setActiveName(name)
-    }
-
     return {
-      ready,
       spaces,
       spacesLoading: spacesResource.loading,
       reload: () => spacesActions.refetch(),
-      tabs,
-      activeName,
-      activeTab,
-      openTab,
-      closeTab,
-      setActive,
     }
   },
 })
