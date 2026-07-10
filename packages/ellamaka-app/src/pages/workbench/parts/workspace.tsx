@@ -168,7 +168,7 @@ export function Workspace() {
                       </Suspense>
                       <Show when={index() < tabPanels().length - 1}>
                         <div
-                          class="w-1 hover:w-1.5 z-20 cursor-col-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"
+                          class="w-px z-20 cursor-col-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand/30 transition-colors flex-shrink-0"
                           onMouseDown={(e) => handlePanelResizeStart(e, index(), tab.path, tabPanels())}
                           onDblClick={() => wb.resetPanelWidths(tab.path)}
                           title="双击恢复等宽"

@@ -111,6 +111,7 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
 面板的持久化结构定义：
 
 ```ts
+type PanelMode = "tui" | "chat" | "terminal"
 type PanelSlotState = "empty" | "bound"
 type PanelViewMode = string // "tui" | "chat" | "context"
 
@@ -118,13 +119,15 @@ type WorkbenchPanel = {
   id: string
   slotState: PanelSlotState
   boundSessionId?: string     // 当 slotState === "bound" 时，绑定的 Session ID
-  viewMode: PanelViewMode     // 当 slotState === "bound" 时，当前激活的主视图
+  viewMode?: PanelViewMode    // 当前激活的主视图（可选，向前兼容）
+  mode: PanelMode             // 面板模式，与 viewMode 同步但持久化必需
   directory: string           // 面板当前的 CWD（工作路径）
   width: number               // flex 占比分配（列宽）
   splitTerminal: boolean      // 面板底部 Split Terminal 是否打开
   splitHeight?: number        // Split Terminal 的高度（像素值）
   // PTY IDs — 作为重连提示持久化，使用前必须由 PTY Manager 探测验证
   tuiPtyId?: string           // TUI 进程的 PTY ID
+  termPtyId?: string          // Terminal 模式 PTY ID
   splitPtyId?: string         // Split Terminal 的 PTY ID
 }
 ```
@@ -362,12 +365,12 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 2. **多面板容器与 Resize 列宽/行高**
 3. **TUI 视图集成**
 4. **Session/Panel 模型重构、三级树与 Chat 视图集成**
+5. **Panel 状态模型设计** — 字段命名为 `slotState` / `boundSessionId` / `viewMode` / `mode`，保持代码显式性，不简化为 `slot` + `sessionId`。`mode` 持久化必需，`viewMode` 可选向前兼容。PTY ID 作为重连提示持久化。
 
 ### 待重构
-5. **统一状态 Store 与水合门控** — 合并分散的 Store 为单 Store，建立 Bootstrap Gate，迁移旧持久化数据。
-6. **Space Keep-Alive 容器** — 重构 `workspace.tsx`，所有 Tab 保持挂载，切换只改可见性。
-7. **PTY 运行时管理器** — 从 `view-registry.tsx` 和 `panel.tsx` 中提取 PTY 生命周期，集中到 `pty-manager.tsx`。视图不持有 PTY 生命周期。
-8. **Panel 状态模型简化** — 用 `slot` + `sessionId` 替代 `slotState` + `boundSessionId` + `mode`，移除 `terminal` 槽位，PTY ID 改为重连提示持久化。
+6. **统一状态 Store 与水合门控** — 合并分散的 Store 为单 Store，建立 Bootstrap Gate，迁移旧持久化数据。
+7. **Space Keep-Alive 容器** — 重构 `workspace.tsx`，所有 Tab 保持挂载，切换只改可见性。
+8. **PTY 运行时管理器** — 从 `view-registry.tsx` 和 `panel.tsx` 中提取 PTY 生命周期，集中到 `pty-manager.tsx`。视图不持有 PTY 生命周期。
 9. **Session 状态收敛** — 移除本地持久化的 `status` / `boundPanelId` / title 副本，改为从布局派生。
 10. **持久化性能优化** — 拖拽 debounce 提交、串行写队列、`visibilitychange` flush。
 

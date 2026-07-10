@@ -256,7 +256,7 @@ export function SpaceRail() {
     </aside>
     <Show when={expanded()}>
       <div
-        class="absolute top-0 bottom-0 w-1 cursor-col-resize bg-transparent hover:bg-v2-icon-icon-brand/30 z-30"
+        class="absolute top-0 bottom-0 w-2 cursor-col-resize bg-transparent hover:bg-v2-icon-icon-brand/30 z-30"
         style={{ left: `${sidebarWidth()}px` }}
         onMouseDown={startResize}
         title="拖动调整宽度"

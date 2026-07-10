@@ -352,7 +352,7 @@ export function Panel(props: {
 
   return (
     <div
-      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-r border-v2-border-border-base last:border-r-0 transition-all duration-200"
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base transition-all duration-200"
       classList={{
         "opacity-100": props.isActive,
         "opacity-65": !props.isActive,
@@ -519,7 +519,7 @@ export function Panel(props: {
         {/* Split Divider Handle */}
         <Show when={props.panel.splitTerminal}>
           <div
-            class="h-1 hover:h-1.5 z-20 cursor-row-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand transition-all flex-shrink-0"
+            class="h-px z-20 cursor-row-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand/30 transition-colors flex-shrink-0"
             onMouseDown={handleSplitResizeStart}
             title={t("workbench.panel.splitTerminal.resize")}
           />
