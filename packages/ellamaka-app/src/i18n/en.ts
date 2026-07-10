@@ -997,6 +997,8 @@ export const dict = {
   "workbench.panel.moveSession.message": "Session \"{title}\" is already running in another panel. Move it here?",
   "workbench.panel.moveSession.hint": "The session will be unbound from its current panel and loaded here.",
   "workbench.panel.moveSession.confirm": "Move here",
+  "workbench.panel.dropTargetOccupied": "The target panel already has a session. Choose an empty panel.",
+  "workbench.panel.sessionAlreadyOpen": "This session is already open.",
   "workbench.panel.splitTerminal.show": "Open split terminal",
   "workbench.panel.splitTerminal.hide": "Hide split terminal",
   "workbench.panel.splitTerminal.title": "Split terminal",

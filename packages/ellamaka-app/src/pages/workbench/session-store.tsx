@@ -17,6 +17,14 @@ export type Session = {
   lastActiveAt: number
 }
 
+export function serverSessionReferenceUpdates(input: Pick<Session, "title" | "type" | "projectPath">) {
+  return {
+    title: input.title,
+    type: input.type,
+    projectPath: input.projectPath,
+  }
+}
+
 let _nextSessionSeq = 0
 function uniqueSessionID(): string {
   _nextSessionSeq++
@@ -73,7 +81,11 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       return session
     }
 
-    function updateSession(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
+    function applySessionUpdates(
+      id: string,
+      updates: Partial<Pick<Session, "title" | "type" | "projectPath">>,
+      options?: { touch?: boolean; refresh?: boolean },
+    ) {
       for (const spaceName of Object.keys(store.spaces)) {
         const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
         if (idx === -1) continue
@@ -85,11 +97,16 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
             if (updates.title !== undefined) s.title = updates.title
             if (updates.type !== undefined) s.type = updates.type
             if (updates.projectPath !== undefined) s.projectPath = updates.projectPath
-            s.lastActiveAt = Date.now()
+            if (options?.touch !== false) s.lastActiveAt = Date.now()
           }),
         )
+        if (options?.refresh !== false) triggerRefresh()
         return
       }
+    }
+
+    function updateSession(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
+      applySessionUpdates(id, updates)
     }
 
     function deleteSession(id: string) {
@@ -168,21 +185,11 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
     }
 
     function renameSession(id: string, title: string) {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          idx,
-          produce((s: Session) => {
-            s.title = title
-            s.lastActiveAt = Date.now()
-          }),
-        )
-        triggerRefresh()
-        return
-      }
+      applySessionUpdates(id, { title })
+    }
+
+    function syncSessionReference(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
+      applySessionUpdates(id, updates, { touch: false, refresh: false })
     }
 
     function getSession(id: string): Session | undefined {
@@ -201,7 +208,10 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       title: string,
     ): Session {
       const existing = getSession(id)
-      if (existing) return existing
+      if (existing) {
+        syncSessionReference(id, serverSessionReferenceUpdates({ title, type, projectPath }))
+        return getSession(id) ?? existing
+      }
       ensureSpace(spaceName)
       const now = Date.now()
       const session: Session = {
@@ -242,6 +252,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
       unbindPanel,
       archiveSession,
       renameSession,
+      syncSessionReference,
       getSession,
       ensureSessionReference,
       trimSessions,

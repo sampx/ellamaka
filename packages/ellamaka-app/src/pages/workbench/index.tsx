@@ -7,6 +7,7 @@ import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
 import { BottomDock } from "./parts/bottom-dock"
+import { shouldUnbindSessionFromEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 
 function BottomDockController() {
@@ -32,8 +33,28 @@ function WorkbenchShell() {
   onMount(() => {
     console.log("=== WORKBENCH MOUNTED ===", Date.now())
     const unsub = sdk.event.listen((e) => {
-      const type = e.details?.type
-      if (type === "session.created" || type === "session.deleted") {
+      const details = e.details as {
+        type?: string
+        properties?: { info?: { id?: string; time?: { archived?: number } } }
+      } | undefined
+      const session = details?.properties?.info
+      if (shouldUnbindSessionFromEvent({ type: details?.type, timeArchived: session?.time?.archived })) {
+        if (session?.id) {
+          for (const spacePath of Object.keys(wb.spaces)) {
+            const space = wb.spaces[spacePath]
+            if (!space) continue
+            for (const panel of space.panels) {
+              if (panel.boundSessionId === session.id) {
+                wb.unbindSessionFromPanel(spacePath, panel.id)
+              }
+            }
+          }
+          sessionStore.deleteSession(session.id)
+        }
+        sessionStore.triggerRefresh()
+        return
+      }
+      if (details?.type === "session.created") {
         sessionStore.triggerRefresh()
       }
     })

@@ -942,6 +942,8 @@ export const dict = {
   "workbench.panel.moveSession.message": "会话「{title}」已在其他面板中运行，是否移动到此面板？",
   "workbench.panel.moveSession.hint": "会话将从原面板解绑，并装载到当前面板。",
   "workbench.panel.moveSession.confirm": "移动到此处",
+  "workbench.panel.dropTargetOccupied": "目标面板已打开会话，请选择空面板。",
+  "workbench.panel.sessionAlreadyOpen": "当前会话已经打开。",
   "workbench.panel.splitTerminal.show": "打开拆分终端",
   "workbench.panel.splitTerminal.hide": "收起拆分终端",
   "workbench.panel.splitTerminal.title": "拆分终端",

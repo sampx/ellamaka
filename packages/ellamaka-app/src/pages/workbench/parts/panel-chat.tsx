@@ -108,34 +108,8 @@ function PanelChatInner(props: {
     if (!officialSession) return
     const local = sessionStore.getSession(props.session.id)
     if (local && officialSession.title && officialSession.title !== local.title) {
-      sessionStore.renameSession(props.session.id, officialSession.title)
+      sessionStore.syncSessionReference(props.session.id, { title: officialSession.title })
     }
-  })
-
-  // Archive/delete sync: official archiveSession (in MessageTimeline) only
-  // mutates the official sync store — it splices the session out of
-  // sync.data.session and evicts caches. It does not know about workbench's
-  // sessionStore or panel binding, so the panel stays bound and the tree
-  // cache stays stale after an archive. Detect the session disappearing from
-  // sync.data.session (only after it was present, i.e. session.sync injected
-  // it) and clean up the workbench side: drop the local reference, unbind the
-  // panel (slotState -> empty, PanelChat unmounts), and trigger a tree refresh
-  // so spaceOverview refetches and the archived session vanishes from the tree.
-  let wasPresent = false
-  let cleanupHandled = false
-  createEffect(() => {
-    if (cleanupHandled) return
-    const sessions = sync.data.session as any[]
-    const present = sessions?.some((s: any) => s.id === props.session.id) ?? false
-    if (present) {
-      wasPresent = true
-      return
-    }
-    if (!wasPresent) return
-    cleanupHandled = true
-    sessionStore.deleteSession(props.session.id)
-    wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
-    sessionStore.triggerRefresh()
   })
 
   let inputRef: HTMLDivElement | undefined

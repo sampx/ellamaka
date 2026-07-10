@@ -5,6 +5,8 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { useSessionStore } from "../session-store"
 import { useWorkbenchState } from "../view"
+import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
+import { getServerTitlePatches, mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
 
 type ContextMenu = {
@@ -139,38 +141,24 @@ export function SessionTree(props: {
     return false
   }
 
-  function mergeSessions(serverSessions: OverviewSession[], spaceName: string): MergedSession[] {
-    const localMap = new Map(sessionStore.spaceSessions(spaceName).map((s) => [s.id, s]))
-    const mergedList = serverSessions.map((ss) => {
-      const local = localMap.get(ss.id)
-      const bound = isSessionBound(ss.id)
-      return {
-        id: ss.id,
-        title: local?.title ?? ss.title ?? ss.id,
-        status: bound ? ("bound" as const) : (ss.timeArchived ? "archived" as const : "idle" as const),
-        boundPanelId: local?.boundPanelId,
-      }
-    })
+  function mergeSessions(serverSessions: OverviewSession[]): MergedSession[] {
+    return mergeSessionTreeSessions(serverSessions, isSessionBound)
+  }
 
-    const seenIds = new Set<string>()
-    const seenTimestamps = new Set<string>()
-    return mergedList.filter((s) => {
-      if (seenIds.has(s.id)) return false
-      seenIds.add(s.id)
+  function syncOverviewTitles(spaceName: string, overview: SpaceOverview) {
+    const localSessions = sessionStore.spaceSessions(spaceName)
+    const patches = getServerTitlePatches([
+      ...overview.spaceRootSessions,
+      ...overview.projects.flatMap((project) => [
+        ...project.rootSessions,
+        ...project.directories.flatMap((dir) => dir.sessions),
+        ...project.worktrees.flatMap((worktree) => worktree.sessions),
+      ]),
+    ], localSessions)
 
-      const match = s.title.match(/(?:New session|新会话)?\s*-\s*(.+)$/)
-      if (match && match[1]) {
-        const ts = match[1].trim()
-        if (seenTimestamps.has(ts)) {
-          if (s.title.includes("New session") || s.title.includes("新会话")) {
-            return false
-          }
-        }
-        seenTimestamps.add(ts)
-      }
-
-      return true
-    })
+    for (const patch of patches) {
+      sessionStore.syncSessionReference(patch.id, { title: patch.title })
+    }
   }
 
   onMount(() => {
@@ -227,6 +215,7 @@ export function SessionTree(props: {
     try {
       const res = await sdk.client.wopalSpace.spaceOverview({ spaceName })
       const next = (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] }
+      syncOverviewTitles(spaceName, next)
       const prev = overviewCache[spaceName]
       // Skip update if structurally identical — prevents tree flicker on session.updated
       if (prev && overviewStructurallyEqual(prev, next)) return
@@ -302,6 +291,10 @@ export function SessionTree(props: {
           action: () => {
             const space = props.spaces.find((s) => s.name === spaceName)
             if (!space) return
+            if (isSessionBound(session.id)) {
+              props.onStatusMessage(t("workbench.panel.sessionAlreadyOpen"))
+              return
+            }
             // Ensure local reference exists (may be a server session)
             let localSession = sessionStore.getSession(session.id)
             if (!localSession) {
@@ -329,9 +322,17 @@ export function SessionTree(props: {
       items: [
         {
           label: t("workbench.tree.newSession"),
-          action: () => {
-            sessionStore.createSession(spaceName, projectPath, "chat", t("workbench.tree.newSession"))
-            setOverviewCache(spaceName, undefined!)
+          action: async () => {
+            try {
+              const res = await sdk.client.session.create({ directory: projectPath })
+              const serverSession = (res as any).data
+              if (!serverSession?.id) return
+              const title = serverSession.title ?? t("workbench.tree.newSession")
+              sessionStore.ensureSessionReference(serverSession.id, spaceName, projectPath, "chat", title)
+              sessionStore.triggerRefresh()
+            } catch (err) {
+              console.error("Failed to create session:", err)
+            }
           },
         },
       ],
@@ -351,10 +352,13 @@ export function SessionTree(props: {
         class="group flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
         draggable={true}
         onDragStart={(e) => {
-          e.dataTransfer!.setData("text/sessionId", session.id)
-          e.dataTransfer!.setData("text/spaceName", spaceName)
-          e.dataTransfer!.setData("text/projectPath", projectPath)
-          e.dataTransfer!.setData("text/sessionTitle", session.title)
+          const dataTransfer = e.dataTransfer
+          if (!dataTransfer) return
+          dataTransfer.setData("text/sessionId", session.id)
+          dataTransfer.setData("text/spaceName", spaceName)
+          dataTransfer.setData("text/projectPath", projectPath)
+          dataTransfer.setData("text/sessionTitle", session.title)
+          setInvisibleSessionDragPreview(dataTransfer)
         }}
         onClick={() => handleSessionClick(session.id)}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
@@ -376,7 +380,7 @@ export function SessionTree(props: {
     const projectKey = `${spaceName}/${projectPath}`
     const isProjExpanded = () => expandedProjects().has(projectKey)
 
-    const rootSessions = createMemo(() => mergeSessions(project.rootSessions, spaceName))
+    const rootSessions = createMemo(() => mergeSessions(project.rootSessions))
 
     return (
       <div>
@@ -404,7 +408,7 @@ export function SessionTree(props: {
 
             <For each={project.directories}>
               {(dir) => {
-                const dirSessions = createMemo(() => mergeSessions(dir.sessions, spaceName))
+                const dirSessions = createMemo(() => mergeSessions(dir.sessions))
                 return (
                   <div>
                     <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
@@ -424,7 +428,7 @@ export function SessionTree(props: {
             <For each={project.worktrees}>
               {(wt) => {
                 if (wt.stale) return null
-                const wtSessions = createMemo(() => mergeSessions(wt.sessions, spaceName))
+                const wtSessions = createMemo(() => mergeSessions(wt.sessions))
                 return (
                   <div>
                     <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
@@ -507,7 +511,7 @@ export function SessionTree(props: {
                     }
                   >
                     {(ov) => {
-                      const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions, space.name))
+                      const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions))
                       return (
                         <>
                           <For each={rootSessions()}>

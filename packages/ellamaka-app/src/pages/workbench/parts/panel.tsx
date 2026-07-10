@@ -3,6 +3,7 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { showToast } from "@opencode-ai/ui/toast"
 import { Show, createEffect, onCleanup, For, createSignal, on } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
@@ -14,6 +15,7 @@ import { PanelLoader } from "./panel-loader"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState } from "./panel-split-terminal"
+import { sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
 import type { WorkbenchPanel, PanelMode } from "../view"
 
 export function Panel(props: {
@@ -64,6 +66,38 @@ export function Panel(props: {
     return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
   }
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState)
+  const restoringSessionIDs = new Set<string>()
+
+  createEffect(() => {
+    const sessionID = props.panel.boundSessionId
+    const existing = sessionID ? sessionStore.getSession(sessionID) : undefined
+    if (!shouldRestoreBoundSession({
+      slotState: props.panel.slotState,
+      boundSessionId: sessionID,
+      hasLocalSession: !!existing,
+    })) return
+    if (!sessionID || restoringSessionIDs.has(sessionID)) return
+
+    restoringSessionIDs.add(sessionID)
+    void sdk.client.session.get({ sessionID })
+      .then((result) => {
+        const session = result.data
+        if (!session) return
+        sessionStore.ensureSessionReference(
+          session.id,
+          props.spaceName,
+          session.directory || props.panel.directory,
+          "chat",
+          session.title || session.id,
+        )
+      })
+      .catch((error) => {
+        console.error("Failed to restore bound session:", error)
+      })
+      .finally(() => {
+        restoringSessionIDs.delete(sessionID)
+      })
+  })
 
   createEffect(() => {
     const spacePath = props.spacePath
@@ -204,14 +238,11 @@ export function Panel(props: {
       return
     }
 
-    // Reject bound Panel
-    if (props.panel.slotState === "bound") {
-      alert("请先关闭当前会话或选择空 Panel")
+    const targetDrop = { targetSlotState: props.panel.slotState, sourceHasLiveBinding: false }
+    if (!shouldAcceptSessionDrop(targetDrop)) {
+      showToast({ title: t("workbench.panel.dropTargetOccupied") })
       return
     }
-
-    // Only empty or open Panel can accept drop
-    if (props.panel.slotState !== "empty" && props.panel.slotState !== "open") return
 
     // Try local session store first; if not found, it's a server session — create a local reference
     let session = sessionStore.getSession(sessionId)
@@ -221,26 +252,21 @@ export function Panel(props: {
       session = sessionStore.ensureSessionReference(sessionId, dragSpaceName, projectPath, "chat", sessionTitle)
     }
 
-    // If session is already bound to another panel, check if binding is still valid
-    if (session.boundPanelId && session.boundPanelId !== props.panel.id) {
-      const boundPanel = wb.spaceState(spacePath)?.panels.find((p) => p.id === session.boundPanelId)
-      // Dangling reference: panel no longer exists or no longer bound to this session
-      if (!boundPanel || boundPanel.boundSessionId !== sessionId) {
-        sessionStore.unbindPanel(sessionId)
-      } else {
-        // Real binding to another panel — ask user via styled dialog
-        dialog.show(() => (
-          <DialogMoveSession
-            sessionTitle={session.title}
-            onConfirm={() => {
-              sessionStore.unbindPanel(sessionId)
-              wb.unbindSessionFromPanel(spacePath, session.boundPanelId!)
-              bindSessionToThisPanel()
-            }}
-          />
-        ))
-        return
-      }
+    const boundPanel = session.boundPanelId && session.boundPanelId !== props.panel.id
+      ? wb.spaceState(spacePath)?.panels.find((panel) => panel.id === session.boundPanelId)
+      : undefined
+    const sourceHasLiveBinding = !!boundPanel && boundPanel.boundSessionId === sessionId
+    const sessionDrop = { targetSlotState: props.panel.slotState, sourceHasLiveBinding }
+    if (!shouldAcceptSessionDrop(sessionDrop)) {
+      const rejection = sessionDropRejection(sessionDrop)
+      showToast({
+        title: t(rejection === "target-occupied" ? "workbench.panel.dropTargetOccupied" : "workbench.panel.sessionAlreadyOpen"),
+      })
+      return
+    }
+
+    if (session.boundPanelId && !sourceHasLiveBinding) {
+      sessionStore.unbindPanel(sessionId)
     }
 
     bindSessionToThisPanel()
@@ -296,34 +322,6 @@ export function Panel(props: {
             </Button>
             <Button variant="primary" size="large" onClick={handleConfirm}>
               确认关闭
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    )
-  }
-
-  function DialogMoveSession(props: { sessionTitle: string; onConfirm: () => void }) {
-    return (
-      <Dialog title={t("workbench.panel.moveSession.title")} fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
-              {t("workbench.panel.moveSession.message", { title: props.sessionTitle })}
-            </span>
-            <span class="text-12-regular text-text-muted">
-              {t("workbench.panel.moveSession.hint")}
-            </span>
-          </div>
-          <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              {t("common.cancel")}
-            </Button>
-            <Button variant="primary" size="large" onClick={() => {
-              props.onConfirm()
-              dialog.close()
-            }}>
-              {t("workbench.panel.moveSession.confirm")}
             </Button>
           </div>
         </div>
@@ -504,14 +502,35 @@ export function Panel(props: {
                       const session = () => props.panel.boundSessionId
                         ? sessionStore.getSession(props.panel.boundSessionId)
                         : undefined
-                      return viewDef.render({
-                        panel: props.panel,
-                        session: session(),
-                        directory: props.panel.directory,
-                        sdk,
-                        spaceName: props.spaceName,
-                        spacePath: props.spacePath,
-                      })
+                      if (!viewDef.requiresSession) {
+                        return viewDef.render({
+                          panel: props.panel,
+                          directory: props.panel.directory,
+                          sdk,
+                          spaceName: props.spaceName,
+                          spacePath: props.spacePath,
+                        })
+                      }
+                      return (
+                        <Show
+                          when={session()}
+                          fallback={
+                            <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
+                              <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+                              <span class="text-12-regular">正在恢复会话…</span>
+                            </div>
+                          }
+                        >
+                          {(loadedSession) => viewDef.render({
+                            panel: props.panel,
+                            session: loadedSession(),
+                            directory: props.panel.directory,
+                            sdk,
+                            spaceName: props.spaceName,
+                            spacePath: props.spacePath,
+                          })}
+                        </Show>
+                      )
                     })()}
                   </div>
                 </Show>
