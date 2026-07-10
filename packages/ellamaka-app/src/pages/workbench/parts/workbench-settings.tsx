@@ -4,7 +4,7 @@ import { MenuV2 } from "@opencode-ai/ui/v2/components/menu-v2.jsx"
 import { createSignal, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useWorkbenchState } from "../view"
+import { useWorkbenchState } from "../view-store"
 
 export function WorkbenchSettingsMenu() {
   const wb = useWorkbenchState()

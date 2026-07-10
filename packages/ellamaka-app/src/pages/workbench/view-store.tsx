@@ -4,9 +4,10 @@ import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSessionStore } from "./session-store"
+import { ptyManager } from "./pty-manager"
 
 export type PanelMode = "tui" | "chat" | "terminal"
-export type PanelSlotState = "empty" | "open" | "bound"
+export type PanelSlotState = "empty" | "bound"
 export type PanelViewMode = string
 
 export type WorkbenchPanel = {
@@ -80,13 +81,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     const display = createMemo(() => store.display)
 
-    // PTY instances don't survive page refresh — clear stale IDs on mount.
-    // slotState, boundSessionId, directory etc. are preserved; view-registry
-    // will recreate PTY connections as needed via createEffect.
-    onMount(() => {
-      Object.keys(store.spaces).forEach((path) => clearSpacePtyIds(path))
-    })
-
     function spaceState(path: string): SpaceWorkbenchState | undefined {
       return store.spaces[path]
     }
@@ -111,9 +105,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
           if ((panel as Record<string, unknown>).slotState !== undefined) return panel
           if (panel.tuiPtyId) {
             return { ...panel, slotState: "bound" as PanelSlotState, viewMode: "tui" }
-          }
-          if (panel.termPtyId) {
-            return { ...panel, slotState: "open" as PanelSlotState, viewMode: "terminal" }
           }
           return { ...panel, slotState: "empty" as PanelSlotState }
         }),
@@ -142,16 +133,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
       const panel = space.panels.find((p) => p.id === id)
       if (panel) {
-        // Skip tuiPtyId for bound panels — let TUI process exit naturally
-        if (panel.tuiPtyId && panel.slotState !== "bound") {
-          sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(console.error)
-        }
-        if (panel.termPtyId) {
-          sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(console.error)
-        }
-        if (panel.splitPtyId) {
-          sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(console.error)
-        }
+        ptyManager.disposePanel(path, id, sdk)
       }
 
       batch(() => {
@@ -337,6 +319,20 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
+    function unbindSessionGlobal(sessionId: string) {
+      batch(() => {
+        Object.keys(store.spaces).forEach((path) => {
+          const space = store.spaces[path]
+          if (!space) return
+          space.panels.forEach((panel) => {
+            if (panel.boundSessionId === sessionId) {
+              unbindSessionFromPanel(path, panel.id)
+            }
+          })
+        })
+      })
+    }
+
     function setPanelSlotState(path: string, panelId: string, state: PanelSlotState) {
       ensureSpace(path)
       setStore(
@@ -364,22 +360,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       )
     }
 
-    function openTerminalInPanel(path: string, panelId: string, directory: string) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === panelId,
-        produce((panel) => {
-          panel.slotState = "open"
-          panel.viewMode = "terminal"
-          panel.mode = "terminal" as PanelMode
-          panel.directory = directory
-        }),
-      )
-    }
-
     return {
       ready,
       display,
@@ -402,9 +382,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       resetPanelWidths,
       bindSessionToPanel,
       unbindSessionFromPanel,
+      unbindSessionGlobal,
       setPanelSlotState,
       setPanelViewMode,
-      openTerminalInPanel,
     }
   },
 })

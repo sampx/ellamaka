@@ -1,4 +1,4 @@
-import type { PanelSlotState, PanelViewMode } from "../view"
+import type { PanelSlotState, PanelViewMode } from "../view-store"
 
 type ReconcileMountedViewsInput = {
   prevBoundSessionId?: string

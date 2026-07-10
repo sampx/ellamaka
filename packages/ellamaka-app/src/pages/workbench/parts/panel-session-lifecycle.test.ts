@@ -15,9 +15,8 @@ describe("shouldAcceptSessionDrop", () => {
     expect(shouldAcceptSessionDrop({ targetSlotState: "empty", sourceHasLiveBinding: true })).toBe(false)
   })
 
-  test("accepts an unbound session in an empty or terminal panel", () => {
+  test("accepts an unbound session in an empty panel", () => {
     expect(shouldAcceptSessionDrop({ targetSlotState: "empty", sourceHasLiveBinding: false })).toBe(true)
-    expect(shouldAcceptSessionDrop({ targetSlotState: "open", sourceHasLiveBinding: false })).toBe(true)
   })
 })
 

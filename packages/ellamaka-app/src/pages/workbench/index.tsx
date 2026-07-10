@@ -1,6 +1,6 @@
 import { Show, createMemo, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider, useSpaceStore } from "./space-store"
-import { WorkbenchStateProvider, useWorkbenchState } from "./view"
+import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionStore } from "./session-store"
 import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
@@ -26,7 +26,9 @@ function BottomDockController() {
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
+  const spaceStore = useSpaceStore()
   const sessionStore = useSessionStore()
+  const allStoresReady = () => wb.ready() && spaceStore.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
 
@@ -40,15 +42,7 @@ function WorkbenchShell() {
       const session = details?.properties?.info
       if (shouldUnbindSessionFromEvent({ type: details?.type, timeArchived: session?.time?.archived })) {
         if (session?.id) {
-          for (const spacePath of Object.keys(wb.spaces)) {
-            const space = wb.spaces[spacePath]
-            if (!space) continue
-            for (const panel of space.panels) {
-              if (panel.boundSessionId === session.id) {
-                wb.unbindSessionFromPanel(spacePath, panel.id)
-              }
-            }
-          }
+          wb.unbindSessionGlobal(session.id)
           sessionStore.deleteSession(session.id)
         }
         sessionStore.triggerRefresh()
@@ -88,7 +82,7 @@ function WorkbenchShell() {
   return (
     <div class="flex h-dvh flex-col bg-v2-background-bg-deep text-v2-text-text-base overflow-hidden">
       <Show
-        when={wb.ready()}
+        when={allStoresReady()}
         fallback={
           <div class="flex h-full items-center justify-center">
             <div class="animate-spin rounded-full h-8 w-8 border-2 border-v2-text-text-muted border-t-transparent" />

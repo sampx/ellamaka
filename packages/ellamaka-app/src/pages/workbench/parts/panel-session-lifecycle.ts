@@ -1,4 +1,4 @@
-import type { PanelSlotState } from "../view"
+import type { PanelSlotState } from "../view-store"
 
 export function shouldAcceptSessionDrop(input: {
   targetSlotState: PanelSlotState
@@ -11,7 +11,7 @@ export function sessionDropRejection(input: {
   targetSlotState: PanelSlotState
   sourceHasLiveBinding: boolean
 }) {
-  if (input.targetSlotState !== "empty" && input.targetSlotState !== "open") return "target-occupied" as const
+  if (input.targetSlotState !== "empty") return "target-occupied" as const
   if (input.sourceHasLiveBinding) return "session-already-open" as const
 }
 

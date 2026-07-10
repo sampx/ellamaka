@@ -4,7 +4,8 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Terminal } from "@/components/terminal"
 import { SessionContextTab } from "@/components/session"
 import { PanelChat } from "./parts/panel-chat"
-import type { WorkbenchPanel } from "./view"
+import { useWorkbenchState, type WorkbenchPanel } from "./view-store"
+import { ptyManager } from "./pty-manager"
 import type { Session } from "./session-store"
 
 export type PanelViewCtx = {
@@ -22,7 +23,6 @@ export type PanelViewDef = {
   icon?: string
   requiresSession: boolean
   showContext: boolean
-  availableInOpen: boolean
   render: (ctx: PanelViewCtx) => JSX.Element
 }
 
@@ -47,37 +47,39 @@ registerView({
   label: "TUI",
   requiresSession: true,
   showContext: false,
-  availableInOpen: false,
   render: (ctx) => {
+    const wb = useWorkbenchState()
     const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
 
-    const startTui = () => {
-      const args = ctx.session?.id
-        ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", ctx.session.id, "--dir", ctx.directory]
+    createEffect(() => {
+      const existingId = ctx.panel.tuiPtyId
+      const sessionId = ctx.session?.id
+      const args = sessionId
+        ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", sessionId, "--dir", ctx.directory]
         : undefined
 
-      ctx.sdk.client.pty
-        .create({
-          command: "ellamaka",
-          args,
-          cwd: ctx.directory,
-          title: `ellamaka tui (${ctx.panel.id})`,
-        })
-        .then((res: any) => {
-          if (res.data?.id) setPtyId(res.data.id)
-        })
-        .catch(console.error)
-    }
-
-    // Auto-start TUI when view mounts
-    createEffect(() => {
-      if (ptyId()) return
-      startTui()
-    })
-
-    onCleanup(() => {
-      const id = ptyId()
-      if (id) ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
+      ptyManager.ensure({
+        spacePath: ctx.spacePath,
+        panelId: ctx.panel.id,
+        kind: "tui",
+        existingPtyId: existingId,
+        sdk: ctx.sdk,
+        createFn: async () => {
+          const res = await ctx.sdk.client.pty.create({
+            command: "ellamaka",
+            args,
+            cwd: ctx.directory,
+            title: `ellamaka tui (${ctx.panel.id})`,
+          })
+          if (!res.data?.id) throw new Error("No PTY ID returned")
+          return res.data.id
+        }
+      }).then((id) => {
+        setPtyId(id)
+        if (id !== existingId) {
+          wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", id)
+        }
+      }).catch(console.error)
     })
 
     return (
@@ -96,59 +98,10 @@ registerView({
             class="w-full h-full"
             noPadding={true}
             isTui={true}
-            onConnectError={() => setPtyId(undefined)}
-          />
-        )}
-      </Show>
-    )
-  },
-})
-
-// ── Terminal View ─────────────────────────────────────────
-
-registerView({
-  id: "terminal",
-  label: "Terminal",
-  requiresSession: false,
-  showContext: false,
-  availableInOpen: true,
-  render: (ctx) => {
-    const [ptyId, setPtyId] = createSignal<string | undefined>(ctx.panel.termPtyId)
-
-    createEffect(() => {
-      if (ptyId()) return
-      ctx.sdk.client.pty
-        .create({
-          cwd: ctx.directory,
-          title: `Terminal (${ctx.panel.id})`,
-        })
-        .then((res: any) => {
-          if (res.data?.id) setPtyId(res.data.id)
-        })
-        .catch(console.error)
-    })
-
-    onCleanup(() => {
-      const id = ptyId()
-      if (id) ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
-    })
-
-    return (
-      <Show
-        when={ptyId()}
-        fallback={
-          <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-            <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-            <span class="text-11-regular">Starting terminal session...</span>
-          </div>
-        }
-      >
-        {(id) => (
-          <Terminal
-            pty={{ id: id(), title: "Terminal", titleNumber: 2 }}
-            class="w-full h-full"
-            noPadding={true}
-            onConnectError={() => setPtyId(undefined)}
+            onConnectError={() => {
+              setPtyId(undefined)
+              wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+            }}
           />
         )}
       </Show>
@@ -163,7 +116,6 @@ registerView({
   label: "Chat",
   requiresSession: true,
   showContext: true,
-  availableInOpen: false,
   render: (ctx) => {
     if (!ctx.session) {
       return (
@@ -184,7 +136,6 @@ registerView({
   label: "Context",
   requiresSession: true,
   showContext: false,
-  availableInOpen: false,
   render: (ctx) => {
     const sessionId = ctx.session?.id
     if (!sessionId) {

@@ -8,15 +8,16 @@ import { Show, createEffect, onCleanup, For, createSignal, on } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
-import { useWorkbenchState } from "../view"
+import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
+import { ptyManager } from "../pty-manager"
 import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState } from "./panel-split-terminal"
 import { sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
-import type { WorkbenchPanel, PanelMode } from "../view"
+import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function Panel(props: {
   panel: WorkbenchPanel
@@ -61,7 +62,6 @@ export function Panel(props: {
       const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
       return session?.title ?? "Session"
     }
-    if (props.panel.slotState === "open") return props.panel.directory
     const parts = props.panel.id.split("-")
     return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
   }
@@ -99,47 +99,38 @@ export function Panel(props: {
       })
   })
 
-  createEffect(() => {
-    const spacePath = props.spacePath
-    if (!spacePath) return
-    if (props.panel.slotState !== "bound") return
-    if (props.panel.viewMode !== "terminal") return
-    if (!props.panel.splitTerminal) {
-      setPanelSplitTerminal(spacePath, props.panel.id, true)
-    }
-    wb.setPanelViewMode(spacePath, props.panel.id, "tui")
-  })
-  // Split terminal PTY is managed by panel.tsx (separate from view-registry main view PTY)
+
+  // Split terminal PTY is managed by panel.tsx via ptyManager
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
     const directory = props.panel.directory
     const spacePath = props.spacePath
+    const existingId = props.panel.splitPtyId
 
     if (!spacePath) return
 
-    if (splitOpen && !props.panel.splitPtyId) {
-      sdk.client.pty
-        .create({
-          cwd: directory,
-          title: `Split Terminal (${props.panel.id})`,
-        })
-        .then((res) => {
-          const ptyId = res.data?.id
-          if (ptyId) {
-            setPanelPtyId(props.spacePath, props.panel.id, "split", ptyId)
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to create split pty:", err)
-        })
-    }
-  })
-
-  // Safety net: when Panel unmounts (tab close, panel remove, space switch),
-  // kill split PTY if still alive. Main view PTY cleanup handled by view-registry onCleanup.
-  onCleanup(() => {
-    if (props.panel.splitPtyId) {
-      sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(() => {})
+    if (splitOpen) {
+      ptyManager.ensure({
+        spacePath,
+        panelId: props.panel.id,
+        kind: "split",
+        existingPtyId: existingId,
+        sdk,
+        createFn: async () => {
+          const res = await sdk.client.pty.create({
+            cwd: directory,
+            title: `Split Terminal (${props.panel.id})`,
+          })
+          if (!res.data?.id) throw new Error("No PTY ID returned")
+          return res.data.id
+        }
+      }).then((id) => {
+        if (id !== existingId) {
+          wb.setPanelPtyId(spacePath, props.panel.id, "split", id)
+        }
+      }).catch((err) => {
+        console.error("Failed to create split pty:", err)
+      })
     }
   })
 
@@ -193,32 +184,18 @@ export function Panel(props: {
 
     const slotState = props.panel.slotState
 
-    // bound Panel: directly unbind session and make panel empty
+    // bound Panel: unbind session, dispose PTYs and optionally remove panel
     if (slotState === "bound") {
       const sessionId = props.panel.boundSessionId
       if (sessionId) sessionStore.unbindPanel(sessionId)
       wb.unbindSessionFromPanel(spacePath, props.panel.id)
-      return
-    }
-
-    // open Panel: kill split PTY (main view PTY handled by view-registry onCleanup)
-    if (slotState === "open") {
-      if (props.panel.splitPtyId) {
-        sdk.client.pty.remove({ ptyID: props.panel.splitPtyId }).catch(console.error)
-        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
-      }
-      if (props.panel.splitTerminal) {
-        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
-      }
-      if (props.panelCount <= 1) {
-        wb.setPanelSlotState(spacePath, props.panel.id, "empty")
-        return
-      }
+      ptyManager.disposePanel(spacePath, props.panel.id, sdk)
+      if (props.panelCount <= 1) return
       wb.removePanel(spacePath, props.panel.id)
       return
     }
 
-    // empty Panel: direct remove
+    // empty Panel: direct remove if multiple exist
     if (props.panelCount <= 1) return
     wb.removePanel(spacePath, props.panel.id)
   }
@@ -398,7 +375,6 @@ export function Panel(props: {
           class="size-2 rounded-full shrink-0"
           classList={{
             "bg-green-500": props.panel.slotState === "bound",
-            "bg-blue-400": props.panel.slotState === "open",
             "bg-v2-text-text-faint": props.panel.slotState === "empty",
           }}
         />

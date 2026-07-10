@@ -6,13 +6,14 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { For, Show, createEffect, createMemo, batch, onMount, onCleanup, Suspense } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
-import { useWorkbenchState } from "../view"
+import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { Panel } from "./panel"
 import { SDKProvider } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
+import { ptyManager } from "../pty-manager"
 
-import type { WorkbenchPanel } from "../view"
+import type { WorkbenchPanel } from "../view-store"
 
 export function Workspace() {
   const store = useSpaceStore()
@@ -260,21 +261,7 @@ function DialogCloseTab(props: { name: string; path: string }) {
     const space = wb.spaceState(path)
 
     // 1. Kill all PTYs owned by this space's panels
-    if (space) {
-      space.panels.forEach((panel) => {
-        // Split PTY (managed by panel.tsx)
-        if (panel.splitPtyId) {
-          sdk.client.pty.remove({ ptyID: panel.splitPtyId }).catch(() => {})
-        }
-        // Legacy field PTYs (tuiPtyId/termPtyId) — may still exist from old persisted state
-        if (panel.tuiPtyId) {
-          sdk.client.pty.remove({ ptyID: panel.tuiPtyId }).catch(() => {})
-        }
-        if (panel.termPtyId) {
-          sdk.client.pty.remove({ ptyID: panel.termPtyId }).catch(() => {})
-        }
-      })
-    }
+    ptyManager.disposeSpace(path, sdk)
 
     // 2. Unbind all sessions bound to panels in this space
     if (space) {

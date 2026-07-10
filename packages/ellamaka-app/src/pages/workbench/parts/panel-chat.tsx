@@ -19,8 +19,8 @@ import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
 import { WorkbenchChatProvider } from "./workbench-chat-context"
 import { useSessionStore } from "../session-store"
-import { useWorkbenchState } from "../view"
-import type { WorkbenchPanel } from "../view"
+import { useWorkbenchState } from "../view-store"
+import type { WorkbenchPanel } from "../view-store"
 import type { Session } from "../session-store"
 
 const emptyUserMessages: UserMessage[] = []

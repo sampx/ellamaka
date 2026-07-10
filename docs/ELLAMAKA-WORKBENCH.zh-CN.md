@@ -62,7 +62,9 @@ Ellamaka App
 packages/ellamaka-app/           ← ellamaka 定制 web UI
   ├── src/pages/workbench/         ← 三栏 IDE 工作台
   │   ├── index.tsx                  主布局与事件总线连接
-  │   ├── workbench-store.tsx         统一状态管理（布局、Space、Panel、Session 绑定）
+  │   ├── view-store.tsx              工作台视图与面板布局状态管理
+  │   ├── space-store.tsx             Space 工作空间与 Tab 状态管理
+  │   ├── session-store.tsx           会话实例及绑定投影状态管理
   │   ├── pty-manager.tsx             PTY 运行时管理器（非持久化，统一管理 PTY 生命周期）
   │   ├── space-workspace.tsx         Space Keep-Alive 容器（所有打开的 Space Tab 保持挂载）
   │   ├── view-registry.tsx           视图注册表（解耦 TUI/Chat/Terminal/Context 渲染）
@@ -97,26 +99,26 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
 
 ### 4.1 面板状态定义
 
-每个面板通过 `slot` 处于以下两种状态之一：
+每个面板通过 `slotState` 处于以下两种状态之一：
 
 | 槽位状态 | 含义 | 主视图能力 | 绑定 Session |
 |----------|------|-----------|--------------|
 | `empty` | 槽位为空，等待装载 | 显示 `PanelLoader` 装载器 | 无 |
-| `session` | 槽位绑定了 Session | 支持 TUI / Chat / Context 主视图切换，可在面板底部展开 Split Terminal | 有 |
+| `bound` | 槽位绑定了 Session | 支持 TUI / Chat / Context 主视图切换，可在面板底部展开 Split Terminal | 有 |
 
 不存在"裸 Terminal 面板"状态。终端体验由 Split Terminal 子区域提供。
 
 面板的持久化结构定义：
 
 ```ts
-type PanelSlot = "empty" | "session"
-type PanelView = "tui" | "chat" | "context"
+type PanelSlotState = "empty" | "bound"
+type PanelViewMode = string // "tui" | "chat" | "context"
 
 type WorkbenchPanel = {
   id: string
-  slot: PanelSlot
-  sessionId?: string          // 当 slot === "session" 时，绑定的 Session ID
-  view?: PanelView            // 当 slot === "session" 时，当前激活的主视图
+  slotState: PanelSlotState
+  boundSessionId?: string     // 当 slotState === "bound" 时，绑定的 Session ID
+  viewMode: PanelViewMode     // 当 slotState === "bound" 时，当前激活的主视图
   directory: string           // 面板当前的 CWD（工作路径）
   width: number               // flex 占比分配（列宽）
   splitTerminal: boolean      // 面板底部 Split Terminal 是否打开
@@ -126,8 +128,6 @@ type WorkbenchPanel = {
   splitPtyId?: string         // Split Terminal 的 PTY ID
 }
 ```
-
-PTY ID 是**重连提示**，不是可信状态。PTY Manager 在 `ensure()` 时先探测持久化的 PTY ID 是否存活，存活则复用（TUI 终端状态完整保留），已死则创建新 PTY 并更新 ID。这保证 TUI 刷新后尽可能保留终端上下文，同时不会因 stale ID 导致连接闪烁。
 
 ### 4.2 Panel 子区域：Split Terminal
 
@@ -139,7 +139,7 @@ Split Terminal 是面板的**底部辅助终端子区域**，不是独立面板�
   - 可见性（`splitTerminal` 布尔值）：持久化。
   - 高度（`splitHeight` 像素值）：持久化。
   - PTY 实例与终端渲染状态：由 PTY 运行时管理器管理，刷新后重建。
-- **视图切换不释放**：在 `session` 槽位中切换主视图（TUI ↔ Chat ↔ Context）时，Split Terminal 的 PTY 进程保持运行，只切换可见性。切回时复用同一终端连接。
+- **视图切换不释放**：在 `bound` 槽位中切换主视图（TUI ↔ Chat ↔ Context）时，Split Terminal 的 PTY 进程保持运行，只切换可见性。切回时复用同一终端连接。
 - **操作行为**：头部 `TUI` 按钮左侧的终端图标切换 `splitTerminal` 开关。收起时只隐藏下方区域，保留 PTY 与终端上下文；再次展开时复用同一终端。
 
 ### 4.3 视图注册机制 (View Registry)
@@ -166,7 +166,7 @@ type PanelViewDef = {
 }
 ```
 
-系统已默认注册 `tui`、`chat` 和 `context` 视图。`session` 槽位的头部呈现 `TUI / Chat / Context` 主视图按钮，并在 `TUI` 左侧提供终端图标，用于切换面板底部的 Split Terminal。
+系统已默认注册 `tui`、`chat` 和 `context` 视图。`bound` 槽位的头部呈现 `TUI / Chat / Context` 主视图按钮，并在 `TUI` 左侧提供终端图标，用于切换面板底部的 Split Terminal。
 
 **视图组件不拥有 PTY 生命周期**。视图通过 `ctx.ptyManager` 获取或复用 PTY 实例。PTY 的创建、复用、释放由运行时管理器统一负责。视图的 `onCleanup` 只能断开前端连接（WebSocket 等），不得调用 `pty.remove` 杀止进程。
 
@@ -181,32 +181,33 @@ Workbench 状态管理的核心目标是：
 3. **切换视图模式不释放 PTY**——TUI PTY、Split Terminal PTY 在视图切换时保持运行。
 4. **高频对话生成期间左侧导航树保持绝对稳定**。
 
-### 5.1 统一状态模型
+### 5.1 状态模型分层设计
 
-所有 Workbench 状态整合到**单一 Store**（`workbench-store.tsx`）中，使用**单一持久化键** `workbench`，包含：
+Workbench 状态不进行强行合并，而是通过分层 Store 实现解耦并由统一门控协同。状态存入以下 Store：
 
-- **显示设置**：标题栏、状态栏、侧栏的显隐。
-- **已打开 Space Tabs**：Space Path 列表及当前激活的 Space Path。
-- **每个 Space 的面板布局**：Panel 数组、宽度、目录、Session 绑定、视图模式、Split Terminal 配置。
-- **当前激活 Panel**。
-
-不持久化：Session 标题副本、Session `status` / `boundPanelId`、请求状态、WebSocket 连接。这些属于运行时或服务端事实。
+- **Space Store** (`space-store.tsx`)：维护已打开的 Space Path 列表及当前激活的 Space Tab 状态。
+- **View Store** (`view-store.tsx`)：维护显示设置（侧栏、标题栏状态等）及每个 Space 下的 Panel 布局（Panel 数组、宽度、工作目录、Session 绑定状态及 PTY ID 提示）。
+- **Session Store** (`session-store.tsx`)：维护本地与服务端的会话列表缓存及其绑定投影。
 
 PTY ID（`tuiPtyId`、`splitPtyId`）作为**重连提示**持久化在 Panel 布局中。PTY Manager 在使用前必须探测存活状态，存活则复用（保留 TUI 终端上下文），已死则创建新 PTY 并更新 ID。
 
-### 5.2 水合门控
+### 5.2 水合门控与协同 (allStoresReady)
 
-所有持久化数据使用 `persisted()` 的 `ready` 信号汇合成 **Workbench Bootstrap Gate**。
+所有持久化 Store 分别声明 `ready` 状态。在 `index.tsx` 中使用 `allStoresReady` 汇合成统一的 **Workbench Bootstrap Gate**：
+
+```tsx
+const allStoresReady = () => spaceStore.ready() && viewStore.ready()
+```
 
 > [!IMPORTANT]
-> **水合完成前禁止行为**：
-> - 不渲染 `Workspace`（渲染 Splash 占位）。
+> **水合完成前（allStoresReady 为 false）禁止行为**：
+> - 不渲染 `Workspace` 与侧栏/标题栏主体（渲染 Splash 占位）。
 > - 不执行 `ensureSpace()`（避免写入默认布局覆盖持久化数据）。
-> - 不创建 PTY。
-> - 不处理 SSE 事件引发的 Session 解绑检测。
+> - 不创建 PTY，不连接终端。
+> - 不处理任何可能引发布局或生命周期副作用的事件。
 >
 > **水合完成后**：
-> - 一次性渲染恢复的布局。
+> - 一次性挂载并渲染恢复的布局。
 > - PTY Manager 对持久化的 PTY ID 发起探测，存活的重连，已死的标记为待重建。视图挂载时通过 `ptyManager.ensure()` 按需创建或复用。
 
 这消除了刷新后"先显示空 Panel 再跳变到恢复布局"的闪烁问题。
@@ -318,16 +319,16 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 1. 点击 "Add Panel" 新增面板，槽位为 `empty` 状态。
 2. 显示 `PanelLoader`，用户选定 Project Path 及类型（默认为 Chat）。
 3. 点击 "开始会话"，触发 SDK 创建 session 得到 ID。
-4. 通过 `workbenchStore.bindSession(spacePath, panel.id, sessionId)` 将绑定写入持久化布局。
-5. 槽位状态切为 `session`，渲染对应的 `PanelChat` 并开始交互。PTY 运行时管理器按需创建资源。
+4. 通过 `viewStore.bindSession(spacePath, panel.id, sessionId)` 将绑定写入持久化布局。
+5. 槽位状态切为 `bound`，渲染对应的 `PanelChat` 并开始交互。PTY 运行时管理器按需创建资源。
 
 ### 6.2 拖拽会话恢复
 1. 左侧树的 idle 状态会话节点支持 Drag。
 2. 拖入任意 `empty` 状态的 Panel 释放。
-3. 通过 `workbenchStore.bindSession(spacePath, panel.id, sessionId)` 修改持久化槽位状态，恢复会话。目标 Panel 若已有 PTY 则先释放旧资源。
+3. 通过 `viewStore.bindSession(spacePath, panel.id, sessionId)` 修改持久化槽位状态，恢复会话。目标 Panel 若已有 PTY 则先释放旧资源。
 
 ### 6.3 切换视图模式
-1. 在 `session` 槽位的面板中，点击头部 `TUI | Chat | Context` 主视图按钮，或点击 `TUI` 左侧的终端图标展开/收起下方 Split Terminal。
+1. 在 `bound` 槽位的面板中，点击头部 `TUI | Chat | Context` 主视图按钮，或点击 `TUI` 左侧的终端图标展开/收起下方 Split Terminal。
 2. 主视图按钮仅切换 `panel.view`。终端图标仅切换 `panel.splitTerminal`，不会抢占当前主视图。
 3. **切换视图不释放任何 PTY**：
    - 从 TUI 切到 Chat：前端断开 TUI 终端的 WebSocket，TUI 进程保持后台挂起。前端挂载 `PanelChat` 导入聊天数据。
@@ -342,9 +343,9 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 
 ### 6.5 关闭面板与会话解绑
 1. 面板头部右侧提供直观的 "关闭" 按钮，取代复杂的菜单。
-2. 当槽位处于 `session`（绑定会话）时，展示关闭按钮。
+2. 当槽位处于 `bound`（绑定会话）时，展示关闭按钮。
 3. 点击关闭按钮时：
-   - 若为 `session`：弹出二次确认框。确认后解绑 Session（在左侧树中保留可重新恢复），调用 `ptyManager.disposePanel(panelId)` 释放该面板全部 PTY 并清除持久化 PTY ID，从布局中移除该 Panel。
+   - 若为 `bound`：弹出二次确认框。确认后解绑 Session（在左侧树中保留可重新恢复），调用 `ptyManager.disposePanel(spacePath, panelId, sdk)` 释放该面板全部 PTY 并清除持久化 PTY ID，从布局中移除该 Panel。
    - 若移除的是空间内最后一个 Panel：保留该 Panel 并将其重置为 `empty` 状态，确保工作区不为 0。
 
 ### 6.6 关闭 Space Tab

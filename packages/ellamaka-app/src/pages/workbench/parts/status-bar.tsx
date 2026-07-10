@@ -2,7 +2,7 @@ import { Show, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useSpaceStore } from "../space-store"
-import { useWorkbenchState } from "../view"
+import { useWorkbenchState } from "../view-store"
 
 export function StatusBar() {
   const wb = useWorkbenchState()

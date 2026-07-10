@@ -14,14 +14,15 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
   name: "SpaceStore",
   init: () => {
     const sdk = useServerSDK()
-    const [tabs, setTabs] = persisted(
+    const [tabs, setTabs, _1, tabsReady] = persisted(
       Persist.global("workbench.spacetabs", []),
       createStore<WopalSpace[]>([]),
     )
-    const [activeStore, setActiveStore] = persisted(
+    const [activeStore, setActiveStore, _2, activeStoreReady] = persisted(
       Persist.global("workbench.activespace", []),
       createStore<{ name: string | undefined }>({ name: undefined }),
     )
+    const ready = () => tabsReady() && activeStoreReady()
     const activeName = () => activeStore.name
     const setActiveName = (name: string | undefined) => setActiveStore("name", name)
 
@@ -81,6 +82,7 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
     }
 
     return {
+      ready,
       spaces,
       spacesLoading: spacesResource.loading,
       reload: () => spacesActions.refetch(),

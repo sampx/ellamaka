@@ -1,8 +1,8 @@
 import { createSignal, Show, createResource, For, createEffect } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { useSessionStore } from "../session-store"
-import { useWorkbenchState } from "../view"
-import type { WorkbenchPanel } from "../view"
+import { useWorkbenchState } from "../view-store"
+import type { WorkbenchPanel } from "../view-store"
 
 export function PanelLoader(props: {
   panel: WorkbenchPanel

@@ -1,23 +1,15 @@
-import type { PanelSlotState } from "../view"
+import type { PanelSlotState } from "../view-store"
 
 type PanelHeaderView = {
   id: string
   label: string
   requiresSession: boolean
-  availableInOpen: boolean
 }
 
 type PanelHeaderViewState = PanelHeaderView & { disabled: boolean }
 
 export function getPanelHeaderViews(views: PanelHeaderView[], slotState: PanelSlotState): PanelHeaderViewState[] {
   if (slotState === "empty") return []
-
-  if (slotState === "open") {
-    return views.map((view) => ({
-      ...view,
-      disabled: !view.availableInOpen,
-    }))
-  }
 
   return views
     .filter((view) => view.requiresSession)
