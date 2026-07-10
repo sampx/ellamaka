@@ -53,7 +53,7 @@ registerView({
 
     const startTui = () => {
       const args = ctx.session?.id
-        ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", ctx.session.id]
+        ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", ctx.session.id, "--dir", ctx.directory]
         : undefined
 
       ctx.sdk.client.pty
