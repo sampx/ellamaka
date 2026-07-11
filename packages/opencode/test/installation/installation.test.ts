@@ -187,7 +187,7 @@ describe("installation method", () => {
           configurable: true,
         })
         const method = yield* Installation.use.method()
-        expect(method).toBe("wopal")
+        expect(method).toBe("ellamaka")
       } finally {
         Object.defineProperty(process, "execPath", {
           value: originalExecPath,
@@ -218,7 +218,7 @@ describe("installation latest", () => {
 
   it.effect("reads latest version from ellamaka CDN manifest", () =>
     Effect.gen(function* () {
-      const result = yield* Installation.use.latest("wopal")
+      const result = yield* Installation.use.latest("ellamaka")
       expect(result).toBe("2.0.0")
     }),
   )
@@ -250,16 +250,16 @@ describe("installation upgrade", () => {
 
   it.effect("upgrades via ellamaka CDN", () =>
     Effect.gen(function* () {
-      const result = yield* Installation.use.upgrade("wopal", "2.0.0")
+      const result = yield* Installation.use.upgrade("ellamaka", "2.0.0")
       expect(result).toBeUndefined()
     }),
   )
 
   it.effect("returns typed error on upgrade failure", () =>
     Effect.gen(function* () {
-      const error = yield* Effect.flip(Installation.use.upgrade("wopal", "9.9.9"))
+      const error = yield* Effect.flip(Installation.use.upgrade("ellamaka", "9.9.9"))
       expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
-      expect(error.stderr).toContain("wopal")
+      expect(error.stderr).toContain("ellamaka")
     }),
   )
 })

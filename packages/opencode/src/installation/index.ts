@@ -17,7 +17,7 @@ import os from "os"
 
 const log = Log.create({ service: "installation" })
 
-export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "wopal" | "unknown"
+export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "ellamaka" | "unknown"
 
 export type ReleaseType = "patch" | "minor" | "major"
 
@@ -256,7 +256,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         stdout: result.stdout.toString("utf8"),
         stderr: result.stderr.toString("utf8"),
       }
-    }, Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("wopal") })))
+    }, Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("ellamaka") })))
 
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
@@ -266,7 +266,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (isUnderWopalBin()) return "wopal" as Method
+        if (isUnderWopalBin()) return "ellamaka" as Method
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
@@ -303,7 +303,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
         const detectedMethod = installMethod || (yield* result.method())
 
-        if (detectedMethod === "wopal") {
+        if (detectedMethod === "ellamaka") {
           const manifestUrl = "https://download.coursedao.com/ellamaka/latest/manifest.json"
           const response = yield* httpOk.execute(
             HttpClientRequest.get(manifestUrl).pipe(HttpClientRequest.acceptJson),
@@ -369,7 +369,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
         let upgradeResult: { code: number; stdout: string; stderr: string } | undefined
         switch (m) {
-          case "wopal":
+          case "ellamaka":
             upgradeResult = yield* upgradeWopal(target)
             break
           case "curl":

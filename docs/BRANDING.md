@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-07-06
+> **更新时间**: 2026-07-11
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-11 | Updated | §9 重写：恢复自动更新，改用 ellamaka CDN（`download.coursedao.com/ellamaka/latest/manifest.json`）；安装方法从 `"wopal"` 重命名为 `"ellamaka"`；`upgrade()` 不再检测安装方式，直接走 CDN |
 | 2026-07-07 | Updated | §16 扩展 Workbench 会话归组 API：新增 spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories 四端点，完全按 Workbench 自有归组模型（空间→项目→子目录/worktree→会话），不沿用 opencode project_id 归组；引入 stale 检测、会话标记（目录/工作树）、realpath 统一匹配 |
 | 2026-07-07 | Updated | §16 扩展项目目录聚合端点：新增 `/wopal-space/projects` 和 `/wopal-space/non-space-projects`，按空间路径过滤 project 表 ∪ session 表并聚合会话数；realpath 统一匹配；为 Workbench 三级 Session Browser 提供数据源 |
 | 2026-07-07 | Updated | 新增 §16 WopalSpace 空间注册表 API;§15.2/§15.6 更新为实际实施文件清单和进度 |
@@ -411,25 +412,63 @@ slashName: Flag.WOPAL_SPACE ? undefined : "help",
 
 ---
 
-## 9. 安装与更新保护
+## 9. 安装与自动更新
 
 ### 目的
 
-ellamaka 通过 wopal-cli 分发和更新（`wopal ellamaka install`），不走 opencode 的自动更新通道（npm/brew/GitHub）。必须在 ellamaka 二进制内部阻止误触发 opencode 更新机制。
+ellamaka 通过 wopal-cli 分发安装（`wopal ellamaka install`），同时使用自有 CDN（`download.coursedao.com/ellamaka/`）实现版本检查和自动更新，不依赖 opencode 的 GitHub/npm/brew 更新通道。
 
-### 三层守卫
+### 9.1 安装方法
 
-所有守卫使用 `isWopalInstall()` 函数——检查 `process.execPath` 是否位于 `WOPAL_HOME/bin/`（wopal-cli 的固定安装路径）。不依赖 channel 名。
+`Installation.method()` 检测当前运行环境的安装方式，返回 `"ellamaka"` 表示通过 wopal-cli 安装。检测逻辑：`isUnderWopalBin()` 检查 `process.execPath` 或 `process.argv[0]` 是否包含 `.wopal/bin`。
 
-| 层级 | 触发场景 | 行为 |
-|------|---------|------|
-| 自动更新 worker | TUI 后台定时检查更新 | `isWopalInstall()` → 直接 return，不发起网络请求 |
-| 版本查询 | `Installation.latest()` 被调用 | `isWopalInstall()` → 返回当前版本，跳过 GitHub/npm/brew 查询 |
-| 手动升级 | 用户执行 `upgrade` 命令或被触发 `Installation.upgrade()` | `isWopalInstall()` → 拦截，引导用户使用 `wopal ellamaka update` |
+`"ellamaka"` 方法已加入 `Method` 类型和 `upgrade` 命令的合法选项。
+
+### 9.2 自动更新
+
+TUI 启动后 1 秒触发 `checkUpgrade()` → `upgrade()`，流程如下：
+
+1. **配置检查**：读取 workspace `settings.local.jsonc` / `settings.jsonc` 中的 `ellamaka.autoupdate` 字段
+   - `false` → 跳过
+   - `"notify"` → 仅通知，不自动安装
+   - `true` 或未配置 → 启用（patch 版本自动安装，minor/major 仅通知）
+2. **版本查询**：`Installation.latest("ellamaka")` 直接请求 `https://download.coursedao.com/ellamaka/latest/manifest.json`，不走 GitHub API
+3. **版本比对**：对比 `InstallationVersion`（编译时版本号）与 CDN 返回的版本
+4. **通知/升级**：
+   - 版本相同 → 跳过
+   - minor/major 版本 → 通过 Bus 事件通知 UI 显示更新提示，不自动安装
+   - patch 版本且 autoupdate 未设为 notify → 自动下载安装
+
+### 9.3 CDN 版本清单
+
+`latest()` 请求 `manifest.json`，格式：
+
+```json
+{
+  "version": "1.15.14",
+  "artifacts": [
+    { "name": "ellamaka-darwin-arm64.tar.gz", "os": "darwin", "arch": "arm64", "url": "...", "sha256": "..." }
+  ],
+  "checksumsUrl": "..."
+}
+```
+
+`upgrade()` 根据目标版本请求 `https://download.coursedao.com/ellamaka/v{version}/manifest.json`，通过 `findEllamakaArtifact()` 匹配当前平台架构的制品，下载 → 解压 → 安装 → codesign。
+
+### 9.4 与 opencode 的差异
+
+| 维度 | opencode | ellamaka |
+|------|----------|----------|
+| 版本查询 | GitHub API `/repos/anomalyco/opencode/releases/latest` | ellamaka CDN `download.coursedao.com/ellamaka/latest/manifest.json` |
+| 安装方法检测 | 检测 npm/brew/curl/scoop/choco 等包管理器 | 检测 `WOPAL_HOME/bin/` 路径 |
+| 自动更新入口 | 同 opencode | `upgrade()` 直接 `latest("ellamaka")`，不检测安装方式 |
+| 升级通道 | npm/brew/curl/GitHub | CDN 下载 tar.gz + shell 脚本安装 |
 
 ### 实现逻辑
 
-`isWopalInstall()` 实现为独立文件 `packages/ellamaka/is-wopal-install.ts`，在 4 处 guard 点通过 import 注入，每处仅替换 1 行 guard 表达式。使用 `WOPAL_HOME` 环境变量（支持 `~/` 前缀扩展）确定安装根路径，与 `global.ts` 路径体系对齐。
+`upgrade()` 位于 `packages/opencode/src/cli/upgrade.ts`，是独立的异步函数，不依赖 Effect 服务层。`Installation.latest("ellamaka")` 和 `Installation.upgrade("ellamaka", target)` 在 `packages/opencode/src/installation/index.ts` 中实现。
+
+`upgrade` 命令（`cli/cmd/upgrade.ts`）支持手动升级，接受 `--method ellamaka` 指定安装方式。`isWopalInstall()` 仍用于安装路径检测，但不再拦截更新流程。
 
 ---
 

@@ -6,6 +6,9 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { GlobalBus } from "@/bus/global"
 import { existsSync, readFileSync } from "fs"
 import path from "path"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "upgrade" })
 
 export function readJsoncConfig(filepath: string): Record<string, unknown> | null {
   try {
@@ -35,17 +38,31 @@ export function getWorkspaceAutoupdate(spaceRoot?: string): boolean | "notify" |
 
 export async function upgrade() {
   const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.getGlobal()))
-
-  // Respect workspace autoupdate setting in WopalSpace mode
   const workspaceAutoupdate = getWorkspaceAutoupdate()
   const effectiveAutoupdate = workspaceAutoupdate !== undefined ? workspaceAutoupdate : config.autoupdate
 
-  if (effectiveAutoupdate === false || Flag.OPENCODE_DISABLE_AUTOUPDATE) return
-  const method = await Installation.method()
-  const latest = await Installation.latest(method).catch(() => {})
+  if (effectiveAutoupdate === false) {
+    log.info("autoupdate disabled by config")
+    return
+  }
+  if (Flag.OPENCODE_DISABLE_AUTOUPDATE) {
+    log.info("autoupdate disabled by OPENCODE_DISABLE_AUTOUPDATE flag")
+    return
+  }
+
+  const latest = await Installation.latest("ellamaka").catch((e) => {
+    log.error(`fetch latest version from CDN failed: ${e}`)
+    return undefined
+  })
   if (!latest) return
 
+  if (InstallationVersion === latest) {
+    log.info(`already latest (${latest})`)
+    return
+  }
+
   if (Flag.OPENCODE_ALWAYS_NOTIFY_UPDATE) {
+    log.info(`new version ${latest} (current ${InstallationVersion})`)
     GlobalBus.emit("event", {
       directory: "global",
       payload: {
@@ -55,12 +72,11 @@ export async function upgrade() {
     })
     return
   }
-
-  if (InstallationVersion === latest) return
 
   const kind = Installation.getReleaseType(InstallationVersion, latest)
 
-  if (effectiveAutoupdate === "notify" || kind !== "patch") {
+  if (effectiveAutoupdate === "notify") {
+    log.info(`new version ${latest} (current ${InstallationVersion}), notify only`)
     GlobalBus.emit("event", {
       directory: "global",
       payload: {
@@ -71,16 +87,31 @@ export async function upgrade() {
     return
   }
 
-  if (method === "unknown") return
-  await Installation.upgrade(method, latest)
-    .then(() =>
+  if (kind !== "patch") {
+    log.info(`new ${kind} version ${latest} (current ${InstallationVersion}), skip auto-upgrade`)
+    GlobalBus.emit("event", {
+      directory: "global",
+      payload: {
+        type: Installation.Event.UpdateAvailable.type,
+        properties: { version: latest },
+      },
+    })
+    return
+  }
+
+  log.info(`upgrading from ${InstallationVersion} to ${latest}`)
+  await Installation.upgrade("ellamaka", latest)
+    .then(() => {
+      log.info(`upgraded to ${latest}`)
       GlobalBus.emit("event", {
         directory: "global",
         payload: {
           type: Installation.Event.Updated.type,
           properties: { version: latest },
         },
-      }),
-    )
-    .catch(() => {})
+      })
+    })
+    .catch((e) => {
+      log.error(`upgrade to ${latest} failed: ${e}`)
+    })
 }

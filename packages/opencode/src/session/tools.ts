@@ -30,7 +30,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   messages: MessageV2.WithParts[]
   promptOps: TaskPromptOps
 }) {
-  using _ = log.time("resolveTools")
+  const resolveStart = Date.now()
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
@@ -202,6 +202,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     tools[key] = item
   }
 
+  log.debug("resolveTools", { status: "completed", duration: Date.now() - resolveStart })
   return tools
 })
 
