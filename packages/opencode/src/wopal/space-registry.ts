@@ -144,6 +144,6 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(Service, make)
 
-export const defaultLayer = layer.pipe(Layer.provide(CliAdapter.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provideMerge(CliAdapter.defaultLayer))
 
 export * as SpaceRegistry from "./space-registry"

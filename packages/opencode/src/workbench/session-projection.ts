@@ -1,4 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect"
+import path from "path"
+import { Global } from "@opencode-ai/core/global"
 import { Database } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
 import { SessionDirectoryHealth } from "./session-directory-health"
@@ -58,6 +60,8 @@ function isDirectoryUnderSpace(directory: string, spacePath: string): boolean {
   return directory === spacePath || directory.startsWith(spacePath + "/")
 }
 
+const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
   const registry = yield* SpaceRegistry.Service
@@ -81,8 +85,13 @@ const make = Effect.gen(function* () {
         ),
       )
 
-      // Resolve spaces from registry
-      const snapshot = yield* registry.getSpaces()
+      // Resolve spaces from registry — refresh on cold cache
+      let snapshot = yield* registry.getSpaces()
+      if (snapshot.spaces.length === 0) {
+        snapshot = yield* registry.refreshSpaces(WOPAL_CLI).pipe(
+          Effect.catch(() => Effect.succeed({ spaces: [], refreshedAt: 0 })),
+        )
+      }
       const spaces = snapshot.spaces
 
       // Classify each session: which space does it belong to?
