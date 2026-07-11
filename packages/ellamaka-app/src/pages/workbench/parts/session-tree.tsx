@@ -72,15 +72,30 @@ export function SessionTree(props: {
   const wb = useWorkbenchState()
 
   const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
+  const PINNED_STORAGE_KEY = "workbench.tree.pinned"
 
-  function loadExpanded(): { spaces: string[]; projects: string[] } {
+  function loadExpanded(): { spaces: string[]; projects: string[]; dirs: string[] } {
     try {
       const raw = localStorage.getItem(EXPAND_STORAGE_KEY)
-      if (!raw) return { spaces: [], projects: [] }
+      if (!raw) return { spaces: [], projects: [], dirs: [] }
       const parsed = JSON.parse(raw)
-      return { spaces: parsed.spaces ?? [], projects: parsed.projects ?? [] }
+      return {
+        spaces: parsed.spaces ?? [],
+        projects: parsed.projects ?? [],
+        dirs: parsed.dirs ?? [],
+      }
     } catch {
-      return { spaces: [], projects: [] }
+      return { spaces: [], projects: [], dirs: [] }
+    }
+  }
+
+  function loadPinned(): string[] {
+    try {
+      const raw = localStorage.getItem(PINNED_STORAGE_KEY)
+      if (!raw) return []
+      return JSON.parse(raw) ?? []
+    } catch {
+      return []
     }
   }
 
@@ -90,6 +105,8 @@ export function SessionTree(props: {
 
   const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(initialSpaces)
   const [expandedProjects, setExpandedProjects] = createSignal<Set<string>>(new Set(saved.projects))
+  const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set(saved.dirs))
+  const [pinnedSessions, setPinnedSessions] = createSignal<Set<string>>(new Set(loadPinned()))
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
   const [overviewCache, setOverviewCache] = createStore<Record<string, SpaceOverview>>({})
   const [loading, setLoading] = createStore<Record<string, boolean>>({})
@@ -141,8 +158,36 @@ export function SessionTree(props: {
     return false
   }
 
+  function getPanelBadge(sessionId: string): string | undefined {
+    const activePath = wb.activeTab()?.path
+    if (!activePath) return undefined
+    const space = wb.spaces[activePath]
+    if (!space?.panels) return undefined
+    const idx = space.panels.findIndex((p) => p.boundSessionId === sessionId)
+    if (idx !== -1) return `P${idx + 1}`
+
+    for (const spPath of Object.keys(wb.spaces)) {
+      if (spPath === activePath) continue
+      const otherSpace = wb.spaces[spPath]
+      const otherIdx = otherSpace?.panels?.findIndex((p) => p.boundSessionId === sessionId) ?? -1
+      if (otherIdx !== -1) return `P${otherIdx + 1}`
+    }
+    return undefined
+  }
+
   function mergeSessions(serverSessions: OverviewSession[]): MergedSession[] {
-    return mergeSessionTreeSessions(serverSessions, isSessionBound)
+    const merged = mergeSessionTreeSessions(serverSessions, isSessionBound)
+    const pinned = pinnedSessions()
+    const pinnedList: MergedSession[] = []
+    const unpinnedList: MergedSession[] = []
+    for (const s of merged) {
+      if (pinned.has(s.id)) {
+        pinnedList.push(s)
+      } else {
+        unpinnedList.push(s)
+      }
+    }
+    return [...pinnedList, ...unpinnedList]
   }
 
   function syncOverviewTitles(spaceName: string, overview: SpaceOverview) {
@@ -161,18 +206,40 @@ export function SessionTree(props: {
     }
   }
 
+  let treeContainerRef: HTMLDivElement | undefined
+
   onMount(() => {
     const handler = () => setContextMenu(null)
     document.addEventListener("click", handler)
-    onCleanup(() => document.removeEventListener("click", handler))
+
+    const savedScrollTop = sessionStorage.getItem("workbench.tree.scrollTop")
+    if (savedScrollTop && treeContainerRef) {
+      setTimeout(() => {
+        if (treeContainerRef) {
+          treeContainerRef.scrollTop = Number(savedScrollTop)
+        }
+      }, 50)
+    }
+
+    onCleanup(() => {
+      document.removeEventListener("click", handler)
+    })
   })
 
-  // Persist expand state to localStorage
+  // Persist expand state and pinned state to localStorage
   createEffect(() => {
     const spaces = [...expandedSpaces()]
     const projects = [...expandedProjects()]
+    const dirs = [...expandedDirs()]
     try {
-      localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects }))
+      localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects, dirs }))
+    } catch {}
+  })
+
+  createEffect(() => {
+    const pinned = [...pinnedSessions()]
+    try {
+      localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinned))
     } catch {}
   })
 
@@ -199,6 +266,15 @@ export function SessionTree(props: {
 
   function toggleProject(key: string) {
     setExpandedProjects((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleDirectory(key: string) {
+    setExpandedDirs((prev) => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
       else next.add(key)
@@ -248,6 +324,7 @@ export function SessionTree(props: {
   function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string, projectPath: string) {
     e.preventDefault()
     e.stopPropagation()
+    const isPinned = pinnedSessions().has(session.id)
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -260,6 +337,17 @@ export function SessionTree(props: {
             const trimmed = newTitle.trim()
             sessionStore.renameSession(session.id, trimmed)
             void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+          },
+        },
+        {
+          label: isPinned ? t("workbench.tree.unpin") : t("workbench.tree.pin"),
+          action: () => {
+            setPinnedSessions((prev) => {
+              const next = new Set(prev)
+              if (next.has(session.id)) next.delete(session.id)
+              else next.add(session.id)
+              return next
+            })
           },
         },
         {
@@ -284,28 +372,6 @@ export function SessionTree(props: {
             } catch (err) {
               console.error("Failed to archive session:", err)
             }
-          },
-        },
-        {
-          label: t("workbench.tree.openInNewPanel"),
-          action: () => {
-            const space = props.spaces.find((s) => s.name === spaceName)
-            if (!space) return
-            if (isSessionBound(session.id)) {
-              props.onStatusMessage(t("workbench.panel.sessionAlreadyOpen"))
-              return
-            }
-            // Ensure local reference exists (may be a server session)
-            let localSession = sessionStore.getSession(session.id)
-            if (!localSession) {
-              localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
-            }
-            const panelId = wb.addPanel(space.path)
-            if (!panelId) {
-              props.onStatusMessage(t("workbench.tree.noEmptyPanel"))
-              return
-            }
-            wb.bindSessionToPanel(space.path, panelId, session.id)
           },
         },
       ],
@@ -345,6 +411,88 @@ export function SessionTree(props: {
   }
 
   function renderSessionRow(session: MergedSession, spaceName: string, projectPath: string) {
+    const handleSessionClick = () => {
+      const badge = getPanelBadge(session.id)
+      if (badge) {
+        let boundSpacePath: string | undefined
+        let boundPanelId: string | undefined
+
+        for (const spPath of Object.keys(wb.spaces)) {
+          const spaceState = wb.spaces[spPath]
+          const p = spaceState?.panels?.find((panel) => panel.boundSessionId === session.id)
+          if (p) {
+            boundSpacePath = spPath
+            boundPanelId = p.id
+            break
+          }
+        }
+
+        if (boundSpacePath && boundPanelId) {
+          const targetSpace = props.spaces.find((s) => s.path === boundSpacePath)
+          if (targetSpace && wb.activeSpaceName !== targetSpace.name) {
+            wb.setActive(targetSpace.name)
+          }
+          wb.setActivePanel(boundSpacePath, boundPanelId)
+        }
+        wb.setStatusMessage(`已激活绑定了该会话的面板 ${badge}`)
+      } else {
+        wb.setStatusMessage("提示：双击会话或拖拽会话到面板中即可在工作台打开")
+      }
+      props.onSessionClick(session.id)
+    }
+
+    const handleSessionDblClick = () => {
+      const targetSpace = props.spaces.find((s) => s.name === spaceName)
+      if (!targetSpace) return
+      
+      const targetSpacePath = targetSpace.path
+
+      // Auto-switch to session's parent Space Tab if it is not the active one
+      if (wb.activeSpaceName !== spaceName) {
+        wb.setActive(spaceName)
+      }
+
+      const space = wb.spaces[targetSpacePath]
+      if (!space || !space.panels || space.panels.length === 0) return
+
+      let targetPanel = space.panels.find((p) => p.slotState === "empty")
+
+      if (!targetPanel && space.panels.length < 3) {
+        const newPanelId = wb.addPanel(targetSpacePath)
+        if (newPanelId) {
+          // Fetch updated state after adding panel
+          const updatedSpace = wb.spaces[targetSpacePath]
+          targetPanel = updatedSpace?.panels?.find((p) => p.id === newPanelId)
+        }
+      }
+
+      if (!targetPanel) {
+        const activeId = space.activePanelID
+        targetPanel = space.panels.find((p) => p.id === activeId) || space.panels[0]
+        
+        const isFirst = !activeId || targetPanel.id === space.panels[0].id
+        const confirmMsg = isFirst
+          ? "当前所有面板已满且未选择活动面板，是否覆盖第一个面板以打开此会话？"
+          : "当前面板已满，是否覆盖当前活动面板以打开此会话？"
+        
+        const ok = confirm(confirmMsg)
+        if (!ok) return
+      }
+
+      if (targetPanel) {
+        let localSession = sessionStore.getSession(session.id)
+        if (!localSession) {
+          localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
+        }
+        wb.bindSessionToPanel(targetSpacePath, targetPanel.id, session.id)
+        wb.setPanelViewMode(targetSpacePath, targetPanel.id, "chat")
+        wb.setActivePanel(targetSpacePath, targetPanel.id)
+        
+        const badge = getPanelBadge(session.id)
+        wb.setStatusMessage(`已在面板 ${badge || ""} 中装载会话`)
+      }
+    }
+
     return (
       <button
         type="button"
@@ -359,14 +507,29 @@ export function SessionTree(props: {
           dataTransfer.setData("text/sessionTitle", session.title)
           setInvisibleSessionDragPreview(dataTransfer)
         }}
-        onClick={() => handleSessionClick(session.id)}
+        onClick={handleSessionClick}
+        onDblClick={handleSessionDblClick}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
       >
         <Show
-          when={session.status === "bound"}
-          fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
+          when={getPanelBadge(session.id)}
+          fallback={
+            <Show
+              when={pinnedSessions().has(session.id)}
+              fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
+            >
+              <svg class="size-3 shrink-0 text-v2-icon-icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="17" x2="12" y2="22"></line>
+                <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.55A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.21L5.8 13.97A2 2 0 0 0 5 15.24V17z"></path>
+              </svg>
+            </Show>
+          }
         >
-          <div class="size-2.5 rounded-[2px] bg-gradient-to-br from-v2-icon-icon-brand to-v2-icon-icon-accent shrink-0" />
+          {(badge) => (
+            <span class="flex items-center justify-center shrink-0 rounded-full px-1 text-[9px] font-bold text-white bg-v2-icon-icon-brand leading-none min-w-[18px] h-3.5 scale-90 select-none">
+              {badge()}
+            </span>
+          )}
         </Show>
         <span class="flex-1 truncate">{session.title}</span>
       </button>
@@ -408,17 +571,29 @@ export function SessionTree(props: {
             <For each={project.directories}>
               {(dir) => {
                 const dirSessions = createMemo(() => mergeSessions(dir.sessions))
+                const dirKey = `${spaceName}/${projectPath}/${dir.path}`
+                const isDirExpanded = () => expandedDirs().has(dirKey)
                 return (
                   <div>
-                    <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
+                    <button
+                      type="button"
+                      class="group flex w-full items-center gap-1 px-2 py-0.5 text-left text-10-regular text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md transition-colors"
+                      onClick={() => toggleDirectory(dirKey)}
+                    >
+                      <IconV2
+                        name={isDirExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
+                        class={`size-2 shrink-0 ${isDirExpanded() ? "" : "-rotate-90"}`}
+                      />
                       <span class="truncate">{dir.path.split("/").pop() || dir.path}</span>
                       <span class="text-v2-text-text-faint/50">({dir.sessionCount})</span>
-                    </div>
-                    <div class="ml-2">
-                      <For each={dirSessions()}>
-                        {(session) => renderSessionRow(session, spaceName, projectPath)}
-                      </For>
-                    </div>
+                    </button>
+                    <Show when={isDirExpanded()}>
+                      <div class="ml-3 border-l border-v2-border-border-base/20 pl-1.5">
+                        <For each={dirSessions()}>
+                          {(session) => renderSessionRow(session, spaceName, projectPath)}
+                        </For>
+                      </div>
+                    </Show>
                   </div>
                 )
               }}
@@ -428,19 +603,31 @@ export function SessionTree(props: {
               {(wt) => {
                 if (wt.stale) return null
                 const wtSessions = createMemo(() => mergeSessions(wt.sessions))
+                const wtKey = `${spaceName}/${projectPath}/wt/${wt.worktreePath}`
+                const isWtExpanded = () => expandedDirs().has(wtKey)
                 return (
                   <div>
-                    <div class="flex items-center gap-1 px-2 py-0.5 text-10-regular text-v2-text-text-faint">
+                    <button
+                      type="button"
+                      class="group flex w-full items-center gap-1 px-2 py-0.5 text-left text-10-regular text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md transition-colors"
+                      onClick={() => toggleDirectory(wtKey)}
+                    >
+                      <IconV2
+                        name={isWtExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
+                        class={`size-2 shrink-0 ${isWtExpanded() ? "" : "-rotate-90"}`}
+                      />
                       <span class="truncate">{wt.worktreePath.split("/").pop() || wt.worktreePath}</span>
                       <Show when={wt.branch}>
                         <span class="text-v2-text-text-faint/50">({wt.branch})</span>
                       </Show>
-                    </div>
-                    <div class="ml-2">
-                      <For each={wtSessions()}>
-                        {(session) => renderSessionRow(session, spaceName, projectPath)}
-                      </For>
-                    </div>
+                    </button>
+                    <Show when={isWtExpanded()}>
+                      <div class="ml-3 border-l border-v2-border-border-base/20 pl-1.5">
+                        <For each={wtSessions()}>
+                          {(session) => renderSessionRow(session, spaceName, projectPath)}
+                        </For>
+                      </div>
+                    </Show>
                   </div>
                 )
               }}
@@ -452,7 +639,11 @@ export function SessionTree(props: {
   }
 
   return (
-    <div class="flex-1 overflow-y-auto px-1.5">
+    <div
+      ref={treeContainerRef}
+      class="flex-1 overflow-y-auto px-1.5"
+      onScroll={(e) => sessionStorage.setItem("workbench.tree.scrollTop", String(e.currentTarget.scrollTop))}
+    >
       <For each={props.spaces}>
         {(space) => {
           const isActive = space.name === props.activeSpaceName
@@ -493,7 +684,7 @@ export function SessionTree(props: {
                 />
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
                 <Show when={space.type}>
-                  <span class="rounded px-1 text-9-regular text-v2-text-text-muted bg-v2-background-bg-base">
+                  <span class="rounded-full px-1.5 py-0.5 text-[9px] font-medium text-v2-text-text-muted bg-v2-background-bg-deep border border-v2-border-border-base scale-95 origin-right">
                     {space.type}
                   </span>
                 </Show>

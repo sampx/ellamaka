@@ -49,10 +49,15 @@ function WorkbenchShell() {
         ),
       )
     }
+    const preventContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+    }
     window.addEventListener("beforeunload", handleUnload)
+    window.addEventListener("contextmenu", preventContextMenu)
     onCleanup(() => {
       unsub()
       window.removeEventListener("beforeunload", handleUnload)
+      window.removeEventListener("contextmenu", preventContextMenu)
     })
   })
 

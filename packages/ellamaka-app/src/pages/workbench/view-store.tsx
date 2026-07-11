@@ -122,6 +122,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     const ready = () => storeHydrated()
 
+    const [statusMessage, setStatusMessage] = createSignal("提示：双击会话或拖拽会话到面板中即可在工作台打开")
+
     // 3. 150ms debounce 防抖优化写入
     let saveTimer: any = null
     let isDirty = false
@@ -551,6 +553,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       closeTab,
       setActive,
       validateTabs,
+      get statusMessage() { return statusMessage() },
+      setStatusMessage,
     }
   },
 })
