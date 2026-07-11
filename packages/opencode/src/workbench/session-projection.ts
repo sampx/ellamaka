@@ -2,6 +2,8 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
 import { SessionDirectoryHealth } from "./session-directory-health"
+import { SpaceRegistry } from "@/wopal/space-registry"
+import type { SpaceEntry } from "@/wopal/cli-schema"
 import type { DirectoryHealth } from "./session-directory-health"
 
 // ---------------------------------------------------------------------------
@@ -51,8 +53,14 @@ interface RawSessionRow {
   time_archived: number | null
 }
 
+/** Check if a directory is under a space path. */
+function isDirectoryUnderSpace(directory: string, spacePath: string): boolean {
+  return directory === spacePath || directory.startsWith(spacePath + "/")
+}
+
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
+  const registry = yield* SpaceRegistry.Service
 
   const getSessionGroups = (): Effect.Effect<SessionGroup[]> =>
     Effect.gen(function* () {
@@ -73,42 +81,64 @@ const make = Effect.gen(function* () {
         ),
       )
 
-      // Group sessions by directory — each unique directory becomes a group
-      const dirMap = new Map<string, RawSessionRow[]>()
+      // Resolve spaces from registry
+      const snapshot = yield* registry.getSpaces()
+      const spaces = snapshot.spaces
+
+      // Classify each session: which space does it belong to?
+      const spaceSessions = new Map<string, RawSessionRow[]>()
+      const generalSessions: RawSessionRow[] = []
+
       for (const row of rows) {
-        const existing = dirMap.get(row.directory) || []
-        existing.push(row)
-        dirMap.set(row.directory, existing)
+        let matched = false
+        for (const space of spaces) {
+          if (isDirectoryUnderSpace(row.directory, space.path)) {
+            const existing = spaceSessions.get(space.name) ?? []
+            existing.push(row)
+            spaceSessions.set(space.name, existing)
+            matched = true
+            break
+          }
+        }
+        if (!matched) {
+          generalSessions.push(row)
+        }
       }
 
-      const groups: SessionGroup[] = yield* Effect.all(
-        [...dirMap.entries()].map(([directory, sessionRows]) =>
-          Effect.gen(function* () {
-            const dirHealth = yield* health.check(directory)
-            const sessions: SessionSummary[] = sessionRows.map((row) => ({
-              id: row.id,
-              title: row.title,
-              directory: row.directory,
-              directoryHealth: dirHealth,
-              agent: row.agent ?? undefined,
-              timeCreated: row.time_created ?? 0,
-              timeUpdated: row.time_updated ?? 0,
-              timeArchived: row.time_archived ?? undefined,
-            }))
+      const groups: SessionGroup[] = []
 
-            // Determine group type: check if directory is under any known space
-            // For now, all groups are marked as "general" — space-aware grouping
-            // is handled by the frontend matching groups to space paths
-            return {
-              id: directory,
-              title: directory.split("/").pop() || directory,
-              type: "general" as const,
-              sessionCount: sessions.length,
-              sessions,
-            }
-          }),
-        ),
-      )
+      // Build space groups (one per space that has sessions)
+      for (const [spaceName, sessionRows] of spaceSessions) {
+        const sessions = yield* buildSessionSummaries(sessionRows, health)
+        groups.push({
+          id: spaceName,
+          title: spaceName,
+          type: "space",
+          sessionCount: sessions.length,
+          sessions,
+        })
+      }
+
+      // Build general groups (grouped by directory)
+      if (generalSessions.length > 0) {
+        const dirMap = new Map<string, RawSessionRow[]>()
+        for (const row of generalSessions) {
+          const existing = dirMap.get(row.directory) ?? []
+          existing.push(row)
+          dirMap.set(row.directory, existing)
+        }
+
+        for (const [directory, sessionRows] of dirMap) {
+          const sessions = yield* buildSessionSummaries(sessionRows, health)
+          groups.push({
+            id: directory,
+            title: directory.split("/").pop() || directory,
+            type: "general",
+            sessionCount: sessions.length,
+            sessions,
+          })
+        }
+      }
 
       return groups
     })
@@ -116,8 +146,34 @@ const make = Effect.gen(function* () {
   return Service.of({ getSessionGroups })
 })
 
+/** Build session summaries with per-session directory health checks. */
+function buildSessionSummaries(
+  rows: RawSessionRow[],
+  health: SessionDirectoryHealth,
+): Effect.Effect<SessionSummary[]> {
+  return Effect.all(
+    rows.map((row) =>
+      health.check(row.directory).pipe(
+        Effect.map((dirHealth) => ({
+          id: row.id,
+          title: row.title,
+          directory: row.directory,
+          directoryHealth: dirHealth,
+          agent: row.agent ?? undefined,
+          timeCreated: row.time_created ?? 0,
+          timeUpdated: row.time_updated ?? 0,
+          timeArchived: row.time_archived ?? undefined,
+        })),
+      ),
+    ),
+  )
+}
+
 export const layer = Layer.effect(Service, make)
 
-export const defaultLayer = layer.pipe(Layer.provide(SessionDirectoryHealth.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(SessionDirectoryHealth.defaultLayer),
+  Layer.provide(SpaceRegistry.defaultLayer),
+)
 
 export * as SessionProjection from "./session-projection"
