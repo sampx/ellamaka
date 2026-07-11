@@ -30,7 +30,7 @@ export function Panel(props: {
   onRemove: () => void
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as any, params)
+  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
   const sdk = useSDK()
   const wb = useWorkbenchState()
   const { setPanelPtyId, setPanelSplitTerminal } = wb

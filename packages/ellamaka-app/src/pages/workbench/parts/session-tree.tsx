@@ -54,7 +54,7 @@ export function SessionTree(props: {
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as any, params)
+  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
 
@@ -183,7 +183,7 @@ export function SessionTree(props: {
           s.id,
           spaceName,
           s.directory,
-          (s.agent === "tui" ? "tui" : "chat") as any,
+          (s.agent === "tui" ? "tui" : "chat"),
           s.title,
         )
         sessionStore.syncSessionReference(s.id, { directoryHealth: s.directoryHealth })
