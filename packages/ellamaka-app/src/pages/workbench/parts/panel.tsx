@@ -113,7 +113,7 @@ export function Panel(props: {
     const spacePath = props.spacePath
     const existingId = props.panel.splitPtyId
 
-    if (!spacePath) return
+    if (spacePath === undefined || spacePath === null) return
 
     if (splitOpen) {
       if (!existingId) setTerminalTitle(undefined)
@@ -177,7 +177,7 @@ export function Panel(props: {
 
   const handleToggleSplit = () => {
     const spacePath = props.spacePath
-    if (!spacePath) return
+    if (spacePath === undefined || spacePath === null) return
     const next = reconcileSplitTerminalState({
       open: !!props.panel.splitTerminal,
       ptyId: props.panel.splitPtyId,
@@ -187,7 +187,7 @@ export function Panel(props: {
 
   const handleCloseSplit = () => {
     const spacePath = props.spacePath
-    if (!spacePath) return
+    if (spacePath === undefined || spacePath === null) return
     const ptyId = props.panel.splitPtyId
     const next = reconcileSplitTerminalState({ open: !!props.panel.splitTerminal, ptyId }, "teardown")
     batch(() => {
@@ -206,7 +206,7 @@ export function Panel(props: {
 
   const handleClose = () => {
     const spacePath = props.spacePath
-    if (!spacePath) return
+    if (spacePath === undefined || spacePath === null) return
 
     const slotState = props.panel.slotState
 

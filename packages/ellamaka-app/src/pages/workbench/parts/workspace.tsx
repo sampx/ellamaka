@@ -94,7 +94,7 @@ export function Workspace() {
       const finalLeftFlex = parseFloat(leftPanelEl.style.flex)
       const finalRightFlex = parseFloat(rightPanelEl.style.flex)
 
-      if (path && !isNaN(finalLeftFlex) && !isNaN(finalRightFlex)) {
+      if (path !== undefined && path !== null && !isNaN(finalLeftFlex) && !isNaN(finalRightFlex)) {
         batch(() => {
           wb.setPanelWidth(path, leftPanelID, finalLeftFlex)
           wb.setPanelWidth(path, rightPanelID, finalRightFlex)
@@ -117,7 +117,7 @@ export function Workspace() {
         panelCount={currentPanels().length}
         onAddPanel={() => {
           const path = activePath()
-          if (!path) return
+          if (path === undefined || path === null) return
           const id = wb.addPanel(path)
           if (id) wb.setActivePanel(path, id)
         }}
@@ -207,7 +207,7 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.spaces") : tab.name}</span>
+              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.sessions") : tab.name}</span>
               <Show when={tab.path !== ""}>
                 <span
                   class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"

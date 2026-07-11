@@ -1005,6 +1005,7 @@ export const dict = {
   "workbench.panel.splitTerminal.resize": "Drag to resize the split terminal",
   "workbench.panel.splitTerminal.loading": "Starting split shell...",
   "workbench.sidebar.spaces": "Sessions",
+  "workbench.sidebar.sessions": "General",
   "workbench.sidebar.expand": "Expand space rail",
   "workbench.sidebar.collapse": "Collapse space rail",
   "workbench.sidebar.refresh": "Refresh spaces",

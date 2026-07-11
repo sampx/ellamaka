@@ -950,6 +950,7 @@ export const dict = {
   "workbench.panel.splitTerminal.resize": "拖动调整拆分终端高度",
   "workbench.panel.splitTerminal.loading": "正在启动拆分终端...",
   "workbench.sidebar.spaces": "会话",
+  "workbench.sidebar.sessions": "通用",
   "workbench.sidebar.expand": "展开空间栏",
   "workbench.sidebar.collapse": "收起空间栏",
   "workbench.sidebar.refresh": "刷新空间",
