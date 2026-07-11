@@ -221,3 +221,8 @@ function requireConfig(input: unknown) {
 - **强制规则**：`createMemo` 必须是纯函数，**禁止**在 Memo 内部发起 API 异步请求或写入 Store 的副作用行为，必须使用 `createEffect`。
 - **高频更新限频**：连接 SSE 总线时，只有结构性变动（如 `created`、`deleted`）才允许更新 `triggerRefresh()` 引发树组件重新获取。状态内容的高频变动（如 `updated` 块生成）必须通过 Sync 机制在渲染组件内部局部响应，禁止引起全局列表频繁重绘。
 
+### 5.4 虚拟通用空间 (General Space) 的逻辑兼容
+
+- **空串路径处理**：通用空间（General）的路径为空字符串 `""`。在组件内对 `path` 进行初始化保障（如 `ensureSpace(path)`）或显示切换时，**必须**使用 activeTab 存在与否做前置守卫，**绝对禁止**使用 `if (path)` 等隐式真值判定，避免 `""` 被识别为 Falsy 值导致初始化被跳过、面板渲染空白及加号按钮被隐藏。
+- **I18n 引用**：通用空间的 Tab 顶部标题翻译引用应为 `t("workbench.sidebar.spaces")`（对应中文“会话”，英文“Sessions”），禁止错写为未定义的 `t("workbench.sidebar.sessions")`。
+

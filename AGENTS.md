@@ -219,3 +219,8 @@ To prevent state loss and UI flickering in multi-panel structures, all agents do
 - **Rule**: `createMemo` must be a pure function. **Do not** write to stores or trigger API requests inside a memo; use `createEffect` for side effects.
 - **Flicker Prevention**: SSE event subscriptions should only trigger global refetches/re-renders (`triggerRefresh()`) on structural events (e.g., `created`, `deleted`). High-frequency property changes (such as chat `updated` stream chunks) must be handled locally inside rendering components.
 
+### 5.4 Virtual General Space logical compatibility
+
+- **Empty Path Handling**: The path for the General Space is defined as an empty string `""`. When initializing or refreshing space states (e.g., `ensureSpace(path)`), you **must** use the existence of `activeTab` as the guard. **Never** use implicit truthiness checks like `if (path)` because `""` evaluates to falsy, causing the space state to fail to initialize, panels to render empty, and panel action buttons (like Add Panel) to hide.
+- **I18n References**: The translation key for the General Space tab title must be `t("workbench.sidebar.spaces")` (which maps to "Sessions" in English and "会话" in Chinese). Do not use the undefined key `t("workbench.sidebar.sessions")`.
+
