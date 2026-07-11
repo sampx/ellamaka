@@ -27,13 +27,12 @@ export function Workspace() {
 
   createEffect(() => {
     const path = activePath()
-    if (path) wb.ensureSpace(path)
+    if (wb.activeTab()) wb.ensureSpace(path)
   })
 
   const currentSpace = () => {
-    const path = activePath()
-    if (!path) return undefined
-    return wb.spaceState(path)
+    if (!wb.activeTab()) return undefined
+    return wb.spaceState(activePath())
   }
 
   const currentPanels = () => currentSpace()?.panels ?? []
@@ -208,7 +207,7 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.sessions") : tab.name}</span>
+              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.spaces") : tab.name}</span>
               <Show when={tab.path !== ""}>
                 <span
                   class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
@@ -227,7 +226,7 @@ function StageHeader(props: {
 
       <div class="grow" />
 
-      <Show when={props.activePath}>
+      <Show when={wb.activeTab()}>
         <IconButtonV2
           variant="ghost-muted"
           size="small"

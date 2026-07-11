@@ -1,5 +1,5 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
-import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount, untrack } from "solid-js"
+import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount, untrack, batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -191,19 +191,26 @@ export function SessionTree(props: {
   }
 
   function syncOverviewTitles(spaceName: string, overview: SpaceOverview) {
-    const localSessions = sessionStore.spaceSessions(spaceName)
-    const patches = getServerTitlePatches([
+    const serverSessions = [
       ...overview.spaceRootSessions,
       ...overview.projects.flatMap((project) => [
         ...project.rootSessions,
         ...project.directories.flatMap((dir) => dir.sessions),
         ...project.worktrees.flatMap((worktree) => worktree.sessions),
       ]),
-    ], localSessions)
+    ]
 
-    for (const patch of patches) {
-      sessionStore.syncSessionReference(patch.id, { title: patch.title })
-    }
+    batch(() => {
+      for (const s of serverSessions) {
+        sessionStore.ensureSessionReference(
+          s.id,
+          spaceName,
+          s.directory,
+          (s.agent === "tui" ? "tui" : "chat") as any,
+          s.title,
+        )
+      }
+    })
   }
 
   let treeContainerRef: HTMLDivElement | undefined
@@ -291,23 +298,38 @@ export function SessionTree(props: {
 
     if (spaceName === "General") {
       try {
-        const localSessions = sessionStore.spaceSessions("General") || []
-        const overviewSessions: OverviewSession[] = localSessions.map(s => ({
-          id: s.id,
-          title: s.title,
-          directory: s.projectPath,
-          marker: "" as const,
-          timeCreated: s.createdAt,
-          timeUpdated: s.lastActiveAt,
-          timeArchived: s.timeArchived
-        }))
+        const res = await sdk.client.wopalSpace.nonSpaceOverview()
+        const orphanDirs = (res as any).data?.orphanDirectories || []
+
+        const projects: OverviewProject[] = orphanDirs.map((od: any) => {
+          const name = od.path.split("/").pop() || od.path
+          return {
+            path: od.path,
+            displayPath: od.path,
+            name: name,
+            sessionCount: od.sessions.length,
+            rootSessions: od.sessions.map((s: any) => ({
+              id: s.id,
+              title: s.title,
+              directory: s.directory,
+              marker: s.marker || "",
+              timeCreated: s.timeCreated,
+              timeUpdated: s.timeUpdated,
+              timeArchived: s.timeArchived,
+            })),
+            directories: [],
+            worktrees: [],
+          };
+        })
+
         const next: SpaceOverview = {
           spaceName: "General",
           spacePath: "",
-          spaceRootSessionCount: overviewSessions.length,
-          spaceRootSessions: overviewSessions,
-          projects: []
+          spaceRootSessionCount: 0,
+          spaceRootSessions: [],
+          projects: projects,
         }
+        syncOverviewTitles("General", next)
         setOverviewCache("General", next)
       } catch (e) {
         console.error("loadSpaceOverview General error:", e)

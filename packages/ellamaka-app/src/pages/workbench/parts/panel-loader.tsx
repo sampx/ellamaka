@@ -23,9 +23,19 @@ export function PanelLoader(props: {
 
   // Fetch projects inside the current space
   const [overview] = createResource(
-    () => props.spaceName,
-    async (name) => {
+    () => ({ name: props.spaceName, path: props.spacePath }),
+    async ({ name, path }) => {
       try {
+        if (name === "General") {
+          const res = await sdk.client.wopalSpace.nonSpaceOverview()
+          const orphanDirs = (res as any).data?.orphanDirectories || []
+          return {
+            projects: orphanDirs.map((od: any) => ({
+              path: od.path,
+              name: od.path.split("/").pop() || od.path,
+            }))
+          }
+        }
         const res = await sdk.client.wopalSpace.spaceOverview({ spaceName: name })
         return res.data
       } catch (err) {
