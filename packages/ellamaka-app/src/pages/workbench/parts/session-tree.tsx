@@ -309,7 +309,8 @@ export function SessionTree(props: {
           projects: []
         }
         setOverviewCache("General", next)
-      } catch {
+      } catch (e) {
+        console.error("loadSpaceOverview General error:", e)
         setOverviewCache("General", { spaceName: "General", spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
       } finally {
         setLoading("General", false)
@@ -325,7 +326,8 @@ export function SessionTree(props: {
       // Skip update if structurally identical — prevents tree flicker on session.updated
       if (prev && overviewStructurallyEqual(prev, next)) return
       setOverviewCache(spaceName, next)
-    } catch {
+    } catch (e) {
+      console.error("loadSpaceOverview Physical error:", e)
       setOverviewCache(spaceName, { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
     } finally {
       setLoading(spaceName, false)
