@@ -5,22 +5,26 @@ import { createSessionPersist, limitSessions } from "./services/session-store-se
 
 export type SessionType = "tui" | "chat"
 
+export type DirectoryHealth = "healthy" | "missing" | "unavailable"
+
 export type Session = {
   id: string
   spaceName: string
   projectPath: string
   type: SessionType
   title: string
+  directoryHealth: DirectoryHealth
   timeArchived?: number
   createdAt: number
   lastActiveAt: number
 }
 
-export function serverSessionReferenceUpdates(input: Pick<Session, "title" | "type" | "projectPath">) {
+export function serverSessionReferenceUpdates(input: Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">) {
   return {
     title: input.title,
     type: input.type,
     projectPath: input.projectPath,
+    directoryHealth: input.directoryHealth,
   }
 }
 
@@ -65,6 +69,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         projectPath,
         type,
         title,
+        directoryHealth: "healthy",
         createdAt: now,
         lastActiveAt: now,
       }
@@ -81,7 +86,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
 
     function applySessionUpdates(
       id: string,
-      updates: Partial<Pick<Session, "title" | "type" | "projectPath">>,
+      updates: Partial<Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">>,
       options?: { touch?: boolean; refresh?: boolean },
     ) {
       for (const spaceName of Object.keys(store.spaces)) {
@@ -95,6 +100,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
             if (updates.title !== undefined) s.title = updates.title
             if (updates.type !== undefined) s.type = updates.type
             if (updates.projectPath !== undefined) s.projectPath = updates.projectPath
+            if (updates.directoryHealth !== undefined) s.directoryHealth = updates.directoryHealth
             if (options?.touch !== false) s.lastActiveAt = Date.now()
           }),
         )
@@ -150,7 +156,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
     }
 
     // sync session updates without touching lastActiveAt or triggering heavy rerenders
-    function syncSessionReference(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
+    function syncSessionReference(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">>) {
       applySessionUpdates(id, updates, { touch: false, refresh: false })
     }
 
@@ -171,7 +177,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
     ): Session {
       const existing = getSession(id)
       if (existing) {
-        syncSessionReference(id, serverSessionReferenceUpdates({ title, type, projectPath }))
+        syncSessionReference(id, serverSessionReferenceUpdates({ title, type, projectPath, directoryHealth: "healthy" }))
         return getSession(id) ?? existing
       }
       ensureSpace(spaceName)
@@ -182,6 +188,7 @@ export const { use: useSessionStore, provider: SessionStoreProvider } = createSi
         projectPath,
         type,
         title,
+        directoryHealth: "healthy",
         createdAt: now,
         lastActiveAt: now,
       }

@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useSessionStore } from "../session-store"
 import { useWorkbenchState } from "../view-store"
 import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
-import { getServerTitlePatches, mergeSessionTreeSessions } from "./session-tree-merge"
+import { mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
 
 type ContextMenu = {
@@ -24,37 +24,24 @@ type MergedSession = {
   id: string
   title: string
   status: "idle" | "bound" | "archived"
-  boundPanelId?: string
 }
 
-type OverviewSession = {
+type GroupSession = {
   id: string
   title: string
   directory: string
-  marker: "" | "directory" | "worktree"
+  directoryHealth: "healthy" | "missing" | "unavailable"
   agent?: string
   timeCreated: number
   timeUpdated: number
-  timeArchived?: number
 }
 
-type OverviewProject = {
-  path: string
-  displayPath: string
-  name?: string
-  vcs?: "git"
+type SessionGroup = {
+  id: string
+  title: string
+  type: "space" | "general"
   sessionCount: number
-  rootSessions: OverviewSession[]
-  directories: { path: string; sessionCount: number; sessions: OverviewSession[] }[]
-  worktrees: { worktreePath: string; branch?: string; stale: boolean; sessionCount: number; sessions: OverviewSession[] }[]
-}
-
-type SpaceOverview = {
-  spaceName: string
-  spacePath: string
-  spaceRootSessionCount: number
-  spaceRootSessions: OverviewSession[]
-  projects: OverviewProject[]
+  sessions: GroupSession[]
 }
 
 export function SessionTree(props: {
@@ -74,18 +61,14 @@ export function SessionTree(props: {
   const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
   const PINNED_STORAGE_KEY = "workbench.tree.pinned"
 
-  function loadExpanded(): { spaces: string[]; projects: string[]; dirs: string[] } {
+  function loadExpanded(): string[] {
     try {
       const raw = localStorage.getItem(EXPAND_STORAGE_KEY)
-      if (!raw) return { spaces: [], projects: [], dirs: [] }
+      if (!raw) return []
       const parsed = JSON.parse(raw)
-      return {
-        spaces: parsed.spaces ?? [],
-        projects: parsed.projects ?? [],
-        dirs: parsed.dirs ?? [],
-      }
+      return parsed.spaces ?? []
     } catch {
-      return { spaces: [], projects: [], dirs: [] }
+      return []
     }
   }
 
@@ -100,17 +83,16 @@ export function SessionTree(props: {
   }
 
   const saved = loadExpanded()
-  const initialSpaces = new Set(saved.spaces)
+  const initialSpaces = new Set(saved)
   if (props.activeSpaceName) initialSpaces.add(props.activeSpaceName)
 
   const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(initialSpaces)
-  const [expandedProjects, setExpandedProjects] = createSignal<Set<string>>(new Set(saved.projects))
-  const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set(saved.dirs))
   const [pinnedSessions, setPinnedSessions] = createSignal<Set<string>>(new Set(loadPinned()))
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
-  const [overviewCache, setOverviewCache] = createStore<Record<string, SpaceOverview>>({})
-  const [loading, setLoading] = createStore<Record<string, boolean>>({})
-  const fetchVersions = new Map<string, number>()
+  const [groupCache, setGroupCache] = createStore<Record<string, SessionGroup[]>>({})
+  const [allGroups, setAllGroups] = createStore<SessionGroup[]>([])
+  const [loading, setLoading] = createSignal(false)
+  let fetchVersion = -1
 
   const activeSessionId = createMemo(() => {
     const tab = wb.activeTab()
@@ -133,71 +115,7 @@ export function SessionTree(props: {
       next.add(session.spaceName)
       return next
     })
-
-    if (session.projectPath && session.spaceName !== "General") {
-      const overview = overviewCache[session.spaceName]
-      if (overview) {
-        const matchingProject = overview.projects.find((proj) => {
-          return session.projectPath === proj.path || session.projectPath.startsWith(proj.path + "/")
-        })
-        if (matchingProject) {
-          const projKey = `${session.spaceName}/${matchingProject.path}`
-          setExpandedProjects((prev) => {
-            if (prev.has(projKey)) return prev
-            const next = new Set(prev)
-            next.add(projKey)
-            return next
-          })
-
-          if (session.projectPath !== matchingProject.path) {
-            const dirKey = `${session.spaceName}/${matchingProject.path}/${session.projectPath}`
-            setExpandedDirs((prev) => {
-              if (prev.has(dirKey)) return prev
-              const next = new Set(prev)
-              next.add(dirKey)
-              return next
-            })
-          }
-        }
-      }
-    }
   })
-
-  // Shallow structural comparison — ignores timestamps to avoid unnecessary re-renders
-  // when session.updated only bumped timeUpdated (e.g. during chat conversation).
-  function overviewStructurallyEqual(a: SpaceOverview, b: SpaceOverview): boolean {
-    if (a.spaceRootSessionCount !== b.spaceRootSessionCount) return false
-    if (a.projects.length !== b.projects.length) return false
-    if (!sessionListEqual(a.spaceRootSessions, b.spaceRootSessions)) return false
-    for (let i = 0; i < a.projects.length; i++) {
-      const ap = a.projects[i], bp = b.projects[i]
-      if (ap.path !== bp.path || ap.sessionCount !== bp.sessionCount) return false
-      if (ap.directories.length !== bp.directories.length) return false
-      if (ap.worktrees.length !== bp.worktrees.length) return false
-      if (!sessionListEqual(ap.rootSessions, bp.rootSessions)) return false
-      for (let j = 0; j < ap.directories.length; j++) {
-        const ad = ap.directories[j], bd = bp.directories[j]
-        if (ad.path !== bd.path || ad.sessionCount !== bd.sessionCount) return false
-        if (!sessionListEqual(ad.sessions, bd.sessions)) return false
-      }
-      for (let j = 0; j < ap.worktrees.length; j++) {
-        const aw = ap.worktrees[j], bw = bp.worktrees[j]
-        if (aw.worktreePath !== bw.worktreePath || aw.stale !== bw.stale || aw.sessionCount !== bw.sessionCount) return false
-        if (!sessionListEqual(aw.sessions, bw.sessions)) return false
-      }
-    }
-    return true
-  }
-
-  function sessionListEqual(a: OverviewSession[], b: OverviewSession[]): boolean {
-    if (a.length !== b.length) return false
-    for (let i = 0; i < a.length; i++) {
-      const as = a[i], bs = b[i]
-      if (as.id !== bs.id || as.title !== bs.title || as.marker !== bs.marker) return false
-      if ((as.timeArchived ? 1 : 0) !== (bs.timeArchived ? 1 : 0)) return false
-    }
-    return true
-  }
 
   function isSessionBound(sessionId: string): boolean {
     for (const spacePath of Object.keys(wb.spaces)) {
@@ -226,8 +144,25 @@ export function SessionTree(props: {
     return undefined
   }
 
-  function mergeSessions(serverSessions: OverviewSession[]): MergedSession[] {
-    const merged = mergeSessionTreeSessions(serverSessions, isSessionBound)
+  function getSessionsForSpace(spaceName: string): GroupSession[] {
+    if (spaceName === "General") {
+      return allGroups
+        .filter((g) => g.type === "general")
+        .flatMap((g) => g.sessions)
+    }
+    const space = props.spaces.find((s) => s.name === spaceName)
+    if (!space) return []
+    return allGroups
+      .filter((g) => g.type === "space" && g.id === spaceName)
+      .flatMap((g) => g.sessions)
+  }
+
+  function mergeSessions(serverSessions: GroupSession[]): MergedSession[] {
+    const simplified = serverSessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+    }))
+    const merged = mergeSessionTreeSessions(simplified, isSessionBound)
     const pinned = pinnedSessions()
     const pinnedList: MergedSession[] = []
     const unpinnedList: MergedSession[] = []
@@ -241,18 +176,9 @@ export function SessionTree(props: {
     return [...pinnedList, ...unpinnedList]
   }
 
-  function syncOverviewTitles(spaceName: string, overview: SpaceOverview) {
-    const serverSessions = [
-      ...overview.spaceRootSessions,
-      ...overview.projects.flatMap((project) => [
-        ...project.rootSessions,
-        ...project.directories.flatMap((dir) => dir.sessions),
-        ...project.worktrees.flatMap((worktree) => worktree.sessions),
-      ]),
-    ]
-
+  function syncGroupTitles(spaceName: string, sessions: GroupSession[]) {
     batch(() => {
-      for (const s of serverSessions) {
+      for (const s of sessions) {
         sessionStore.ensureSessionReference(
           s.id,
           spaceName,
@@ -260,6 +186,7 @@ export function SessionTree(props: {
           (s.agent === "tui" ? "tui" : "chat") as any,
           s.title,
         )
+        sessionStore.syncSessionReference(s.id, { directoryHealth: s.directoryHealth })
       }
     })
   }
@@ -279,18 +206,34 @@ export function SessionTree(props: {
       }, 50)
     }
 
+    // 30-second visible tree refresh (D-04)
+    const VISIBLE_REFRESH_MS = 30_000
+    const treeInterval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        loadSessionGroups()
+      }
+    }, VISIBLE_REFRESH_MS)
+
+    // Refresh tree when page becomes visible again (D-04)
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        loadSessionGroups(true)
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+
     onCleanup(() => {
       document.removeEventListener("click", handler)
+      clearInterval(treeInterval)
+      document.removeEventListener("visibilitychange", handleVisibility)
     })
   })
 
   // Persist expand state and pinned state to localStorage
   createEffect(() => {
     const spaces = [...expandedSpaces()]
-    const projects = [...expandedProjects()]
-    const dirs = [...expandedDirs()]
     try {
-      localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects, dirs }))
+      localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects: [], dirs: [] }))
     } catch {}
   })
 
@@ -299,18 +242,6 @@ export function SessionTree(props: {
     try {
       localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinned))
     } catch {}
-  })
-
-  const activeName = () => props.activeSpaceName
-  createMemo(() => {
-    const name = activeName()
-    if (!name) return
-    setExpandedSpaces((prev) => {
-      if (prev.has(name)) return prev
-      const next = new Set(prev)
-      next.add(name)
-      return next
-    })
   })
 
   function toggleSpace(spaceName: string) {
@@ -322,88 +253,44 @@ export function SessionTree(props: {
     })
   }
 
-  function toggleProject(key: string) {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  function normalizeSessionCount(n: number | string): number {
+    return typeof n === "number" ? n : 0
   }
 
-  function toggleDirectory(key: string) {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  function normalizeTimestamp(n: number | string): number {
+    return typeof n === "number" ? n : 0
   }
 
-  async function loadSpaceOverview(spaceName: string, force = false) {
+  async function loadSessionGroups(force = false) {
     const currentKey = sessionStore.refreshKey()
-    const lastKey = fetchVersions.get(spaceName) ?? -1
-    if (!force && overviewCache[spaceName] && currentKey === lastKey) return
-    fetchVersions.set(spaceName, currentKey)
-    setLoading(spaceName, true)
-
-    if (spaceName === "General") {
-      try {
-        const res = await sdk.client.wopalSpace.nonSpaceOverview()
-        const orphanDirs = (res as any).data?.orphanDirectories || []
-
-        const projects: OverviewProject[] = orphanDirs.map((od: any) => {
-          const name = od.path.split("/").pop() || od.path
-          return {
-            path: od.path,
-            displayPath: od.path,
-            name: name,
-            sessionCount: od.sessions.length,
-            rootSessions: od.sessions.map((s: any) => ({
-              id: s.id,
-              title: s.title,
-              directory: s.directory,
-              marker: s.marker || "",
-              timeCreated: s.timeCreated,
-              timeUpdated: s.timeUpdated,
-              timeArchived: s.timeArchived,
-            })),
-            directories: [],
-            worktrees: [],
-          };
-        })
-
-        const next: SpaceOverview = {
-          spaceName: "General",
-          spacePath: "",
-          spaceRootSessionCount: 0,
-          spaceRootSessions: [],
-          projects: projects,
-        }
-        syncOverviewTitles("General", next)
-        setOverviewCache("General", next)
-      } catch (e) {
-        console.error("loadSpaceOverview General error:", e)
-        setOverviewCache("General", { spaceName: "General", spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
-      } finally {
-        setLoading("General", false)
-      }
-      return
-    }
+    if (!force && allGroups.length > 0 && currentKey === fetchVersion) return
+    fetchVersion = currentKey
+    setLoading(true)
 
     try {
-      const res = await sdk.client.wopalSpace.spaceOverview({ spaceName })
-      const next = (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] }
-      syncOverviewTitles(spaceName, next)
-      const prev = overviewCache[spaceName]
-      // Skip update if structurally identical — prevents tree flicker on session.updated
-      if (prev && overviewStructurallyEqual(prev, next)) return
-      setOverviewCache(spaceName, next)
+      const res = await sdk.client.workbench.sessionGroups()
+      const rawGroups = res.data?.groups ?? []
+      const groups: SessionGroup[] = rawGroups.map((g) => ({
+        id: g.id,
+        title: g.title,
+        type: g.type,
+        sessionCount: normalizeSessionCount(g.sessionCount),
+        sessions: (g.sessions ?? []).map((s) => ({
+          id: s.id,
+          title: s.title,
+          directory: s.directory,
+          directoryHealth: s.directoryHealth,
+          agent: s.agent,
+          timeCreated: normalizeTimestamp(s.timeCreated),
+          timeUpdated: normalizeTimestamp(s.timeUpdated),
+        })),
+      }))
+      setAllGroups(groups)
     } catch (e) {
-      console.error("loadSpaceOverview Physical error:", e)
-      setOverviewCache(spaceName, { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
+      console.error("loadSessionGroups error:", e)
+      setAllGroups([])
     } finally {
-      setLoading(spaceName, false)
+      setLoading(false)
     }
   }
 
@@ -415,17 +302,11 @@ export function SessionTree(props: {
     props.onSpaceClick(space)
   }
 
-  function handleProjectClick(spaceName: string, projectPath: string) {
-    const key = `${spaceName}/${projectPath}`
-    toggleProject(key)
-    props.onProjectClick(spaceName, projectPath)
-  }
-
   function handleSessionClick(sessionId: string) {
     props.onSessionClick(sessionId)
   }
 
-  function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string, projectPath: string) {
+  function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string) {
     e.preventDefault()
     e.stopPropagation()
     const isPinned = pinnedSessions().has(session.id)
@@ -462,38 +343,11 @@ export function SessionTree(props: {
             const ok = confirm(t("workbench.tree.deleteConfirm"))
             if (!ok) return
             try {
-              await sdk.client.session.delete({ sessionID: session.id, directory: projectPath })
+              await sdk.client.session.delete({ sessionID: session.id, directory: "" })
               sessionStore.deleteSession(session.id)
               wb.unbindSessionGlobal(session.id)
             } catch (err) {
               console.error("Failed to delete session:", err)
-            }
-          },
-        },
-      ],
-    })
-  }
-
-  function showProjectMenu(e: MouseEvent, spaceName: string, projectPath: string) {
-    e.preventDefault()
-    e.stopPropagation()
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          label: t("workbench.tree.newSession"),
-          action: async () => {
-            try {
-              await sdk.client.wopalSpace.ensureDirectory({ path: projectPath })
-              const res = await sdk.client.session.create({ directory: projectPath })
-              const serverSession = (res as any).data
-              if (!serverSession?.id) return
-              const title = serverSession.title ?? t("workbench.tree.newSession")
-              sessionStore.ensureSessionReference(serverSession.id, spaceName, projectPath, "chat", title)
-              sessionStore.triggerRefresh()
-            } catch (err) {
-              console.error("Failed to create session:", err)
             }
           },
         },
@@ -512,22 +366,15 @@ export function SessionTree(props: {
           label: t("workbench.tree.newSession"),
           action: async () => {
             try {
-              let targetDir = space.path
-              
-              if (space.name === "General") {
-                const pathRes = await sdk.client.path.get()
-                const wopalHome = pathRes.data?.wopalHome || `${pathRes.data?.home || ""}/.wopal`
-                const now = new Date()
-                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`
-                targetDir = `${wopalHome}/general_tasks/${dateStr}`
-              }
+              const target = space.name === "General"
+                ? { type: "general" as const }
+                : { type: "space" as const, space: space.name }
 
-              await sdk.client.wopalSpace.ensureDirectory({ path: targetDir })
-              const res = await sdk.client.session.create({ directory: targetDir })
-              const serverSession = (res as any).data
+              const res = await sdk.client.workbench.createSession({ target })
+              const serverSession = res.data
               if (!serverSession?.id) return
               const title = serverSession.title ?? t("workbench.tree.newSession")
-              sessionStore.ensureSessionReference(serverSession.id, space.name, targetDir, "chat", title)
+              sessionStore.ensureSessionReference(serverSession.id, space.name, serverSession.directory, "chat", title)
               sessionStore.triggerRefresh()
 
               if (wb.activeSpaceName !== space.name) {
@@ -566,7 +413,10 @@ export function SessionTree(props: {
     return "bg-v2-icon-icon-muted"
   }
 
-  function renderSessionRow(session: MergedSession, spaceName: string, projectPath: string) {
+  function renderSessionRow(session: MergedSession, spaceName: string, sessions: GroupSession[]) {
+    const sessionData = sessions.find((s) => s.id === session.id)
+    const dirHealth = sessionData?.directoryHealth ?? "healthy"
+
     const handleSessionClick = () => {
       const badge = getPanelBadge(session.id)
       if (badge) {
@@ -637,6 +487,7 @@ export function SessionTree(props: {
 
       let localSession = sessionStore.getSession(session.id)
       if (!localSession) {
+        const projectPath = sessionData?.directory ?? targetSpacePath
         localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
       }
       wb.bindSessionToPanel(targetSpacePath, targetPanel.id, session.id)
@@ -672,17 +523,23 @@ export function SessionTree(props: {
           if (!dataTransfer) return
           dataTransfer.setData("text/sessionId", session.id)
           dataTransfer.setData("text/spaceName", spaceName)
-          dataTransfer.setData("text/projectPath", projectPath)
+          dataTransfer.setData("text/projectPath", sessionData?.directory ?? "")
           dataTransfer.setData("text/sessionTitle", session.title)
           setInvisibleSessionDragPreview(dataTransfer)
         }}
         onClick={handleSessionClick}
         onDblClick={handleSessionDblClick}
-        onContextMenu={(e) => showSessionMenu(e, session, spaceName, projectPath)}
+        onContextMenu={(e) => showSessionMenu(e, session, spaceName)}
+        title={dirHealth !== "healthy" ? "工作目录不可用" : undefined}
       >
-        <Show
-          when={getPanelBadge(session.id)}
-          fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
+        <Show when={getPanelBadge(session.id)}
+          fallback={
+            <Show when={dirHealth !== "healthy"}
+              fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
+            >
+              <span class="flex items-center justify-center shrink-0 text-[11px] leading-none text-amber-500" title="工作目录不可用">!</span>
+            </Show>
+          }
         >
           {(badge) => (
             <span class="flex items-center justify-center shrink-0 rounded-full px-1 text-[9px] font-bold text-white bg-v2-icon-icon-brand leading-none min-w-[18px] h-3.5 scale-90 select-none">
@@ -691,6 +548,9 @@ export function SessionTree(props: {
           )}
         </Show>
         <span class="flex-1 truncate">{session.title}</span>
+        <Show when={dirHealth !== "healthy"}>
+          <span class="text-9-regular text-v2-text-text-faint shrink-0" title="工作目录不可用">{dirHealth === "missing" ? "缺失" : "不可用"}</span>
+        </Show>
         <Show when={pinnedSessions().has(session.id)}>
           <svg class="size-3 shrink-0 text-v2-icon-icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="17" x2="12" y2="22"></line>
@@ -698,108 +558,6 @@ export function SessionTree(props: {
           </svg>
         </Show>
       </button>
-    )
-  }
-
-  function renderProject(project: OverviewProject, spaceName: string) {
-    const projectPath = project.path
-    const projectLabel = project.name || projectPath.split("/").pop() || projectPath
-    const projectKey = `${spaceName}/${projectPath}`
-    const isProjExpanded = () => expandedProjects().has(projectKey)
-
-    const rootSessions = createMemo(() => mergeSessions(project.rootSessions))
-
-    return (
-      <div>
-        <button
-          type="button"
-          class="group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
-          onClick={() => handleProjectClick(spaceName, projectPath)}
-          onContextMenu={(e) => showProjectMenu(e, spaceName, projectPath)}
-        >
-          <IconV2
-            name={isProjExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
-            class={`size-2.5 shrink-0 ${isProjExpanded() ? "" : "-rotate-90"}`}
-          />
-          <span class="flex-1 truncate">{projectLabel}</span>
-          <Show when={project.vcs === "git"}>
-            <span class="text-9-regular text-v2-text-text-faint">git</span>
-          </Show>
-        </button>
-
-        <Show when={isProjExpanded()}>
-          <div class="ml-4">
-            <For each={rootSessions()}>
-              {(session) => renderSessionRow(session, spaceName, projectPath)}
-            </For>
-
-            <For each={project.directories}>
-              {(dir) => {
-                const dirSessions = createMemo(() => mergeSessions(dir.sessions))
-                const dirKey = `${spaceName}/${projectPath}/${dir.path}`
-                const isDirExpanded = () => expandedDirs().has(dirKey)
-                return (
-                  <div>
-                    <button
-                      type="button"
-                      class="group flex w-full items-center gap-1 px-2 py-0.5 text-left text-10-regular text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md transition-colors"
-                      onClick={() => toggleDirectory(dirKey)}
-                    >
-                      <IconV2
-                        name={isDirExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
-                        class={`size-2 shrink-0 ${isDirExpanded() ? "" : "-rotate-90"}`}
-                      />
-                      <span class="truncate">{dir.path.split("/").pop() || dir.path}</span>
-                      <span class="text-v2-text-text-faint/50">({dir.sessionCount})</span>
-                    </button>
-                    <Show when={isDirExpanded()}>
-                      <div class="ml-3 border-l border-v2-border-border-base/20 pl-1.5">
-                        <For each={dirSessions()}>
-                          {(session) => renderSessionRow(session, spaceName, projectPath)}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                )
-              }}
-            </For>
-
-            <For each={project.worktrees}>
-              {(wt) => {
-                if (wt.stale) return null
-                const wtSessions = createMemo(() => mergeSessions(wt.sessions))
-                const wtKey = `${spaceName}/${projectPath}/wt/${wt.worktreePath}`
-                const isWtExpanded = () => expandedDirs().has(wtKey)
-                return (
-                  <div>
-                    <button
-                      type="button"
-                      class="group flex w-full items-center gap-1 px-2 py-0.5 text-left text-10-regular text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md transition-colors"
-                      onClick={() => toggleDirectory(wtKey)}
-                    >
-                      <IconV2
-                        name={isWtExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
-                        class={`size-2 shrink-0 ${isWtExpanded() ? "" : "-rotate-90"}`}
-                      />
-                      <span class="truncate">{wt.worktreePath.split("/").pop() || wt.worktreePath}</span>
-                      <Show when={wt.branch}>
-                        <span class="text-v2-text-text-faint/50">({wt.branch})</span>
-                      </Show>
-                    </button>
-                    <Show when={isWtExpanded()}>
-                      <div class="ml-3 border-l border-v2-border-border-base/20 pl-1.5">
-                        <For each={wtSessions()}>
-                          {(session) => renderSessionRow(session, spaceName, projectPath)}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                )
-              }}
-            </For>
-          </div>
-        </Show>
-      </div>
     )
   }
 
@@ -814,34 +572,36 @@ export function SessionTree(props: {
           const isActive = space.name === props.activeSpaceName
           const isExpanded = createMemo(() => expandedSpaces().has(space.name))
 
-          // Trigger overview load only when expanded status flips from false to true and we do not have cached overview data
+          // Trigger group load when expanded
           createEffect(() => {
-            if (isExpanded() && !overview()) {
-              untrack(() => loadSpaceOverview(space.name))
+            if (isExpanded() && allGroups.length === 0) {
+              untrack(() => loadSessionGroups())
             }
           })
 
-          // Trigger overview load when session store requires a refresh (e.g. session created/deleted)
+          // Trigger group load when session store requires a refresh
           createEffect(() => {
             const key = sessionStore.refreshKey()
             void key
-            const localSessionIdsStr = (sessionStore.spaceSessions(space.name) || []).map((s) => s.id).join(",")
-            void localSessionIdsStr
             if (untrack(isExpanded)) {
-              untrack(() => loadSpaceOverview(space.name))
+              untrack(() => loadSessionGroups())
             }
           })
 
-          // Trigger overview load when user manually clicks refresh button
+          // Trigger group load when user manually clicks refresh button
           createEffect(() => {
             const ver = wb.refreshVersion
             if (ver > 0 && untrack(isExpanded)) {
-              untrack(() => loadSpaceOverview(space.name, true))
+              untrack(() => loadSessionGroups(true))
             }
           })
 
-          const overview = () => overviewCache[space.name]
-          const spaceLoading = () => loading[space.name] ?? false
+          const sessions = createMemo(() => getSessionsForSpace(space.name))
+          const mergedSessions = createMemo(() => {
+            const raw = sessions()
+            syncGroupTitles(space.name, raw)
+            return mergeSessions(raw)
+          })
 
           return (
             <div>
@@ -869,27 +629,14 @@ export function SessionTree(props: {
 
               <Show when={isExpanded()}>
                 <div class="ml-3">
-                  <Show
-                    when={overview()}
+                  <Show when={!loading()}
                     fallback={
-                      <Show when={spaceLoading()}>
-                        <div class="py-1 text-10-regular text-v2-text-text-faint">{t("common.loading")}</div>
-                      </Show>
+                      <div class="py-1 text-10-regular text-v2-text-text-faint">{t("common.loading")}</div>
                     }
                   >
-                    {(ov) => {
-                      const rootSessions = createMemo(() => mergeSessions(ov().spaceRootSessions))
-                      return (
-                        <>
-                          <For each={rootSessions()}>
-                            {(session) => renderSessionRow(session, space.name, space.path)}
-                          </For>
-                          <For each={ov().projects}>
-                            {(project) => renderProject(project, space.name)}
-                          </For>
-                        </>
-                      )
-                    }}
+                    <For each={mergedSessions()}>
+                      {(session) => renderSessionRow(session, space.name, sessions())}
+                    </For>
                   </Show>
                 </div>
               </Show>

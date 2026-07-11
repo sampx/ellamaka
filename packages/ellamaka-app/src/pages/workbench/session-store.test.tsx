@@ -8,11 +8,13 @@ describe("ensureSessionReference", () => {
         title: "New session - 2026-07-09T04:04:53.724Z",
         type: "chat",
         projectPath: "/repo",
+        directoryHealth: "healthy",
       }),
     ).toEqual({
       title: "New session - 2026-07-09T04:04:53.724Z",
       type: "chat",
       projectPath: "/repo",
+      directoryHealth: "healthy",
     })
   })
 })

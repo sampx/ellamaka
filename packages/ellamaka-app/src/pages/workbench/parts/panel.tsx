@@ -70,6 +70,12 @@ export function Panel(props: {
     const parts = props.panel.id.split("-")
     return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
   }
+  const directoryHealth = () => {
+    if (props.panel.slotState !== "bound") return "healthy" as const
+    const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
+    return session?.directoryHealth ?? "healthy" as const
+  }
+  const isDirUnhealthy = () => directoryHealth() !== "healthy"
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState)
   const splitTitle = () => splitTerminalTitle(terminalTitle(), t("terminal.title"))
   const restoringSessionIDs = new Set<string>()
@@ -477,6 +483,14 @@ export function Panel(props: {
         class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep"
         ref={panelContainerRef}
       >
+        <Show when={isDirUnhealthy()}>
+          <div class="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 text-11-regular text-amber-700 dark:text-amber-400 shrink-0">
+            <svg class="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 9v2m0 4h.01M12 3l9.66 16.5H2.34L12 3z" />
+            </svg>
+            <span>工作目录{directoryHealth() === "missing" ? "不存在" : "不可用"} — 终端和 Shell 操作不可用，聊天历史仍可查看</span>
+          </div>
+        </Show>
         <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
           {/* 1. PanelLoader wrapper container (physically kept but visually toggled via hidden class) */}
           <div class="w-full h-full" classList={{ "hidden": props.panel.slotState !== "empty" }}>

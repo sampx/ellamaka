@@ -1,6 +1,14 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import path from "path"
+import { eq } from "drizzle-orm"
 import { Global } from "@opencode-ai/core/global"
+import { Slug } from "@opencode-ai/core/util/slug"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { Identifier } from "@/id/id"
+import { Database } from "@/storage/db"
+import { SessionTable } from "@/session/session.sql"
+import { ProjectTable } from "@/project/project.sql"
+import { ProjectID } from "@/project/schema"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
@@ -73,6 +81,28 @@ const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
   const registry = yield* SpaceRegistry.Service
 
+  const ensureGlobalProject = () =>
+    Effect.sync(() =>
+      Database.use((db) => {
+        const existing = db
+          .select({ id: ProjectTable.id })
+          .from(ProjectTable)
+          .where(eq(ProjectTable.id, ProjectID.global))
+          .get()
+        if (!existing) {
+          db.insert(ProjectTable)
+            .values({
+              id: ProjectID.global,
+              worktree: "/",
+              sandboxes: [],
+              time_created: Date.now(),
+              time_updated: Date.now(),
+            } as any)
+            .run()
+        }
+      }),
+    )
+
   const provisionGeneral = (input: ProvisionGeneralInput): Effect.Effect<ProvisionResult, SessionDirectoryUnavailable> =>
     Effect.gen(function* () {
       const now = new Date()
@@ -92,11 +122,28 @@ const make = Effect.gen(function* () {
         )
       }
 
-      return {
-        id: `general-${ts}`,
-        directory: dir,
-        title,
-      }
+      yield* ensureGlobalProject()
+      const sessionId = Identifier.ascending("session")
+      yield* Effect.sync(() =>
+        Database.use((db) =>
+          db
+            .insert(SessionTable)
+            .values({
+              id: sessionId as any,
+              project_id: ProjectID.global,
+              slug: Slug.create(),
+              directory: dir,
+              title,
+              version: InstallationVersion,
+              agent: input.agent ?? null,
+              time_created: Date.now(),
+              time_updated: Date.now(),
+            })
+            .run(),
+        ),
+      )
+
+      return { id: sessionId, directory: dir, title }
     })
 
   const provisionSpace = (
@@ -146,12 +193,29 @@ const make = Effect.gen(function* () {
       }
 
       const title = input.title ?? `Space session - ${input.spaceName}`
+      yield* ensureGlobalProject()
+      const sessionId = Identifier.ascending("session")
 
-      return {
-        id: `space-${input.spaceName}-${Date.now()}`,
-        directory,
-        title,
-      }
+      yield* Effect.sync(() =>
+        Database.use((db) =>
+          db
+            .insert(SessionTable)
+            .values({
+              id: sessionId as any,
+              project_id: ProjectID.global,
+              slug: Slug.create(),
+              directory,
+              title,
+              version: InstallationVersion,
+              agent: input.agent ?? null,
+              time_created: Date.now(),
+              time_updated: Date.now(),
+            })
+            .run(),
+        ),
+      )
+
+      return { id: sessionId, directory, title }
     })
 
   return Service.of({ provisionGeneral, provisionSpace })

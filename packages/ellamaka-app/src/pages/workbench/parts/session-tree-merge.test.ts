@@ -77,6 +77,7 @@ describe("getServerTitlePatches", () => {
           projectPath: "/repo",
           type: "chat",
           title: "新会话 - 2026-07-09T04:04:53.724Z",
+          directoryHealth: "healthy",
           createdAt: 1,
           lastActiveAt: 1,
         }],
