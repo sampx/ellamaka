@@ -4356,6 +4356,36 @@ export type WopalSpaceRecentDirectoriesResponses = {
 export type WopalSpaceRecentDirectoriesResponse =
   WopalSpaceRecentDirectoriesResponses[keyof WopalSpaceRecentDirectoriesResponses]
 
+export type WopalSpaceEnsureDirectoryData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: never
+  url: "/wopal-space/ensure-directory"
+}
+
+export type WopalSpaceEnsureDirectoryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceEnsureDirectoryError = WopalSpaceEnsureDirectoryErrors[keyof WopalSpaceEnsureDirectoryErrors]
+
+export type WopalSpaceEnsureDirectoryResponses = {
+  /**
+   * Directory creation result
+   */
+  200: {
+    created: boolean
+  }
+}
+
+export type WopalSpaceEnsureDirectoryResponse =
+  WopalSpaceEnsureDirectoryResponses[keyof WopalSpaceEnsureDirectoryResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never

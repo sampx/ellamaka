@@ -274,6 +274,8 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WopalSpaceEnsureDirectoryErrors,
+  WopalSpaceEnsureDirectoryResponses,
   WopalSpaceNonSpaceOverviewErrors,
   WopalSpaceNonSpaceOverviewResponses,
   WopalSpaceRecentDirectoriesErrors,
@@ -720,15 +722,15 @@ export class WopalSpace extends HeyApiClient {
    * Create a directory (recursively) if it does not already exist.
    */
   public ensureDirectory<ThrowOnError extends boolean = false>(
-    parameters: {
-      path: string
+    parameters?: {
+      path?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "path" }] }])
     return (options?.client ?? this.client).post<
-      { 200: { data: { created: boolean }; errors: Record<string, unknown> } },
-      Record<string, unknown>,
+      WopalSpaceEnsureDirectoryResponses,
+      WopalSpaceEnsureDirectoryErrors,
       ThrowOnError
     >({
       url: "/wopal-space/ensure-directory",
