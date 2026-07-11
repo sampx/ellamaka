@@ -67,7 +67,7 @@ export function SessionTree(props: {
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()
-  const t = (k: string) => language.t(k)
+  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as any, params)
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
 
@@ -202,7 +202,7 @@ export function SessionTree(props: {
   function isSessionBound(sessionId: string): boolean {
     for (const spacePath of Object.keys(wb.spaces)) {
       const space = wb.spaces[spacePath]
-      if (space?.panels?.some((p) => p.boundSessionId === sessionId)) {
+      if (space?.panels?.some((p) => p.boundSessionId === sessionId && p.slotState === "bound")) {
         return true
       }
     }
@@ -211,16 +211,16 @@ export function SessionTree(props: {
 
   function getPanelBadge(sessionId: string): string | undefined {
     const activePath = wb.activeTab()?.path
-    if (!activePath) return undefined
-    const space = wb.spaces[activePath]
-    if (!space?.panels) return undefined
-    const idx = space.panels.findIndex((p) => p.boundSessionId === sessionId)
-    if (idx !== -1) return `P${idx + 1}`
+    if (activePath !== undefined) {
+      const space = wb.spaces[activePath]
+      const idx = space?.panels?.findIndex((p) => p.boundSessionId === sessionId && p.slotState === "bound") ?? -1
+      if (idx !== -1) return `P${idx + 1}`
+    }
 
     for (const spPath of Object.keys(wb.spaces)) {
       if (spPath === activePath) continue
       const otherSpace = wb.spaces[spPath]
-      const otherIdx = otherSpace?.panels?.findIndex((p) => p.boundSessionId === sessionId) ?? -1
+      const otherIdx = otherSpace?.panels?.findIndex((p) => p.boundSessionId === sessionId && p.slotState === "bound") ?? -1
       if (otherIdx !== -1) return `P${otherIdx + 1}`
     }
     return undefined
@@ -573,7 +573,7 @@ export function SessionTree(props: {
 
         for (const spPath of Object.keys(wb.spaces)) {
           const spaceState = wb.spaces[spPath]
-          const p = spaceState?.panels?.find((panel) => panel.boundSessionId === session.id)
+          const p = spaceState?.panels?.find((panel) => panel.boundSessionId === session.id && panel.slotState === "bound")
           if (p) {
             boundSpacePath = spPath
             boundPanelId = p.id
@@ -583,14 +583,19 @@ export function SessionTree(props: {
 
         if (boundSpacePath && boundPanelId) {
           const targetSpace = props.spaces.find((s) => s.path === boundSpacePath)
-          if (targetSpace && wb.activeSpaceName !== targetSpace.name) {
-            wb.setActive(targetSpace.name)
+          if (targetSpace) {
+            wb.openTab(targetSpace)
           }
           wb.setActivePanel(boundSpacePath, boundPanelId)
+          wb.setStatusMessage(t("workbench.status.panelActivated", { badge }))
         }
-        wb.setStatusMessage(`已激活绑定了该会话的面板 ${badge}`)
       } else {
-        wb.setStatusMessage("提示：双击会话或拖拽会话到面板中即可在工作台打开")
+        const targetSpace = props.spaces.find((s) => s.name === spaceName)
+        if (targetSpace) {
+          wb.openTab(targetSpace)
+          wb.ensureSpace(targetSpace.path)
+        }
+        wb.setStatusMessage(t("workbench.status.defaultHint"))
       }
       props.onSessionClick(session.id)
     }
@@ -604,15 +609,11 @@ export function SessionTree(props: {
 
       const targetSpace = props.spaces.find((s) => s.name === spaceName)
       if (!targetSpace) return
-      
+
       const targetSpacePath = targetSpace.path
 
-      // Auto-open or auto-switch space tab if it is not currently open/active
-      if (!wb.tabs.some((t) => t.name === spaceName)) {
-        wb.openTab(targetSpace)
-      } else if (wb.activeSpaceName !== spaceName) {
-        wb.setActive(spaceName)
-      }
+      wb.openTab(targetSpace)
+      wb.ensureSpace(targetSpacePath)
 
       const space = wb.spaces[targetSpacePath]
       if (!space || !space.panels || space.panels.length === 0) return
@@ -622,37 +623,26 @@ export function SessionTree(props: {
       if (!targetPanel && space.panels.length < 3) {
         const newPanelId = wb.addPanel(targetSpacePath)
         if (newPanelId) {
-          // Fetch updated state after adding panel
           const updatedSpace = wb.spaces[targetSpacePath]
           targetPanel = updatedSpace?.panels?.find((p) => p.id === newPanelId)
         }
       }
 
       if (!targetPanel) {
-        const activeId = space.activePanelID
-        targetPanel = space.panels.find((p) => p.id === activeId) || space.panels[0]
-        
-        const isFirst = !activeId || targetPanel.id === space.panels[0].id
-        const confirmMsg = isFirst
-          ? "当前所有面板已满且未选择活动面板，是否覆盖第一个面板以打开此会话？"
-          : "当前面板已满，是否覆盖当前活动面板以打开此会话？"
-        
-        const ok = confirm(confirmMsg)
-        if (!ok) return
+        wb.setStatusMessage(t("workbench.panel.noAvailablePanel"))
+        return
       }
 
-      if (targetPanel) {
-        let localSession = sessionStore.getSession(session.id)
-        if (!localSession) {
-          localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
-        }
-        wb.bindSessionToPanel(targetSpacePath, targetPanel.id, session.id)
-        wb.setPanelViewMode(targetSpacePath, targetPanel.id, "chat")
-        wb.setActivePanel(targetSpacePath, targetPanel.id)
-        
-        const badge = getPanelBadge(session.id)
-        wb.setStatusMessage(`已在面板 ${badge || ""} 中装载会话`)
+      let localSession = sessionStore.getSession(session.id)
+      if (!localSession) {
+        localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
       }
+      wb.bindSessionToPanel(targetSpacePath, targetPanel.id, session.id)
+      wb.setPanelViewMode(targetSpacePath, targetPanel.id, "chat")
+      wb.setActivePanel(targetSpacePath, targetPanel.id)
+
+      const newBadge = getPanelBadge(session.id)
+      wb.setStatusMessage(t("workbench.status.sessionLoaded", { badge: newBadge ?? "" }))
     }
 
     let sessionEl: HTMLButtonElement | undefined
