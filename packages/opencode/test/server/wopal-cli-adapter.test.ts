@@ -221,6 +221,28 @@ describe("wopal-cli-adapter", () => {
     }),
   )
 
+  it.live("returns SpaceControlUnavailable when CLI execution exceeds its timeout", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CliAdapter.Service
+
+      const result = yield* adapter.execute(
+        "/bin/sh",
+        ["-c", "sleep 1"],
+        "space.list",
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
+        { timeout: 10 },
+      ).pipe(Effect.exit)
+
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect(result.cause.toString()).toContain("timed out")
+      }
+    }),
+  )
+
   it.live("returns SpaceControlUnavailable on empty stdout", () =>
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
