@@ -10,6 +10,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 权威引用：
 
 - DESIGN: `docs/DESIGN.md`
+- API 契约: `docs/API-CONTRACT.md`
 - BRANDING: `docs/BRANDING.md` — 品牌化定制的唯一真相源，记录每项定制的设计意图和实现逻辑
 - WORKBENCH: `docs/ELLAMAKA-WORKBENCH.zh-CN.md` — 工作台设计规范，包含多面板、三级会话浏览器、状态持久化等核心设计
 - `.gitattributes` — fork 独有文件的 merge 保护规则（merge=ours），上游合并自动保留 ellamaka 版本
@@ -59,6 +60,14 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - diff 基准使用 `main` 或 `origin/main`；不要用 `dev` 作为 ellamaka 定制差异基准。
 - 上游合并时遵循 `docs/UPSTREAM-MERGE-LOG.md` 的精简清单、保留定制项和验证门槛。
 - `.gitattributes` 已配置以下 fork 独有文件的 `merge=ours` 保护：`README.md`、`README.zh-CN.md`、`AGENTS.md`、`AGENTS.zh-CN.md`、`scripts/**`、`docs/**`、`.husky/**`、`.github/TEAM_MEMBERS`、`.github/workflows/publish-ellamaka.yml`。上游合并时这些文件自动保留 ellamaka 版本，禁止删除或修改该规则。
+
+### HTTP API 与 SDK 契约
+
+- 新端点遵循 `docs/API-CONTRACT.md`。先确认领域 Owner、Root/Instance 层级、既有 group 和资源语义，再定义 Effect Schema、请求、成功结果、领域错误与兼容性。
+- 端点归入 `HttpApiGroup`。全局 WopalSpace 控制能力归 Root API，Session、文件、项目、PTY 和工作目录能力归 Instance API。handler 只转换 HTTP 与领域服务。
+- 路径表达领域资源与自然从属关系。查询条件属于 query 参数。文件系统、Shell、CLI 执行和目录 provision 由所属领域服务拥有，不形成浏览器可直接调用的通用原语。
+- SDK 由 Effect HttpApi → OpenAPI → `packages/sdk/js/script/build.ts` 自动生成。应用代码使用生成客户端；`packages/sdk/js/src/v2/gen/**` 由生成管线拥有。
+- 新增或修改端点必须测试 schema、成功结果、领域错误和 middleware 边界，重新生成 SDK，并同步更新 DESIGN 与 BRANDING。
 
 ### 提交信息与 PR 标题
 
@@ -225,4 +234,3 @@ function requireConfig(input: unknown) {
 
 - **空串路径处理**：通用空间（General）的路径为空字符串 `""`。在组件内对 `path` 进行初始化保障（如 `ensureSpace(path)`）或显示切换时，**必须**使用 activeTab 存在与否做前置守卫，**绝对禁止**使用 `if (path)` 等隐式真值判定，避免 `""` 被识别为 Falsy 值导致初始化被跳过、面板渲染空白及加号按钮被隐藏。
 - **I18n 引用**：通用空间的 Tab 顶部标题翻译引用应为 `t("workbench.sidebar.spaces")`（对应中文“会话”，英文“Sessions”），禁止错写为未定义的 `t("workbench.sidebar.sessions")`。
-

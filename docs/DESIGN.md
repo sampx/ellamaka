@@ -1,13 +1,14 @@
 # Ellamaka
 
 > **状态**: Active
-> **更新时间**: 2026-06-11
+> **更新时间**: 2026-07-11
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 
 ## 0. Change Log
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-11 | Major | §7.1 新增 Runtime API 与 SDK 契约。Effect HttpApi、OpenAPI 和生成 SDK 形成单一 API 链路；Wopal CLI adapter 通过版本化 capability contract 集成空间控制能力。 |
 | 2026-07-04 | Updated | §9 新增 ellamaka-app Web UI 架构设计决策;§1.1 补充 ellamaka-app 引用 |
 | 2026-06-18 | Updated | §3 放弃 opencode 配置兼容：普通模式下不再加载 opencode XDG 全局配置和项目级 opencode.jsonc；§2 适配点表格同步 |
 | 2026-06-11 | Updated | §1 新增文档关系声明；§2 表移除与 BRANDING.md 重复细节，添加节号引用；§5 简化指向 BRANDING.md；同步 BRANDING.md 重构为设计意图驱动 |
@@ -50,6 +51,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | Branding & build | BINARY_NAME、构建包装、CLI 品牌常量 | §2–§4 |
 | TUI 空间配置 | `settings.jsonc` 的 `tui` 字段和主题目录 | §4.7 |
 | Web UI 产品化 | Fork 上游 `packages/app` 为 `packages/ellamaka-app`，承接 poc/web 验证的产品形态 | §9（本文件），§15 |
+| Runtime API 与 SDK | Effect HttpApi schema → OpenAPI → 生成 SDK；Wopal CLI adapter 将空间控制能力映射为 Runtime API | §7.1（本文件） |
 
 上游文件改动遵循：新文件优先、提前返回 guard、回调注入、禁止格式化重排。完整策略和合并保护文件清单见 **BRANDING.md §9**。
 
@@ -108,6 +110,14 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 | 空间 ontology | `<space>/.wopal/` | Space Ontology，ellamaka 加载 |
 | 空间运行态 | `<space>/.wopal-space/` | space runtime，ellamaka 不写入 |
 
+### 7.1 Runtime API 与 SDK 契约
+
+Ellamaka 的 HTTP API 是 Workbench 和外部集成使用运行时能力的唯一网络表面。领域 schema 同时驱动 Effect HttpApi 路由、运行时校验、OpenAPI 和生成 SDK。Root API 承载全局控制能力，Instance API 承载工作目录相关运行时能力。
+
+Wopal CLI adapter 作为 Runtime 的领域服务使用 `wopal ... --json --api-version` capability。它维护非权威空间快照，并将稳定的 CLI 结果映射为 Ellamaka 领域资源和错误。浏览器只使用 Ellamaka API。
+
+完整的路径语义、schema、错误、版本、SDK 生成和端点门禁见 [API-CONTRACT.md](./API-CONTRACT.md)。
+
 ## 8. Web UI 与 ellamaka-app
 
 ### 8.1 背景
@@ -137,6 +147,7 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 | 文档 | 引用目的 |
 |------|----------|
 | `./BRANDING.md` | 品牌化定制唯一真相源— |
+| `./API-CONTRACT.md` | Runtime API、OpenAPI、生成 SDK 与 Wopal CLI adapter 契约 |
 | `./ELLAMAKA-WORKBENCH.md` | ellamaka 自定义工作台 app 设计 |
 | `./DISTRIBUTION.md` | release、artifact、安装契约 |
 | `../../wopal-cli/docs/DESIGN.md` | wopal-cli 如何消费 ellamaka release |
