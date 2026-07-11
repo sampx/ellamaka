@@ -1,4 +1,6 @@
 import { Context, Effect, Layer, Schema } from "effect"
+import path from "path"
+import { Global } from "@opencode-ai/core/global"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
@@ -64,8 +66,8 @@ export class Service extends Context.Service<Service, SessionProvisioner>()("@op
 // Implementation
 // ---------------------------------------------------------------------------
 
-const WOPAL_CLI = "/Users/sam/.wopal/bin/wopal"
-const WOPAL_HOME = process.env.WOPAL_HOME || require("os").homedir() + "/.wopal"
+const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+const WOPAL_HOME = Global.Path.wopalHome
 
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service

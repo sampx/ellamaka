@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from "fs"
+import path from "path"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
@@ -6,6 +7,7 @@ import { InvalidRequestError } from "../errors"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import { realpathSafe, groupSessionsBySpace } from "./wopal-space-grouping"
 import { Database } from "@/storage/db"
+import { Global } from "@opencode-ai/core/global"
 import { SessionTable } from "@/session/session.sql"
 import { ProjectTable } from "@/project/project.sql"
 import type { Session } from "@/session/session"
@@ -72,7 +74,7 @@ function queryAllProjects(): Project.Info[] {
 // Space list helper
 // ---------------------------------------------------------------------------
 
-const WOPAL_CLI = "/Users/sam/.wopal/bin/wopal"
+const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
 
 const resolveSpaces = (registry: SpaceRegistry) =>
   Effect.gen(function* () {
