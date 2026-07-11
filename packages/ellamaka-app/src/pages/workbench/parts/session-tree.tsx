@@ -288,6 +288,35 @@ export function SessionTree(props: {
     if (overviewCache[spaceName] && currentKey === lastKey) return
     fetchVersions.set(spaceName, currentKey)
     setLoading(spaceName, true)
+
+    if (spaceName === "General") {
+      try {
+        const localSessions = sessionStore.spaceSessions("General") || []
+        const overviewSessions: OverviewSession[] = localSessions.map(s => ({
+          id: s.id,
+          title: s.title,
+          directory: s.projectPath,
+          marker: "" as const,
+          timeCreated: s.createdAt,
+          timeUpdated: s.lastActiveAt,
+          timeArchived: s.timeArchived
+        }))
+        const next: SpaceOverview = {
+          spaceName: "General",
+          spacePath: "",
+          spaceRootSessionCount: overviewSessions.length,
+          spaceRootSessions: overviewSessions,
+          projects: []
+        }
+        setOverviewCache("General", next)
+      } catch {
+        setOverviewCache("General", { spaceName: "General", spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] })
+      } finally {
+        setLoading("General", false)
+      }
+      return
+    }
+
     try {
       const res = await sdk.client.wopalSpace.spaceOverview({ spaceName })
       const next = (res as any).data ?? { spaceName, spacePath: "", spaceRootSessionCount: 0, spaceRootSessions: [], projects: [] }
@@ -333,10 +362,12 @@ export function SessionTree(props: {
           label: t("workbench.tree.rename"),
           action: () => {
             const newTitle = prompt(t("workbench.tree.rename"), session.title)
-            if (!newTitle || !newTitle.trim() || newTitle.trim() === session.title) return
+            if (newTitle === null) return
             const trimmed = newTitle.trim()
-            sessionStore.renameSession(session.id, trimmed)
-            void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+            if (trimmed) {
+              sessionStore.renameSession(session.id, trimmed)
+              void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+            }
           },
         },
         {
@@ -351,26 +382,16 @@ export function SessionTree(props: {
           },
         },
         {
-          label: t("workbench.tree.archive"),
+          label: t("common.delete"),
           action: async () => {
+            const ok = confirm(t("workbench.tree.deleteConfirm"))
+            if (!ok) return
             try {
-              await sdk.client.session.update({
-                sessionID: session.id,
-                time: { archived: Date.now() },
-              })
-              for (const sp of Object.keys(wb.spaces)) {
-                const space = wb.spaces[sp]
-                if (!space) continue
-                for (const panel of space.panels) {
-                  if (panel.boundSessionId === session.id) {
-                    wb.unbindSessionFromPanel(sp, panel.id)
-                  }
-                }
-              }
+              await sdk.client.session.delete({ sessionID: session.id, directory: projectPath })
               sessionStore.deleteSession(session.id)
-              setOverviewCache(spaceName, undefined!)
+              wb.unbindSessionGlobal(session.id)
             } catch (err) {
-              console.error("Failed to archive session:", err)
+              console.error("Failed to delete session:", err)
             }
           },
         },
@@ -395,6 +416,64 @@ export function SessionTree(props: {
               const title = serverSession.title ?? t("workbench.tree.newSession")
               sessionStore.ensureSessionReference(serverSession.id, spaceName, projectPath, "chat", title)
               sessionStore.triggerRefresh()
+            } catch (err) {
+              console.error("Failed to create session:", err)
+            }
+          },
+        },
+      ],
+    })
+  }
+
+  function showSpaceMenu(e: MouseEvent, space: WopalSpace) {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        {
+          label: t("workbench.tree.newSession"),
+          action: async () => {
+            try {
+              let targetDir = space.path
+              
+              if (space.name === "General") {
+                const pathRes = await sdk.client.path.get()
+                const wopalHome = pathRes.data?.wopalHome || `${pathRes.data?.home || ""}/.wopal`
+                const now = new Date()
+                const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`
+                targetDir = `${wopalHome}/general_tasks/${dateStr}`
+              }
+
+              const res = await sdk.client.session.create({ directory: targetDir })
+              const serverSession = (res as any).data
+              if (!serverSession?.id) return
+              const title = serverSession.title ?? t("workbench.tree.newSession")
+              sessionStore.ensureSessionReference(serverSession.id, space.name, targetDir, "chat", title)
+              sessionStore.triggerRefresh()
+
+              if (wb.activeSpaceName !== space.name) {
+                wb.setActive(space.name)
+              }
+
+              wb.ensureSpace(space.path)
+              const targetSpaceState = wb.spaces[space.path]
+              if (targetSpaceState) {
+                let targetPanel = targetSpaceState.panels.find((p) => p.slotState === "empty")
+                if (!targetPanel && targetSpaceState.panels.length < 3) {
+                  const newPanelId = wb.addPanel(space.path)
+                  if (newPanelId) {
+                    const updatedSpace = wb.spaces[space.path]
+                    targetPanel = updatedSpace?.panels?.find((p) => p.id === newPanelId)
+                  }
+                }
+                if (targetPanel) {
+                  wb.bindSessionToPanel(space.path, targetPanel.id, serverSession.id)
+                  wb.setPanelViewMode(space.path, targetPanel.id, "chat")
+                  wb.setActivePanel(space.path, targetPanel.id)
+                }
+              }
             } catch (err) {
               console.error("Failed to create session:", err)
             }
@@ -442,13 +521,21 @@ export function SessionTree(props: {
     }
 
     const handleSessionDblClick = () => {
+      const badge = getPanelBadge(session.id)
+      if (badge) {
+        handleSessionClick()
+        return
+      }
+
       const targetSpace = props.spaces.find((s) => s.name === spaceName)
       if (!targetSpace) return
       
       const targetSpacePath = targetSpace.path
 
-      // Auto-switch to session's parent Space Tab if it is not the active one
-      if (wb.activeSpaceName !== spaceName) {
+      // Auto-open or auto-switch space tab if it is not currently open/active
+      if (!wb.tabs.some((t) => t.name === spaceName)) {
+        wb.openTab(targetSpace)
+      } else if (wb.activeSpaceName !== spaceName) {
         wb.setActive(spaceName)
       }
 
@@ -677,6 +764,7 @@ export function SessionTree(props: {
                     : "hover:bg-v2-overlay-simple-overlay-hover"
                 }`}
                 onClick={() => handleSpaceClick(space)}
+                onContextMenu={(e) => showSpaceMenu(e, space)}
               >
                 <IconV2
                   name={isExpanded() ? "outline-chevron-down" : "outline-chevron-down"}

@@ -32,6 +32,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         home: Global.Path.home,
         state: Global.Path.state,
         config: Global.Path.config,
+        wopalHome: Global.Path.wopalHome,
         worktree: ctx.worktree,
         directory: ctx.directory,
       }

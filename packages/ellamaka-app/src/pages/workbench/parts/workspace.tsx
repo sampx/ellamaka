@@ -208,16 +208,18 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name}</span>
-              <span
-                class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  props.onCloseTab(tab.name, tab.path)
-                }}
-              >
-                <IconV2 name="xmark-small" />
-              </span>
+              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.sessions") : tab.name}</span>
+              <Show when={tab.path !== ""}>
+                <span
+                  class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    props.onCloseTab(tab.name, tab.path)
+                  }}
+                >
+                  <IconV2 name="xmark-small" />
+                </span>
+              </Show>
             </button>
           )}
         </For>

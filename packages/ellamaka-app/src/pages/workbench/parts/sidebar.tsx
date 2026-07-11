@@ -176,20 +176,14 @@ export function SpaceRail() {
 
       <div class="flex-1 min-h-0 flex flex-col min-w-0" classList={{ "hidden": !expanded() }}>
         <Show
-          when={store.spaces().length > 0}
-          fallback={
-            <Show
-              when={!store.spacesLoading}
-              fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
-            >
-              <div class="px-3 py-6 text-center text-12-regular text-v2-text-text-muted">
-                {t("workbench.sidebar.empty")}
-              </div>
-            </Show>
-          }
+          when={!store.spacesLoading}
+          fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
         >
           <SessionTree
-            spaces={store.spaces()}
+            spaces={[
+              { name: "General", path: "", type: "general" },
+              ...store.spaces(),
+            ]}
             activeSpaceName={wb.activeSpaceName}
             onSpaceClick={handleSpaceClick}
             onProjectClick={handleProjectClick}

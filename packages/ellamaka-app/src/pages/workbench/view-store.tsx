@@ -70,11 +70,14 @@ const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
   showSpaceRail: true,
 }
 
+export const GENERAL_TAB_NAME = "General"
+export const GENERAL_TAB_PATH = ""
+
 const PERSISTED_DEFAULTS: PersistedWorkbench = {
   display: { ...DISPLAY_DEFAULTS },
   spaces: {},
-  tabs: [],
-  activeSpaceName: undefined,
+  tabs: [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }],
+  activeSpaceName: GENERAL_TAB_NAME,
 }
 
 export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = createSimpleContext({
@@ -111,11 +114,15 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     // 在 mounted 时，一次性同步复制 sessionStorage 的数据至运行 Store
     onMount(() => {
       const snapshot = JSON.parse(JSON.stringify(persistedStore))
+      let tabs = snapshot.tabs || []
+      if (!tabs.some((t: any) => t.path === GENERAL_TAB_PATH)) {
+        tabs = [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...tabs]
+      }
       batch(() => {
         setStore("display", snapshot.display)
         setStore("spaces", snapshot.spaces)
-        setStore("tabs", snapshot.tabs || [])
-        setStore("activeSpaceName", snapshot.activeSpaceName)
+        setStore("tabs", tabs)
+        setStore("activeSpaceName", snapshot.activeSpaceName || GENERAL_TAB_NAME)
       })
       setStoreHydrated(true)
     })
@@ -488,6 +495,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     }
 
     function closeTab(name: string) {
+      if (name === GENERAL_TAB_NAME) return
       batch(() => {
         const idx = store.tabs.findIndex((t) => t.name === name)
         if (idx === -1) return
@@ -508,11 +516,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     function validateTabs(validNames: Set<string>) {
       batch(() => {
         setStore("tabs", (prev) => {
-          const filtered = prev.filter((t) => validNames.has(t.name))
+          const filtered = prev.filter((t) => t.name === GENERAL_TAB_NAME || validNames.has(t.name))
           return filtered.length === prev.length ? prev : filtered
         })
         const current = store.activeSpaceName
-        if (current && !validNames.has(current)) {
+        if (current && current !== GENERAL_TAB_NAME && !validNames.has(current)) {
           setStore("activeSpaceName", store.tabs[0]?.name)
         } else if (!current && store.tabs.length > 0) {
           setStore("activeSpaceName", store.tabs[0].name)

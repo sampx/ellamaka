@@ -19,6 +19,7 @@ const PathInfo = Schema.Struct({
   home: Schema.String,
   state: Schema.String,
   config: Schema.String,
+  wopalHome: Schema.optional(Schema.String),
   worktree: Schema.String,
   directory: Schema.String,
 }).annotate({ identifier: "Path" })

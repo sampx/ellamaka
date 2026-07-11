@@ -1596,6 +1596,7 @@ export type Path = {
   home: string
   state: string
   config: string
+  wopalHome?: string
   worktree: string
   directory: string
 }
