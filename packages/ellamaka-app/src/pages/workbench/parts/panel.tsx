@@ -371,11 +371,7 @@ export function Panel(props: {
 
   return (
     <div
-      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base transition-all duration-200"
-      classList={{
-        "opacity-100": props.isActive,
-        "opacity-65": !props.isActive,
-      }}
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-all duration-200"
       style={{ flex: props.panel.width }}
       onClick={props.onActivate}
       onDragOver={(e) => e.preventDefault()}
@@ -385,9 +381,9 @@ export function Panel(props: {
     >
       {/* Panel Header */}
       <div
-        class="flex h-7 shrink-0 items-center gap-1 px-2 border-b relative"
+        class="flex h-7 shrink-0 items-center gap-1 px-2 border-b relative transition-colors duration-200"
         classList={{
-          "bg-v2-background-bg-deep border-v2-border-border-base": props.isActive,
+          "bg-blue-50/80 border-blue-200 dark:bg-blue-950/40 dark:border-blue-900/50": props.isActive,
           "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
         }}
       >
@@ -405,7 +401,13 @@ export function Panel(props: {
         />
 
         {/* Title */}
-        <span class="text-10-regular text-v2-text-text-faint truncate max-w-40 ml-0.5">
+        <span
+          class="truncate max-w-40 ml-0.5 transition-colors duration-200"
+          classList={{
+            "text-11-bold text-v2-text-text-strong font-semibold": props.isActive,
+            "text-10-regular text-v2-text-text-muted": !props.isActive,
+          }}
+        >
           {title()}
         </span>
 

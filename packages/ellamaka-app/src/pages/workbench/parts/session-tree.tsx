@@ -112,6 +112,57 @@ export function SessionTree(props: {
   const [loading, setLoading] = createStore<Record<string, boolean>>({})
   const fetchVersions = new Map<string, number>()
 
+  const activeSessionId = createMemo(() => {
+    const tab = wb.activeTab()
+    if (!tab) return undefined
+    const state = wb.spaceState(tab.path)
+    if (!state) return undefined
+    const panel = state.panels.find((p) => p.id === state.activePanelID)
+    return panel?.slotState === "bound" ? panel.boundSessionId : undefined
+  })
+
+  createEffect(() => {
+    const id = activeSessionId()
+    if (!id) return
+    const session = sessionStore.getSession(id)
+    if (!session) return
+
+    setExpandedSpaces((prev) => {
+      if (prev.has(session.spaceName)) return prev
+      const next = new Set(prev)
+      next.add(session.spaceName)
+      return next
+    })
+
+    if (session.projectPath && session.spaceName !== "General") {
+      const overview = overviewCache[session.spaceName]
+      if (overview) {
+        const matchingProject = overview.projects.find((proj) => {
+          return session.projectPath === proj.path || session.projectPath.startsWith(proj.path + "/")
+        })
+        if (matchingProject) {
+          const projKey = `${session.spaceName}/${matchingProject.path}`
+          setExpandedProjects((prev) => {
+            if (prev.has(projKey)) return prev
+            const next = new Set(prev)
+            next.add(projKey)
+            return next
+          })
+
+          if (session.projectPath !== matchingProject.path) {
+            const dirKey = `${session.spaceName}/${matchingProject.path}/${session.projectPath}`
+            setExpandedDirs((prev) => {
+              if (prev.has(dirKey)) return prev
+              const next = new Set(prev)
+              next.add(dirKey)
+              return next
+            })
+          }
+        }
+      }
+    }
+  })
+
   // Shallow structural comparison — ignores timestamps to avoid unnecessary re-renders
   // when session.updated only bumped timeUpdated (e.g. during chat conversation).
   function overviewStructurallyEqual(a: SpaceOverview, b: SpaceOverview): boolean {
@@ -604,10 +655,25 @@ export function SessionTree(props: {
       }
     }
 
+    let sessionEl: HTMLButtonElement | undefined
+
+    createEffect(() => {
+      if (session.id === activeSessionId() && sessionEl) {
+        setTimeout(() => {
+          sessionEl?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+        }, 150)
+      }
+    })
+
     return (
       <button
+        ref={sessionEl}
         type="button"
-        class="group flex w-full items-center gap-2 rounded-md px-2 py-0.5 text-left text-11-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base transition-colors"
+        class="group flex w-full items-center gap-2 px-2 py-0.5 text-left text-11-regular transition-all"
+        classList={{
+          "bg-blue-50/80 dark:bg-blue-950/40 text-v2-text-text-strong border-l-[3px] border-v2-border-border-brand-strong rounded-l-none pl-1.25 font-semibold shadow-sm": session.id === activeSessionId(),
+          "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md": session.id !== activeSessionId(),
+        }}
         draggable={true}
         onDragStart={(e) => {
           const dataTransfer = e.dataTransfer
