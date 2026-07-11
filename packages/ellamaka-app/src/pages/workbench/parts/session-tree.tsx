@@ -70,7 +70,6 @@ export function SessionTree(props: {
   const t = (k: string) => language.t(k)
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
-  let isSyncingTitles = false
 
   const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
   const PINNED_STORAGE_KEY = "workbench.tree.pinned"
@@ -202,17 +201,8 @@ export function SessionTree(props: {
       ]),
     ], localSessions)
 
-    if (patches.length > 0) {
-      isSyncingTitles = true
-      try {
-        for (const patch of patches) {
-          sessionStore.syncSessionReference(patch.id, { title: patch.title })
-        }
-      } finally {
-        queueMicrotask(() => {
-          isSyncingTitles = false
-        })
-      }
+    for (const patch of patches) {
+      sessionStore.syncSessionReference(patch.id, { title: patch.title })
     }
   }
 
@@ -755,8 +745,8 @@ export function SessionTree(props: {
 
           // Trigger overview load when session store requires a refresh (e.g. session created/deleted)
           createEffect(() => {
-            void sessionStore.refreshKey()
-            if (isSyncingTitles) return
+            const localSessionIdsStr = (sessionStore.spaceSessions(space.name) || []).map((s) => s.id).join(",")
+            void localSessionIdsStr
             if (untrack(isExpanded)) {
               untrack(() => loadSpaceOverview(space.name))
             }
