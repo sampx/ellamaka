@@ -90,6 +90,16 @@ const make = Effect.gen(function* () {
               }),
             ),
           ),
+          Effect.timeoutOrElse({
+            duration: timeout,
+            orElse: () =>
+              Effect.fail(
+                new SpaceControlUnavailable({
+                  message: "CLI process timed out",
+                  reason: `execution exceeded ${timeout}ms`,
+                }),
+              ),
+          }),
         ) as Effect.Effect<T, SpaceControlUnavailable | CapabilityContractError>
     })
 
