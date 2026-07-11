@@ -53,6 +53,10 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M4.25 11.75L11.75 4.25M11.75 11.75L4.25 4.25" stroke="currentColor"/>`,
   },
+  "arrow-rotate-right": {
+    viewBox: "0 0 16 16",
+    body: `<path d="M12.75 8a4.75 4.75 0 1 1-1.39-3.36l1.39-1.39V6.75H9.25l1.39-1.39A6.25 6.25 0 1 0 14.25 8h-1.5z" fill="currentColor"/>`,
+  },
   "outline-chevron-down": {
     viewBox: "0 0 16 16",
     body: `<path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor"/>`,

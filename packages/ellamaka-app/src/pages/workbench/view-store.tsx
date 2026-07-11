@@ -129,6 +129,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     const ready = () => storeHydrated()
 
+    const [refreshVersion, setRefreshVersion] = createSignal(0)
+    function triggerRefresh() {
+      setRefreshVersion((v) => v + 1)
+    }
+
     const [statusMessage, setStatusMessage] = createSignal("提示：双击会话或拖拽会话到面板中即可在工作台打开")
 
     // 3. 150ms debounce 防抖优化写入
@@ -563,6 +568,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       validateTabs,
       get statusMessage() { return statusMessage() },
       setStatusMessage,
+      get refreshVersion() { return refreshVersion() },
+      triggerRefresh,
     }
   },
 })

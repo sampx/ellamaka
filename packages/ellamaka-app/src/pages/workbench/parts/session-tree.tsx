@@ -289,10 +289,10 @@ export function SessionTree(props: {
     })
   }
 
-  async function loadSpaceOverview(spaceName: string) {
+  async function loadSpaceOverview(spaceName: string, force = false) {
     const currentKey = sessionStore.refreshKey()
     const lastKey = fetchVersions.get(spaceName) ?? -1
-    if (overviewCache[spaceName] && currentKey === lastKey) return
+    if (!force && overviewCache[spaceName] && currentKey === lastKey) return
     fetchVersions.set(spaceName, currentKey)
     setLoading(spaceName, true)
 
@@ -773,6 +773,14 @@ export function SessionTree(props: {
             void localSessionIdsStr
             if (untrack(isExpanded)) {
               untrack(() => loadSpaceOverview(space.name))
+            }
+          })
+
+          // Trigger overview load when user manually clicks refresh button
+          createEffect(() => {
+            const ver = wb.refreshVersion
+            if (ver > 0 && untrack(isExpanded)) {
+              untrack(() => loadSpaceOverview(space.name, true))
             }
           })
 

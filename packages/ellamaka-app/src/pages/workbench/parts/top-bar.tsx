@@ -15,9 +15,13 @@ export function WorkbenchTitlebar() {
 
   return (
     <header class="flex h-10 shrink-0 items-center gap-3 px-3 bg-v2-background-bg-base border-b border-v2-border-border-base">
-      <div class="flex items-center gap-2 text-v2-text-text-strong [font-weight:530] text-14-regular">
-        <div class="size-4 rounded-[5px] bg-gradient-to-br from-v2-icon-icon-brand to-v2-icon-icon-accent" />
-        <span class="tracking-wide">Ellamaka</span>
+      <div class="flex items-center gap-2 text-v2-text-text-strong [font-weight:600] text-14-regular select-none">
+        <div class="relative size-4.5 flex items-center justify-center rounded-[5px] bg-gradient-to-tr from-[#9b51e0] via-[#3b82f6] to-[#00f2fe] shadow-[0_0_6px_rgba(59,130,246,0.35)] overflow-hidden">
+          <div class="absolute inset-[1px] rounded-[4px] bg-v2-background-bg-base flex items-center justify-center">
+            <span class="text-8-bold bg-gradient-to-r from-[#9b51e0] to-[#00f2fe] bg-clip-text text-transparent leading-none">E</span>
+          </div>
+        </div>
+        <span class="tracking-wider bg-gradient-to-r from-v2-text-text-strong via-v2-text-text-strong to-v2-text-text-muted bg-clip-text text-transparent">Ellamaka</span>
       </div>
 
       <Show when={activeName()}>

@@ -1,4 +1,5 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -87,6 +88,19 @@ export function SpaceRail() {
     wb.openTab(space)
   }
 
+  const [refreshing, setRefreshing] = createSignal(false)
+
+  function handleRefresh() {
+    if (refreshing()) return
+    setRefreshing(true)
+    wb.triggerRefresh()
+    showStatus(t("workbench.sidebar.refreshing"))
+    setTimeout(() => {
+      setRefreshing(false)
+      showStatus(t("workbench.sidebar.refreshed"))
+    }, 600)
+  }
+
   function confirmSwitch() {
     const space = pendingSpace()
     setConfirmDialog(false)
@@ -157,10 +171,33 @@ export function SpaceRail() {
             />
           }
         >
-          <div class="flex min-w-0 flex-1 items-center gap-2">
-            <span class="text-10-medium text-v2-text-text-muted uppercase [letter-spacing:1.5px]">
+          <div class="flex min-w-0 flex-1 items-center gap-1.5">
+            <span class="text-10-medium text-v2-text-text-muted uppercase [letter-spacing:1.5px] select-none">
               {t("workbench.sidebar.spaces")}
             </span>
+            <IconButtonV2
+              variant="ghost-muted"
+              size="small"
+              class="size-5 flex items-center justify-center p-0"
+              icon={
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class={refreshing() ? "animate-spin" : ""}
+                  style={{ "transform-origin": "center" }}
+                >
+                  <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89L13.5 5.5M13.5 5.5V2m0 3.5H10" />
+                </svg>
+              }
+              aria-label={t("workbench.sidebar.refresh")}
+              onClick={handleRefresh}
+            />
           </div>
           <div class="flex items-center gap-0.5">
             <IconButtonV2
@@ -176,7 +213,7 @@ export function SpaceRail() {
 
       <div class="flex-1 min-h-0 flex flex-col min-w-0" classList={{ "hidden": !expanded() }}>
         <Show
-          when={!store.spacesLoading}
+          when={store.spaces() !== undefined}
           fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
         >
           <SessionTree

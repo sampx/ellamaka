@@ -951,6 +951,8 @@ export const dict = {
   "workbench.panel.splitTerminal.loading": "正在启动拆分终端...",
   "workbench.sidebar.spaces": "会话",
   "workbench.sidebar.sessions": "通用",
+  "workbench.sidebar.refreshing": "正在刷新会话列表...",
+  "workbench.sidebar.refreshed": "会话列表已刷新",
   "workbench.sidebar.expand": "展开空间栏",
   "workbench.sidebar.collapse": "收起空间栏",
   "workbench.sidebar.refresh": "刷新空间",
