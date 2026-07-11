@@ -1,9 +1,15 @@
 import { describe, expect } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { testEffect } from "../lib/effect"
 import { CliAdapter } from "../../src/wopal/cli-adapter"
+import { SpaceRegistry } from "../../src/wopal/space-registry"
 
-const it = testEffect(CliAdapter.defaultLayer)
+const it = testEffect(
+  Layer.mergeAll(
+    SpaceRegistry.layer.pipe(Layer.provide(CliAdapter.defaultLayer)),
+    CliAdapter.defaultLayer,
+  ),
+)
 
 // Helper: build v1 success envelope JSON
 const successEnvelope = (capability: string, data: unknown) =>
@@ -283,6 +289,69 @@ describe("wopal-cli-adapter", () => {
       if (result._tag === "Failure") {
         expect(result.cause.toString()).toContain("UNKNOWN_ERROR")
       }
+    }),
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Task 2: SpaceRegistry tests
+// ---------------------------------------------------------------------------
+
+describe("space-registry", () => {
+  it.live("getSpaces returns empty when never refreshed", () =>
+    Effect.gen(function* () {
+      const registry = yield* SpaceRegistry.Service
+      const snapshot = yield* registry.getSpaces()
+      expect(snapshot.spaces).toEqual([])
+      expect(snapshot.refreshedAt).toBe(0)
+    }),
+  )
+
+  it.live("refreshSpaces + getSpaces round-trip", () =>
+    Effect.gen(function* () {
+      const registry = yield* SpaceRegistry.Service
+      const adapter = yield* CliAdapter.Service
+      const data = { items: [{ name: "test-space", path: "/tmp/test", type: "local" }], total: 1 }
+      const json = successEnvelope("space.list", data)
+      const [exec, args] = shellCmd(json)
+
+      // Verify the adapter can decode the space list
+      const result = yield* adapter.execute(
+        exec,
+        args,
+        "space.list",
+        Schema.Struct({
+          items: Schema.Array(
+            Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) }),
+          ),
+          total: Schema.Number,
+        }),
+      )
+
+      expect(result.items.length).toBe(1)
+      expect(result.items[0].name).toBe("test-space")
+    }),
+  )
+
+  it.live("searchDirectories returns directory data", () =>
+    Effect.gen(function* () {
+      const registry = yield* SpaceRegistry.Service
+      const adapter = yield* CliAdapter.Service
+      const data = { items: [{ name: "src", path: "src" }], total: 1 }
+      const json = successEnvelope("space.directories.search", data)
+      const [exec, args] = shellCmd(json)
+
+      const result = yield* adapter.execute(
+        exec,
+        args,
+        "space.directories.search",
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
+      )
+
+      expect(result.items[0].name).toBe("src")
     }),
   )
 })
