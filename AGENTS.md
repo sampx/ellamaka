@@ -8,6 +8,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ## 1. Canonical References
 
 - DESIGN: `docs/DESIGN.md` — architecture overview, config contract, ontology loading
+- API CONTRACT: `docs/API-CONTRACT.md` — Runtime API, OpenAPI, generated SDK, and Wopal CLI adapter contract
 - BRANDING: `docs/BRANDING.md` — single source of truth for all upstream injection changes (per-file, per-line, per-pattern)
 - WORKBENCH: [docs/ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md) — Workbench design specification, covering multi-panel layout, session browser, and state persistence
 - `.gitattributes` — fork-specific file merge protection (`merge=ours`); upstream merges automatically preserve ellamaka versions
@@ -57,6 +58,14 @@ Tests cannot run from repo root; the root `test` script is a guard.
 - Use `main` or `origin/main` as the diff baseline; do not use `dev` as the diff baseline for ellamaka customizations.
 - Follow `docs/UPSTREAM-MERGE-LOG.md` for cleanup checklists, preserved customizations, and validation gates during upstream merges.
 - `.gitattributes` configures `merge=ours` protection for: `README.md`, `README.zh-CN.md`, `AGENTS.md`, `AGENTS.zh-CN.md`, `scripts/**`, `docs/**`, `.husky/**`, `.github/TEAM_MEMBERS`, `.github/workflows/publish-ellamaka.yml`. Upstream merges automatically preserve ellamaka versions; do not delete or modify these rules.
+
+### HTTP API and SDK Contract
+
+- Follow `docs/API-CONTRACT.md` for every new endpoint. Establish the domain owner, Root/Instance scope, existing group, and resource semantics before defining Effect Schemas, requests, success results, domain errors, and compatibility.
+- Endpoints belong to `HttpApiGroup`. Global WopalSpace control capabilities belong to the Root API. Session, file, project, PTY, and working-directory capabilities belong to the Instance API. Handlers only translate between HTTP and domain services.
+- Paths express domain resources and their natural relationships. Query parameters express query conditions. Filesystem access, shell execution, CLI invocation, and directory provisioning are owned by their domain services rather than exposed as browser-callable primitives.
+- The SDK is generated through Effect HttpApi → OpenAPI → `packages/sdk/js/script/build.ts`. Application code uses the generated client, and `packages/sdk/js/src/v2/gen/**` remains owned by the generation pipeline.
+- Every endpoint addition or modification tests its schemas, success result, domain errors, and middleware boundary, regenerates the SDK, and updates DESIGN and BRANDING.
 
 ### Commits and PR Titles
 
@@ -223,4 +232,3 @@ To prevent state loss and UI flickering in multi-panel structures, all agents do
 
 - **Empty Path Handling**: The path for the General Space is defined as an empty string `""`. When initializing or refreshing space states (e.g., `ensureSpace(path)`), you **must** use the existence of `activeTab` as the guard. **Never** use implicit truthiness checks like `if (path)` because `""` evaluates to falsy, causing the space state to fail to initialize, panels to render empty, and panel action buttons (like Add Panel) to hide.
 - **I18n References**: The translation key for the General Space tab title must be `t("workbench.sidebar.spaces")` (which maps to "Sessions" in English and "会话" in Chinese). Do not use the undefined key `t("workbench.sidebar.sessions")`.
-
