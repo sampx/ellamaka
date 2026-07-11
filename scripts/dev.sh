@@ -30,10 +30,8 @@ stop() {
     rm -f "$PIDFILE"
   fi
   rm -f "$LOGDIR/ellamaka-dev-server.log" "$LOGDIR/wopal-plugins-debug.log"
-  for port in 4097 3000; do
-    local pp="$(lsof -ti :"$port" 2>/dev/null)"
-    [ -n "$pp" ] && pids+=($pp)
-  done
+  local pp="$(lsof -ti :"$PORT" 2>/dev/null)"
+  [ -n "$pp" ] && pids+=($pp)
   if [ ${#pids[@]} -gt 0 ]; then
     for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
       kill "$pid" 2>/dev/null
@@ -58,7 +56,8 @@ Usage: $self [command|option]
   Options:
     -a, --attach      Start HTTP server + attach TUI client
     --debug [mods]    Enable debug mode (default: all)
-                      Modules: task, rules, or comma-separated list
+                       Modules: task, rules, or comma-separated list
+    --port <port>    Server port (default: 4096)
     -ns               Disable WopalSpace mode (native opencode behavior)
     -h, --help        Forwarded to ellamaka
 
@@ -72,7 +71,7 @@ Debug logs:
   $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
   $LOGDIR/wopal-plugins-debug.log   Plugin debug output
 
-Server: http://127.0.0.1:4097 (dev) / http://127.0.0.1:4096 (prod)
+Server: http://127.0.0.1:4096 (default, use --port to override)
 EOF
 }
 
@@ -81,6 +80,7 @@ attach=false
 debug=false
 debug_modules=""
 passthrough=()
+PORT=4096
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +96,7 @@ while [[ $# -gt 0 ]]; do
         debug_modules="all"; shift
       fi
       ;;
+    --port) PORT="$2"; shift 2 ;;
     -ns) passthrough+=(--disable-wopalspace); shift ;;
     *) passthrough+=("$1"); shift ;;
   esac
@@ -142,19 +143,19 @@ is_running() { lsof -ti :"$1" > /dev/null 2>&1; }
 wait_backend() {
   local i
   for i in $(seq 1 30); do
-    curl -sf http://127.0.0.1:4097/health > /dev/null 2>&1 && return 0
+    curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1 && return 0
     sleep 0.5
   done
   return 1
 }
 
 warmup_config() {
-  curl -sf -H "x-opencode-directory: $space" http://127.0.0.1:4097/config > /dev/null 2>&1 || true
+  curl -sf -H "x-opencode-directory: $space" "http://127.0.0.1:$PORT/config" > /dev/null 2>&1 || true
 }
 
 start_backend() {
   local srv_env=()
-  local srv_args=(serve --port 4097 --print-logs)
+  local srv_args=(serve --port "$PORT" --print-logs)
 
   if [ "$debug" = true ]; then
     srv_args+=(--log-level DEBUG)
@@ -177,7 +178,7 @@ start_backend() {
 # ----- attach mode (HTTP server + TUI client) -----
 
 if $attach; then
-if ! is_running 4097; then
+if ! is_running "$PORT"; then
     [ "$debug" = true ] && echo "logs: $LOGDIR/ellamaka-dev-server.log"
     start_backend
     echo -n "starting server (pid $(cat "$PIDFILE"))"
@@ -191,13 +192,13 @@ if ! is_running 4097; then
   fi
   warmup_config
   cd "$opencode_dir"
-  exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:4097" --dir "$space"
+  exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:$PORT" --dir "$space"
 fi
 
 # ----- serve mode -----
 
 if [ "$cmd" = "serve" ]; then
-if [ -f "$PIDFILE" ] || is_running 4097; then
+if [ -f "$PIDFILE" ] || is_running "$PORT"; then
   echo "already running."
   read -p "stop and restart? [Y/n] " yn
   case "${yn:-Y}" in
@@ -211,7 +212,7 @@ echo "logs: $LOGDIR/"
 
 start_backend
 
-echo "started (backend :4097)"
+echo "started (backend :$PORT)"
 
 wait_backend && warmup_config
 
