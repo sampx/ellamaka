@@ -690,17 +690,7 @@ export function SessionTree(props: {
       >
         <Show
           when={getPanelBadge(session.id)}
-          fallback={
-            <Show
-              when={pinnedSessions().has(session.id)}
-              fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
-            >
-              <svg class="size-3 shrink-0 text-v2-icon-icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="17" x2="12" y2="22"></line>
-                <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.55A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.21L5.8 13.97A2 2 0 0 0 5 15.24V17z"></path>
-              </svg>
-            </Show>
-          }
+          fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
         >
           {(badge) => (
             <span class="flex items-center justify-center shrink-0 rounded-full px-1 text-[9px] font-bold text-white bg-v2-icon-icon-brand leading-none min-w-[18px] h-3.5 scale-90 select-none">
@@ -709,6 +699,12 @@ export function SessionTree(props: {
           )}
         </Show>
         <span class="flex-1 truncate">{session.title}</span>
+        <Show when={pinnedSessions().has(session.id)}>
+          <svg class="size-3 shrink-0 text-v2-icon-icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22"></line>
+            <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.55A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.21L5.8 13.97A2 2 0 0 0 5 15.24V17z"></path>
+          </svg>
+        </Show>
       </button>
     )
   }
