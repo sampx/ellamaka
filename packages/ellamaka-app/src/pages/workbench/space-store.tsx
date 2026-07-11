@@ -36,8 +36,9 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
 
     return {
       spaces,
-      spacesLoading: spacesResource.loading,
+      get spacesLoading() { return spacesResource.loading },
       reload: () => spacesActions.refetch(),
     }
   },
 })
+
