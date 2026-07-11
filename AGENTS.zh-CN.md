@@ -61,8 +61,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | Workbench | POST | `/workbench/sessions` | `SessionProvisioner` + `SessionDirectoryHealth` |
 | Workbench | GET | `/workbench/session-groups` | `SessionProjection` + `SessionDirectoryHealth` |
 | WopalSpace | GET | `/wopal-space/spaces` | `SpaceRegistry`（通过 CLI adapter） |
-| WopalSpace | GET | `/wopal-space/space-overview` | `SpaceRegistry` + `SessionProjection` |
-| WopalSpace | GET | `/wopal-space/search-directories` | `SpaceRegistry`（通过 CLI adapter） |
+
+> **⚠ 待用户审阅**: 2026-07-11 SDK 迁移后，已移除以下 legacy 端点：`/wopal-space/space-overview`、`/wopal-space/non-space-overview`、`/wopal-space/search-directories`、`/wopal-space/recent-directories`、`/wopal-space/ensure-directory`。前端已完全迁移至 Workbench API（`POST /workbench/sessions` + `GET /workbench/session-groups`）。
 
 ## 3. Development Commands (build format test)
 
