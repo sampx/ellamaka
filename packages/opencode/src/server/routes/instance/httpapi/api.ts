@@ -20,6 +20,7 @@ import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
 import { WopalSpaceApi } from "./groups/wopal-space"
+import { WorkbenchApi } from "./groups/workbench"
 import { V2Api } from "./groups/v2"
 import { Authorization } from "./middleware/authorization"
 import { SchemaErrorMiddleware } from "./middleware/schema-error"
@@ -32,6 +33,7 @@ export const RootHttpApi = HttpApi.make("opencode-root")
   .addHttpApi(ControlApi)
   .addHttpApi(GlobalApi)
   .addHttpApi(WopalSpaceApi)
+  .addHttpApi(WorkbenchApi)
   .middleware(SchemaErrorMiddleware)
   .middleware(Authorization)
 

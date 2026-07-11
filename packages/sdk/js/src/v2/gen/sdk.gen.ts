@@ -274,6 +274,8 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WopalSpaceEnsureDirectoryErrors,
+  WopalSpaceEnsureDirectoryResponses,
   WopalSpaceNonSpaceOverviewErrors,
   WopalSpaceNonSpaceOverviewResponses,
   WopalSpaceRecentDirectoriesErrors,
@@ -284,6 +286,10 @@ import type {
   WopalSpaceSpaceOverviewResponses,
   WopalSpaceSpacesErrors,
   WopalSpaceSpacesResponses,
+  WorkbenchCreateSessionErrors,
+  WorkbenchCreateSessionResponses,
+  WorkbenchSessionGroupsErrors,
+  WorkbenchSessionGroupsResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -720,15 +726,15 @@ export class WopalSpace extends HeyApiClient {
    * Create a directory (recursively) if it does not already exist.
    */
   public ensureDirectory<ThrowOnError extends boolean = false>(
-    parameters: {
-      path: string
+    parameters?: {
+      path?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "path" }] }])
     return (options?.client ?? this.client).post<
-      { 200: { data: { created: boolean }; errors: Record<string, unknown> } },
-      Record<string, unknown>,
+      WopalSpaceEnsureDirectoryResponses,
+      WopalSpaceEnsureDirectoryErrors,
       ThrowOnError
     >({
       url: "/wopal-space/ensure-directory",
@@ -740,6 +746,70 @@ export class WopalSpace extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+}
+
+export class Workbench extends HeyApiClient {
+  /**
+   * Create a Workbench session
+   *
+   * Create a controlled session. For `general` target, the backend provisions a directory under `$WOPAL_HOME/general_tasks/`. For `space` target, the specified space must be registered and the directory must exist within the space.
+   */
+  public createSession<ThrowOnError extends boolean = false>(
+    parameters?: {
+      target?:
+        | {
+            type: "general"
+          }
+        | {
+            type: "space"
+            space: string
+            directory?: string
+          }
+      title?: string
+      agent?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "target" },
+            { in: "body", key: "title" },
+            { in: "body", key: "agent" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      WorkbenchCreateSessionResponses,
+      WorkbenchCreateSessionErrors,
+      ThrowOnError
+    >({
+      url: "/workbench/sessions",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List Workbench session groups
+   *
+   * Return all sessions grouped by space or general, with directory health per session. Sessions from external TUI are included in the projection.
+   */
+  public sessionGroups<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      WorkbenchSessionGroupsResponses,
+      WorkbenchSessionGroupsErrors,
+      ThrowOnError
+    >({ url: "/workbench/session-groups", ...options })
   }
 }
 
@@ -5192,6 +5262,11 @@ export class OpencodeClient extends HeyApiClient {
   private _wopalSpace?: WopalSpace
   get wopalSpace(): WopalSpace {
     return (this._wopalSpace ??= new WopalSpace({ client: this.client }))
+  }
+
+  private _workbench?: Workbench
+  get workbench(): Workbench {
+    return (this._workbench ??= new Workbench({ client: this.client }))
   }
 
   private _event?: Event

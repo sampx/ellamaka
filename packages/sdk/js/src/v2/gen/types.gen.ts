@@ -4356,6 +4356,122 @@ export type WopalSpaceRecentDirectoriesResponses = {
 export type WopalSpaceRecentDirectoriesResponse =
   WopalSpaceRecentDirectoriesResponses[keyof WopalSpaceRecentDirectoriesResponses]
 
+export type WopalSpaceEnsureDirectoryData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: never
+  url: "/wopal-space/ensure-directory"
+}
+
+export type WopalSpaceEnsureDirectoryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceEnsureDirectoryError = WopalSpaceEnsureDirectoryErrors[keyof WopalSpaceEnsureDirectoryErrors]
+
+export type WopalSpaceEnsureDirectoryResponses = {
+  /**
+   * Directory creation result
+   */
+  200: {
+    created: boolean
+  }
+}
+
+export type WopalSpaceEnsureDirectoryResponse =
+  WopalSpaceEnsureDirectoryResponses[keyof WopalSpaceEnsureDirectoryResponses]
+
+export type WorkbenchCreateSessionData = {
+  body?: {
+    target:
+      | {
+          type: "general"
+        }
+      | {
+          type: "space"
+          space: string
+          directory?: string
+        }
+    title?: string
+    agent?: string
+  }
+  path?: never
+  query?: never
+  url: "/workbench/sessions"
+}
+
+export type WorkbenchCreateSessionErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkbenchCreateSessionError = WorkbenchCreateSessionErrors[keyof WorkbenchCreateSessionErrors]
+
+export type WorkbenchCreateSessionResponses = {
+  /**
+   * Created session with directory health
+   */
+  200: {
+    id: string
+    title: string
+    directory: string
+    directoryHealth: "healthy" | "missing" | "unavailable"
+    agent?: string
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type WorkbenchCreateSessionResponse = WorkbenchCreateSessionResponses[keyof WorkbenchCreateSessionResponses]
+
+export type WorkbenchSessionGroupsData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/workbench/session-groups"
+}
+
+export type WorkbenchSessionGroupsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkbenchSessionGroupsError = WorkbenchSessionGroupsErrors[keyof WorkbenchSessionGroupsErrors]
+
+export type WorkbenchSessionGroupsResponses = {
+  /**
+   * Session groups with directory health
+   */
+  200: {
+    groups: Array<{
+      id: string
+      title: string
+      type: "space" | "general"
+      sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      sessions: Array<{
+        id: string
+        title: string
+        directory: string
+        directoryHealth: "healthy" | "missing" | "unavailable"
+        agent?: string
+        timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }>
+    }>
+  }
+}
+
+export type WorkbenchSessionGroupsResponse = WorkbenchSessionGroupsResponses[keyof WorkbenchSessionGroupsResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never

@@ -1,24 +1,23 @@
+import { existsSync, mkdirSync } from "fs"
 import path from "path"
-import { execSync } from "child_process"
-import { existsSync, mkdirSync, readdirSync, statSync } from "fs"
-import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Global } from "@opencode-ai/core/global"
-import { ConfigParse } from "@/config/parse"
-import { Database } from "@/storage/db"
-import { SessionTable } from "@/session/session.sql"
-import { ProjectTable } from "@/project/project.sql"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { RootHttpApi } from "../api"
 import { InvalidRequestError } from "../errors"
-import type { WopalSpaceEntry } from "../groups/wopal-space"
+import { SpaceRegistry } from "@/wopal/space-registry"
 import { realpathSafe, groupSessionsBySpace } from "./wopal-space-grouping"
+import { Database } from "@/storage/db"
+import { Global } from "@opencode-ai/core/global"
+import { SessionTable } from "@/session/session.sql"
+import { ProjectTable } from "@/project/project.sql"
 import type { Session } from "@/session/session"
 import type { Project } from "@/project/project"
+import type { SpaceEntry } from "@/wopal/cli-schema"
 
-const SPACES_FILE = path.join(Global.Path.config, "settings.jsonc")
+// ---------------------------------------------------------------------------
+// Database queries (kept for session/project grouping, not space registry)
+// ---------------------------------------------------------------------------
 
-// Query all sessions directly from the database (no InstanceRef needed)
 function queryAllSessions(): Session.Info[] {
   return Database.use((db) =>
     db
@@ -50,7 +49,6 @@ function queryAllSessions(): Session.Info[] {
   })) as Session.Info[]
 }
 
-// Query all projects directly from the database (no InstanceRef needed)
 function queryAllProjects(): Project.Info[] {
   return Database.use((db) =>
     db
@@ -72,70 +70,38 @@ function queryAllProjects(): Project.Info[] {
   })) as Project.Info[]
 }
 
-const readSpaces = Effect.fn("WopalSpaceHttpApi.readSpaces")(function* () {
-  const fs = yield* AppFileSystem.Service
-  const text = yield* fs.readFileStringSafe(SPACES_FILE).pipe(Effect.catch(() => Effect.succeed(undefined)))
-  if (!text) return [] as WopalSpaceEntry[]
-  const raw = ConfigParse.jsonc(text, SPACES_FILE)
-  const spaces = (raw as { spaces?: Record<string, { path: string; type?: string }> })?.spaces
-  if (!spaces || typeof spaces !== "object") return [] as WopalSpaceEntry[]
-  return Object.entries(spaces).map(([name, info]) => ({
-    name,
-    path: info?.path ?? "",
-    type: info?.type,
-  }))
-})
+// ---------------------------------------------------------------------------
+// Space list helper
+// ---------------------------------------------------------------------------
 
-const isGitRepo = (dir: string): boolean => {
-  try {
-    execSync("git -C " + dir + " rev-parse --show-toplevel", {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-    return true
-  } catch {
-    return false
-  }
-}
+const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
 
-const scanDirectories = (root: string, maxDepth: number): string[] => {
-  const results: string[] = []
-  const walk = (dir: string, depth: number) => {
-    if (depth > maxDepth) return
-    let entries: string[]
-    try {
-      entries = readdirSync(dir)
-    } catch {
-      return
-    }
-    for (const name of entries) {
-      if (name.startsWith(".") || name === "node_modules") continue
-      const childPath = path.join(dir, name)
-      try {
-        if (!statSync(childPath).isDirectory()) continue
-      } catch {
-        continue
-      }
-      results.push(childPath)
-      walk(childPath, depth + 1)
-    }
-  }
-  walk(root, 0)
-  return results
-}
+const resolveSpaces = (registry: SpaceRegistry) =>
+  Effect.gen(function* () {
+    const snapshot = yield* registry.getSpaces()
+    if (snapshot.spaces.length > 0) return snapshot.spaces
+    const refreshed = yield* registry.refreshSpaces(WOPAL_CLI)
+    return refreshed.spaces
+  }).pipe(Effect.catch(() => Effect.succeed([] as SpaceEntry[])))
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
 
 export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space", (handlers) =>
   Effect.gen(function* () {
+    const registry = yield* SpaceRegistry.Service
+
     const spaces = Effect.fn("WopalSpaceHttpApi.spaces")(function* () {
-      const list = yield* readSpaces()
+      const list = yield* resolveSpaces(registry)
       return { spaces: list }
     })
 
     const spaceOverview = Effect.fn("WopalSpaceHttpApi.spaceOverview")(function* (ctx: {
       query: { spaceName: string }
     }) {
-      const list = yield* readSpaces()
-      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      const list = yield* resolveSpaces(registry)
+      const entry = list.find((s: SpaceEntry) => s.name === ctx.query.spaceName)
       if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
       const spaceRealPath = realpathSafe(entry.path)
       const sessions = queryAllSessions()
@@ -155,8 +121,8 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
     })
 
     const nonSpaceOverview = Effect.fn("WopalSpaceHttpApi.nonSpaceOverview")(function* () {
-      const list = yield* readSpaces()
-      const spaceRealPaths = new Set(list.map((s) => realpathSafe(s.path)))
+      const list = yield* resolveSpaces(registry)
+      const spaceRealPaths = new Set(list.map((s: SpaceEntry) => realpathSafe(s.path)))
       const sessions = queryAllSessions()
       const active = sessions.filter((s) => s.time.archived == null)
       const orphan = active.filter((s) => {
@@ -191,19 +157,17 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
     const searchDirectories = Effect.fn("WopalSpaceHttpApi.searchDirectories")(function* (ctx: {
       query: { spaceName: string; query: string }
     }) {
-      const list = yield* readSpaces()
-      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      const list = yield* resolveSpaces(registry)
+      const entry = list.find((s: SpaceEntry) => s.name === ctx.query.spaceName)
       if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
-      const spaceRealPath = realpathSafe(entry.path)
       if (!ctx.query.query) return { directories: [] }
-      const allDirs = scanDirectories(spaceRealPath, 3)
-      const q = ctx.query.query.toLowerCase()
-      const matched = allDirs.filter((d) => path.basename(d).toLowerCase().includes(q))
-      const limited = matched.slice(0, 50)
-      const directories = limited.map((d) => ({
-        path: d,
-        displayPath: d,
-        isGitRepo: isGitRepo(d),
+      const result = yield* registry.searchDirectories(WOPAL_CLI, ctx.query.query).pipe(
+        Effect.catch(() => Effect.succeed({ items: [], total: 0, refreshedAt: 0 })),
+      )
+      const directories = result.items.slice(0, 50).map((d) => ({
+        path: d.path,
+        displayPath: d.path,
+        isGitRepo: false,
       }))
       return { directories }
     })
@@ -211,8 +175,8 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
     const recentDirectories = Effect.fn("WopalSpaceHttpApi.recentDirectories")(function* (ctx: {
       query: { spaceName: string }
     }) {
-      const list = yield* readSpaces()
-      const entry = list.find((s) => s.name === ctx.query.spaceName)
+      const list = yield* resolveSpaces(registry)
+      const entry = list.find((s: SpaceEntry) => s.name === ctx.query.spaceName)
       if (!entry) return yield* new InvalidRequestError({ message: "Space not found: " + ctx.query.spaceName })
       const spaceRealPath = realpathSafe(entry.path)
       const sessions = queryAllSessions()
@@ -234,7 +198,7 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       const directories = sorted.map(([p]) => ({
         path: p,
         displayPath: p,
-        isGitRepo: isGitRepo(p),
+        isGitRepo: false,
       }))
       return { directories }
     })
@@ -243,11 +207,15 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       payload: { path: string }
     }) {
       const dir = ctx.payload.path
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true })
-        return { created: true }
+      try {
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true })
+          return { created: true }
+        }
+        return { created: false }
+      } catch {
+        return yield* new InvalidRequestError({ message: "Failed to create directory: " + dir })
       }
-      return { created: false }
     })
 
     return handlers

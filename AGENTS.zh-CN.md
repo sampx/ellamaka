@@ -33,6 +33,37 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | `packages/ellamaka/` | 品牌常量（branding.ts/channel）、品牌字模（logo.ts）、构建包装（build.ts）、WopalSpace 自动检测（detect.ts）、安装路径判断（is-wopal-install.ts）及包级测试 |
 | `docs/` | project DESIGN、BRANDING、DISTRIBUTION、references、research 和 plans |
 
+### 2.1 Wopal 集成模块
+
+| 模块 | 路径 | 职责 |
+|------|------|------|
+| CLI Adapter | `packages/opencode/src/wopal/cli-adapter.ts` | Effect 服务，通过 ChildProcessSpawner 以绝对路径+参数数组执行 wopal CLI，解析 v1 capability envelope（`wopal.capability/v1`），将 CLI 错误码映射为 Runtime 领域错误（`SpaceControlUnavailable`、`CapabilityContractError`） |
+| CLI Schema | `packages/opencode/src/wopal/cli-schema.ts` | CLI envelope、data schema（SpaceEntry、ProjectEntry、DirectoryEntry）、Runtime 领域错误（`SpaceControlUnavailable`、`CapabilityContractError`）与稳定错误码（`StableErrorCode`）定义 |
+| SpaceRegistry | `packages/opencode/src/wopal/space-registry.ts` | 非权威读穿式 Runtime 缓存。通过 CLI adapter 获取 Space 列表、项目列表和目录搜索结果，提供 `refreshSpaces`、`getSpaces`、`refreshProjects`、`searchDirectories` 方法。WopalSpace handler 不再直接读取 `settings.jsonc` |
+| Session Provisioner | `packages/opencode/src/workbench/session-provisioner.ts` | 受控会话创建。`provisionGeneral` 在 `$WOPAL_HOME/general_tasks/` 下创建唯一目录；`provisionSpace` 只接受已登记 Space 和安全的相对目录，拒绝遍历攻击和未知 Space |
+| Session Projection | `packages/opencode/src/workbench/session-projection.ts` | 会话树投影。从 Runtime 数据库全量读取 Session 数据，按已登记 Space 归组；外部 TUI 创建的 Session 自然出现在投影中 |
+| Directory Health | `packages/opencode/src/workbench/session-directory-health.ts` | 目录健康检查。返回 `healthy`、`missing` 或 `unavailable`；目录失效不删除 Session |
+| Workbench API | `packages/opencode/src/server/routes/instance/httpapi/groups/workbench.ts` | Workbench HttpApi 路由组。`POST /workbench/sessions` 创建受控会话；`GET /workbench/session-groups` 返回含目录健康的全量 Session 投影 |
+| Workbench Handler | `packages/opencode/src/server/routes/instance/httpapi/handlers/workbench.ts` | Workbench 端点 handler，将 HTTP 请求转换为领域服务调用，返回含 `directoryHealth` 的 Session 响应 |
+
+### 2.2 测试位置
+
+| 测试文件 | 覆盖范围 |
+|----------|----------|
+| `packages/opencode/test/server/wopal-cli-adapter.test.ts` | CLI adapter 协议解析、错误映射、Schema 验证、SpaceRegistry 集成 |
+| `packages/opencode/test/server/wopal-space-overview.test.ts` | WopalSpace 空间分组逻辑（project root session、子目录、worktree 归属） |
+| `packages/opencode/test/server/workbench-session-api.test.ts` | Session provisioner、projection、directory health 服务级测试 |
+
+### 2.3 HTTP API 所有权
+
+| API 域 | HTTP 方法 | 路径 | Owner |
+|--------|-----------|------|-------|
+| Workbench | POST | `/workbench/sessions` | `SessionProvisioner` + `SessionDirectoryHealth` |
+| Workbench | GET | `/workbench/session-groups` | `SessionProjection` + `SessionDirectoryHealth` |
+| WopalSpace | GET | `/wopal-space/spaces` | `SpaceRegistry`（通过 CLI adapter） |
+| WopalSpace | GET | `/wopal-space/space-overview` | `SpaceRegistry` + `SessionProjection` |
+| WopalSpace | GET | `/wopal-space/search-directories` | `SpaceRegistry`（通过 CLI adapter） |
+
 ## 3. Development Commands (build format test)
 
 | 场景 | 命令 | 何时 |
