@@ -4,7 +4,6 @@ import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
-import { isWopalInstall } from "../../../../ellamaka/is-wopal-install"
 
 export const UpgradeCommand = {
   command: "upgrade [target]",
@@ -19,7 +18,7 @@ export const UpgradeCommand = {
         alias: "m",
         describe: "installation method to use",
         type: "string",
-        choices: ["curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"],
+        choices: ["curl", "npm", "pnpm", "bun", "brew", "choco", "scoop", "wopal"],
       })
   },
   handler: async (args: { target?: string; method?: string }) => {
@@ -27,12 +26,6 @@ export const UpgradeCommand = {
     UI.println(UI.logo("  "))
     UI.empty()
     prompts.intro("Upgrade")
-    if (isWopalInstall()) {
-      prompts.log.info(`${BINARY_NAME} is updated via wopal-cli.`)
-      prompts.log.info(`Run: wopal ellamaka update`)
-      prompts.outro("Done")
-      return
-    }
     const detectedMethod = await Installation.method()
     const method = (args.method as Installation.Method) ?? detectedMethod
     if (method === "unknown") {

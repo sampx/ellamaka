@@ -13,11 +13,11 @@ import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
 import { NpmConfig } from "@opencode-ai/core/npm-config"
 import { BINARY_NAME } from "../../../ellamaka/branding"
-import { isWopalInstall } from "../../../ellamaka/is-wopal-install"
+import os from "os"
 
 const log = Log.create({ service: "installation" })
 
-export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "unknown"
+export type Method = "curl" | "npm" | "yarn" | "pnpm" | "bun" | "brew" | "scoop" | "choco" | "wopal" | "unknown"
 
 export type ReleaseType = "patch" | "minor" | "major"
 
@@ -86,6 +86,45 @@ const ChocoPackage = Schema.Struct({
   d: Schema.Struct({ results: Schema.Array(Schema.Struct({ Version: Schema.String })) }),
 })
 const ScoopManifest = NpmPackage
+
+// Ellamaka CDN manifest
+const EllamakaArtifact = Schema.Struct({
+  name: Schema.String,
+  os: Schema.String,
+  arch: Schema.String,
+  variant: Schema.optional(Schema.String),
+  url: Schema.String,
+  sha256: Schema.String,
+  size: Schema.optional(Schema.Number),
+})
+const EllamakaManifest = Schema.Struct({
+  version: Schema.String,
+  artifacts: Schema.Array(EllamakaArtifact),
+})
+
+function findEllamakaArtifact(
+  manifest: Schema.Schema.Type<typeof EllamakaManifest>,
+  targetPlatform?: string,
+  targetArch?: string,
+) {
+  const platform = targetPlatform ?? process.platform
+  const arch = targetArch ?? process.arch
+  const platformMap: Record<string, string> = { darwin: "darwin", win32: "windows", linux: "linux" }
+  const targetOS = platformMap[platform] ?? platform
+  const targetArchNorm = arch === "x64" ? "x64" : arch === "arm64" ? "arm64" : arch
+  let artifact = manifest.artifacts.find((a) => a.os === targetOS && a.arch === targetArchNorm && !a.variant)
+  if (!artifact) artifact = manifest.artifacts.find((a) => a.os === targetOS && a.arch === targetArchNorm)
+  if (!artifact) artifact = manifest.artifacts.find((a) => a.os === targetOS)
+  if (!artifact) throw new Error(`No artifact for ${targetOS}-${targetArchNorm}`)
+  return artifact
+}
+
+export { findEllamakaArtifact }
+
+function isUnderWopalBin(): boolean {
+  const wopalBin = path.join(".wopal", "bin")
+  return process.execPath.includes(wopalBin) || (typeof process.argv[0] === "string" && process.argv[0].includes(wopalBin))
+}
 
 export interface Interface {
   readonly info: () => Effect.Effect<Info>
@@ -172,6 +211,53 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("curl") })),
     )
 
+    const upgradeWopal = Effect.fnUntraced(function* (target: string) {
+      const manifestUrl = `https://download.coursedao.com/ellamaka/v${target}/manifest.json`
+      const response = yield* httpOk.execute(
+        HttpClientRequest.get(manifestUrl).pipe(HttpClientRequest.acceptJson),
+      )
+      const manifest = yield* HttpClientResponse.schemaBodyJson(EllamakaManifest)(response)
+      const artifact = findEllamakaArtifact(manifest)
+      const wopalHomeRaw = process.env.WOPAL_HOME || path.join(os.homedir(), ".wopal")
+      const wopalHome = wopalHomeRaw.startsWith("~/") ? path.join(os.homedir(), wopalHomeRaw.slice(2)) : wopalHomeRaw
+      const installDir = path.join(wopalHome, "bin")
+      const installPath = path.join(installDir, BINARY_NAME)
+
+      // Download and install via shell (proven in wopal-cli)
+      const script = [
+        "set -e",
+        `TMPDIR=$(mktemp -d)`,
+        `trap 'rm -rf "$TMPDIR"' EXIT`,
+        `ARCHIVE="$TMPDIR/${artifact.name}"`,
+        `curl -fsSL -o "$ARCHIVE" "${artifact.url}"`,
+        `mkdir -p "$TMPDIR/extract"`,
+        `tar -xzf "$ARCHIVE" -C "$TMPDIR/extract"`,
+        `BINARY=$(find "$TMPDIR/extract" -name "${BINARY_NAME}" -type f | head -1)`,
+        `[ -n "$BINARY" ] || { echo "ERROR: ${BINARY_NAME} binary not found in archive"; exit 1; }`,
+        `mkdir -p "${installDir}"`,
+        `cp -f "$BINARY" "${installPath}"`,
+        `chmod +x "${installPath}"`,
+        `if [ "$(uname -s)" = "Darwin" ]; then`,
+        `  xattr -d com.apple.quarantine "${installPath}" 2>/dev/null || true`,
+        `  codesign --force --sign - "${installPath}" 2>/dev/null || true`,
+        `fi`,
+        `echo "INSTALLED:${installPath}"`,
+      ].join("\n")
+
+      const scriptBytes = new TextEncoder().encode(script)
+      const result = yield* appProcess.run(
+        ChildProcess.make("bash", [], {
+          stdin: Stream.make(scriptBytes),
+          extendEnv: true,
+        }),
+      )
+      return {
+        code: result.exitCode,
+        stdout: result.stdout.toString("utf8"),
+        stderr: result.stderr.toString("utf8"),
+      }
+    }, Effect.mapError(() => new UpgradeFailedError({ stderr: upgradeFailure("wopal") })))
+
     const result: Interface = {
       info: Effect.fn("Installation.info")(function* () {
         return {
@@ -180,7 +266,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         }
       }),
       method: Effect.fn("Installation.method")(function* () {
-        if (process.execPath.includes(path.join(".wopal", "bin"))) return "curl" as Method
+        if (isUnderWopalBin()) return "wopal" as Method
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
@@ -215,11 +301,16 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         return "unknown" as Method
       }),
       latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
-        if (isWopalInstall()) {
-          return InstallationVersion
-        }
-
         const detectedMethod = installMethod || (yield* result.method())
+
+        if (detectedMethod === "wopal") {
+          const manifestUrl = "https://download.coursedao.com/ellamaka/latest/manifest.json"
+          const response = yield* httpOk.execute(
+            HttpClientRequest.get(manifestUrl).pipe(HttpClientRequest.acceptJson),
+          )
+          const manifest = yield* HttpClientResponse.schemaBodyJson(EllamakaManifest)(response)
+          return manifest.version
+        }
 
         if (detectedMethod === "brew") {
           const formula = yield* getBrewFormula()
@@ -276,14 +367,11 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         return data.tag_name.replace(/^v/, "")
       }, Effect.orDie),
       upgrade: Effect.fn("Installation.upgrade")(function* (m: Method, target: string) {
-        if (isWopalInstall()) {
-          return yield* new UpgradeFailedError({
-            stderr: `${BINARY_NAME} is updated via wopal-cli. Run: wopal ellamaka update`,
-          })
-        }
-
         let upgradeResult: { code: number; stdout: string; stderr: string } | undefined
         switch (m) {
+          case "wopal":
+            upgradeResult = yield* upgradeWopal(target)
+            break
           case "curl":
             upgradeResult = yield* upgradeCurl(target)
             break
