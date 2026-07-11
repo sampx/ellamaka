@@ -4,6 +4,7 @@ import {
   sessionDropRejection,
   shouldRestoreBoundSession,
   shouldUnbindSessionFromEvent,
+  shouldSyncSessionTitle,
 } from "./panel-session-lifecycle"
 
 describe("shouldAcceptSessionDrop", () => {
@@ -47,5 +48,31 @@ describe("shouldUnbindSessionFromEvent", () => {
   test("unbinds only on an explicit server deletion or archive event", () => {
     expect(shouldUnbindSessionFromEvent({ type: "session.deleted" })).toBe(true)
     expect(shouldUnbindSessionFromEvent({ type: "session.updated", timeArchived: 1 })).toBe(true)
+  })
+})
+
+describe("shouldSyncSessionTitle", () => {
+  test("returns false for non-session.updated events", () => {
+    expect(shouldSyncSessionTitle({ type: "session.created", sessionId: "s1", title: "Hello", localTitle: "Old" })).toBe(false)
+    expect(shouldSyncSessionTitle({ type: "session.deleted", sessionId: "s1", title: "Hello", localTitle: "Old" })).toBe(false)
+  })
+
+  test("returns false when sessionId or title is missing", () => {
+    expect(shouldSyncSessionTitle({ type: "session.updated", title: "Hello", localTitle: "Old" })).toBe(false)
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", localTitle: "Old" })).toBe(false)
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "", localTitle: "Old" })).toBe(false)
+  })
+
+  test("returns false when the session is not tracked locally", () => {
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "Hello" })).toBe(false)
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "Hello", localTitle: undefined })).toBe(false)
+  })
+
+  test("returns false when the title has not changed", () => {
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "Same", localTitle: "Same" })).toBe(false)
+  })
+
+  test("returns true when the title differs from the local store", () => {
+    expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "New Title", localTitle: "Old Title" })).toBe(true)
   })
 })

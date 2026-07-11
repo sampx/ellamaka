@@ -6,7 +6,7 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
-import { shouldUnbindSessionFromEvent } from "./parts/panel-session-lifecycle"
+import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { ptyManager } from "./pty-manager"
 
@@ -23,7 +23,7 @@ function WorkbenchShell() {
     const unsub = sdk.event.listen((e) => {
       const details = e.details as {
         type?: string
-        properties?: { info?: { id?: string; time?: { archived?: number } } }
+        properties?: { info?: { id?: string; title?: string; time?: { archived?: number } } }
       } | undefined
       const session = details?.properties?.info
       if (shouldUnbindSessionFromEvent({ type: details?.type, timeArchived: session?.time?.archived })) {
@@ -35,6 +35,12 @@ function WorkbenchShell() {
         return
       }
       if (details?.type === "session.created") {
+        sessionStore.triggerRefresh()
+      }
+      if (shouldSyncSessionTitle({ type: details?.type, sessionId: session?.id, title: session?.title, localTitle: sessionStore.getSession(session?.id ?? "")?.title })) {
+        const sid = session!.id!
+        const stitle = session!.title!
+        sessionStore.syncSessionReference(sid, { title: stitle })
         sessionStore.triggerRefresh()
       }
     })

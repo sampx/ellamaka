@@ -821,6 +821,8 @@ export function SessionTree(props: {
 
           // Trigger overview load when session store requires a refresh (e.g. session created/deleted)
           createEffect(() => {
+            const key = sessionStore.refreshKey()
+            void key
             const localSessionIdsStr = (sessionStore.spaceSessions(space.name) || []).map((s) => s.id).join(",")
             void localSessionIdsStr
             if (untrack(isExpanded)) {

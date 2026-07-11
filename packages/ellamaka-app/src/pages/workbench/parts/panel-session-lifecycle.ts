@@ -29,3 +29,15 @@ export function shouldUnbindSessionFromEvent(input: {
 }) {
   return input.type === "session.deleted" || (input.type === "session.updated" && input.timeArchived !== undefined)
 }
+
+export function shouldSyncSessionTitle(input: {
+  type?: string
+  sessionId?: string
+  title?: string
+  localTitle?: string
+}) {
+  if (input.type !== "session.updated") return false
+  if (!input.sessionId || !input.title) return false
+  if (input.localTitle === undefined) return false
+  return input.title !== input.localTitle
+}
