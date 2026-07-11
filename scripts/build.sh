@@ -118,12 +118,12 @@ if $INSTALL; then
   fi
 
   mkdir -p "$INSTALL_DIR"
-  DST="$INSTALL_DIR/$BINARY_NAME"
+  SYMLINK="$INSTALL_DIR/${BINARY_NAME}-main"
 
   NEW_VER=$("$SRC" --version 2>/dev/null || echo "unknown")
-  OLD_VER=$([[ -f "$DST" ]] && "$DST" --version 2>/dev/null || echo "none")
+  OLD_VER=$([[ -L "$SYMLINK" ]] && "$SYMLINK" --version 2>/dev/null || echo "none")
   echo "📦 $OLD_VER → $NEW_VER"
 
-  cp -f "$SRC" "${DST}.tmp" && mv -f "${DST}.tmp" "$DST"
-  echo "✅ Installed: $DST"
+  rm -f "$SYMLINK" && ln -s "$SRC" "$SYMLINK"
+  echo "✅ Symlinked: $SYMLINK → $SRC"
 fi
