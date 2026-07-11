@@ -1,6 +1,6 @@
 import path from "path"
 import { execSync } from "child_process"
-import { existsSync, readdirSync, statSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, statSync } from "fs"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { ConfigParse } from "@/config/parse"
@@ -239,11 +239,23 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
       return { directories }
     })
 
+    const ensureDirectory = Effect.fn("WopalSpaceHttpApi.ensureDirectory")(function* (ctx: {
+      payload: { path: string }
+    }) {
+      const dir = ctx.payload.path
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+        return { created: true }
+      }
+      return { created: false }
+    })
+
     return handlers
       .handle("spaces", spaces)
       .handle("spaceOverview", spaceOverview)
       .handle("nonSpaceOverview", nonSpaceOverview)
       .handle("searchDirectories", searchDirectories)
       .handle("recentDirectories", recentDirectories)
+      .handle("ensureDirectory", ensureDirectory)
   }),
 )

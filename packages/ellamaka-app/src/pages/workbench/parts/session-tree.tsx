@@ -485,6 +485,7 @@ export function SessionTree(props: {
           label: t("workbench.tree.newSession"),
           action: async () => {
             try {
+              await sdk.client.wopalSpace.ensureDirectory({ path: projectPath })
               const res = await sdk.client.session.create({ directory: projectPath })
               const serverSession = (res as any).data
               if (!serverSession?.id) return
@@ -521,6 +522,7 @@ export function SessionTree(props: {
                 targetDir = `${wopalHome}/general_tasks/${dateStr}`
               }
 
+              await sdk.client.wopalSpace.ensureDirectory({ path: targetDir })
               const res = await sdk.client.session.create({ directory: targetDir })
               const serverSession = (res as any).data
               if (!serverSession?.id) return

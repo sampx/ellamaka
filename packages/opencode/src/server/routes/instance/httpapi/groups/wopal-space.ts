@@ -106,6 +106,14 @@ const RecentDirectoriesQuery = Schema.Struct({
   spaceName: Schema.String,
 })
 
+const EnsureDirectoryPayload = Schema.Struct({
+  path: Schema.String,
+})
+
+const EnsureDirectoryResponse = Schema.Struct({
+  created: Schema.Boolean,
+})
+
 // ============ Paths ============
 
 const Paths = {
@@ -114,6 +122,7 @@ const Paths = {
   nonSpaceOverview: "/wopal-space/non-space-overview",
   searchDirectories: "/wopal-space/search-directories",
   recentDirectories: "/wopal-space/recent-directories",
+  ensureDirectory: "/wopal-space/ensure-directory",
 } as const
 
 export const WopalSpaceApi = HttpApi.make("wopal-space").add(
@@ -170,6 +179,16 @@ export const WopalSpaceApi = HttpApi.make("wopal-space").add(
           summary: "Get recent directories",
           description:
             "Return directories within a space that have had recent sessions, ordered by most recent first (up to 20).",
+        }),
+      ),
+      HttpApiEndpoint.post("ensureDirectory", Paths.ensureDirectory, {
+        payload: EnsureDirectoryPayload,
+        success: described(EnsureDirectoryResponse, "Directory creation result"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "wopal-space.ensureDirectory",
+          summary: "Ensure directory exists",
+          description: "Create a directory (recursively) if it does not already exist.",
         }),
       ),
     )
