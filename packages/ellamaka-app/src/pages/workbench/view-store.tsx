@@ -135,6 +135,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setRefreshVersion((v) => v + 1)
     }
 
+    const [persistentHint, setPersistentHint] = createSignal("")
+
     const [statusMessage, setStatusMessageValue] = createSignal("")
     let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -590,6 +592,8 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       validateTabs,
       get statusMessage() { return statusMessage() },
       setStatusMessage,
+      get persistentHint() { return persistentHint() },
+      setPersistentHint,
       get refreshVersion() { return refreshVersion() },
       triggerRefresh,
     }

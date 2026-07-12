@@ -77,6 +77,11 @@ export function SpaceRail() {
     return state?.panels.some((p) => p.slotState === "bound") ?? false
   })
 
+  const effectiveHint = createMemo(() => {
+    if (wb.statusMessage) return wb.statusMessage
+    return wb.persistentHint || t("workbench.status.defaultHint")
+  })
+
   function handleSpaceClick(space: { name: string; path: string; type?: string }) {
     if (space.name === wb.activeSpaceName) return
     if (hasBoundPanels() && !dontRemindStore.suppress) {
@@ -227,9 +232,9 @@ export function SpaceRail() {
         </Show>
       </div>
 
-      <Show when={expanded() && wb.statusMessage}>
-        <div aria-live="polite" class="shrink-0 border-t border-v2-border-border-base px-2 py-1.5 text-10-regular leading-4 text-v2-text-text-muted">
-          {wb.statusMessage}
+      <Show when={expanded()}>
+        <div aria-live="polite" class="shrink-0 border-t border-v2-border-border-base px-2 py-1.5 text-10-regular leading-4 text-v2-text-text-muted min-h-[36px] flex items-center">
+          {effectiveHint()}
         </div>
       </Show>
 

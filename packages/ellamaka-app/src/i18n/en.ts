@@ -1034,6 +1034,8 @@ export const dict = {
   "workbench.status.defaultHint": "Tip: Double-click a session or drag it into a panel to open",
   "workbench.status.panelActivated": "Activated panel {{badge}} bound to this session",
   "workbench.status.sessionLoaded": "Session loaded in panel {{badge}}",
+  "workbench.status.dirHealthWarning": "Warning: The working directory for this session is unavailable. Right-click to rename, archive, or delete",
+  "workbench.status.sessionReadyHint": "Tip: Double-click this session or drag it into a panel to load and open",
   "workbench.tree.rename": "Rename",
   "workbench.tree.archive": "Archive",
   "workbench.tree.unarchive": "Unarchive",

@@ -273,6 +273,7 @@ export function SessionTree(props: {
   }
 
   function handleSpaceRowClick(space: WopalSpace) {
+    wb.setPersistentHint("")
     if (space.name === props.activeSpaceName) {
       toggleSpace(space.name)
       return
@@ -536,7 +537,7 @@ export function SessionTree(props: {
             wb.openTab(targetSpace)
           }
           wb.setActivePanel(boundSpacePath, boundPanelId)
-          wb.setStatusMessage(t("workbench.status.panelActivated", { badge }))
+          wb.setPersistentHint(t("workbench.status.panelActivated", { badge }))
         }
       } else {
         const targetSpace = props.spaces.find((s) => s.name === spaceName)
@@ -544,7 +545,11 @@ export function SessionTree(props: {
           wb.openTab(targetSpace)
           wb.ensureSpace(targetSpace.path)
         }
-        wb.setStatusMessage(t("workbench.status.defaultHint"))
+        if (dirHealth !== "healthy") {
+          wb.setPersistentHint(t("workbench.status.dirHealthWarning"))
+        } else {
+          wb.setPersistentHint(t("workbench.status.sessionReadyHint"))
+        }
       }
       props.onSessionClick(session.id)
     }
