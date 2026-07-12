@@ -252,12 +252,12 @@ function DialogCloseTab(props: { name: string; path: string }) {
   const boundCount = () =>
     wb.spaceState(props.path)?.panels.filter((p) => p.slotState === "bound").length ?? 0
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const path = props.path
     const name = props.name
 
     // 1. Kill all PTYs owned by this space's panels
-    void ptyManager.disposeSpace(path, sdk, wb.spaceState(path)?.panels ?? [])
+    await ptyManager.disposeSpace(path, sdk, wb.spaceState(path)?.panels ?? [])
 
     // 2. Destroy the entire space state from persisted store (will also trigger tab closure)
     wb.removeSpace(path)
