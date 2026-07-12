@@ -313,6 +313,29 @@ export function Panel(props: {
     )
   }
 
+  function DialogCrossSpaceWarning(props: { dragSpace: string; targetSpace: string }) {
+    return (
+      <Dialog title={t("common.warning") || "空间不匹配提示"} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {t("workbench.panel.crossSpaceWarningText", { dragSpace: props.dragSpace, targetSpace: props.targetSpace }) ||
+                `该会话属于空间 "${props.dragSpace}"，无法装载到 "${props.targetSpace}" 中。`}
+            </span>
+            <span class="text-12-regular text-text-muted">
+              {t("workbench.panel.crossSpaceWarningHint") || "请先在左侧切换到对应的空间进行操作。"}
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="primary" size="large" onClick={() => dialog.close()}>
+              {t("common.confirm") || "确认"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   const handleDrop = (e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -324,7 +347,12 @@ export function Panel(props: {
 
     // Cross-space check
     if (dragSpaceName !== props.spaceName) {
-      alert("会话不属于当前空间,请切换到对应空间 tab")
+      dialog.show(() => (
+        <DialogCrossSpaceWarning
+          dragSpace={dragSpaceName}
+          targetSpace={props.spaceName}
+        />
+      ))
       return
     }
 
