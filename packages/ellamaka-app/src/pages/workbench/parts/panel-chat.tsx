@@ -114,9 +114,16 @@ function PanelChatInner(props: {
     const sessions = sync.data.session as any[]
     const officialSession = sessions?.find((s: any) => s.id === props.session.id)
     if (!officialSession) return
-    const local = sessionStore.getSession(props.session.id)
-    if (local && officialSession.title && officialSession.title !== local.title) {
-      sessionStore.syncSessionReference(props.session.id, { title: officialSession.title })
+    
+    // Use untrack and setTimeout to prevent solid reactive cycle deadlock
+    const title = officialSession.title
+    if (title) {
+      setTimeout(() => {
+        const local = sessionStore.getSession(props.session.id)
+        if (local && title !== local.title) {
+          sessionStore.syncSessionReference(props.session.id, { title })
+        }
+      }, 0)
     }
   })
 

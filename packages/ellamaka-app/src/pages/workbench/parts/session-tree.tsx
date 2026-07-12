@@ -4,10 +4,14 @@ import { createStore } from "solid-js/store"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { useSessionStore } from "../session-store"
-import { useWorkbenchState } from "../view-store"
+import { useWorkbenchState, type WorkbenchPanel } from "../view-store"
 import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
+import { ptyManager, ptyReferences } from "../pty-manager"
+import { Button } from "@opencode-ai/ui/button"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 
 type ContextMenu = {
   x: number
@@ -57,6 +61,9 @@ export function SessionTree(props: {
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
   const sessionStore = useSessionStore()
   const wb = useWorkbenchState()
+  const dialog = useDialog()
+
+
 
   const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
   const PINNED_STORAGE_KEY = "workbench.tree.pinned"
@@ -317,13 +324,59 @@ export function SessionTree(props: {
         {
           label: t("workbench.tree.rename"),
           action: () => {
-            const newTitle = prompt(t("workbench.tree.rename"), session.title)
-            if (newTitle === null) return
-            const trimmed = newTitle.trim()
-            if (trimmed) {
-              sessionStore.renameSession(session.id, trimmed)
-              void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
-            }
+            let inputEl: HTMLInputElement | undefined
+            const [val, setVal] = createSignal(session.title)
+
+            dialog.show(() => (
+              <Dialog title={t("workbench.tree.rename") || "重命名会话"} fit>
+                <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+                  <div class="flex flex-col gap-2">
+                    <input
+                      ref={inputEl}
+                      type="text"
+                      class="w-full px-3 py-1.5 text-12-regular text-text-strong bg-v2-background-bg-deep border border-v2-border-border-base rounded-md focus:outline-none focus:border-v2-border-border-brand-strong"
+                      value={val()}
+                      onInput={(e) => setVal(e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const trimmed = val().trim()
+                          if (trimmed && trimmed !== session.title) {
+                            sessionStore.renameSession(session.id, trimmed)
+                            void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+                          }
+                          dialog.close()
+                        }
+                        if (e.key === "Escape") dialog.close()
+                      }}
+                    />
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                      {t("common.cancel") || "取消"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="large"
+                      onClick={() => {
+                        const trimmed = val().trim()
+                        if (trimmed && trimmed !== session.title) {
+                          sessionStore.renameSession(session.id, trimmed)
+                          void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+                        }
+                        dialog.close()
+                      }}
+                    >
+                      {t("common.confirm") || "确认"}
+                    </Button>
+                  </div>
+                </div>
+              </Dialog>
+            ))
+
+            setTimeout(() => {
+              inputEl?.focus()
+              inputEl?.select()
+            }, 50)
           },
         },
         {
@@ -339,16 +392,42 @@ export function SessionTree(props: {
         },
         {
           label: t("common.delete"),
-          action: async () => {
-            const ok = confirm(t("workbench.tree.deleteConfirm"))
-            if (!ok) return
-            try {
-              await sdk.client.session.delete({ sessionID: session.id, directory: "" })
-              sessionStore.deleteSession(session.id)
-              wb.unbindSessionGlobal(session.id)
-            } catch (err) {
-              console.error("Failed to delete session:", err)
-            }
+          action: () => {
+            dialog.show(() => (
+              <Dialog title={t("common.delete") || "删除会话"} fit>
+                <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-14-regular text-text-strong">
+                      {t("workbench.tree.deleteConfirmText", { title: session.title }) || `确定要删除会话 "${session.title}" 吗？`}
+                    </span>
+                    <span class="text-12-regular text-text-muted">
+                      {t("workbench.tree.deleteConfirmHint") || "删除后，该会话记录将从列表中彻底移除。"}
+                    </span>
+                  </div>
+                  <div class="flex justify-end gap-2">
+                    <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                      {t("common.cancel") || "取消"}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="large"
+                      onClick={async () => {
+                        try {
+                          await sdk.client.session.delete({ sessionID: session.id, directory: "" })
+                          sessionStore.deleteSession(session.id)
+                          wb.unbindSessionGlobal(session.id)
+                        } catch (err) {
+                          console.error("Failed to delete session:", err)
+                        }
+                        dialog.close()
+                      }}
+                    >
+                      {t("common.confirm") || "确认"}
+                    </Button>
+                  </div>
+                </div>
+              </Dialog>
+            ))
           },
         },
       ],
@@ -452,6 +531,34 @@ export function SessionTree(props: {
       props.onSessionClick(session.id)
     }
 
+    function DialogOverwritePanel(props: {
+      panelIndex: number
+      onConfirm: () => void
+    }) {
+      return (
+        <Dialog title={t("workbench.panel.overwriteTitle") || "覆盖会话窗口"} fit>
+          <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-14-regular text-text-strong">
+                {t("workbench.panel.overwriteConfirmText", { index: String(props.panelIndex) }) || `确定要覆盖面板 #${props.panelIndex} 的当前会话吗？`}
+              </span>
+              <span class="text-12-regular text-text-muted">
+                {t("workbench.panel.overwriteConfirmHint") || "覆盖后原有会话将自动解绑，您可以在左侧会话列表中随时重新恢复。"}
+              </span>
+            </div>
+            <div class="flex justify-end gap-2">
+              <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                {t("common.cancel") || "取消"}
+              </Button>
+              <Button variant="primary" size="large" onClick={props.onConfirm}>
+                {t("common.confirm") || "确认"}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )
+    }
+
     const handleSessionDblClick = () => {
       const badge = getPanelBadge(session.id)
       if (badge) {
@@ -463,6 +570,33 @@ export function SessionTree(props: {
       if (!targetSpace) return
 
       const targetSpacePath = targetSpace.path
+
+      const loadSessionIntoPanel = (panel: WorkbenchPanel) => {
+        if (panel.slotState === "bound") {
+          // 先物理杀死并注销该面板原有的 PTY 资源，并解绑
+          void ptyManager.disposePanel(targetSpacePath, panel.id, sdk, ptyReferences(panel))
+
+          // 清理原有面板上关联 of PTY ID
+          wb.setPanelPtyId(targetSpacePath, panel.id, "tui", undefined)
+          wb.setPanelPtyId(targetSpacePath, panel.id, "term", undefined)
+          wb.setPanelPtyId(targetSpacePath, panel.id, "split", undefined)
+          wb.setPanelSplitTerminal(targetSpacePath, panel.id, false)
+
+          wb.unbindSessionFromPanel(targetSpacePath, panel.id)
+        }
+
+        let localSession = sessionStore.getSession(session.id)
+        if (!localSession) {
+          const projectPath = sessionData?.directory ?? targetSpacePath
+          localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
+        }
+        wb.bindSessionToPanel(targetSpacePath, panel.id, session.id)
+        wb.setPanelViewMode(targetSpacePath, panel.id, "chat")
+        wb.setActivePanel(targetSpacePath, panel.id)
+
+        const newBadge = getPanelBadge(session.id)
+        wb.setStatusMessage(t("workbench.status.sessionLoaded", { badge: newBadge ?? "" }))
+      }
 
       wb.openTab(targetSpace)
       wb.ensureSpace(targetSpacePath)
@@ -481,21 +615,33 @@ export function SessionTree(props: {
       }
 
       if (!targetPanel) {
-        wb.setStatusMessage(t("workbench.panel.noAvailablePanel"))
-        return
+        const activePanelId = space.activePanelID
+        const activePanel = space.panels.find((p) => p.id === activePanelId)
+        if (activePanel) {
+          const idx = space.panels.findIndex((p) => p.id === activePanelId)
+          dialog.show(() => (
+            <DialogOverwritePanel
+              panelIndex={idx + 1}
+              onConfirm={() => {
+                loadSessionIntoPanel(activePanel)
+                dialog.close()
+              }}
+            />
+          ))
+        } else {
+          dialog.show(() => (
+            <DialogOverwritePanel
+              panelIndex={1}
+              onConfirm={() => {
+                loadSessionIntoPanel(space.panels[0])
+                dialog.close()
+              }}
+            />
+          ))
+        }
+      } else {
+        loadSessionIntoPanel(targetPanel)
       }
-
-      let localSession = sessionStore.getSession(session.id)
-      if (!localSession) {
-        const projectPath = sessionData?.directory ?? targetSpacePath
-        localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
-      }
-      wb.bindSessionToPanel(targetSpacePath, targetPanel.id, session.id)
-      wb.setPanelViewMode(targetSpacePath, targetPanel.id, "chat")
-      wb.setActivePanel(targetSpacePath, targetPanel.id)
-
-      const newBadge = getPanelBadge(session.id)
-      wb.setStatusMessage(t("workbench.status.sessionLoaded", { badge: newBadge ?? "" }))
     }
 
     let sessionEl: HTMLButtonElement | undefined

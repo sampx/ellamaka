@@ -4,7 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, onCleanup, For, createSignal, on, batch } from "solid-js"
+import { Show, createEffect, onCleanup, For, createSignal, on, batch, onMount } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
@@ -36,6 +36,8 @@ export function Panel(props: {
   const { setPanelPtyId, setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
+
+
 
   const [mountedViews, setMountedViews] = createSignal<Set<string>>(new Set())
   const [terminalTitle, setTerminalTitle] = createSignal<string>()
@@ -156,11 +158,62 @@ export function Panel(props: {
     const id = sessionId()
     if (!id) return
     const current = sessionInfo()?.title ?? ""
-    const next = prompt("重命名会话", current)
-    if (!next || next === current) return
-    const directory = props.panel.directory
-    sessionStore.renameSession(id, next)
-    void sdk.client.session.update({ sessionID: id, title: next, directory }).catch(() => {})
+
+    let inputEl: HTMLInputElement | undefined
+    const [val, setVal] = createSignal(current)
+
+    dialog.show(() => (
+      <Dialog title={t("workbench.tree.rename") || "重命名会话"} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+          <div class="flex flex-col gap-2">
+            <input
+              ref={inputEl}
+              type="text"
+              class="w-full px-3 py-1.5 text-12-regular text-text-strong bg-v2-background-bg-deep border border-v2-border-border-base rounded-md focus:outline-none focus:border-v2-border-border-brand-strong"
+              value={val()}
+              onInput={(e) => setVal(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const trimmed = val().trim()
+                  if (trimmed && trimmed !== current) {
+                    const directory = props.panel.directory
+                    sessionStore.renameSession(id, trimmed)
+                    void sdk.client.session.update({ sessionID: id, title: trimmed, directory }).catch(() => {})
+                  }
+                  dialog.close()
+                }
+                if (e.key === "Escape") dialog.close()
+              }}
+            />
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {t("common.cancel") || "取消"}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              onClick={() => {
+                const trimmed = val().trim()
+                if (trimmed && trimmed !== current) {
+                  const directory = props.panel.directory
+                  sessionStore.renameSession(id, trimmed)
+                  void sdk.client.session.update({ sessionID: id, title: trimmed, directory }).catch(() => {})
+                }
+                dialog.close()
+              }}
+            >
+              {t("common.confirm") || "确认"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
+
+    setTimeout(() => {
+      inputEl?.focus()
+      inputEl?.select()
+    }, 50)
   }
 
   const handleCopyLink = () => {

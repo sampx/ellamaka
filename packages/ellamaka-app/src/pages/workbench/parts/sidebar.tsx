@@ -132,9 +132,12 @@ export function SpaceRail() {
     if (!session) return
     const isBound = wb.isSessionBound(sessionId)
     const boundPanelId = wb.boundPanelIdForSession(sessionId)
-    if (isBound && boundPanelId) {
-      const tab = wb.tabs.find((t) => t.name === session.spaceName)
-      if (tab) wb.setActivePanel(tab.path, boundPanelId)
+    const tab = wb.tabs.find((t) => t.name === session.spaceName)
+    if (tab) {
+      wb.openTab(tab)
+      if (isBound && boundPanelId) {
+        wb.setActivePanel(tab.path, boundPanelId)
+      }
     }
   }
 

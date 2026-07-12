@@ -27,7 +27,7 @@ export function shouldUnbindSessionFromEvent(input: {
   type?: string
   timeArchived?: number
 }) {
-  return input.type === "session.deleted" || (input.type === "session.updated" && input.timeArchived !== undefined)
+  return input.type === "session.deleted" || (input.type === "session.updated" && typeof input.timeArchived === "number")
 }
 
 export function shouldSyncSessionTitle(input: {
