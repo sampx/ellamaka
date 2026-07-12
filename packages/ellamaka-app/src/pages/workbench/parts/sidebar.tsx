@@ -219,6 +219,7 @@ export function SpaceRail() {
               ...store.spaces(),
             ]}
             activeSpaceName={wb.activeSpaceName}
+            pendingSpacePath={pendingSpace()?.path}
             onSpaceClick={handleSpaceClick}
             onProjectClick={handleProjectClick}
             onSessionClick={handleSessionClick}

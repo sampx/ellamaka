@@ -51,6 +51,7 @@ type SessionGroup = {
 export function SessionTree(props: {
   spaces: WopalSpace[]
   activeSpaceName: string | undefined
+  pendingSpacePath?: string | undefined
   onSpaceClick: (space: WopalSpace) => void
   onProjectClick: (spaceName: string, projectPath: string) => void
   onSessionClick: (sessionId: string) => void
@@ -312,13 +313,6 @@ export function SessionTree(props: {
     }
   }
 
-  function handleSpaceClick(space: WopalSpace) {
-    if (space.name === props.activeSpaceName) {
-      toggleSpace(space.name)
-      return
-    }
-    props.onSpaceClick(space)
-  }
 
   function handleSessionClick(sessionId: string) {
     props.onSessionClick(sessionId)
@@ -699,7 +693,7 @@ export function SessionTree(props: {
           }
         >
           {(badge) => (
-            <span class="flex items-center justify-center shrink-0 rounded-full px-1 text-[9px] font-bold text-white bg-v2-icon-icon-brand leading-none min-w-[18px] h-3.5 scale-90 select-none">
+            <span class="flex items-center justify-center shrink-0 rounded-full px-1.25 text-[10px] font-semibold text-white bg-v2-icon-icon-brand leading-none min-w-[20px] h-4.5 select-none">
               {badge()}
             </span>
           )}
@@ -728,6 +722,7 @@ export function SessionTree(props: {
         {(space) => {
           const isActive = space.name === props.activeSpaceName
           const isExpanded = createMemo(() => expandedSpaces().has(space.name))
+          const isPending = createMemo(() => props.pendingSpacePath !== undefined && props.pendingSpacePath === space.path)
 
           // Trigger group load when expanded
           createEffect(() => {
@@ -764,18 +759,28 @@ export function SessionTree(props: {
             <div>
               <button
                 type="button"
-                class={`group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
-                  isActive
-                    ? "bg-v2-overlay-simple-overlay-hover"
-                    : "hover:bg-v2-overlay-simple-overlay-hover"
-                }`}
-                onClick={() => handleSpaceClick(space)}
+                classList={{
+                  "group flex w-full items-center gap-2 text-left transition-all py-1.5": true,
+                  "bg-v2-background-bg-deep border-l-2 border-v2-border-border-brand-strong pl-1.5 pr-2 font-medium rounded-l-none text-v2-text-text-strong shadow-sm": isActive,
+                  "bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-500/30 pl-1.5 pr-2 rounded-md": !isActive && isPending(),
+                  "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md px-2": !isActive && !isPending(),
+                }}
+                onClick={() => props.onSpaceClick(space)}
                 onContextMenu={(e) => showSpaceMenu(e, space)}
               >
-                <IconV2
-                  name={isExpanded() ? "outline-chevron-down" : "outline-chevron-down"}
-                  class={`size-3 shrink-0 text-v2-text-text-muted ${isExpanded() ? "" : "-rotate-90"}`}
-                />
+                <span
+                  class="p-0.5 rounded hover:bg-v2-overlay-simple-overlay-hover cursor-pointer shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    toggleSpace(space.name)
+                  }}
+                >
+                  <IconV2
+                    name="outline-chevron-down"
+                    class={`size-3 text-v2-text-text-muted transition-transform ${isExpanded() ? "" : "-rotate-90"}`}
+                  />
+                </span>
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
                 <Show when={space.type}>
                   <span class="rounded-full px-1.5 py-0.5 text-[9px] font-medium text-v2-text-text-muted bg-v2-background-bg-deep border border-v2-border-border-base scale-95 origin-right">
