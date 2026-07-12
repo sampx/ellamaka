@@ -977,7 +977,7 @@ export const dict = {
   "workbench.status.panel": "面板",
   "workbench.status.path": "路径",
   "workbench.status.defaultHint": "提示：双击会话或拖拽会话到面板中即可在工作台打开",
-  "workbench.status.panelActivated": "已激活绑定了该会话的面板 {{badge}}",
+  "workbench.status.panelActivated": "已激活绑定该会话的面板 {{badge}}。您可在窗口顶部切换不同视图进行对话",
   "workbench.status.sessionLoaded": "已在面板 {{badge}} 中装载会话",
   "workbench.status.dirHealthWarning": "警告：此会话的工作目录已不可用，请右击重命名、归档或删除",
   "workbench.status.sessionReadyHint": "提示：双击该会话或将其拖拽到右侧面板以装载打开",
