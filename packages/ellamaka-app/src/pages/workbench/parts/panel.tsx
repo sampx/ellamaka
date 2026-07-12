@@ -4,7 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, onCleanup, For, createSignal, on, batch, onMount } from "solid-js"
+import { Show, createEffect, onCleanup, For, createSignal, on, batch, onMount, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
@@ -81,6 +81,7 @@ export function Panel(props: {
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState, props.panel.tuiPtyId)
   const splitTitle = () => splitTerminalTitle(terminalTitle(), t("terminal.title"))
   const restoringSessionIDs = new Set<string>()
+  const hasOpenSplitPty = createMemo(() => !!props.panel.splitPtyId)
 
   createEffect(() => {
     const sessionID = props.panel.boundSessionId
@@ -553,7 +554,7 @@ export function Panel(props: {
             variant="ghost-muted"
             size="small"
             state={props.panel.splitTerminal ? "pressed" : undefined}
-            icon={<IconV2 name="terminal" />}
+            icon={<IconV2 name="terminal" classList={{ "text-v2-icon-icon-accent": hasOpenSplitPty() }} />}
             aria-label={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
             title={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
             onClick={(e: MouseEvent) => {
