@@ -694,14 +694,13 @@ export function SessionTree(props: {
         onClick={handleSessionClick}
         onDblClick={handleSessionDblClick}
         onContextMenu={(e) => showSessionMenu(e, session, spaceName)}
-        title={dirHealth !== "healthy" ? "工作目录不可用" : undefined}
       >
         <Show when={getPanelBadge(session.id)}
           fallback={
             <Show when={dirHealth !== "healthy"}
               fallback={<span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />}
             >
-              <span class="flex items-center justify-center shrink-0 text-[11px] leading-none text-amber-500" title="工作目录不可用">!</span>
+              <span class="flex items-center justify-center shrink-0 text-[11px] leading-none text-amber-500">!</span>
             </Show>
           }
         >
@@ -713,7 +712,7 @@ export function SessionTree(props: {
         </Show>
         <span class="flex-1 truncate">{session.title}</span>
         <Show when={dirHealth !== "healthy"}>
-          <span class="text-9-regular text-v2-text-text-faint shrink-0" title="工作目录不可用">{dirHealth === "missing" ? "缺失" : "不可用"}</span>
+          <span class="text-9-regular text-v2-text-text-faint shrink-0">{dirHealth === "missing" ? "缺失" : "不可用"}</span>
         </Show>
         <Show when={pinnedSessions().has(session.id)}>
           <svg class="size-3 shrink-0 text-v2-icon-icon-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
