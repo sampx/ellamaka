@@ -553,8 +553,9 @@ export function Panel(props: {
           <IconButtonV2
             variant="ghost-muted"
             size="small"
+            style={{ color: hasOpenSplitPty() ? "var(--v2-icon-icon-accent)" : undefined }}
             state={props.panel.splitTerminal ? "pressed" : undefined}
-            icon={<IconV2 name="terminal" classList={{ "text-v2-icon-icon-accent": hasOpenSplitPty() }} />}
+            icon={<IconV2 name="terminal" />}
             aria-label={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
             title={t(props.panel.splitTerminal ? "workbench.panel.splitTerminal.hide" : "workbench.panel.splitTerminal.show")}
             onClick={(e: MouseEvent) => {
