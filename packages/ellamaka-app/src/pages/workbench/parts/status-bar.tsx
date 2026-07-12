@@ -1,7 +1,59 @@
-import { Show, createMemo } from "solid-js"
+import { Show, createMemo, For } from "solid-js"
 import { useServer } from "@/context/server"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
+
+export type StatusBarSegment = {
+  type: "space" | "panel" | "session" | "path"
+  text: string
+}
+
+export type StatusBarMetadataInput = {
+  spaceName: string
+  activePanelID: string | undefined
+  panels: Array<{
+    id: string
+    slotState: string
+    directory: string
+    boundSessionId?: string
+  }>
+  getSessionTitle: (sessionId: string) => string | undefined
+}
+
+export function getStatusBarSegments(input: StatusBarMetadataInput): StatusBarSegment[] {
+  const { spaceName, activePanelID, panels, getSessionTitle } = input
+  const segments: StatusBarSegment[] = []
+  if (!spaceName) return segments
+
+  segments.push({ type: "space", text: spaceName })
+
+  if (!activePanelID) return segments
+  const idx = panels.findIndex((p) => p.id === activePanelID)
+  if (idx === -1) return segments
+  const panel = panels[idx]
+  const pIndex = idx + 1
+
+  segments.push({
+    type: "panel",
+    text: `P${pIndex}/${panels.length}`,
+  })
+
+  if (panel.slotState === "bound" && panel.boundSessionId) {
+    const title = getSessionTitle(panel.boundSessionId)
+    if (title) {
+      segments.push({ type: "session", text: title })
+    }
+  }
+
+  if (panel.directory) {
+    const pathText = panel.directory.startsWith("/")
+      ? panel.directory.slice(1)
+      : panel.directory
+    segments.push({ type: "path", text: pathText })
+  }
+
+  return segments
+}
 
 export function StatusBar() {
   const wb = useWorkbenchState()
@@ -10,42 +62,42 @@ export function StatusBar() {
 
   const activePath = createMemo(() => wb.activeTab()?.path ?? "")
   const space = createMemo(() => wb.spaceState(activePath()))
-  const panelCount = createMemo(() => space()?.panels.length ?? 0)
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
 
-  const activePanelInfo = createMemo(() => {
+  const segments = createMemo(() => {
+    const name = spaceName()
     const sp = space()
-    if (!sp || !sp.activePanelID) return undefined
-    const idx = sp.panels.findIndex((p) => p.id === sp.activePanelID)
-    if (idx === -1) return undefined
-    const panel = sp.panels[idx]
-    return {
-      index: idx + 1,
-      sessionTitle: panel.slotState === "bound"
-        ? sessionStore.getSession(panel.boundSessionId ?? "")?.title
-        : undefined,
-    }
+    if (!name || !sp) return []
+    return getStatusBarSegments({
+      spaceName: name,
+      activePanelID: sp.activePanelID,
+      panels: sp.panels,
+      getSessionTitle: (id) => sessionStore.getSession(id)?.title,
+    })
   })
 
   return (
-    <footer class="flex h-6 shrink-0 items-center gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
+    <footer class="flex h-6 shrink-0 items-center justify-between gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
+      {/* 左区：空间 / panel / 会话 / 路径 的现代紧凑层级链 */}
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
-        <Show when={spaceName()}>
-          <span class="shrink-0">{spaceName()}</span>
-        </Show>
-        <Show when={activePanelInfo()}>
-          {(info) => (
+        <For each={segments()}>
+          {(seg, idx) => (
             <>
-              <span class="text-v2-text-text-faint">/</span>
-              <span class="shrink-0 rounded bg-v2-background-bg-deep px-1.5 py-px">P{info().index}/{panelCount()}</span>
-              <Show when={info().sessionTitle}>
-                <span class="text-v2-text-text-faint">/</span>
-                <span class="min-w-0 truncate text-v2-text-text-base" title={info().sessionTitle}>{info().sessionTitle}</span>
+              <Show when={idx() > 0}>
+                <span class="text-v2-text-text-faint select-none">/</span>
               </Show>
+              <span
+                class="truncate text-v2-text-text-muted"
+                title={seg.type === "path" ? "/" + seg.text : seg.text}
+              >
+                {seg.text}
+              </span>
             </>
           )}
-        </Show>
+        </For>
       </div>
+
+      {/* 右区：Server 名字及连接状态，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1.5 border-l border-v2-border-border-base pl-2">
         <span class="size-1.5 rounded-full bg-v2-icon-icon-accent" />
         <span class="truncate">{server.name}</span>
@@ -53,3 +105,5 @@ export function StatusBar() {
     </footer>
   )
 }
+
+

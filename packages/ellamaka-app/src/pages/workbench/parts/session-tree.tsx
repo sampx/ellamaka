@@ -198,6 +198,17 @@ export function SessionTree(props: {
   }
 
   let treeContainerRef: HTMLDivElement | undefined
+  let scrollTimeout: any = null
+
+  const handleScroll = (e: Event) => {
+    const target = e.currentTarget as HTMLDivElement
+    if (!target) return
+    const scrollTop = target.scrollTop
+    if (scrollTimeout) clearTimeout(scrollTimeout)
+    scrollTimeout = setTimeout(() => {
+      sessionStorage.setItem("workbench.tree.scrollTop", String(scrollTop))
+    }, 100)
+  }
 
   onMount(() => {
     const handler = () => setContextMenu(null)
@@ -232,6 +243,7 @@ export function SessionTree(props: {
       document.removeEventListener("click", handler)
       clearInterval(treeInterval)
       document.removeEventListener("visibilitychange", handleVisibility)
+      if (scrollTimeout) clearTimeout(scrollTimeout)
     })
   })
 
@@ -710,7 +722,7 @@ export function SessionTree(props: {
     <div
       ref={treeContainerRef}
       class="flex-1 overflow-y-auto px-1.5"
-      onScroll={(e) => sessionStorage.setItem("workbench.tree.scrollTop", String(e.currentTarget.scrollTop))}
+      onScroll={handleScroll}
     >
       <For each={props.spaces}>
         {(space) => {
