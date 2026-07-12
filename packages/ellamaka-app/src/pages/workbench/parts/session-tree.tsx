@@ -272,6 +272,19 @@ export function SessionTree(props: {
     })
   }
 
+  function handleSpaceRowClick(space: WopalSpace) {
+    if (space.name === props.activeSpaceName) {
+      toggleSpace(space.name)
+      return
+    }
+    setExpandedSpaces((prev) => {
+      const next = new Set(prev)
+      next.add(space.name)
+      return next
+    })
+    props.onSpaceClick(space)
+  }
+
   function normalizeSessionCount(n: number | string): number {
     return typeof n === "number" ? n : 0
   }
@@ -765,7 +778,7 @@ export function SessionTree(props: {
                   "bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-500/30 px-2 rounded-md": !isActive && isPending(),
                   "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md px-2": !isActive && !isPending(),
                 }}
-                onClick={() => props.onSpaceClick(space)}
+                onClick={() => handleSpaceRowClick(space)}
                 onContextMenu={(e) => showSpaceMenu(e, space)}
               >
                 <span
