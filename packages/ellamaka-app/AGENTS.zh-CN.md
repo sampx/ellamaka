@@ -69,6 +69,9 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 - 构建使用 Vite，配置在 `vite.config.ts`；生产构建 target 为 `esnext`。
 - `packages/ui/` (`@opencode-ai/ui`) 是本项目的共享 UI 库；跨 package 复用的 UI 原语放在那里。
 - Workbench 的 `session-store` 只拥有 UI 投影状态。会话标题等服务端字段必须回归后端真相，不能让持久化的本地状态长期覆盖服务端返回结果。
+- Panel 标题栏中 TUI 的存活标记必须直接由 `panel.tuiPtyId` 派生；不得另存一个 UI 标记状态。该 PTY ID 会在启动时写入、关闭或断连时清空。
+- Workbench 的瞬时提示统一使用 `wb.statusMessage`，只能传入 i18n 文案，显示在左侧会话树底部并在 5 秒后自动消失；侧栏收缩时提示区必须完全隐藏。底部状态栏只呈现当前 Space、Panel、会话和服务器上下文，不能承载操作帮助。
+- Workbench Chat 的历史区与输入 dock 必须共享 `bg-v2-background-bg-deep`；该适配只能位于 `PanelChatComposer`，不得改变通用会话 Composer 的默认底色。
 - 嵌入式 terminal/TUI 不显示 `ghostty-web` 的 canvas 滚动条，也不能沿用 `FitAddon` 固定预留的滚动条宽度；终端列数必须按容器完整内容宽度计算。TUI 需要优先消除可见 gutter：始终向上取整到完整字符网格，并由容器裁掉超出边缘的部分，避免保留任何正向余量。直接 TUI 用 `isTui` 标记；用户在普通终端中启动的 Ellamaka TUI 必须同时通过 OSC 标题与 alternate buffer 识别，才能启用相同的满铺尺寸和滚轮消息历史映射，不能影响其它全屏终端程序；禁止用全局滚动条 CSS 掩盖尺寸预留问题。
 
 ## 5. 测试

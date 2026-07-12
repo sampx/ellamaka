@@ -72,6 +72,7 @@ const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
 
 export const GENERAL_TAB_NAME = "General"
 export const GENERAL_TAB_PATH = ""
+const STATUS_MESSAGE_DURATION = 5_000
 
 const PERSISTED_DEFAULTS: PersistedWorkbench = {
   display: { ...DISPLAY_DEFAULTS },
@@ -134,7 +135,23 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setRefreshVersion((v) => v + 1)
     }
 
-    const [statusMessage, setStatusMessage] = createSignal("提示：双击会话或拖拽会话到面板中即可在工作台打开")
+    const [statusMessage, setStatusMessageValue] = createSignal("")
+    let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
+
+    function setStatusMessage(message: string) {
+      if (statusMessageTimer) clearTimeout(statusMessageTimer)
+      statusMessageTimer = undefined
+      setStatusMessageValue(message)
+      if (!message) return
+      statusMessageTimer = setTimeout(() => {
+        setStatusMessageValue("")
+        statusMessageTimer = undefined
+      }, STATUS_MESSAGE_DURATION)
+    }
+
+    onCleanup(() => {
+      if (statusMessageTimer) clearTimeout(statusMessageTimer)
+    })
 
     // 3. 150ms debounce 防抖优化写入
     let saveTimer: any = null

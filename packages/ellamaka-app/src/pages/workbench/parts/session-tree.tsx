@@ -54,7 +54,6 @@ export function SessionTree(props: {
   onSpaceClick: (space: WopalSpace) => void
   onProjectClick: (spaceName: string, projectPath: string) => void
   onSessionClick: (sessionId: string) => void
-  onStatusMessage: (msg: string) => void
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()

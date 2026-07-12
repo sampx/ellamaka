@@ -24,7 +24,6 @@ export function SpaceRail() {
   const t = (k: string) => language.t(k)
 
   const expanded = createMemo(() => wb.display().showSpaceRail)
-  const [statusMsg, setStatusMsg] = createSignal("")
   const [confirmDialog, setConfirmDialog] = createSignal(false)
   const [pendingSpace, setPendingSpace] = createSignal<{ name: string; path: string; type?: string } | null>(null)
 
@@ -94,10 +93,10 @@ export function SpaceRail() {
     if (refreshing()) return
     setRefreshing(true)
     wb.triggerRefresh()
-    showStatus(t("workbench.sidebar.refreshing"))
+    wb.setStatusMessage(t("workbench.sidebar.refreshing"))
     setTimeout(() => {
       setRefreshing(false)
-      showStatus(t("workbench.sidebar.refreshed"))
+      wb.setStatusMessage(t("workbench.sidebar.refreshed"))
     }, 600)
   }
 
@@ -120,7 +119,7 @@ export function SpaceRail() {
     if (!state) return
     const emptyPanel = state.panels.find((p) => p.slotState === "empty")
     if (!emptyPanel) {
-      showStatus(t("workbench.tree.noEmptyPanel"))
+      wb.setStatusMessage(t("workbench.tree.noEmptyPanel"))
       return
     }
     wb.setPanelDirectory(tab.path, emptyPanel.id, projectPath)
@@ -139,11 +138,6 @@ export function SpaceRail() {
         wb.setActivePanel(tab.path, boundPanelId)
       }
     }
-  }
-
-  function showStatus(msg: string) {
-    setStatusMsg(msg)
-    setTimeout(() => setStatusMsg(""), 3000)
   }
 
   return (
@@ -228,14 +222,13 @@ export function SpaceRail() {
             onSpaceClick={handleSpaceClick}
             onProjectClick={handleProjectClick}
             onSessionClick={handleSessionClick}
-            onStatusMessage={showStatus}
           />
         </Show>
       </div>
 
-      <Show when={statusMsg()}>
-        <div class="shrink-0 border-t border-v2-border-border-base px-2 py-1 text-10-regular text-v2-text-text-muted">
-          {statusMsg()}
+      <Show when={expanded() && wb.statusMessage}>
+        <div aria-live="polite" class="shrink-0 border-t border-v2-border-border-base px-2 py-1.5 text-10-regular leading-4 text-v2-text-text-muted">
+          {wb.statusMessage}
         </div>
       </Show>
 

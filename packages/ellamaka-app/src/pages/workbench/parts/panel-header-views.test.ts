@@ -15,4 +15,9 @@ describe("getPanelHeaderViews", () => {
   test("keeps only session views for bound panels", () => {
     expect(getPanelHeaderViews(views, "bound").map((view) => view.id)).toEqual(["tui", "chat", "context"])
   })
+
+  test("marks the TUI menu when the panel has an open TUI PTY", () => {
+    expect(getPanelHeaderViews(views, "bound", "pty-tui-1").find((view) => view.id === "tui")?.hasOpenTui).toBe(true)
+    expect(getPanelHeaderViews(views, "bound").find((view) => view.id === "tui")?.hasOpenTui).toBe(false)
+  })
 })

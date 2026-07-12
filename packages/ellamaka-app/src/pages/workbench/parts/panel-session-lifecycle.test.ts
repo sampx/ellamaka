@@ -5,6 +5,7 @@ import {
   shouldRestoreBoundSession,
   shouldUnbindSessionFromEvent,
   shouldSyncSessionTitle,
+  workbenchSessionEvent,
 } from "./panel-session-lifecycle"
 
 describe("shouldAcceptSessionDrop", () => {
@@ -74,5 +75,50 @@ describe("shouldSyncSessionTitle", () => {
 
   test("returns true when the title differs from the local store", () => {
     expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "New Title", localTitle: "Old Title" })).toBe(true)
+  })
+})
+
+describe("workbenchSessionEvent", () => {
+  test("ignores an event without session details", () => {
+    expect(workbenchSessionEvent()).toEqual({
+      type: undefined,
+      sessionId: undefined,
+      title: undefined,
+      timeArchived: undefined,
+    })
+  })
+
+  test("reads the session id from an incremental session.updated payload", () => {
+    expect(
+      workbenchSessionEvent({
+        type: "session.updated",
+        properties: {
+          sessionID: "ses_1",
+          info: { title: "Generated title" },
+        },
+      }),
+    ).toEqual({
+      type: "session.updated",
+      sessionId: "ses_1",
+      title: "Generated title",
+      timeArchived: undefined,
+    })
+  })
+
+  test("uses the complete session payload for creation and deletion events", () => {
+    expect(
+      workbenchSessionEvent({
+        type: "session.deleted",
+        properties: {
+          sessionID: "ses_2",
+          info: { id: "ses_2", time: { archived: 10 } },
+        },
+      }),
+    ).toEqual({
+      type: "session.deleted",
+      sessionId: "ses_2",
+      title: undefined,
+      timeArchived: 10,
+    })
   })
 })

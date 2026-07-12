@@ -24,18 +24,20 @@ export function PanelChatComposer(props: {
   }
 }) {
   return (
-    <SessionComposerRegion
-      state={props.state}
-      ready={props.ready}
-      centered={false}
-      placement="dock"
-      inputRef={props.inputRef}
-      newSessionWorktree={props.directory}
-      onNewSessionWorktreeReset={() => {}}
-      onSubmit={props.onSubmit}
-      onResponseSubmit={props.onResponseSubmit}
-      setPromptDockRef={props.setPromptDockRef}
-      revert={props.revert}
-    />
+    <div class="contents [&_[data-component=session-prompt-dock]]:!bg-v2-background-bg-deep">
+      <SessionComposerRegion
+        state={props.state}
+        ready={props.ready}
+        centered={false}
+        placement="dock"
+        inputRef={props.inputRef}
+        newSessionWorktree={props.directory}
+        onNewSessionWorktreeReset={() => {}}
+        onSubmit={props.onSubmit}
+        onResponseSubmit={props.onResponseSubmit}
+        setPromptDockRef={props.setPromptDockRef}
+        revert={props.revert}
+      />
+    </div>
   )
 }

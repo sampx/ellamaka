@@ -41,3 +41,19 @@ export function shouldSyncSessionTitle(input: {
   if (input.localTitle === undefined) return false
   return input.title !== input.localTitle
 }
+
+export function workbenchSessionEvent(input?: {
+  type?: string
+  properties?: {
+    sessionID?: string
+    info?: { id?: string; title?: string; time?: { archived?: number } }
+  }
+}) {
+  const info = input?.properties?.info
+  return {
+    type: input?.type,
+    sessionId: input?.properties?.sessionID ?? info?.id,
+    title: info?.title,
+    timeArchived: info?.time?.archived,
+  }
+}

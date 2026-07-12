@@ -23,8 +23,6 @@ import { createSessionHistoryLoader } from "./panel-chat-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
 import { WorkbenchChatProvider } from "./workbench-chat-context"
-import { useSessionStore } from "../session-store"
-import { useWorkbenchState } from "../view-store"
 import type { WorkbenchPanel } from "../view-store"
 import type { Session } from "../session-store"
 
@@ -38,8 +36,6 @@ function PanelChatInner(props: {
   spaceName: string
 }) {
   const sync = useSync()
-  const sessionStore = useSessionStore()
-  const wb = useWorkbenchState()
   const sdk = useSDK()
   const prompt = usePrompt()
   const language = useLanguage()
@@ -107,24 +103,6 @@ function PanelChatInner(props: {
 
   onCleanup(() => {
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
-  })
-
-  // Sync bridge: watch official sync.data.session for title changes
-  createEffect(() => {
-    const sessions = sync.data.session as any[]
-    const officialSession = sessions?.find((s: any) => s.id === props.session.id)
-    if (!officialSession) return
-    
-    // Use untrack and setTimeout to prevent solid reactive cycle deadlock
-    const title = officialSession.title
-    if (title) {
-      setTimeout(() => {
-        const local = sessionStore.getSession(props.session.id)
-        if (local && title !== local.title) {
-          sessionStore.syncSessionReference(props.session.id, { title })
-        }
-      }, 0)
-    }
   })
 
   let inputRef: HTMLDivElement | undefined

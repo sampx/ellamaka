@@ -6,7 +6,7 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
-import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle } from "./parts/panel-session-lifecycle"
+import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { ptyManager } from "./pty-manager"
 
@@ -21,26 +21,23 @@ function WorkbenchShell() {
   onMount(() => {
     console.log("=== WORKBENCH MOUNTED ===", Date.now())
     const unsub = sdk.event.listen((e) => {
-      const details = e.details as {
+      const session = workbenchSessionEvent(e.details as {
         type?: string
-        properties?: { info?: { id?: string; title?: string; time?: { archived?: number } } }
-      } | undefined
-      const session = details?.properties?.info
-      if (shouldUnbindSessionFromEvent({ type: details?.type, timeArchived: session?.time?.archived })) {
-        if (session?.id) {
-          wb.unbindSessionGlobal(session.id)
-          sessionStore.deleteSession(session.id)
+        properties?: { sessionID?: string; info?: { id?: string; title?: string; time?: { archived?: number } } }
+      } | undefined)
+      if (shouldUnbindSessionFromEvent({ type: session.type, timeArchived: session.timeArchived })) {
+        if (session.sessionId) {
+          wb.unbindSessionGlobal(session.sessionId)
+          sessionStore.deleteSession(session.sessionId)
         }
         sessionStore.triggerRefresh()
         return
       }
-      if (details?.type === "session.created") {
+      if (session.type === "session.created") {
         sessionStore.triggerRefresh()
       }
-      if (shouldSyncSessionTitle({ type: details?.type, sessionId: session?.id, title: session?.title, localTitle: sessionStore.getSession(session?.id ?? "")?.title })) {
-        const sid = session!.id!
-        const stitle = session!.title!
-        sessionStore.syncSessionReference(sid, { title: stitle })
+      if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: sessionStore.getSession(session.sessionId ?? "")?.title })) {
+        sessionStore.syncSessionReference(session.sessionId!, { title: session.title! })
         sessionStore.triggerRefresh()
       }
     })

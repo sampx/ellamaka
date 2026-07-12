@@ -6,9 +6,12 @@ type PanelHeaderView = {
   requiresSession: boolean
 }
 
-type PanelHeaderViewState = PanelHeaderView & { disabled: boolean }
+type PanelHeaderViewState = PanelHeaderView & {
+  disabled: boolean
+  hasOpenTui: boolean
+}
 
-export function getPanelHeaderViews(views: PanelHeaderView[], slotState: PanelSlotState): PanelHeaderViewState[] {
+export function getPanelHeaderViews(views: PanelHeaderView[], slotState: PanelSlotState, tuiPtyId?: string): PanelHeaderViewState[] {
   if (slotState === "empty") return []
 
   return views
@@ -16,5 +19,6 @@ export function getPanelHeaderViews(views: PanelHeaderView[], slotState: PanelSl
     .map((view) => ({
       ...view,
       disabled: false,
+      hasOpenTui: view.id === "tui" && !!tuiPtyId,
     }))
 }

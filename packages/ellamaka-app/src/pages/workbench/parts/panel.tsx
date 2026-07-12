@@ -78,7 +78,7 @@ export function Panel(props: {
     return session?.directoryHealth ?? "healthy" as const
   }
   const isDirUnhealthy = () => directoryHealth() !== "healthy"
-  const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState)
+  const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState, props.panel.tuiPtyId)
   const splitTitle = () => splitTerminalTitle(terminalTitle(), t("terminal.title"))
   const restoringSessionIDs = new Set<string>()
 
@@ -571,7 +571,7 @@ export function Panel(props: {
             return (
               <button
                 type="button"
-                class="px-1.5 py-0.5 rounded text-10-regular transition-colors"
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-10-regular transition-colors"
                 classList={{
                   "text-v2-text-text-faint cursor-not-allowed": view.disabled,
                   "cursor-pointer": !view.disabled,
@@ -585,7 +585,10 @@ export function Panel(props: {
                   wb.setPanelViewMode(spacePath, props.panel.id, view.id)
                 }}
               >
-                {view.label}
+                <span>{view.label}</span>
+                <Show when={view.hasOpenTui}>
+                  <span aria-hidden="true" class="size-2 shrink-0 rounded-full bg-v2-icon-icon-accent" />
+                </Show>
               </button>
             )
           }}

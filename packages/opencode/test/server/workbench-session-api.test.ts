@@ -6,6 +6,46 @@ import { SessionProjection } from "../../src/workbench/session-projection"
 import { SessionDirectoryHealth } from "../../src/workbench/session-directory-health"
 import { SpaceRegistry } from "../../src/wopal/space-registry"
 import { CliAdapter } from "../../src/wopal/cli-adapter"
+import { SessionShare } from "../../src/share/session"
+import { InstanceStore } from "../../src/project/instance-store"
+
+const sessionShareLayer = Layer.mock(SessionShare.Service, {
+  create: () => Effect.die("SessionShare.create should not run in service wiring tests"),
+})
+
+const instanceStoreLayer = Layer.mock(InstanceStore.Service, {
+  provide: (_input, effect) => effect,
+})
+
+let createInput: { title?: string; agent?: string } | undefined
+let createCalled = false
+
+function resetCreateCapture() {
+  createInput = undefined
+  createCalled = false
+}
+
+const provisionerIt = testEffect(
+  SessionProvisioner.layer.pipe(
+    Layer.provide([
+      Layer.mock(SessionDirectoryHealth.Service, {
+        check: () => Effect.succeed("healthy" as const),
+      }),
+      Layer.mock(SpaceRegistry.Service, {
+        getSpaces: () => Effect.succeed({ spaces: [{ name: "main", path: "/tmp" }], refreshedAt: 0 } as never),
+      }),
+      Layer.mock(SessionShare.Service, {
+        create: (input) =>
+          Effect.sync(() => {
+            createCalled = true
+            createInput = input
+            return { id: "ses_1", directory: "/tmp", title: "New session - 2026-07-12T00:00:00.000Z" } as never
+          }),
+      }),
+      instanceStoreLayer,
+    ]),
+  ),
+)
 
 const it = testEffect(
   Layer.mergeAll(
@@ -14,10 +54,26 @@ const it = testEffect(
     SessionDirectoryHealth.defaultLayer,
     CliAdapter.defaultLayer,
     SpaceRegistry.defaultLayer,
-  ),
+  ).pipe(Layer.provide([sessionShareLayer, instanceStoreLayer])),
 )
 
 describe("workbench-session-api", () => {
+  provisionerIt.live("provisioner delegates session creation without assigning a fixed title", () =>
+    Effect.gen(function* () {
+      resetCreateCapture()
+      const provisioner = yield* SessionProvisioner.Service
+      const result = yield* provisioner.provisionSpace({ spaceName: "main" })
+
+      expect(createCalled).toBe(true)
+      expect(createInput).toEqual({ title: undefined, agent: undefined })
+      expect(result).toEqual({
+        id: "ses_1",
+        directory: "/tmp",
+        title: "New session - 2026-07-12T00:00:00.000Z",
+      })
+    }),
+  )
+
   it.live("SessionProvisioner service is available", () =>
     Effect.gen(function* () {
       const provisioner = yield* SessionProvisioner.Service
@@ -56,15 +112,6 @@ describe("workbench-session-api", () => {
       const health = yield* SessionDirectoryHealth.Service
       const result = yield* health.check("/nonexistent/path/12345")
       expect(result).toBe("missing")
-    }),
-  )
-
-  it.live("provisioner creates general session directory", () =>
-    Effect.gen(function* () {
-      const provisioner = yield* SessionProvisioner.Service
-      const result = yield* provisioner.provisionGeneral({ title: "test" })
-      expect(result.directory).toContain("general_tasks")
-      expect(result.title).toBe("test")
     }),
   )
 })
