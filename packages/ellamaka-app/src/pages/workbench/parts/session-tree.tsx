@@ -95,6 +95,43 @@ export function SessionTree(props: {
 
   const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(initialSpaces)
   const [pinnedSessions, setPinnedSessions] = createSignal<Set<string>>(new Set(loadPinned()))
+  const [selectedSessionId, setSelectedSessionId] = createSignal<string | undefined>(undefined)
+
+  createEffect(() => {
+    const activeId = activeSessionId()
+    if (activeId) {
+      setSelectedSessionId(activeId)
+    }
+  })
+
+  createEffect(() => {
+    const activeId = selectedSessionId()
+    if (!activeId) {
+      wb.setPersistentHint("")
+      return
+    }
+
+    let dirHealth = "healthy"
+    for (const space of props.spaces) {
+      const sData = getSessionsForSpace(space.name).find((s) => s.id === activeId)
+      if (sData) {
+        dirHealth = space.name === "General" ? "healthy" : (sData.directoryHealth ?? "healthy")
+        break
+      }
+    }
+
+    const badge = getPanelBadge(activeId)
+    if (badge) {
+      wb.setPersistentHint(t("workbench.status.panelActivated", { badge }))
+    } else {
+      if (dirHealth !== "healthy") {
+        wb.setPersistentHint(t("workbench.status.dirHealthWarning"))
+      } else {
+        wb.setPersistentHint(t("workbench.status.sessionReadyHint"))
+      }
+    }
+  })
+
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
   const [groupCache, setGroupCache] = createStore<Record<string, SessionGroup[]>>({})
   const [allGroups, setAllGroups] = createStore<SessionGroup[]>([])
@@ -273,7 +310,7 @@ export function SessionTree(props: {
   }
 
   function handleSpaceRowClick(space: WopalSpace) {
-    wb.setPersistentHint("")
+    setSelectedSessionId(undefined)
     if (space.name === props.activeSpaceName) {
       toggleSpace(space.name)
       return
@@ -516,6 +553,7 @@ export function SessionTree(props: {
     const dirHealth = spaceName === "General" ? "healthy" : (sessionData?.directoryHealth ?? "healthy")
 
     const handleSessionClick = () => {
+      setSelectedSessionId(session.id)
       const badge = getPanelBadge(session.id)
       if (badge) {
         let boundSpacePath: string | undefined
@@ -537,18 +575,12 @@ export function SessionTree(props: {
             wb.openTab(targetSpace)
           }
           wb.setActivePanel(boundSpacePath, boundPanelId)
-          wb.setPersistentHint(t("workbench.status.panelActivated", { badge }))
         }
       } else {
         const targetSpace = props.spaces.find((s) => s.name === spaceName)
         if (targetSpace) {
           wb.openTab(targetSpace)
           wb.ensureSpace(targetSpace.path)
-        }
-        if (dirHealth !== "healthy") {
-          wb.setPersistentHint(t("workbench.status.dirHealthWarning"))
-        } else {
-          wb.setPersistentHint(t("workbench.status.sessionReadyHint"))
         }
       }
       props.onSessionClick(session.id)
