@@ -285,6 +285,34 @@ export function Panel(props: {
     wb.removePanel(spacePath, props.panel.id)
   }
 
+  function DialogOverwritePanel(props: {
+    panelIndex: number
+    onConfirm: () => void
+  }) {
+    return (
+      <Dialog title={t("workbench.panel.overwriteTitle") || "覆盖会话窗口"} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {t("workbench.panel.overwriteConfirmText", { index: String(props.panelIndex) }) || `确定要覆盖面板 #${props.panelIndex} 的当前会话吗？`}
+            </span>
+            <span class="text-12-regular text-text-muted">
+              {t("workbench.panel.overwriteConfirmHint") || "覆盖后原有会话将自动解绑，您可以在左侧会话列表中随时重新恢复。"}
+            </span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {t("common.cancel") || "取消"}
+            </Button>
+            <Button variant="primary" size="large" onClick={props.onConfirm}>
+              {t("common.confirm") || "确认"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   const handleDrop = (e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -300,9 +328,7 @@ export function Panel(props: {
       return
     }
 
-    const targetDrop = { targetSlotState: props.panel.slotState, sourceHasLiveBinding: false }
-    if (!shouldAcceptSessionDrop(targetDrop)) {
-      showToast({ title: t("workbench.panel.dropTargetOccupied") })
+    if (props.panel.boundSessionId === sessionId) {
       return
     }
 
@@ -319,19 +345,40 @@ export function Panel(props: {
       ? wb.spaceState(spacePath)?.panels.find((panel) => panel.id === sessionBoundPanelId)
       : undefined
     const sourceHasLiveBinding = !!boundPanel && boundPanel.boundSessionId === sessionId
-    const sessionDrop = { targetSlotState: props.panel.slotState, sourceHasLiveBinding }
-    if (!shouldAcceptSessionDrop(sessionDrop)) {
-      const rejection = sessionDropRejection(sessionDrop)
-      showToast({
-        title: t(rejection === "target-occupied" ? "workbench.panel.dropTargetOccupied" : "workbench.panel.sessionAlreadyOpen"),
-      })
+
+    if (sourceHasLiveBinding) {
+      showToast({ title: t("workbench.panel.sessionAlreadyOpen") })
       return
     }
 
-    bindSessionToThisPanel()
-
-    function bindSessionToThisPanel() {
+    const loadSessionIntoPanel = () => {
+      if (props.panel.slotState === "bound") {
+        void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
+        wb.setPanelPtyId(spacePath, props.panel.id, "tui", undefined)
+        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
+        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
+        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
+        wb.unbindSessionFromPanel(spacePath, props.panel.id)
+      }
       wb.bindSessionToPanel(spacePath, props.panel.id, sessionId!)
+      wb.setPanelViewMode(spacePath, props.panel.id, "chat")
+      wb.setActivePanel(spacePath, props.panel.id)
+    }
+
+    if (props.panel.slotState === "bound") {
+      const panelsList = wb.spaceState(spacePath)?.panels ?? []
+      const idx = panelsList.findIndex((p) => p.id === props.panel.id)
+      dialog.show(() => (
+        <DialogOverwritePanel
+          panelIndex={idx !== -1 ? idx + 1 : 1}
+          onConfirm={() => {
+            loadSessionIntoPanel()
+            dialog.close()
+          }}
+        />
+      ))
+    } else {
+      loadSessionIntoPanel()
     }
   }
 
