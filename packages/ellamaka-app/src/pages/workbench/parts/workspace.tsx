@@ -254,20 +254,10 @@ function DialogCloseTab(props: { name: string; path: string }) {
 
   const handleConfirm = async () => {
     const path = props.path
-    const name = props.name
     const panels = wb.spaceState(path)?.panels ?? []
 
-    console.warn("[PTY-DIAG] handleConfirm (close tab)", {
-      path,
-      name,
-      panelCount: panels.length,
-      panels: panels.map(p => ({ id: p.id, tui: p.tuiPtyId, term: p.termPtyId, split: p.splitPtyId })),
-    })
-
-    // 1. Kill all PTYs owned by this space's panels using project specific SDK context
+    // 1. Kill all PTYs owned by this space's panels using project-specific SDK context
     await ptyManager.disposeSpace(path, sdk.createDirSdkContext(path), panels)
-
-    console.warn("[PTY-DIAG] disposeSpace completed, now removing space from store")
 
     // 2. Destroy the entire space state from persisted store (will also trigger tab closure)
     wb.removeSpace(path)

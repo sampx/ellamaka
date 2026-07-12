@@ -120,15 +120,6 @@ export class PtyManager {
   }
 
   async disposeSpace(spacePath: string, sdk: PtySDK, panels: PtyPanel[] = []): Promise<void> {
-    console.warn("[PTY-DIAG] disposeSpace called", {
-      spacePath,
-      panelCount: panels.length,
-      panels: panels.map(p => ({ id: p.id, tui: p.tuiPtyId, term: p.termPtyId, split: p.splitPtyId })),
-      activePtysKeys: Array.from(this.activePtys.keys()),
-      activePtysValues: Array.from(this.activePtys.entries()),
-      pendingKeys: Array.from(this.pendingEnsures.keys()),
-    })
-
     const known = new Map<PtyKey, string>()
     for (const panel of panels) {
       const refs = ptyReferences(panel)
@@ -144,13 +135,6 @@ export class PtyManager {
       ...Array.from(this.pendingEnsures.keys()).filter((key) => key.startsWith(prefix)),
       ...known.keys(),
     ])
-
-    console.warn("[PTY-DIAG] disposeSpace keys to dispose", {
-      prefix,
-      knownEntries: Array.from(known.entries()),
-      keysToDispose: Array.from(keys),
-    })
-
     await Promise.all(Array.from(keys, (key) => this.disposeKey(key, sdk, known.get(key))))
   }
 
@@ -195,15 +179,11 @@ export class PtyManager {
       this.activePtys.delete(key)
     }
 
-    console.warn("[PTY-DIAG] disposeKey", { key, knownPtyId, activePtyId, ptyIdsToKill: Array.from(ptyIds) })
-
     await Promise.all(Array.from(ptyIds, async (ptyId) => {
       try {
-        console.warn("[PTY-DIAG] calling sdk.client.pty.remove", { ptyId })
         await sdk.client.pty.remove({ ptyID: ptyId })
-        console.warn("[PTY-DIAG] pty.remove succeeded", { ptyId })
       } catch (err) {
-        console.error(`[PTY-DIAG] Failed to dispose PTY ${ptyId}`, err)
+        console.error(`Failed to dispose PTY ${ptyId}`, err)
       }
     }))
   }
