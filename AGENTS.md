@@ -42,6 +42,8 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | After branding, logo, or detection changes |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | When building ellamaka-branded CLI locally; use `--web-ui app` for upstream UI or `--web-ui none` for no embedded UI |
+| Workbench dev server | `./scripts/dev.sh serve` | From any directory; starts backend `:4096` + `ellamaka-app` `:3000/workbench` |
+| Stop Workbench dev server | `./scripts/dev.sh stop` | Stops backend and Workbench for the current port combination |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
 
 Tests cannot run from repo root; the root `test` script is a guard.

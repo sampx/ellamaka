@@ -75,6 +75,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | 本地构建 ellamaka 品牌 CLI 时；用 `--web-ui app` 嵌入上游 UI，用 `--web-ui none` 不嵌入 UI |
+| Workbench 开发服务 | `./scripts/dev.sh serve` | 从任意目录调用；启动后端 `:4096` 与 `ellamaka-app` `:3000/workbench` |
+| 停止 Workbench 开发服务 | `./scripts/dev.sh stop` | 停止当前端口组合记录的后端与 Workbench 进程 |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 
 测试不能从 repo root 运行；root `test` script 是 guard。

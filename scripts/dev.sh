@@ -16,9 +16,9 @@ space="$(cd "$root/../.." && pwd)"
 opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
+ellamaka_app_dir="$root/packages/ellamaka-app"
 
 LOGDIR="$space/.wopal-space/logs"
-PIDFILE="$LOGDIR/ellamaka-dev.pid"
 APP_DEBUG_LOG="$LOGDIR/dev.log"
 
 stop() {
@@ -29,8 +29,10 @@ stop() {
     done < "$PIDFILE"
     rm -f "$PIDFILE"
   fi
-  rm -f "$LOGDIR/ellamaka-dev-server.log" "$LOGDIR/wopal-plugins-debug.log"
+  rm -f "$BACKEND_LOG" "$FRONTEND_LOG" "$LOGDIR/wopal-plugins-debug.log"
   local pp="$(lsof -ti :"$PORT" 2>/dev/null)"
+  [ -n "$pp" ] && pids+=($pp)
+  pp="$(lsof -ti :"$APP_PORT" 2>/dev/null)"
   [ -n "$pp" ] && pids+=($pp)
   if [ ${#pids[@]} -gt 0 ]; then
     for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
@@ -49,15 +51,16 @@ ellamaka - EllaMaka dev launcher
 Usage: $self [command|option]
 
   Commands:
-    serve        Start backend as headless HTTP server
-    stop          Stop all dev servers
+    serve        Start the backend and Ellamaka Workbench
+    stop          Stop the backend and Ellamaka Workbench
     help          Show this help message
 
   Options:
     -a, --attach      Start HTTP server + attach TUI client
     --debug [mods]    Enable debug mode (default: all)
                        Modules: task, rules, or comma-separated list
-    --port <port>    Server port (default: 4096)
+    --port <port>      Backend port (default: 4096)
+    --app-port <port>  Workbench port (default: 3000)
     -ns               Disable WopalSpace mode (native opencode behavior)
     -h, --help        Forwarded to ellamaka
 
@@ -68,10 +71,12 @@ Usage: $self [command|option]
     Example: $self -- --help
 
 Debug logs:
-  $LOGDIR/ellamaka-dev-server.log   Backend stdout/stderr
-  $LOGDIR/wopal-plugins-debug.log   Plugin debug output
+  $LOGDIR/ellamaka-dev-<port>-server.log    Backend stdout/stderr
+  $LOGDIR/ellamaka-dev-<port>-frontend.log  Workbench stdout/stderr
+  $LOGDIR/wopal-plugins-debug.log    Plugin debug output
 
-Server: http://127.0.0.1:4096 (default, use --port to override)
+Backend:   http://127.0.0.1:4096 (default, use --port to override)
+Workbench: http://127.0.0.1:3000/workbench (use --app-port to override)
 EOF
 }
 
@@ -81,6 +86,7 @@ debug=false
 debug_modules=""
 passthrough=()
 PORT=4096
+APP_PORT=3000
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -97,10 +103,15 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     --port) PORT="$2"; shift 2 ;;
+    --app-port) APP_PORT="$2"; shift 2 ;;
     -ns) passthrough+=(--disable-wopalspace); shift ;;
     *) passthrough+=("$1"); shift ;;
   esac
 done
+
+PIDFILE="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
+BACKEND_LOG="$LOGDIR/ellamaka-dev-$PORT-server.log"
+FRONTEND_LOG="$LOGDIR/ellamaka-dev-$APP_PORT-frontend.log"
 
 case "$cmd" in
   stop) stop; exit ;;
@@ -143,14 +154,23 @@ is_running() { lsof -ti :"$1" > /dev/null 2>&1; }
 wait_backend() {
   local i
   for i in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1 && return 0
+    curl -sf "http://127.0.0.1:$PORT/global/health" > /dev/null 2>&1 && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+wait_frontend() {
+  local i
+  for i in $(seq 1 30); do
+    curl -sf "http://127.0.0.1:$APP_PORT/workbench" > /dev/null 2>&1 && return 0
     sleep 0.5
   done
   return 1
 }
 
 warmup_config() {
-  curl -sf -H "x-opencode-directory: $space" "http://127.0.0.1:$PORT/config" > /dev/null 2>&1 || true
+  curl -sf "http://127.0.0.1:$PORT/global/config" > /dev/null 2>&1 || true
 }
 
 start_backend() {
@@ -168,18 +188,37 @@ start_backend() {
 
   srv_args+=("${passthrough[@]}")
 
-  cd "$space"
-  env "${srv_env[@]}" \
-    nohup bun --preload "$opencode_preload" "$opencode_entry" "${srv_args[@]}" > "$LOGDIR/ellamaka-dev-server.log" 2>&1 &
+  if [ ! -f "$opencode_preload" ]; then
+    echo "missing OpenTUI preload: $opencode_preload"
+    return 1
+  fi
+
+  (
+    cd "$opencode_dir" || exit 1
+    exec env "${srv_env[@]}" nohup bun --preload "$opencode_preload" "$opencode_entry" "${srv_args[@]}"
+  ) > "$BACKEND_LOG" 2>&1 &
   local pid=$!
-  echo "$pid" > "$PIDFILE"
+  echo "$pid" >> "$PIDFILE"
+}
+
+start_frontend() {
+  if [ ! -d "$ellamaka_app_dir" ]; then
+    echo "missing Ellamaka Workbench: $ellamaka_app_dir"
+    return 1
+  fi
+
+  (
+    cd "$ellamaka_app_dir" || exit 1
+    exec nohup bun run dev -- --host 127.0.0.1 --port "$APP_PORT" --strictPort
+  ) > "$FRONTEND_LOG" 2>&1 &
+  echo "$!" >> "$PIDFILE"
 }
 
 # ----- attach mode (HTTP server + TUI client) -----
 
 if $attach; then
 if ! is_running "$PORT"; then
-    [ "$debug" = true ] && echo "logs: $LOGDIR/ellamaka-dev-server.log"
+    [ "$debug" = true ] && echo "logs: $BACKEND_LOG"
     start_backend
     echo -n "starting server (pid $(cat "$PIDFILE"))"
     wait_backend && echo " ready" || echo " (health check timeout)"
@@ -198,7 +237,7 @@ fi
 # ----- serve mode -----
 
 if [ "$cmd" = "serve" ]; then
-if [ -f "$PIDFILE" ] || is_running "$PORT"; then
+if [ -f "$PIDFILE" ] || is_running "$PORT" || is_running "$APP_PORT"; then
   echo "already running."
   read -p "stop and restart? [Y/n] " yn
   case "${yn:-Y}" in
@@ -210,11 +249,31 @@ fi
 [ "$debug" = true ] && echo "debug: modules=$debug_modules"
 echo "logs: $LOGDIR/"
 
-start_backend
+rm -f "$PIDFILE"
+if ! start_backend; then
+  exit 1
+fi
 
-echo "started (backend :$PORT)"
+if ! wait_backend; then
+  echo "backend failed to start; see $BACKEND_LOG"
+  stop
+  exit 1
+fi
 
-wait_backend && warmup_config
+warmup_config
 
+if ! start_frontend; then
+  stop
+  exit 1
+fi
+
+if ! wait_frontend; then
+  echo "Workbench failed to start; see $FRONTEND_LOG"
+  stop
+  exit 1
+fi
+
+echo "started (backend :$PORT, Workbench :$APP_PORT)"
+echo "open http://127.0.0.1:$APP_PORT/workbench"
 echo "run '$self stop' to stop"
 fi
