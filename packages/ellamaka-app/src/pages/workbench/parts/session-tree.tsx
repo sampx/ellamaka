@@ -810,7 +810,7 @@ export function SessionTree(props: {
                 type="button"
                 classList={{
                   "group flex w-full items-center gap-2 text-left transition-all py-1.5": true,
-                  "bg-v2-background-bg-deep px-2 font-medium rounded-md text-v2-text-text-strong shadow-sm": isActive,
+                  "bg-v2-background-bg-base hover:bg-v2-overlay-simple-overlay-hover px-2 font-medium rounded-md text-v2-text-text-strong shadow-sm": isActive,
                   "bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-500/30 px-2 rounded-md": !isActive && isPending(),
                   "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md px-2": !isActive && !isPending(),
                 }}
