@@ -368,8 +368,8 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
   - 会话行左侧显示对应空间下绑定 Panel 序号的气泡徽章（如 `P1`、`P2`、`P3`）。徽章取消 `scale-90` 缩放以保持清晰无锯齿，文字大小放为 `text-[10px]` 并设置 `min-w-[20px] h-4.5`，使比例更协调挺拔。
   - 支持会话“置顶 (Pin/Unpin)”功能。已置顶的会话在行首展现大头针矢量图标，并在数据源合并时重排至分类的最顶端，支持右键快捷 Pin/Unpin 切换。
 - **空间高亮与交互解耦**：
-  - 点击左侧 Chevron 图标只控制其展开/折叠，不切换激活空间；点击空间名称/整行其余区域则切换激活空间，两项职责完全解耦。
-  - 区分选中与 hover 背景色：激活的空间背景为 `bg-v2-background-bg-deep`，并伴有 `border-l-2 border-v2-border-border-brand-strong` 精致品牌指示细线，与 hover 背景色 `hover:bg-v2-overlay-simple-overlay-hover` 明显拉开视觉梯度。
+  - 点击左侧 Chevron 图标（包裹于 `size-5 flex items-center justify-center shrink-0` 容器中以防被挤压变形，并支持 duration-200 平滑旋转）只控制其展开/折叠，不切换激活空间；点击空间名称/整行其余区域则切换激活空间，两项职责完全解耦。
+  - 区分选中与 hover 背景色：激活的空间背景为最纯粹且低调的 `bg-v2-background-bg-deep rounded-md px-2` 独立深色背景，与 hover 背景色 `hover:bg-v2-overlay-simple-overlay-hover` 明显拉开视觉梯度，取消左侧多余的竖条指示线以维护极简排版。
   - 引入等待切换确认过渡态：当切换空间处于弹窗等待确认阶段时，被点击空间以虚线淡蓝背景（`bg-blue-50/40 dark:bg-blue-950/20 border-dashed`）作为缓冲反馈。
 
 ### 5.10 状态栏分区与多面板元数据智能层级链

@@ -761,15 +761,15 @@ export function SessionTree(props: {
                 type="button"
                 classList={{
                   "group flex w-full items-center gap-2 text-left transition-all py-1.5": true,
-                  "bg-v2-background-bg-deep border-l-2 border-v2-border-border-brand-strong pl-1.5 pr-2 font-medium rounded-l-none text-v2-text-text-strong shadow-sm": isActive,
-                  "bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-500/30 pl-1.5 pr-2 rounded-md": !isActive && isPending(),
+                  "bg-v2-background-bg-deep px-2 font-medium rounded-md text-v2-text-text-strong shadow-sm": isActive,
+                  "bg-blue-50/40 dark:bg-blue-950/20 border border-dashed border-blue-500/30 px-2 rounded-md": !isActive && isPending(),
                   "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md px-2": !isActive && !isPending(),
                 }}
                 onClick={() => props.onSpaceClick(space)}
                 onContextMenu={(e) => showSpaceMenu(e, space)}
               >
                 <span
-                  class="p-0.5 rounded hover:bg-v2-overlay-simple-overlay-hover cursor-pointer shrink-0"
+                  class="size-5 flex items-center justify-center rounded hover:bg-v2-overlay-simple-overlay-hover cursor-pointer shrink-0"
                   onClick={(e) => {
                     e.stopPropagation()
                     e.preventDefault()
@@ -778,7 +778,7 @@ export function SessionTree(props: {
                 >
                   <IconV2
                     name="outline-chevron-down"
-                    class={`size-3 text-v2-text-text-muted transition-transform ${isExpanded() ? "" : "-rotate-90"}`}
+                    class={`size-3 text-v2-text-text-muted transition-transform duration-200 ${isExpanded() ? "" : "-rotate-90"}`}
                   />
                 </span>
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
