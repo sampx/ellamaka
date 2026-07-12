@@ -776,10 +776,17 @@ export function SessionTree(props: {
                     toggleSpace(space.name)
                   }}
                 >
-                  <IconV2
-                    name="outline-chevron-down"
+                  <svg
                     class={`size-4 text-v2-text-text-muted transition-transform duration-200 ${isExpanded() ? "" : "-rotate-90"}`}
-                  />
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4 6l4 4 4-4" />
+                  </svg>
                 </span>
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
                 <Show when={space.type}>
