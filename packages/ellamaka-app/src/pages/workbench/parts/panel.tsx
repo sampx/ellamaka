@@ -600,7 +600,17 @@ export function Panel(props: {
             onClick={(e: MouseEvent) => {
               e.stopPropagation()
               e.preventDefault()
-              setTimeout(() => handleClose(), 0)
+              if (props.panel.slotState === "bound") {
+                dialog.show(() => (
+                  <DialogClosePanel
+                    panel={props.panel}
+                    spacePath={props.spacePath}
+                    panelCount={props.panelCount}
+                  />
+                ))
+              } else {
+                setTimeout(() => handleClose(), 0)
+              }
             }}
           />
         </Show>
