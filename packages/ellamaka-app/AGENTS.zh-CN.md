@@ -88,14 +88,3 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 
 - 绝对不要尝试重启 app 或 server 进程，永远不要。
 - ALWAYS USE PARALLEL TOOLS WHEN APPLICABLE.
-
-### 浏览器自动化
-
-使用 `agent-browser` 进行 Web 自动化。运行 `agent-browser --help` 查看所有命令。
-
-核心工作流：
-
-1. `agent-browser open <url>` - 导航到页面
-2. `agent-browser snapshot -i` - 获取可交互元素及其 refs (@e1, @e2)
-3. `agent-browser click @e1` / `fill @e2 "text"` - 使用 refs 进行交互
-4. 页面变化后重新 snapshot
