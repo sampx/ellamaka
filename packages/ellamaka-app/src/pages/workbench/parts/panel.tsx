@@ -430,6 +430,7 @@ export function Panel(props: {
       if (props.panelCount <= 1) {
         // Last panel: clear to empty instead of removing
         wb.setPanelSlotState(spacePath, props.panel.id, "empty")
+        wb.resetPanelWidths(spacePath)
         dialog.close()
         return
       }

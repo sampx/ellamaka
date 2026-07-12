@@ -253,6 +253,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
               s.panels.splice(index, 1)
             }
             if (s.activePanelID === id) s.activePanelID = s.panels[0]?.id ?? ""
+            
+            // Auto reset widths of remaining panels to ensure they fill the screen
+            s.panels.forEach((p) => {
+              p.width = 1
+            })
           }),
         )
       })
