@@ -384,9 +384,25 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         }),
       )
     }
-
+    async function killPtySafe(ptyId: string | undefined) {
+      if (!ptyId) return
+      try {
+        await sdk.client.pty.remove({ ptyID: ptyId })
+      } catch (err) {
+        console.error(`Failed to kill pty process ${ptyId}:`, err)
+      }
+    }
     function clearSpacePtyIds(path: string) {
       ensureSpace(path)
+      const space = store.spaces[path]
+      if (space) {
+        space.panels.forEach((panel) => {
+          void killPtySafe(panel.tuiPtyId)
+          void killPtySafe(panel.termPtyId)
+          void killPtySafe(panel.splitPtyId)
+        })
+      }
+
       setStore(
         "spaces",
         path,
@@ -437,6 +453,14 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     function unbindSessionFromPanel(path: string, panelId: string) {
       ensureSpace(path)
+      const space = store.spaces[path]
+      const panel = space?.panels?.find((p) => p.id === panelId)
+      if (panel) {
+        void killPtySafe(panel.tuiPtyId)
+        void killPtySafe(panel.termPtyId)
+        void killPtySafe(panel.splitPtyId)
+      }
+
       setStore(
         "spaces",
         path,
@@ -445,6 +469,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         produce((panel) => {
           panel.slotState = "empty"
           panel.boundSessionId = undefined
+          panel.tuiPtyId = undefined
+          panel.termPtyId = undefined
+          panel.splitPtyId = undefined
         }),
       )
     }
@@ -525,6 +552,21 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     function closeTab(name: string) {
       if (name === GENERAL_TAB_NAME) return
+
+      const targetTab = store.tabs.find((t) => t.name === name)
+      const path = targetTab?.path
+
+      if (path) {
+        const space = store.spaces[path]
+        if (space) {
+          space.panels.forEach((panel) => {
+            void killPtySafe(panel.tuiPtyId)
+            void killPtySafe(panel.termPtyId)
+            void killPtySafe(panel.splitPtyId)
+          })
+        }
+      }
+
       batch(() => {
         const idx = store.tabs.findIndex((t) => t.name === name)
         if (idx === -1) return
