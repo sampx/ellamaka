@@ -513,7 +513,7 @@ export function SessionTree(props: {
 
   function renderSessionRow(session: MergedSession, spaceName: string, sessions: GroupSession[]) {
     const sessionData = sessions.find((s) => s.id === session.id)
-    const dirHealth = sessionData?.directoryHealth ?? "healthy"
+    const dirHealth = spaceName === "General" ? "healthy" : (sessionData?.directoryHealth ?? "healthy")
 
     const handleSessionClick = () => {
       const badge = getPanelBadge(session.id)
