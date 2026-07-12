@@ -778,7 +778,7 @@ export function SessionTree(props: {
                 >
                   <IconV2
                     name="outline-chevron-down"
-                    class={`size-3.5 text-v2-text-text-muted transition-transform duration-200 ${isExpanded() ? "" : "-rotate-90"}`}
+                    class={`size-4 text-v2-text-text-muted transition-transform duration-200 ${isExpanded() ? "" : "-rotate-90"}`}
                   />
                 </span>
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
