@@ -38,7 +38,7 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | Lint | `bun run lint` | After TypeScript / config changes |
 | Root typecheck | `bun run typecheck` | When full-repo type check is needed |
 | opencode typecheck | `bun typecheck` from `packages/opencode` | After engine main package changes; never run `tsc` directly |
-| opencode tests | `bun test --timeout 30000` from `packages/opencode` | After engine main package behavior changes |
+| opencode tests | `bun test --timeout 30000 --force-exit` from `packages/opencode` | After engine main package behavior changes |
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | After branding, logo, or detection changes |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | When building ellamaka-branded CLI locally; use `--web-ui app` for upstream UI or `--web-ui none` for no embedded UI |
@@ -82,8 +82,11 @@ Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributi
 - Code changes follow TDD: write a failing test first, then implement code to make it pass.
 - Avoid mocks as much as possible; test real implementations, do not duplicate logic into tests.
 - Tests must run from package directories, e.g. `packages/opencode` or `packages/ellamaka`; never from repo root.
-- After modifying the engine main package, run `bun test --timeout 30000` from `packages/opencode` or document why not.
+- After modifying the engine main package, run `bun test --timeout 30000 --force-exit` from `packages/opencode` or document why not.
 - After modifying branding, logo, or detection logic, run `bun test` from `packages/ellamaka`.
+- **How to safely and correctly run tests (prevention of hangs and zombie/orphan processes)**:
+  - **Force exit on completion**: When running tests that may spin up long-lived or unmanaged handles (such as PTY terminals, file watchers, database connections), always include the `--force-exit` flag to ensure the process exits cleanly.
+  - **External timeout & lifecycle guard**: When executing tests asynchronously in background shell tasks, agents must not run bare commands. Always wrap the execution with an external timeout guard (e.g. `timeout 120 bun test`), and ensure that the process group is terminated upon cancellation or session close, preventing orphaned processes from consuming CPU in the background.
 - After TypeScript changes, run `bun typecheck` from the corresponding package; never run `tsc` directly.
 - After modifying CLI/runtime/config/plugin/agent/TUI space mode, verify or document: `WOPAL_SPACE` flag, `.wopal/config/settings.*`, TUI settings, plugin loading, theme loading.
 - After upstream merges, distinguish upstream known failures, environment issues, and newly-introduced ellamaka issues.

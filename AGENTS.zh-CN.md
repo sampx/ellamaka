@@ -71,7 +71,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | Lint | `bun run lint` | 修改 TypeScript / config 后 |
 | Root typecheck | `bun run typecheck` | 需要全仓类型检查时 |
 | opencode typecheck | `bun typecheck` from `packages/opencode` | 修改 engine 主包后；不要直接运行 `tsc` |
-| opencode tests | `bun test --timeout 30000` from `packages/opencode` | 修改 engine 主包行为后 |
+| opencode tests | `bun test --timeout 30000 --force-exit` from `packages/opencode` | 修改 engine 主包行为后 |
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | 本地构建 ellamaka 品牌 CLI 时；用 `--web-ui app` 嵌入上游 UI，用 `--web-ui none` 不嵌入 UI |
@@ -115,8 +115,11 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - 代码类变更遵循 TDD：先写能失败的测试，再实现代码使其通过。
 - 尽量避免 mocks；测试真实实现，不要把实现逻辑复制进测试。
 - 测试必须从 package 目录运行，例如 `packages/opencode` 或 `packages/ellamaka`；不要从 repo root 运行测试。
-- 修改 engine 主包后，至少从 `packages/opencode` 运行相关 `bun test --timeout 30000` 或说明未运行原因。
+- 修改 engine 主包后，至少从 `packages/opencode` 运行相关 `bun test --timeout 30000 --force-exit` 或说明未运行原因。
 - 修改 branding、logo 或 detection 逻辑后，从 `packages/ellamaka` 运行 `bun test`。
+- **如何安全且正确地拉起测试（防挂起与孤儿进程）**：
+  - **强制执行强制退出**：若需要运行可能含有悬挂句柄（如 PTY 终端、Watcher 监听、数据库连接）的测试，运行 `bun test` 时必须显式携带 `--force-exit` 标志以强制终止进程。
+  - **使用外层超时与生命周期保护**：Agent 异步拉起测试命令时，禁止裸跑命令，必须配置外层超时保护（如 `timeout 120 bun test`），并在父进程/Agent 会话被取消或退出时释放整组子进程（如通过 Process Group 终止），防止僵尸孤儿进程遗留后台吃满 CPU。
 - 修改 TypeScript 后，从对应 package 运行 `bun typecheck`；不要直接运行 `tsc`。
 - 修改 CLI/runtime/config/plugin/agent/TUI space mode 后，验证或说明以下面向：`WOPAL_SPACE` flag、`.wopal/config/settings.*`、TUI settings、plugin loading、theme loading。
 - 上游合并后区分 upstream known failures、环境问题和 ellamaka 新引入问题。
