@@ -267,17 +267,26 @@ function DialogCloseTab(props: { name: string; path: string }) {
 
   return (
     <Dialog title={t("workbench.tabClose.title")} fit>
-      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-        <div class="flex flex-col gap-1.5">
-          <span class="text-14-regular text-text-strong">
-            {t("workbench.tabClose.confirmPrefix")}「{spaceName()}」？{t("workbench.tabClose.confirmSuffix")}
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[380px]">
+        <div class="flex flex-col gap-3">
+          <span class="text-14-medium text-v2-text-text-strong">
+            {t("workbench.tabClose.confirm", { name: spaceName() })}
           </span>
-          <div class="flex flex-col gap-0.5 text-12-regular text-text-muted">
-            <span>• {t("workbench.tabClose.consequencePanelsPrefix")}{panelCount()}{t("workbench.tabClose.consequencePanelsSuffix")}</span>
+          <div class="flex flex-col gap-2 rounded-lg border border-v2-border-border-base bg-v2-background-bg-deep p-3 text-12-regular text-v2-text-text-muted">
+            <span class="text-12-medium text-v2-text-text-base mb-1">
+              {t("workbench.tabClose.desc")}
+            </span>
+            <span>
+              {t("workbench.tabClose.consequencePanels", { count: panelCount() })}
+            </span>
             <Show when={boundCount() > 0}>
-              <span>• {t("workbench.tabClose.consequenceSessionsPrefix")}{boundCount()}{t("workbench.tabClose.consequenceSessionsSuffix")}</span>
+              <span>
+                {t("workbench.tabClose.consequenceSessions", { count: boundCount() })}
+              </span>
             </Show>
-            <span>• {t("workbench.tabClose.consequenceTerminals")}</span>
+            <span class="text-amber-500/95 dark:text-amber-400/90 font-medium">
+              {t("workbench.tabClose.consequenceTerminals")}
+            </span>
           </div>
         </div>
         <div class="flex justify-end gap-2">

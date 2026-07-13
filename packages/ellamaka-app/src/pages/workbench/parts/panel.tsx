@@ -414,7 +414,7 @@ export function Panel(props: {
 
   function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
     const session = () => sessionStore.getSession(props.panel.boundSessionId ?? "")
-    const sessionTitle = () => session()?.title ?? "会话"
+    const sessionTitle = () => session()?.title ?? t("workbench.panelClose.title")
 
     const handleConfirm = () => {
       const spacePath = props.spacePath
@@ -439,22 +439,30 @@ export function Panel(props: {
     }
 
     return (
-      <Dialog title="关闭会话" fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
-              确定要关闭会话 "{sessionTitle()}" 吗？
+      <Dialog title={t("workbench.panelClose.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[380px]">
+          <div class="flex flex-col gap-3">
+            <span class="text-14-medium text-v2-text-text-strong">
+              {t("workbench.panelClose.confirm", { title: sessionTitle() })}
             </span>
-            <span class="text-12-regular text-text-muted">
-              关闭后会话将解绑，可在左侧会话列表中恢复
-            </span>
+            <div class="flex flex-col gap-2 rounded-lg border border-v2-border-border-base bg-v2-background-bg-deep p-3 text-12-regular text-v2-text-text-muted">
+              <span class="text-12-medium text-v2-text-text-base mb-1">
+                {t("workbench.panelClose.desc")}
+              </span>
+              <span>
+                {t("workbench.panelClose.consequenceSession")}
+              </span>
+              <span class="text-amber-500/95 dark:text-amber-400/90 font-medium">
+                {t("workbench.panelClose.consequenceTerminal")}
+              </span>
+            </div>
           </div>
           <div class="flex justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              取消
+              {t("common.cancel")}
             </Button>
             <Button variant="primary" size="large" onClick={handleConfirm}>
-              确认关闭
+              {t("workbench.panelClose.confirmButton")}
             </Button>
           </div>
         </div>
