@@ -205,3 +205,84 @@ function StatusPopoverView(props: { state: StatusPopoverState }) {
     </Popover>
   )
 }
+
+export function StatusBarStatusPopover() {
+  const language = useLanguage()
+  const server = useServer()
+  const servers = useServers()
+  const sync = useSync()
+  const [shown, setShown] = createSignal(false)
+  const serverHealth = () => servers.health[server.key]?.healthy
+  const ready = createMemo(() => serverHealth() === false || sync.data.mcp_ready)
+  const mcpIssue = createMemo(() => {
+    const mcp = Object.values(sync.data.mcp ?? {})
+    const failed = mcp.some((item) => item.status === "failed" || item.status === "needs_client_registration")
+    const warn = mcp.some((item) => item.status === "needs_auth")
+    if (failed) return "critical" as const
+    if (warn) return "warning" as const
+  })
+  const healthy = createMemo(() => serverHealth() === true && !mcpIssue())
+  const state = createMemo<StatusPopoverState>(() => ({
+    shown: shown(),
+    ready: ready(),
+    healthy: healthy(),
+    serverHealth: serverHealth(),
+    issue: mcpIssue(),
+    label: language.t("status.popover.trigger"),
+    onOpenChange: setShown,
+    body: () => (
+      <StatusPopoverBody shown={shown()}>
+        <Body shown={shown} />
+      </StatusPopoverBody>
+    ),
+  }))
+
+  return <StatusBarStatusPopoverView state={state()} />
+}
+
+function StatusBarStatusPopoverView(props: { state: StatusPopoverState }) {
+  const statusDotClass = () => ({
+    "absolute rounded-full": true,
+    "bg-icon-success-base": props.state.ready && props.state.healthy,
+    "bg-icon-warning-base": props.state.ready && props.state.serverHealth === true && props.state.issue === "warning",
+    "bg-icon-critical-base":
+      props.state.serverHealth === false ||
+      (props.state.ready && props.state.serverHealth === true && props.state.issue === "critical"),
+    "bg-border-weak-base": props.state.serverHealth === undefined || !props.state.ready,
+  })
+
+  const popoverProps = {
+    class:
+      "[&_[data-slot=popover-body]]:p-0 w-[360px] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl",
+    gutter: 6,
+    placement: "top-end" as const,
+    shift: -168,
+  }
+
+  return (
+    <Popover
+      open={props.state.shown}
+      onOpenChange={props.state.onOpenChange}
+      triggerAs="button"
+      triggerProps={{
+        class: "relative flex items-center justify-center size-5 shrink-0 rounded hover:bg-v2-overlay-simple-overlay-hover text-v2-text-text-muted hover:text-v2-text-text-base transition-colors duration-150 focus-visible:outline-none",
+        classList: {
+          "bg-[var(--v2-overlay-simple-overlay-pressed)] text-[var(--v2-text-text-base)]": props.state.shown
+        },
+        "aria-label": props.state.label,
+      }}
+      trigger={
+        <div class="relative size-3.5 flex items-center justify-center">
+          <IconV2 name={props.state.shown ? "status-active" : "status"} class="size-3.5" />
+          <div
+            classList={statusDotClass()}
+            class="-top-0.5 -right-0.5 size-1.5 border border-[var(--v2-background-bg-deep)]"
+          />
+        </div>
+      }
+      {...popoverProps}
+    >
+      {props.state.body()}
+    </Popover>
+  )
+}
