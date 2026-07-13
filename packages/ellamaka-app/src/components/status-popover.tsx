@@ -3,11 +3,16 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Popover } from "@opencode-ai/ui/popover"
-import { Suspense, createMemo, createSignal, lazy, Show, type JSX } from "solid-js"
+import { useQueryClient } from "@tanstack/solid-query"
+import { Suspense, createEffect, createMemo, createSignal, lazy, Show, type JSX } from "solid-js"
+import { reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
+import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { useServers } from "@/context/servers"
+import { pathKey } from "@/utils/path-key"
 
 const Body = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverBody })))
 const ServerBody = lazy(() => import("./status-popover-body").then((x) => ({ default: x.StatusPopoverServerBody })))
@@ -211,7 +216,11 @@ export function StatusBarStatusPopover() {
   const language = useLanguage()
   const server = useServer()
   const servers = useServers()
+  const sdk = useSDK()
   const sync = useSync()
+  const serverSync = useServerSync()
+  const queryClient = useQueryClient()
+  const queryOptions = useQueryOptions()
   const [shown, setShown] = createSignal(false)
   const serverHealth = () => servers.health[server.key]?.healthy
   const ready = createMemo(() => serverHealth() === false || sync.data.mcp_ready)
@@ -223,6 +232,23 @@ export function StatusBarStatusPopover() {
     if (warn) return "warning" as const
   })
   const healthy = createMemo(() => serverHealth() === true && !mcpIssue())
+
+  createEffect(() => {
+    const directory = sdk.directory
+    if (!directory) return
+    const [, setStore] = serverSync.child(directory, { bootstrap: false })
+
+    void Promise.allSettled([
+      sdk.client.config.get().then((result) => {
+        if (!result.data) return
+        setStore("config", reconcile(result.data, { merge: false }))
+      }),
+      queryClient.fetchQuery(queryOptions.path(pathKey(directory))),
+      queryClient.fetchQuery(queryOptions.mcp(pathKey(directory))),
+      queryClient.fetchQuery(queryOptions.lsp(pathKey(directory))),
+    ])
+  })
+
   const state = createMemo<StatusPopoverState>(() => ({
     shown: shown(),
     ready: ready(),

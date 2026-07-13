@@ -104,7 +104,7 @@ describe("ConfigPaths.directories", () => {
     }
   })
 
-  test("wopal-space mode excludes wopalHome from directories (handled by wopalSpaceDirectories)", async () => {
+  test("includes wopalHome for a normal-mode instance when the server process enables WOPAL_SPACE", async () => {
     const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "paths-test-"))
     try {
       const wopalHome = path.join(tmpBase, "wopal-home")
@@ -120,8 +120,10 @@ describe("ConfigPaths.directories", () => {
 
       const dirs = await run(ConfigPaths.directories(projectDir))
 
-      // In wopal-space mode, wopalHome is handled by wopalSpaceDirectories, not ConfigPaths
-      expect(dirs).not.toContain(wopalHome)
+      // Per-directory mode detection happens before ConfigPaths.directories.
+      // A process-level flag must not hide global plugins from General sessions.
+      expect(dirs).toContain(wopalHome)
+      expect(dirs[dirs.length - 1]).toBe(wopalHome)
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true })
     }

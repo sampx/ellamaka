@@ -4,7 +4,6 @@ import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { SDKProvider } from "@/context/sdk"
 import { StatusBarStatusPopover } from "@/components/status-popover"
-import { useServerSync } from "@/context/server-sync"
 
 export type StatusBarSegment = {
   type: "space" | "panel" | "session" | "path"
@@ -62,15 +61,15 @@ export function StatusBar() {
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
   const server = useServer()
-  const serverSync = useServerSync()
 
   const activePath = createMemo(() => wb.activeTab()?.path ?? "")
   const space = createMemo(() => wb.spaceState(activePath()))
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
 
   const activeDirectoryContext = createMemo(() => {
-    const path = wb.activeTab()?.path
-    return { dir: path ?? "" }
+    // MCP and plugin state is directory-scoped. The space path only groups
+    // sessions; the active panel carries the bound session's real directory.
+    return { dir: wb.activeDirectory }
   })
 
   const segments = createMemo(() => {

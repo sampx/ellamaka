@@ -7,6 +7,7 @@ import type { QueryOptionsApi } from "../server-sync"
 
 let createChildStoreManager: typeof import("./child-store").createChildStoreManager
 const queryGroups: Array<() => { queries: Array<{ enabled?: boolean }> }> = []
+const mcpQueries: Array<() => { enabled?: boolean }> = []
 
 const child = () => createStore({} as State)
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
@@ -53,10 +54,13 @@ beforeAll(async () => {
       queryGroups.push(options)
       return [
         { isLoading: false, data: { state: "", config: "", worktree: "", directory: "", home: "" } },
-        { isLoading: false, data: {} },
         { isLoading: false, data: [] },
         { isLoading: false, data: provider },
       ]
+    },
+    useQuery: (options: () => { enabled?: boolean }) => {
+      mcpQueries.push(options)
+      return { isLoading: false, data: {} }
     },
   }))
 
@@ -130,7 +134,7 @@ describe("createChildStoreManager", () => {
 
   test("enables MCP only when requested for the directory", () => {
     let manager: ReturnType<typeof createChildStoreManager> | undefined
-    const offset = queryGroups.length
+    const offset = mcpQueries.length
     const mcpLoads: string[] = []
 
     const dispose = createOwner((owner) => {
@@ -152,17 +156,17 @@ describe("createChildStoreManager", () => {
     try {
       if (!manager) throw new Error("manager required")
       const [, setStore] = manager.child("/project", { bootstrap: false })
-      const queries = queryGroups[offset]
-      if (!queries) throw new Error("queries required")
-      expect(queries().queries[1]?.enabled).toBe(false)
+      const mcpQuery = mcpQueries[offset]
+      if (!mcpQuery) throw new Error("MCP query required")
+      expect(mcpQuery().enabled).toBe(false)
 
       setStore("status", "complete")
       manager.child("/project", { bootstrap: false, mcp: true })
-      expect(queries().queries[1]?.enabled).toBe(true)
+      expect(mcpQuery().enabled).toBe(true)
       expect(mcpLoads).toEqual(["/project"])
 
       manager.disableMcp("/project")
-      expect(queries().queries[1]?.enabled).toBe(false)
+      expect(mcpQuery().enabled).toBe(false)
       expect(manager.mcp("/project")).toBe(false)
     } finally {
       dispose()

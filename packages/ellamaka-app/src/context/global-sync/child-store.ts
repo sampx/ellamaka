@@ -14,7 +14,7 @@ import {
   type VcsCache,
 } from "./types"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
-import { useQueries } from "@tanstack/solid-query"
+import { useQueries, useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import { NormalizedProviderListResponse } from "@opencode-ai/ui/context"
@@ -180,13 +180,16 @@ export function createChildStoreManager(input: {
           const initialIcon = icon[0].value
           const [mcpEnabled, setMcpEnabled] = createSignal(false)
 
-          const [pathQuery, mcpQuery, lspQuery, providerQuery] = useQueries(() => ({
+          const [pathQuery, lspQuery, providerQuery] = useQueries(() => ({
             queries: [
               input.queryOptions.path(key),
-              { ...input.queryOptions.mcp(key), enabled: mcpEnabled() },
               input.queryOptions.lsp(key),
               input.queryOptions.providers(key),
             ],
+          }))
+          const mcpQuery = useQuery(() => ({
+            ...input.queryOptions.mcp(key),
+            enabled: mcpEnabled(),
           }))
 
           const child = createStore<State>({
