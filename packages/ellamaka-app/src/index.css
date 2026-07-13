@@ -157,3 +157,13 @@ html, body, #root {
     }
   }
 }
+
+/* 自适应主题反相滤镜，对接项目的 data-theme 主题机制 */
+.ellamaka-logo-invert {
+  filter: invert(0);
+}
+
+html[data-color-scheme="light"] .ellamaka-logo-invert {
+  filter: invert(1);
+}
+
