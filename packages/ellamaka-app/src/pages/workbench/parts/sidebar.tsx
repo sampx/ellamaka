@@ -1,7 +1,7 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo, createSignal, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
@@ -77,9 +77,19 @@ export function SpaceRail() {
     return state?.panels.some((p) => p.slotState === "bound") ?? false
   })
 
+  const [showDefaultHint, setShowDefaultHint] = createSignal(true)
+
+  onMount(() => {
+    const timer = setTimeout(() => {
+      setShowDefaultHint(false)
+    }, 5000)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   const effectiveHint = createMemo(() => {
     if (wb.statusMessage) return wb.statusMessage
-    return wb.persistentHint || t("workbench.status.defaultHint")
+    if (wb.persistentHint) return wb.persistentHint
+    return showDefaultHint() ? t("workbench.status.defaultHint") : ""
   })
 
   function handleSpaceClick(space: { name: string; path: string; type?: string }) {
