@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
 | 2026-07-13 | Updated | §0 更新桌面端裁剪决策；新增 §17 ellamaka-desktop，采用 OpenCode v1.15.13 Electron desktop 作为固定复制基线，由独立包承载 ellamaka-app、sidecar 与桌面进程生命周期 |
 | 2026-07-11 | Updated | §9 重写：恢复自动更新，改用 ellamaka CDN（`download.coursedao.com/ellamaka/latest/manifest.json`）；安装方法从 `"wopal"` 重命名为 `"ellamaka"`；`upgrade()` 不再检测安装方式，直接走 CDN |
 | 2026-07-07 | Updated | §16 扩展 Workbench 会话归组 API：新增 spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories 四端点，完全按 Workbench 自有归组模型（空间→项目→子目录/worktree→会话），不沿用 opencode project_id 归组；引入 stale 检测、会话标记（目录/工作树）、realpath 统一匹配 |
@@ -933,6 +934,8 @@ Space
 
 `packages/ellamaka-desktop` 是 ellamaka 的官方桌面应用。它承载 `ellamaka-app` Workbench，并由 Electron 主进程管理本地 sidecar、窗口和 PTY 生命周期。桌面渲染层刷新时保持后台进程，窗口关闭时释放该窗口拥有的运行时资源。
 
+完整架构、状态所有权和生命周期契约见 [`DESKTOP.md`](./DESKTOP.md)。本节记录桌面产品的品牌化基线和包级差异。
+
 ### 17.1 固定基线
 
 桌面包从 OpenCode `v1.15.13` 的 `packages/desktop` 独立复制，基线 commit 为 `385cb694419f98103af0e8fc6187ddcbcbb6eecb`。该基线已经使用 Electron，不包含 Tauri 运行时。
@@ -986,3 +989,11 @@ Space
 ### 17.5 实施边界
 
 本节确立桌面产品的目标架构与版本基线。包创建、品牌资源、构建发布、签名、公证、自动更新和窗口级 PTY 注册协议由独立 Plan 实施和验收。
+
+### 17.6 相关文档
+
+| 文档 | 说明 |
+|------|------|
+| `docs/DESKTOP.md` | ellamaka-desktop 架构、状态所有权、PTY 生命周期与验证契约 |
+| `docs/ELLAMAKA-WORKBENCH.zh-CN.md` | ellamaka-app Workbench 详细设计 |
+| `docs/DISTRIBUTION.md` | Ellamaka 构建与分发设计 |
