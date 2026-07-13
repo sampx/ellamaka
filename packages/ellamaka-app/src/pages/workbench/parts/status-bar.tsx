@@ -2,6 +2,9 @@ import { Show, createMemo, For } from "solid-js"
 import { useServer } from "@/context/server"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
+import { SDKProvider } from "@/context/sdk"
+import { StatusBarStatusPopover } from "@/components/status-popover"
+import { useServerSync } from "@/context/server-sync"
 
 export type StatusBarSegment = {
   type: "space" | "panel" | "session" | "path"
@@ -59,10 +62,16 @@ export function StatusBar() {
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
   const server = useServer()
+  const serverSync = useServerSync()
 
   const activePath = createMemo(() => wb.activeTab()?.path ?? "")
   const space = createMemo(() => wb.spaceState(activePath()))
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
+
+  const activeDirectoryContext = createMemo(() => {
+    const spacePath = wb.activeTab()?.path
+    return spacePath || serverSync.data.path.home || ""
+  })
 
   const segments = createMemo(() => {
     const name = spaceName()
@@ -97,8 +106,15 @@ export function StatusBar() {
         </For>
       </div>
 
-      {/* 右区：Server 名字 */}
+      {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
+        <Show when={activeDirectoryContext()} keyed>
+          {(directory) => (
+            <SDKProvider directory={directory}>
+              <StatusBarStatusPopover />
+            </SDKProvider>
+          )}
+        </Show>
         <span class="truncate select-none ml-1">{server.name}</span>
       </div>
     </footer>

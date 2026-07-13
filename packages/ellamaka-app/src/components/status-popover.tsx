@@ -206,6 +206,7 @@ function StatusPopoverView(props: { state: StatusPopoverState }) {
   )
 }
 
+
 export function StatusBarStatusPopover() {
   const language = useLanguage()
   const server = useServer()
