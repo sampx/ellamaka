@@ -108,10 +108,12 @@ export function StatusBar() {
 
       {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
-        <Show when={activePanelDirectory() !== undefined}>
-          <SDKProvider directory={activePanelDirectory()}>
-            <StatusBarStatusPopover />
-          </SDKProvider>
+        <Show when={activePanelDirectory()} keyed>
+          {(directory) => (
+            <SDKProvider directory={directory}>
+              <StatusBarStatusPopover />
+            </SDKProvider>
+          )}
         </Show>
         <span class="truncate select-none ml-1">{server.name}</span>
       </div>
