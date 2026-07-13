@@ -69,8 +69,8 @@ export function StatusBar() {
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
 
   const activeDirectoryContext = createMemo(() => {
-    const spacePath = wb.activeTab()?.path
-    return spacePath || serverSync.data.path.home || ""
+    const path = wb.activeTab()?.path
+    return { dir: path ?? "" }
   })
 
   const segments = createMemo(() => {
@@ -109,8 +109,8 @@ export function StatusBar() {
       {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
         <Show when={activeDirectoryContext()} keyed>
-          {(directory) => (
-            <SDKProvider directory={directory}>
+          {({ dir }) => (
+            <SDKProvider directory={dir}>
               <StatusBarStatusPopover />
             </SDKProvider>
           )}
