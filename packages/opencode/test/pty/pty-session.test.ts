@@ -65,6 +65,12 @@ const waitForEvents = (events: Queue.Queue<PtyEvent>, id: PtyID, count: number) 
   )
 }
 
+const makeSocket = () => ({
+  readyState: 1 as number,
+  send: () => {},
+  close: () => {},
+})
+
 describe("pty", () => {
   it.instance(
     "returns typed not found errors for missing sessions",
@@ -144,5 +150,138 @@ describe("pty", () => {
         yield* pty.remove(info.id).pipe(Effect.ignore)
       }),
     { git: true },
+  )
+})
+
+describe("pty grace reaping", () => {
+  const graceIt = testEffect(
+    Pty.makeLayer(50).pipe(
+      Layer.provideMerge(Bus.layer),
+      Layer.provideMerge(Config.defaultLayer),
+      Layer.provideMerge(Plugin.defaultLayer),
+    ),
+  )
+  const graceTest = process.platform === "win32" ? graceIt.instance.skip : graceIt.instance
+
+  graceTest(
+    "auto-deletes PTY when no subscriber connects within first-connect grace",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const events = yield* subscribePtyEvents()
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+
+        expect(yield* waitForEvents(events, info.id, 2)).toEqual(["created", "deleted"])
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+      }),
+  )
+
+  graceTest(
+    "cancels first-connect grace when subscriber connects within grace",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const events = yield* subscribePtyEvents()
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["created"])
+
+        const conn = yield* pty.connect(info.id, makeSocket())
+        expect(conn).toBeDefined()
+
+        yield* Effect.sleep(150)
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isSuccess(result)).toBe(true)
+
+        conn?.onClose()
+        yield* pty.remove(info.id).pipe(Effect.ignore)
+      }),
+  )
+
+  graceTest(
+    "auto-deletes PTY when last subscriber disconnects and no reconnection within grace",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const events = yield* subscribePtyEvents()
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["created"])
+
+        const conn = yield* pty.connect(info.id, makeSocket())
+        expect(conn).toBeDefined()
+
+        conn?.onClose()
+
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["deleted"])
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+      }),
+  )
+
+  graceTest(
+    "cancels disconnect grace when subscriber reconnects within grace",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const events = yield* subscribePtyEvents()
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["created"])
+
+        const conn1 = yield* pty.connect(info.id, makeSocket())
+        expect(conn1).toBeDefined()
+        conn1?.onClose()
+
+        const conn2 = yield* pty.connect(info.id, makeSocket())
+        expect(conn2).toBeDefined()
+
+        yield* Effect.sleep(150)
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isSuccess(result)).toBe(true)
+
+        conn2?.onClose()
+        yield* pty.remove(info.id).pipe(Effect.ignore)
+      }),
+  )
+
+  graceTest(
+    "keeps PTY alive when one of multiple subscribers disconnects",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const events = yield* subscribePtyEvents()
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+        expect(yield* waitForEvents(events, info.id, 1)).toEqual(["created"])
+
+        const conn1 = yield* pty.connect(info.id, makeSocket())
+        const conn2 = yield* pty.connect(info.id, makeSocket())
+
+        conn1?.onClose()
+
+        yield* Effect.sleep(150)
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isSuccess(result)).toBe(true)
+
+        conn2?.onClose()
+        yield* pty.remove(info.id).pipe(Effect.ignore)
+      }),
+  )
+
+  graceTest(
+    "explicit remove cancels grace and deletes immediately",
+    () =>
+      Effect.gen(function* () {
+        const pty = yield* Pty.Service
+        const info = yield* pty.create({ command: "/bin/sh", title: "sh" })
+
+        yield* pty.remove(info.id)
+
+        const result = yield* pty.get(info.id).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+      }),
   )
 })
