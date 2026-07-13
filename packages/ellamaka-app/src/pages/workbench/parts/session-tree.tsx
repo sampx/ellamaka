@@ -838,11 +838,6 @@ export function SessionTree(props: {
                   </svg>
                 </span>
                 <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{space.name}</span>
-                <Show when={space.type}>
-                  <span class="rounded-full px-1.5 py-0.5 text-[9px] font-medium text-v2-text-text-muted bg-v2-background-bg-deep border border-v2-border-border-base scale-95 origin-right">
-                    {space.type}
-                  </span>
-                </Show>
               </button>
 
               <Show when={isExpanded()}>

@@ -651,6 +651,14 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       boundPanelIdForSession,
       get tabs() { return store.tabs },
       activeTab,
+      get activeDirectory() {
+        const tab = activeTab()
+        if (!tab) return ""
+        const space = store.spaces[tab.path]
+        if (!space) return ""
+        const panel = space.panels.find((p) => p.id === space.activePanelID)
+        return panel?.directory ?? ""
+      },
       get activeSpaceName() { return store.activeSpaceName },
       openTab,
       closeTab,

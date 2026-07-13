@@ -19,7 +19,7 @@ import { SessionApi } from "./groups/session"
 import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
-import { WopalSpaceApi } from "./groups/wopal-space"
+import { WopalSpaceApi, WopalSpaceInstanceApi } from "./groups/wopal-space"
 import { WorkbenchApi } from "./groups/workbench"
 import { V2Api } from "./groups/v2"
 import { Authorization } from "./middleware/authorization"
@@ -53,6 +53,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(V2Api)
   .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
+  .addHttpApi(WopalSpaceInstanceApi)
   .middleware(SchemaErrorMiddleware)
 
 export const OpenCodeHttpApi = HttpApi.make("opencode")

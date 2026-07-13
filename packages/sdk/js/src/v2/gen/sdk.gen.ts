@@ -274,6 +274,8 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WopalSpaceModeErrors,
+  WopalSpaceModeResponses,
   WopalSpaceSpacesErrors,
   WopalSpaceSpacesResponses,
   WorkbenchCreateSessionErrors,
@@ -614,6 +616,36 @@ export class WopalSpace extends HeyApiClient {
     return (options?.client ?? this.client).get<WopalSpaceSpacesResponses, WopalSpaceSpacesErrors, ThrowOnError>({
       url: "/wopal-space/spaces",
       ...options,
+    })
+  }
+
+  /**
+   * Get WopalSpace mode
+   *
+   * Check if the current directory instance is running in WopalSpace mode.
+   */
+  public mode<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<WopalSpaceModeResponses, WopalSpaceModeErrors, ThrowOnError>({
+      url: "/wopal-space/mode",
+      ...options,
+      ...params,
     })
   }
 }

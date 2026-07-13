@@ -181,16 +181,16 @@ export function tryLoadWopalSpaceConfig(deps: WopalSpaceDeps, ctx: {
   directory: string
 }) {
   return Effect.gen(function* () {
-    if (!Flag.WOPAL_SPACE || Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+    if (Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
       return undefined
     }
-
-    log.info("wopal-space mode detected", { directory: ctx.directory })
 
     const settings = yield* loadWopalSpaceSettingsFiles(deps, { directory: ctx.directory })
     if (!settings) {
       return undefined
     }
+
+    log.info("wopal-space mode detected", { directory: ctx.directory })
 
     const directories = settings.directories
     const localWopalDirs = settings.localWopalDirs

@@ -5,6 +5,7 @@ import { existsSync } from "fs"
 import { Effect } from "effect"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
+import { detectWopalSpace } from "../../../ellamaka/detect"
 
 export interface WopalSpaceSettingsDeps {
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>
@@ -36,12 +37,17 @@ export function wopalSpaceDirectories(localWopalDirs: string[]) {
 
 export function loadWopalSpaceSettingsFiles(deps: WopalSpaceSettingsDeps, ctx: { directory: string }) {
   return Effect.gen(function* () {
-    if (!Flag.WOPAL_SPACE || Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+    if (Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
       return undefined
     }
 
-    const spaceRoot = process.env.WOPAL_SPACE_ROOT
-    const localWopalDirs = spaceRoot ? [path.join(spaceRoot, ".wopal")] : []
+    const detection = detectWopalSpace(ctx.directory)
+    if (!detection) {
+      return undefined
+    }
+
+    const spaceRoot = detection.root
+    const localWopalDirs = [path.join(spaceRoot, ".wopal")]
 
     const files: WopalSpaceSettingsFile[] = []
     for (const dir of localWopalDirs) {

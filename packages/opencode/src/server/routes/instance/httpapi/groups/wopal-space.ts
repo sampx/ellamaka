@@ -1,6 +1,8 @@
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
+import { InstanceContextMiddleware } from "../middleware/instance-context"
+import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
 // Mirrors the `spaces` entry in ~/.wopal/config/settings.jsonc, written by wopal-cli.
@@ -42,5 +44,41 @@ export const WopalSpaceApi = HttpApi.make("wopal-space").add(
     )
     .middleware(Authorization),
 )
+
+export const WopalSpaceInstanceApi = HttpApi.make("wopal-space-instance")
+  .add(
+    HttpApiGroup.make("wopal-space-instance")
+      .add(
+        HttpApiEndpoint.get("mode", "/wopal-space/mode", {
+          query: WorkspaceRoutingQuery,
+          success: described(
+            Schema.Struct({ isWopalSpace: Schema.Boolean }),
+            "WopalSpace mode for the current directory instance"
+          ),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "wopal-space.mode",
+            summary: "Get WopalSpace mode",
+            description: "Check if the current directory instance is running in WopalSpace mode.",
+          }),
+        ),
+      )
+      .annotateMerge(
+        OpenApi.annotations({
+          title: "wopal-space-instance",
+          description: "WopalSpace instance routes (ellamaka customization).",
+        }),
+      )
+      .middleware(InstanceContextMiddleware)
+      .middleware(WorkspaceRoutingMiddleware)
+      .middleware(Authorization),
+  )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "wopalspace instance api",
+      version: "0.0.1",
+      description: "Instance-scoped WopalSpace API.",
+    }),
+  )
 
 export type WopalSpaceEntry = typeof WopalSpaceEntry.Type

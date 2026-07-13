@@ -8351,6 +8351,36 @@ export type ExperimentalWorkspaceWarpResponses = {
 export type ExperimentalWorkspaceWarpResponse =
   ExperimentalWorkspaceWarpResponses[keyof ExperimentalWorkspaceWarpResponses]
 
+export type WopalSpaceModeData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/wopal-space/mode"
+}
+
+export type WopalSpaceModeErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WopalSpaceModeError = WopalSpaceModeErrors[keyof WopalSpaceModeErrors]
+
+export type WopalSpaceModeResponses = {
+  /**
+   * WopalSpace mode for the current directory instance
+   */
+  200: {
+    isWopalSpace: boolean
+  }
+}
+
+export type WopalSpaceModeResponse = WopalSpaceModeResponses[keyof WopalSpaceModeResponses]
+
 export type PtyConnectData = {
   body?: never
   path: {

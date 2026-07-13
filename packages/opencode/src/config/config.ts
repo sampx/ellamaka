@@ -330,6 +330,7 @@ type State = {
   directories: string[]
   deps: Fiber.Fiber<void>[]
   consoleState: ConsoleState
+  isWopalSpace: boolean
 }
 
 export interface Interface {
@@ -341,6 +342,7 @@ export interface Interface {
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
+  readonly isWopalSpace: () => Effect.Effect<boolean>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Config") {}
@@ -644,7 +646,12 @@ export const layer = Layer.effect(
           },
           getResult: () => result,
         }, ctx)
-        if (wopalResult) return wopalResult
+        if (wopalResult) {
+          return {
+            ...wopalResult,
+            isWopalSpace: true,
+          }
+        }
 
         log.info("normal mode (opencode compatible)", { directory: ctx.directory })
 
@@ -908,6 +915,7 @@ export const layer = Layer.effect(
             activeOrgName,
             switchableOrgCount: 0,
           },
+          isWopalSpace: false,
         }
       },
       Effect.provideService(AppFileSystem.Service, fs),
@@ -975,6 +983,10 @@ export const layer = Layer.effect(
       return { info: next, changed }
     })
 
+    const isWopalSpace = Effect.fn("Config.isWopalSpace")(function* () {
+      return yield* InstanceState.use(state, (s) => s.isWopalSpace)
+    })
+
     return Service.of({
       get,
       getGlobal,
@@ -984,6 +996,7 @@ export const layer = Layer.effect(
       invalidate,
       directories,
       waitForDependencies,
+      isWopalSpace,
     })
   }),
 )

@@ -85,7 +85,7 @@ import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { v2Handlers } from "./handlers/v2"
 import { workspaceHandlers } from "./handlers/workspace"
-import { wopalSpaceHandlers } from "./handlers/wopal-space"
+import { wopalSpaceHandlers, wopalSpaceInstanceHandlers } from "./handlers/wopal-space"
 import { workbenchHandlers } from "./handlers/workbench"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import { SessionProvisioner } from "@/workbench/session-provisioner"
@@ -157,6 +157,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     v2Handlers,
     tuiHandlers,
     workspaceHandlers,
+    wopalSpaceInstanceHandlers,
   ]),
 )
 

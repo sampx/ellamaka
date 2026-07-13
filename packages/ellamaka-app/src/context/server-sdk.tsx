@@ -2,7 +2,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, onCleanup, onMount, createResource } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -276,12 +276,27 @@ function createDirSdkContext(directory: string, serverSDK: ReturnType<typeof cre
   })
   onCleanup(unsub)
 
+  const [modeResource] = createResource(async () => {
+    try {
+      const res = await client.wopalSpace.mode()
+      return res.data?.isWopalSpace ?? false
+    } catch {
+      return false
+    }
+  })
+
   return {
     directory,
     client,
     event: emitter,
     get url() {
       return serverSDK.url
+    },
+    get isWopalSpace() {
+      return modeResource() ?? false
+    },
+    get isWopalSpaceLoading() {
+      return modeResource.loading
     },
     createClient(opts: Parameters<typeof serverSDK.createClient>[0]) {
       return serverSDK.createClient(opts)

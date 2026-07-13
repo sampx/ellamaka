@@ -2,8 +2,9 @@ import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
-import { RootHttpApi } from "../api"
+import { InstanceHttpApi, RootHttpApi } from "../api"
 import { SpaceRegistry } from "@/wopal/space-registry"
+import { Config } from "@/config/config"
 import type { SpaceEntry } from "@/wopal/cli-schema"
 
 // ---------------------------------------------------------------------------
@@ -40,5 +41,22 @@ export const wopalSpaceHandlers = HttpApiBuilder.group(RootHttpApi, "wopal-space
     })
 
     return handlers.handle("spaces", spaces)
+  }),
+)
+
+// ---------------------------------------------------------------------------
+// Handler - Instance
+// ---------------------------------------------------------------------------
+
+export const wopalSpaceInstanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "wopal-space-instance", (handlers) =>
+  Effect.gen(function* () {
+    const config = yield* Config.Service
+
+    const mode = Effect.fn("WopalSpaceHttpApi.mode")(function* () {
+      const isWopal = yield* config.isWopalSpace()
+      return { isWopalSpace: isWopal }
+    })
+
+    return handlers.handle("mode", mode)
   }),
 )
