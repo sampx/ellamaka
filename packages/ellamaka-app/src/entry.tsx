@@ -69,7 +69,7 @@ const notify: Platform["notify"] = async (title, description, href) => {
 
   const notification = new Notification(title, {
     body: description ?? "",
-    icon: "https://opencode.ai/favicon-96x96-v3.png",
+    icon: "/favicon-96x96-v3.png",
   })
 
   notification.onclick = () => {
@@ -178,4 +178,17 @@ if (root instanceof HTMLElement) {
     ),
     root,
   )
+}
+
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  const registerSW = () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.warn("Service Worker registration failed:", err);
+    });
+  };
+  if (document.readyState === "complete") {
+    registerSW();
+  } else {
+    window.addEventListener("load", registerSW);
+  }
 }
