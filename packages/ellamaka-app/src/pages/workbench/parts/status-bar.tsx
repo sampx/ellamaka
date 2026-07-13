@@ -2,8 +2,6 @@ import { Show, createMemo, For } from "solid-js"
 import { useServer } from "@/context/server"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
-import { SDKProvider } from "@/context/sdk"
-import { StatusBarStatusPopover } from "@/components/status-popover"
 
 export type StatusBarSegment = {
   type: "space" | "panel" | "session" | "path"
@@ -66,13 +64,6 @@ export function StatusBar() {
   const space = createMemo(() => wb.spaceState(activePath()))
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
 
-  const activePanelDirectory = createMemo(() => {
-    const sp = space()
-    if (!sp || !sp.activePanelID) return ""
-    const panel = sp.panels.find((p) => p.id === sp.activePanelID)
-    return panel?.directory ?? ""
-  })
-
   const segments = createMemo(() => {
     const name = spaceName()
     const sp = space()
@@ -106,15 +97,8 @@ export function StatusBar() {
         </For>
       </div>
 
-      {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
+      {/* 右区：Server 名字 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
-        <Show when={activePanelDirectory()} keyed>
-          {(directory) => (
-            <SDKProvider directory={directory}>
-              <StatusBarStatusPopover />
-            </SDKProvider>
-          )}
-        </Show>
         <span class="truncate select-none ml-1">{server.name}</span>
       </div>
     </footer>
