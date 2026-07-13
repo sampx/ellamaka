@@ -16,7 +16,7 @@ export function WorkbenchTitlebar() {
   return (
     <header class="flex h-10 shrink-0 items-center gap-3 px-3 bg-v2-background-bg-base border-b border-v2-border-border-base">
       <div class="flex items-center gap-2 text-v2-text-text-strong [font-weight:530] text-14-regular">
-        <div class="size-4 rounded-[5px] bg-gradient-to-br from-v2-icon-icon-brand to-v2-icon-icon-accent" />
+        <img src="/favicon-96x96-v3.png?v=4" class="w-5 h-5 object-contain" alt="Icon" />
         <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
       </div>
 
