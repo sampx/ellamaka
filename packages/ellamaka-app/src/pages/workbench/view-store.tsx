@@ -136,7 +136,19 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       setRefreshVersion((v) => v + 1)
     }
 
-    const [persistentHint, setPersistentHint] = createSignal("")
+    const [persistentHint, setPersistentHintValue] = createSignal("")
+    let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
+
+    function setPersistentHint(message: string) {
+      if (persistentHintTimer) clearTimeout(persistentHintTimer)
+      persistentHintTimer = undefined
+      setPersistentHintValue(message)
+      if (!message) return
+      persistentHintTimer = setTimeout(() => {
+        setPersistentHintValue("")
+        persistentHintTimer = undefined
+      }, STATUS_MESSAGE_DURATION)
+    }
 
     const [statusMessage, setStatusMessageValue] = createSignal("")
     let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
@@ -154,6 +166,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
 
     onCleanup(() => {
       if (statusMessageTimer) clearTimeout(statusMessageTimer)
+      if (persistentHintTimer) clearTimeout(persistentHintTimer)
     })
 
     // 3. 150ms debounce 防抖优化写入
