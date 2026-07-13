@@ -219,7 +219,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
     <Suspense
       fallback={
         <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <img src="/web-app-manifest-512x512.png?v=7" class="size-20 opacity-80 animate-pulse" alt="Logo" />
+          <img src="/ellamaka-text-logo.png?v=2" class="h-20 w-auto object-contain dark:invert-0 invert" alt="Logo" />
         </div>
       }
     >
@@ -227,7 +227,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
         when={checkMode() === "blocking" ? !startupHealthCheck.loading : startupHealthCheck.state !== "pending"}
         fallback={
           <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-            <img src="/web-app-manifest-512x512.png?v=7" class="size-20 opacity-80 animate-pulse" alt="Logo" />
+            <img src="/ellamaka-text-logo.png?v=2" class="h-20 w-auto object-contain dark:invert-0 invert" alt="Logo" />
           </div>
         }
       >*/}
@@ -268,7 +268,7 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
-        <img src="/web-app-manifest-512x512.png?v=7" class="size-16 mb-4" alt="Logo" />
+        <img src="/ellamaka-text-logo.png?v=2" class="h-16 w-auto object-contain mb-6 dark:invert-0 invert" alt="Logo" />
         <p class="text-14-regular text-text-base">
           {unreachable()[0]}
           <span class="text-text-strong font-medium">{name()}</span>
