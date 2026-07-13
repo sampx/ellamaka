@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-07-11
+> **更新时间**: 2026-07-13
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-13 | Updated | §0 更新桌面端裁剪决策；新增 §17 ellamaka-desktop，采用 OpenCode v1.15.13 Electron desktop 作为固定复制基线，由独立包承载 ellamaka-app、sidecar 与桌面进程生命周期 |
 | 2026-07-11 | Updated | §9 重写：恢复自动更新，改用 ellamaka CDN（`download.coursedao.com/ellamaka/latest/manifest.json`）；安装方法从 `"wopal"` 重命名为 `"ellamaka"`；`upgrade()` 不再检测安装方式，直接走 CDN |
 | 2026-07-07 | Updated | §16 扩展 Workbench 会话归组 API：新增 spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories 四端点，完全按 Workbench 自有归组模型（空间→项目→子目录/worktree→会话），不沿用 opencode project_id 归组；引入 stale 检测、会话标记（目录/工作树）、realpath 统一匹配 |
 | 2026-07-07 | Updated | §16 扩展项目目录聚合端点：新增 `/wopal-space/projects` 和 `/wopal-space/non-space-projects`，按空间路径过滤 project 表 ∪ session 表并聚合会话数；realpath 统一匹配；为 Workbench 三级 Session Browser 提供数据源 |
@@ -25,20 +26,20 @@
 
 ## 0. 项目精简
 
-品牌化第一步：删除与 ellamaka CLI 分发无关的上游模块和文件。
+品牌化第一步：删除不由 ellamaka 产品直接继承的上游模块和文件。需要保留的产品能力由独立品牌包承接。
 
 ### 已删除目录
 
 | 路径 | 原用途 | 删除原因 |
 |------|--------|----------|
-| `packages/desktop/`、`desktop-electron/` | 桌面端（Electron + Tauri） | ellamaka 仅发布 CLI |
+| `packages/desktop/` | OpenCode v1.15.13 Electron 桌面端 | 上游包不直接保留；桌面产品由独立 `packages/ellamaka-desktop/` 承接（§17） |
 | `packages/enterprise/`、`console/`、`function/` | SaaS/Cloud 后台 | ellamaka 无云端服务 |
 | `packages/containers/` | Docker 构建 | 不通过 Docker 分发 |
 | `packages/shared/` | 旧共享包（上游 v1.14.25 重命名为 `packages/core/`） | 上游 rename 后残留，合并时清理 |
 | `packages/web/` | 网站 | 不在本仓库维护 |
 | `packages/extensions/`、`identity/` | VS Code 扩展、品牌素材 | 无 VS Code 插件计划 |
 | `packages/slack/`、`zen/` | Slack bot、API 代理 | 无 Slack 集成计划 |
-| `sdks/` | Python SDK + VS Code 扩展 | 仅 CLI 二进制分发 |
+| `sdks/` | Python SDK + VS Code 扩展 | ellamaka 不单独分发 Python SDK 或 VS Code 扩展 |
 | `github/` | GitHub Action | 上游 CI，ellamaka 用自己的 |
 | `infra/` | SST 基础设施（AWS/Cloudflare） | 无云端部署 |
 | `nix/` | Nix 构建文件 | 不使用 Nix |
@@ -923,3 +924,65 @@ Space
 | `docs/plans/feature-workbench-wopal-space-projects-and-non-space-projects-api.md` | 后端 API 实现 Plan |
 | `docs/BRANDING.md §2` | 路径体系(`Global.Path.config` = `~/.wopal/config`) |
 | `packages/opencode/src/server/routes/instance/httpapi/AGENTS.md` | HttpApi 路由模式规范 |
+
+---
+
+## 17. ellamaka-desktop 桌面应用
+
+### 目的
+
+`packages/ellamaka-desktop` 是 ellamaka 的官方桌面应用。它承载 `ellamaka-app` Workbench，并由 Electron 主进程管理本地 sidecar、窗口和 PTY 生命周期。桌面渲染层刷新时保持后台进程，窗口关闭时释放该窗口拥有的运行时资源。
+
+### 17.1 固定基线
+
+桌面包从 OpenCode `v1.15.13` 的 `packages/desktop` 独立复制，基线 commit 为 `385cb694419f98103af0e8fc6187ddcbcbb6eecb`。该基线已经使用 Electron，不包含 Tauri 运行时。
+
+| 维度 | 上游基线 | ellamaka-desktop |
+|------|----------|-------------------|
+| 包路径 | `packages/desktop` | `packages/ellamaka-desktop` |
+| 包名 | `@opencode-ai/desktop` | `@opencode-ai/ellamaka-desktop` |
+| 桌面框架 | Electron 41.2.1 | Electron，与 1.15.13 基线保持兼容 |
+| 渲染应用 | `@opencode-ai/app` | `@opencode-ai/ellamaka-app` |
+| 默认界面 | OpenCode 主界面 | Ellamaka Workbench `/workbench` |
+| 本地运行时 | OpenCode node sidecar | Ellamaka/WopalSpace node sidecar |
+
+### 17.2 包边界
+
+`ellamaka-desktop` 与 `ellamaka-app` 采用相同的独立复制模式。上游 `packages/desktop` 保持裁剪状态，桌面定制集中在 `packages/ellamaka-desktop`。
+
+- Renderer 依赖 `ellamaka-app` 的根导出、Vite 插件、CSS、public 资源和 i18n 字典。
+- Main Process 与 Preload 负责窗口、IPC、系统能力、更新和 sidecar 生命周期。
+- Sidecar 构建使用当前仓库的 `packages/opencode` node runtime，并启用 Ellamaka 与 WopalSpace 能力。
+- `ellamaka-app` 与 `ellamaka-desktop` 跟随 ellamaka 引擎版本同步升级，保持同一上游版本基线。
+
+### 17.3 PTY 生命周期
+
+桌面端将页面状态与进程所有权分离：
+
+| 所有者 | 职责 |
+|--------|------|
+| `ellamaka-app` Renderer | 维护 Workbench 布局和交互状态；连接已有 PTY |
+| Electron Main Process | 为每个窗口维护 PTY 注册表；处理刷新、窗口关闭和应用退出 |
+| Ellamaka sidecar | 创建、查询和终止 PTY 进程 |
+
+目标行为：
+
+- Renderer 刷新只重载界面。Main Process 和 sidecar 保持运行，刷新后的 Renderer 重新取得窗口的 PTY 注册信息并恢复连接。
+- Workbench 的 `localStorage` 继续持久化布局。临时 PTY 所有权由 Main Process 注册表管理。
+- Panel 或 Space 主动关闭时，Renderer 立即终止对应 PTY，并从 Main Process 注册表注销。
+- 桌面窗口关闭时，Main Process 终止该窗口注册的全部 PTY，再释放窗口资源。
+- 应用退出时，Main Process 终止全部 sidecar 和子进程组。
+- 浏览器版 Workbench 的生命周期由 Web 端策略负责；桌面端不使用浏览器 `pagehide` 作为进程销毁依据。
+
+### 17.4 上游同步策略
+
+`ellamaka-desktop` 的功能基线固定在 OpenCode v1.15.13。桌面包不整体引入 1.17 或其他跨版本实现。
+
+- 上游同版本修复通过人工 review 后选择性移植。
+- Electron 安全修复、进程生命周期修复和平台兼容修复可独立回移，并通过桌面测试验证。
+- ellamaka 升级到新的 OpenCode 基线时，`ellamaka-app`、`ellamaka-desktop` 和 sidecar 一起评估并升级。
+- 独立包保留基线来源和定制差异记录，确保后续同步可审计。
+
+### 17.5 实施边界
+
+本节确立桌面产品的目标架构与版本基线。包创建、品牌资源、构建发布、签名、公证、自动更新和窗口级 PTY 注册协议由独立 Plan 实施和验收。
