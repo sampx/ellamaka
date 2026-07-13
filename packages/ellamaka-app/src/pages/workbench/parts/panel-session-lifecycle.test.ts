@@ -5,6 +5,7 @@ import {
   shouldRestoreBoundSession,
   shouldUnbindSessionFromEvent,
   shouldSyncSessionTitle,
+  disconnectRecovery,
   workbenchSessionEvent,
 } from "./panel-session-lifecycle"
 
@@ -75,6 +76,16 @@ describe("shouldSyncSessionTitle", () => {
 
   test("returns true when the title differs from the local store", () => {
     expect(shouldSyncSessionTitle({ type: "session.updated", sessionId: "s1", title: "New Title", localTitle: "Old Title" })).toBe(true)
+  })
+})
+
+describe("disconnectRecovery", () => {
+  test("returns reconnect when the PTY is still alive after a WebSocket close", () => {
+    expect(disconnectRecovery({ ptyAlive: true })).toBe("reconnect")
+  })
+
+  test("returns fallback when the PTY has been reaped (404)", () => {
+    expect(disconnectRecovery({ ptyAlive: false })).toBe("fallback")
   })
 })
 
