@@ -1,6 +1,8 @@
 # Ellamaka Workbench 设计与状态管理规范
 
 > **状态**：核心设计与开发规范。本项目的后续所有开发与重构工作必须严格遵循本文档。
+> **更新时间**：2026-07-13
+> **相关文档**：`DESKTOP.md`（Electron 桌面承载与共享 PTY 生命周期）
 
 ---
 
@@ -139,10 +141,10 @@ Split Terminal 是面板的**底部辅助终端子区域**，不是独立面板�
 - **独立状态保持**：
   - 可见性（`splitTerminal` 布尔值）：持久化。
   - 高度（`splitHeight` 像素值）：持久化。
-  - PTY 实例与终端渲染状态：由 PTY 运行时管理器管理，刷新后重建。
+  - PTY 进程由 sidecar 管理。刷新后 Renderer 重建终端渲染状态，并在宽限期内重新连接原 PTY。
 - **视图切换不释放**：在 `bound` 槽位中切换主视图（TUI ↔ Chat ↔ Context）时，Split Terminal 的 PTY 进程保持运行，只切换可见性。切回时复用同一终端连接。
 - **操作行为与状态指示**：
-  - 按钮交互：面板头部右侧的终端图标用于切换 `splitTerminal` 的开关。收起时只隐藏 DOM 区域，保留 PTY 进程与终端上下文；再次展开时复用同一终端。
+  - 按钮交互：面板头部右侧的终端图标用于切换 `splitTerminal` 的开关。收起时只隐藏渲染区域，Terminal 连接继续作为 subscriber 存活，保留 PTY 进程与终端上下文；再次展开时复用同一终端。
   - 进程存活高亮：为了防止按钮区域视觉臃肿，该图标不采用右侧小绿点形式进行标记，而是**直接以图标本身的颜色进行状态指示**。终端图标的存活状态直接由 `panel.splitPtyId` 派生——当辅助终端 PTY 进程存活时，终端图标渲染为高亮绿（`text-v2-icon-icon-accent`）；当进程退出或被销毁时恢复为默认 muted 灰色。该颜色状态与 `splitTerminal` 本身的折叠/展开（`state="pressed"` 灰色背景）在视觉上解耦。
 
 ### 4.3 视图注册机制 (View Registry)
@@ -202,7 +204,7 @@ Workbench 内嵌终端由 `ghostty-web` 的 canvas 渲染。canvas 只能按完�
 
 Workbench 状态管理的核心目标是：
 
-1. **全局刷新不丢失面板布局与绑定状态**。
+1. **全局刷新不丢失面板布局与绑定状态，并在宽限期内重新连接仍然存活的 PTY**。
 2. **切换 Space Tab 不销毁 Panel 子树**——所有已打开 Tab 的 Panel、Chat 草稿、终端进程保持挂载，只是切换可见性。
 3. **切换视图模式不释放 PTY**——TUI PTY、Split Terminal PTY 在视图切换时保持运行。
 4. **高频对话生成期间左侧导航树保持绝对稳定**。
@@ -215,7 +217,7 @@ Workbench 状态不进行强行合并，而是通过分层 Store 实现解耦并
 - **View Store** (`view-store.tsx`)：维护显示设置（侧栏、标题栏状态等）及每个 Space 下的 Panel 布局（Panel 数组、宽度、工作目录、Session 绑定状态及 PTY ID 提示）。
 - **Session Store** (`session-store.tsx`)：维护本地与服务端的会话列表缓存及其绑定投影。
 
-PTY ID（`tuiPtyId`、`splitPtyId`、`termPtyId`）是**运行时瞬态标识**，不跨浏览器会话持久化。关 tab 时由 unload handler 杀掉 PTY 并从持久化快照中剥离 ptyId 字段（`stripPtyIds`），重开浏览器时 panel 布局恢复但 PTY 为空，用户需重新点开 TUI/终端。
+PTY ID（`tuiPtyId`、`splitPtyId`、`termPtyId`）作为**重连提示**随 Workbench 布局持久化。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。刷新后 PTY Manager 先探测旧 ID：存活则重连，已回收则清除旧 ID 并按需创建新 PTY。浏览器 Tab 关闭后没有新连接，sidecar 在断连宽限期结束时终止对应 PTY；下次打开时持久化的旧 ID 会在探测阶段自然失效。
 
 ### 5.2 水合门控与协同 (allStoresReady)
 
@@ -252,57 +254,62 @@ const allStoresReady = () => spaceStore.ready() && viewStore.ready()
 
 ### 5.4 PTY 运行时管理器
 
-PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识，不跨浏览器会话持久化。
+Renderer 中的 PTY 关联由 `pty-manager.tsx` 统一管理，后台进程生命周期由 sidecar 的 PTY Service 统一管理。Web 与 Desktop 使用同一套创建、探测、重连、显式删除和断连宽限语义。
 
 **资源键**：`spacePath + panelId + resourceKind`
 
-`resourceKind` 为 `"tui" | "split"`。
+`resourceKind` 为 `"tui" | "term" | "split"`。
 
-**核心操作**：
+**Renderer 核心操作**：
 
 | 操作 | 行为 |
 |------|------|
 | `ensure()` | 检查持久化的 PTY ID 是否存在。存在则**先探测**：向服务端验证该 PTY 是否存活。存活则复用（终端上下文完整保留）。已死则清除旧 ID、创建新 PTY、更新 PTY ID。不存在则直接创建。创建请求附带 generation token，异步返回时检查 generation 是否过期。同时记录 PTY 真实 cwd（`ptyDirectories` Map），用于后续 DELETE 的正确路由。 |
-| `delete()` | 从内存缓存移除 PTY 关联。同时将 PTY ID 加入 `disposedPendingCleanup` 集合——pagehide 时该集合会被回扫，确保 async 的 SDK remove 未发出前由 keepalive DELETE 兜底。 |
-| `disposePty()` / `disposePanel()` / `disposeSpace()` | 关闭指定 PTY/面板/Space 的全部 PTY 进程。成功后清除 `disposedPendingCleanup` 和 `ptyDirectories` 中的对应记录。 |
-| `disposeAllSyncOnUnload(sdkUrl, directory, ptyIds)` | 按 workspace 分组发出 keepalive DELETE。优先使用 `ptyDirectories` 中记录的 PTY 真实 cwd 作为 routing header，而不是调用方传入的 spacePath（可能为空字符串，导致路由错误）。 |
-| `disposeEverythingOnUnload(sdkUrl)` | pagehide 时的最终清理入口。不依赖 store 中的 ptyId（已被 Terminal.onClose 清空），而是扫 `activePtys` 和 `disposedPendingCleanup` 两个内部集合，用 `ptyDirectories` 中的真实 cwd 对所有 PTY 发 keepalive DELETE。 |
+| `delete()` | 从 Renderer 内存缓存移除 PTY 关联。该操作只管理前端引用，不把普通 WebSocket 断连解释为进程销毁。 |
+| `disposePty()` / `disposePanel()` / `disposeSpace()` | 用户显式关闭 PTY、Panel 或 Space 时立即请求 sidecar 终止对应进程，并清除 `ptyDirectories` 与持久化 PTY ID。 |
 
 **探测机制**：PTY Manager 在 `ensure()` 时，若持久化状态中存在 PTY ID，先向服务端发起探测请求（如 PTY 状态查询或轻量连接尝试）。探测成功 → 复用，TUI 终端的滚动位置、当前面板等本地状态完整保留。探测失败（404 或超时）→ 视为已死，创建新 PTY 并更新持久化 ID。
 
 **PTY 真实目录追踪**：PTY 的 `x-opencode-directory` routing header 必须指向 PTY 在服务端的实际 cwd（如 `session.directory`），而非 workbench 的 spacePath（如 General space 的 `""`）。`ptyDirectories` Map 在 `ensure()` 时记录 `ptyId → cwd`，所有 DELETE 操作优先使用该映射的值。
 
+**Sidecar 断连宽限机制**：
+
+- 每个 PTY Session 维护当前 WebSocket subscribers 和一个可取消的回收任务。
+- 新 PTY 创建后在第一个 subscriber 建立前处于 Grace，防止创建成功但页面来不及连接时产生孤儿进程。
+- 最后一个 subscriber 断开时进入 10 秒 Grace，PTY 进程继续运行。
+- 同一 PTY 在 Grace 内重新连接时取消回收任务并继续使用原进程。
+- Grace 结束仍无 subscriber 时，sidecar 自动终止并删除该 PTY。
+- 显式 DELETE 和 Instance finalizer 立即终止 PTY，不等待 Grace。
+- 多个 subscribers 共享 PTY 时，单个连接断开不会启动回收。
+- Workbench 对需要继续运行的隐藏 TUI 和收起的 Split Terminal 保持 subscriber 连接；普通视图切换不会误触发 Grace。
+
 **生命周期规则**：
 
 | 事件 | 行为 |
 |------|------|
-| 视图切换（TUI ↔ Chat ↔ Context） | **不释放 PTY**。TUI PTY 进程保持运行，前端只断开 WebSocket，切回时重新连接同一 PTY。 |
-| Split Terminal 收起 | **不释放 PTY**。只隐藏 DOM，终端上下文保留。再次展开复用同一连接。 |
+| 视图切换（TUI ↔ Chat ↔ Context） | **不释放 PTY**。已经挂载的 TUI Terminal 与 WebSocket subscriber 保持存活，切回时复用同一终端。 |
+| Split Terminal 收起 | **不释放 PTY**。只隐藏渲染区域并保持 WebSocket subscriber，终端上下文保留。再次展开复用同一连接。 |
 | Panel 关闭 | `disposePanel()`：释放该面板所有 PTY，清除持久化 ID。 |
 | Space Tab 关闭 | `disposeSpace()`：释放该 Space 全部 PTY，清除持久化 ID。 |
-| 浏览器刷新 | **防泄露强物理销毁**。`pagehide` 事件触发 `disposeEverythingOnUnload()`，发送 `keepalive: true` 的 fetch DELETE 通知后端杀死所有活跃 PTY 进程。 |
-| 浏览器页面卸载（关闭 tab） | 三阶段协作：<br>1. WebSocket 断开 → `Terminal.onClose`：异步调用 SDK `pty.remove`，将 PTY ID 移入 `disposedPendingCleanup`。<br>2. `pagehide` 事件 → `disposeEverythingOnUnload()`：回扫 `activePtys` + `disposedPendingCleanup`，对每个 PTY 用 `ptyDirectories` 中的真实 cwd 发 keepalive DELETE。<br>3. `beforeunload` 事件：有活跃 PTY 时弹浏览器原生确认框，提醒用户 TUI/终端将被销毁。 |
+| 浏览器或 Electron Renderer 刷新 | `pagehide` 只 flush 布局和 PTY ID 提示。WebSocket 断开后进入 Grace，新 Renderer 探测并重连原 PTY，取消回收任务。 |
+| 浏览器 Tab 或桌面窗口关闭 | WebSocket 断开后进入 Grace。没有新连接时，sidecar 在 10 秒后自动终止 PTY。 |
+| Electron 应用退出 | Main Process 停止 sidecar，Instance finalizer 立即终止全部 PTY。 |
 | Panel 绑定到新 Session | 释放旧 Session 的 TUI PTY，清除旧 ID，为新 Session 创建新 PTY。 |
 
 **异步安全**：创建 PTY 的 Promise 必须携带 generation token。若 Promise resolve 时 Panel 已关闭或 Session 已变更，立即释放该 PTY，禁止将失效 ID 写入持久化状态。
 
-**多 workspace 分组清理**：`disposeAllSyncOnUnload` 在 pagehide 时按 workspace 分组发出 DELETE，每个 workspace 独立带 `x-opencode-directory` header，避免拍平后丢失 routing 信息。
-
 ### 5.5 TUI 进程关闭与自愈机制
 
-为了防止 TUI 意外挂起或用户在交互式终端中输入 `exit` 退出时导致界面卡死，系统设计了终端自动关闭与恢复自愈机制：
+WebSocket 连接关闭与 PTY 进程退出是两个独立事件。前端先确认 sidecar 中的 PTY 状态，再决定重连或回退：
 
-- **正常/异常关闭事件派发**：`<Terminal>` 组件在底层 WebSocket 触发 `close` 时（包括网络故障或正常敲入 `exit`），均会向外派发 `onClose` 事件。
-- **原子批处理（Batch）状态回退**：在接收到 `onClose` 回调时，前端通过 SolidJS 的 `batch` 进行状态原子化同步提交：
-  1. 重置前台 PTY 关联的信号（`setPtyId(undefined)`）以强制卸载该终端。
-  2. 清除 `ptyManager` 内存哈希缓存，并将 `tuiPtyId` 置空。
-  3. 异步发送 `pty.remove` 告知后端彻底物理杀死并注销此 PTY 连接进程。
-  4. 将当前面板视图模式（`viewMode`）同步回退至 `"chat"`（聊天）模式。
-- **Effect 竞态守卫拦截**：在 TUI 视图的 `createEffect` 挂载器顶部设有严密的防重复拉起守卫：`if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return`。结合 `batch` 的微任务更新特性，能完美在切出 TUI 视图时将其截断，彻底避免在退出时因 `tuiPtyId` 被置空而误触发 `createFn` 的重新拉起，从而保证进程被彻底释放。
-- **组件 Keyed 实例化隔离**：所有渲染终端的 `<Show>` 包装组件均带有 `keyed` 属性。这保证了当 PTY ID 发生变化或重建时，旧的含有内部复杂 WebSocket 连线与 xterm 对象的 Terminal 实例会被彻底物理卸载，并创建全新实例，防止连接状态复用卡死。
+- **瞬时断连**：刷新、Renderer 重载或短暂网络中断只关闭 WebSocket。前端保留 PTY ID，sidecar 进入 Grace，Terminal 在宽限期内重新连接原 PTY。
+- **进程退出**：用户在 TUI 或 Shell 中输入 `exit` 后，sidecar 发布 `pty.exited` / `pty.deleted` 并从 Session Registry 删除 PTY。前端探测得到 404 后清除 PTY ID，并将 TUI 主视图回退到 `chat`。
+- **连接关闭处理**：`<Terminal>` 的普通 `onClose` 不直接调用 `pty.remove`。它进入断连状态并触发探测或重连；只有确认 PTY 已退出时才清理持久化关联。
+- **原子状态回退**：确认 PTY 已退出后，前端通过 SolidJS `batch` 同步清除本地信号、PTY Manager 缓存和 Panel PTY ID，再更新视图模式，避免中间状态触发重复创建。
+- **Effect 竞态守卫**：TUI 视图的 `createEffect` 继续使用 `ctx.panel.viewMode`、`ctx.panel.slotState` 和 generation token 拦截过期创建结果。
+- **组件 Keyed 实例化隔离**：终端 `<Show>` 使用 `keyed`。PTY ID 变化时卸载旧 Terminal 实例并创建新实例，防止 WebSocket 与终端对象跨 PTY 复用。
 
-
-### 5.5 Session 状态收敛
+### 5.6 Session 状态收敛
 
 服务端 Session 是 Session 标题、归档状态、消息内容的**唯一事实来源**。
 
@@ -329,13 +336,13 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
 
 移除全局 `refreshKey` 信号，改为按 Space 定向的 Session 树失效。
 
-### 5.6 响应式与副作用约束
+### 5.7 响应式与副作用约束
 
 - `createMemo` 必须是纯函数，**禁止**在 memo 内写 store 或触发 API 请求。副作用使用 `createEffect`。
 - SSE 事件订阅只在结构性事件（`session.created` / `session.deleted`）时触发 Session 树定向刷新。高频属性变更（标题、消息流）由对应组件局部处理。
 - Space Path 是所有 Store 操作的**主键**。Panel directory 是面板 CWD 上下文，禁止用 `panel.directory` 替代 Space Path 作为 Store 读写 key。`workspace.tsx` 或 `space-workspace.tsx` 必须将 `spacePath` 作为属性向下透传。
 
-### 5.7 持久化性能优化
+### 5.8 持久化性能优化
 
 拖拽过程中的尺寸变更（Panel 宽度、Split Terminal 高度、Sidebar 宽度）只在内存 draft 中更新，`pointerup` 时一次性提交到持久化 Store。
 
@@ -348,17 +355,17 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
 
 禁止每次 `mousemove` 序列化整个 Workbench 状态。
 
-### 5.8 持久化配置项
+### 5.9 持久化配置项
 
-- `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化（区别于上游 `sessionStorage`），确保关 tab 重开时布局保持。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局与 Session 绑定、Split Terminal 配置。
+- `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化（区别于上游 `sessionStorage`），确保关 tab 重开时布局保持。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局、Session 绑定、Split Terminal 配置和 PTY ID 重连提示。
 
 存储引擎：`localStorage`（key: `"workbench"`）。
 
-**PTY ID 剥离机制**：`syncToPersisted()` 接受 `{ stripPtyIds?: boolean }` 选项。pagehide 时由 `flushPersisted({ stripPtyIds: true })` 调用，在写入 `localStorage` 前**深拷贝 store 并清空所有 panel 的 `tuiPtyId`/`termPtyId`/`splitPtyId`**。这避免了直接修改内存 store 触发 SolidJS createEffect 导致的 PTY 重复创建问题，同时确保 localStorage 中不保留已失效的 PTY ID。
+**PTY ID 重连提示**：`tuiPtyId`、`termPtyId` 和 `splitPtyId` 随布局一起写入 `localStorage`。`pagehide` 调用普通 `flushPersisted()`，不剥离 PTY ID，也不修改内存 store。水合后的 ID 必须先经过 `ptyManager.ensure()` 探测；sidecar 已回收的 ID 会被清除并按需替换，因此持久化 ID 不承担进程存活状态的权威职责。
 
 单一键，单一 Store，单一水合门控。
 
-### 5.9 侧栏会话浏览器 (Session Tree) 与常驻 Tab 体验优化
+### 5.10 侧栏会话浏览器 (Session Tree) 与常驻 Tab 体验优化
 
 - **常驻通用 Tab (General Tab)**：
   - 工作台默认且常驻一个名为 `"General"` (会话) 的 Tab，其 `path` 标识为 `""`，此 Tab 不允许被用户关闭（UI 屏蔽关闭按钮，Store 层拦截删除请求）。
@@ -379,7 +386,7 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
   - 区分选中与 hover 背景色：激活的空间背景为最纯粹且低调的 `bg-v2-background-bg-deep rounded-md px-2` 独立深色背景，与 hover 背景色 `hover:bg-v2-overlay-simple-overlay-hover` 明显拉开视觉梯度，取消左侧多余的竖条指示线以维护极简排版。
   - 引入等待切换确认过渡态：当切换空间处于弹窗等待确认阶段时，被点击空间以虚线淡蓝背景（`bg-blue-50/40 dark:bg-blue-950/20 border-dashed`）作为缓冲反馈。
 
-### 5.10 状态栏分区与多面板元数据智能层级链
+### 5.11 状态栏分区与多面板元数据智能层级链
 
 - **状态栏分区结构**：
   - 状态栏划分左右分区：**左区**渲染当前激活面板的工作现场元数据层级链，**右区**渲染服务器连接状态与名称，中区弹性占位起两端拉伸对齐作用。
@@ -394,7 +401,7 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
   - 状态栏动态订阅当前活动空间下的聚焦激活面板 `space.activePanelID`、`panel.directory` 路径以及绑定会话标题。
   - 一旦发生面板点击切换、或者是 PTY 终端在后台通过命令变更了工作目录（CWD），层级链会立即响应式刷新最新现场。
 
-### 5.11 浏览器关闭保护与单 Tab 互斥
+### 5.12 浏览器生命周期与单 Tab 互斥
 
 **单 Tab 互斥（Web Locks API）**：
 - `WorkbenchSingletonGuard` 组件在 Workbench 初始化时通过 `navigator.locks.request(..., { ifAvailable: true })` 获取独占锁。
@@ -402,24 +409,23 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
 - Tab 关闭/刷新时浏览器自动释放锁，无需 `beforeunload` 参与（比心跳方案更可靠，不会因崩溃残留锁状态）。
 - 浏览器不支持 `navigator.locks` 时降级为不限制（边缘场景，不影响功能）。
 
-**关闭前提醒（beforeunload）**：
-- `handleBeforeUnload` 监听 `beforeunload` 事件。通过 `wb.hasActivePty()` 检查是否有活跃 PTY（TUI/Split Terminal）。
-- 有活跃 PTY 时调用 `e.preventDefault()` + `e.returnValue = ""`，触发浏览器原生离开确认对话框。
-- 无活跃 PTY 时不注册/不拦截，避免打扰用户关闭空 workbench。
-- 注意：浏览器出于安全策略，不允许自定义提示文案，只能显示标准文案。
+**页面生命周期**：
 
-**页面卸载清理（pagehide）**：
-- `pagehide` 事件替代已废弃的 `unload` 事件（Chrome 逐步弃用 `unload`，`pagehide` 在所有现代浏览器可靠触发）。
-- `handleUnload` 执行 `ptyManager.disposeEverythingOnUnload(sdk.url)`，回扫 `activePtys` + `disposedPendingCleanup`，用 `ptyDirectories` 中的真实 cwd 发 keepalive DELETE。
-- 随后 `wb.flushPersisted({ stripPtyIds: true })` 将剥离 PTY ID 的布局快照写入 localStorage。
+- Workbench 不使用 `beforeunload` 阻止刷新或关闭，也不推断浏览器离开的具体原因。
+- `pagehide` 只调用 `wb.flushPersisted()`，把包含 PTY ID 重连提示的最新布局同步写入 `localStorage`。
+- 页面销毁使 PTY WebSocket 自然断开。Sidecar 在最后一个 subscriber 断开后进入 10 秒 Grace。
+- 刷新后的页面在 Grace 内探测并连接原 PTY，sidecar 取消回收任务。
+- Tab 关闭后没有新连接，sidecar 在 Grace 结束时终止 PTY。
+- Panel 和 Space 的显式关闭继续调用 `disposePty()` / `disposePanel()` / `disposeSpace()`，立即释放进程。
 
-**清理时序**：
-1. WebSocket 断开（浏览器开始卸载）→ `Terminal.onClose`：异步调 SDK `pty.remove`，PTY ID 移入 `disposedPendingCleanup`。
-2. `pagehide` 同步触发 → `disposeEverythingOnUnload`：回扫所有 PTY 发 keepalive DELETE。
-3. `pagehide` 同步触发 → `flushPersisted({ stripPtyIds: true })`：layout 写入 localStorage，PTY ID 不持久化。
-4. 浏览器完全卸载。
+**刷新时序**：
 
-此时序确保即使异步 SDK `pty.remove` 因页面销毁未执行，keepalive DELETE 也能兜底杀 PTY。
+1. `pagehide` 同步 flush Workbench 布局和 PTY ID 提示。
+2. WebSocket 断开，sidecar 启动 PTY Grace。
+3. 新页面水合布局并通过 `ptyManager.ensure()` 探测旧 ID。
+4. 探测成功后重新连接，sidecar 取消 Grace 回收任务。
+
+浏览器关闭、Renderer 崩溃和 Electron 窗口关闭使用相同的断连回收语义。桌面应用退出时由 Electron Main Process 停止 sidecar，立即释放全部 PTY。详见 `DESKTOP.md`。
 
 ---
 
@@ -441,9 +447,9 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识�
 1. 在 `bound` 槽位的面板中，点击头部 `TUI | Chat | Context` 主视图按钮，或点击 `TUI` 左侧的终端图标展开/收起下方 Split Terminal。
 2. 主视图按钮仅切换 `panel.view`。终端图标仅切换 `panel.splitTerminal`，不会抢占当前主视图。
 3. **切换视图不释放任何 PTY**：
-   - 从 TUI 切到 Chat：前端断开 TUI 终端的 WebSocket，TUI 进程保持后台挂起。前端挂载 `PanelChat` 导入聊天数据。
-   - 切回 TUI：重新连接同一 PTY 的 WebSocket，终端上下文恢复。
-   - Split Terminal 收起时只隐藏 DOM 区域，PTY 进程和终端状态保留；再次展开时复用同一连接。
+   - 从 TUI 切到 Chat：已挂载的 TUI Terminal 保持隐藏和连接状态，前端同时挂载 `PanelChat` 导入聊天数据。
+   - 切回 TUI：恢复同一 Terminal 的可见性，终端上下文保持不变。
+   - Split Terminal 收起时只隐藏渲染区域并保留 WebSocket subscriber；再次展开时复用同一连接。
 
 ### 6.4 切换 Space Tab
 1. 用户点击顶部 Space Tab 切换激活 Space。

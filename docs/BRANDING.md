@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-13 | Updated | §17 简化桌面 PTY 生命周期：Web 与 Desktop 共用 sidecar 断连宽限回收，移除 Electron Main PTY 注册表与专用 IPC 设计；同步更新 `DESKTOP.md` 和 Workbench 设计 |
 | 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
 | 2026-07-13 | Updated | §0 更新桌面端裁剪决策；新增 §17 ellamaka-desktop，采用 OpenCode v1.15.13 Electron desktop 作为固定复制基线，由独立包承载 ellamaka-app、sidecar 与桌面进程生命周期 |
 | 2026-07-11 | Updated | §9 重写：恢复自动更新，改用 ellamaka CDN（`download.coursedao.com/ellamaka/latest/manifest.json`）；安装方法从 `"wopal"` 重命名为 `"ellamaka"`；`upgrade()` 不再检测安装方式，直接走 CDN |
@@ -932,7 +933,7 @@ Space
 
 ### 目的
 
-`packages/ellamaka-desktop` 是 ellamaka 的官方桌面应用。它承载 `ellamaka-app` Workbench，并由 Electron 主进程管理本地 sidecar、窗口和 PTY 生命周期。桌面渲染层刷新时保持后台进程，窗口关闭时释放该窗口拥有的运行时资源。
+`packages/ellamaka-desktop` 是 ellamaka 的官方桌面应用。它承载 `ellamaka-app` Workbench。Electron 主进程管理窗口和本地 sidecar，sidecar 统一管理 Web 与 Desktop 的 PTY 生命周期。
 
 完整架构、状态所有权和生命周期契约见 [`DESKTOP.md`](./DESKTOP.md)。本节记录桌面产品的品牌化基线和包级差异。
 
@@ -964,18 +965,18 @@ Space
 
 | 所有者 | 职责 |
 |--------|------|
-| `ellamaka-app` Renderer | 维护 Workbench 布局和交互状态；连接已有 PTY |
-| Electron Main Process | 为每个窗口维护 PTY 注册表；处理刷新、窗口关闭和应用退出 |
-| Ellamaka sidecar | 创建、查询和终止 PTY 进程 |
+| `ellamaka-app` Renderer | 持久化 Workbench 布局和 PTY ID 重连提示；探测、连接和显式删除 PTY |
+| Electron Main Process | 管理窗口与 sidecar；应用退出时停止 sidecar |
+| Ellamaka sidecar | 管理 PTY Session、subscribers、断连宽限任务和操作系统进程 |
 
 目标行为：
 
-- Renderer 刷新只重载界面。Main Process 和 sidecar 保持运行，刷新后的 Renderer 重新取得窗口的 PTY 注册信息并恢复连接。
-- Workbench 的 `localStorage` 继续持久化布局。临时 PTY 所有权由 Main Process 注册表管理。
-- Panel 或 Space 主动关闭时，Renderer 立即终止对应 PTY，并从 Main Process 注册表注销。
-- 桌面窗口关闭时，Main Process 终止该窗口注册的全部 PTY，再释放窗口资源。
-- 应用退出时，Main Process 终止全部 sidecar 和子进程组。
-- 浏览器版 Workbench 的生命周期由 Web 端策略负责；桌面端不使用浏览器 `pagehide` 作为进程销毁依据。
+- Web 与 Desktop 共用 sidecar 的断连宽限机制。最后一个 WebSocket subscriber 断开后，PTY 进入 10 秒 Grace。
+- Renderer 刷新只重载界面。`localStorage` 保留 PTY ID 提示，新 Renderer 在 Grace 内探测并重连原 PTY，sidecar 取消回收任务。
+- Panel 或 Space 主动关闭时，Renderer 立即终止对应 PTY，不等待 Grace。
+- 浏览器 Tab 或桌面窗口关闭后没有新连接，sidecar 在 Grace 结束时自动终止 PTY。
+- 应用退出时，Main Process 停止 sidecar，Instance finalizer 立即终止全部 PTY 和子进程。
+- PTY 所有权集中在 sidecar；Electron Main 与 Preload 保持窗口、系统能力和 sidecar 生命周期边界。
 
 ### 17.4 上游同步策略
 
@@ -988,7 +989,7 @@ Space
 
 ### 17.5 实施边界
 
-本节确立桌面产品的目标架构与版本基线。包创建、品牌资源、构建发布、签名、公证、自动更新和窗口级 PTY 注册协议由独立 Plan 实施和验收。
+本节确立桌面产品的目标架构与版本基线。包创建、品牌资源、构建发布、签名、公证、自动更新和 sidecar 断连宽限机制由独立 Plan 实施和验收。
 
 ### 17.6 相关文档
 

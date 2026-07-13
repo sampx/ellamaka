@@ -6,16 +6,16 @@
 > **上游基线**: OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
 > **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`
 
-本文档描述 ellamaka 官方桌面应用的目标架构。桌面应用承载 `ellamaka-app` Workbench，并由 Electron 主进程管理窗口、本地 sidecar 和 PTY 生命周期。
+本文档描述 ellamaka 官方桌面应用的目标架构。桌面应用承载 `ellamaka-app` Workbench。Electron 主进程管理窗口和本地 sidecar，sidecar 统一管理 Web 与 Desktop 的 PTY 生命周期。
 
 ## 1. 设计目标
 
-`ellamaka-desktop` 提供稳定的本地桌面运行环境，使 Workbench 的界面生命周期与后台进程生命周期相互独立。
+`ellamaka-desktop` 提供稳定的本地桌面运行环境，使 Workbench 的界面生命周期与后台进程生命周期相互独立。Web 与 Desktop 共用 sidecar 的 PTY 断连宽限机制。
 
 - Renderer 刷新只重载界面，已有 TUI 和 Terminal 继续运行。
-- Panel、Space 和桌面窗口关闭时，系统释放对应 PTY。
+- Panel 和 Space 主动关闭时立即释放对应 PTY；页面或窗口关闭后由 sidecar 在宽限期结束时回收 PTY。
 - 应用退出时，系统终止全部 sidecar 和子进程。
-- `ellamaka-app` 同时服务浏览器和桌面端，两种环境共享产品能力并拥有各自的生命周期策略。
+- `ellamaka-app` 同时服务浏览器和桌面端，两种环境共享产品能力与 PTY 生命周期，并分别接入浏览器和 Electron 系统能力。
 - 桌面包与 ellamaka 引擎、SDK 和 app 保持同一 OpenCode 版本基线。
 
 ## 2. 包定位与版本基线
@@ -46,40 +46,30 @@ Electron 安全修复、生命周期修复和平台兼容修复可以独立回�
 ```text
 Electron Main Process
 ├── Window Manager
-├── Sidecar Manager
-├── PTY Ownership Registry
-└── Lifecycle Coordinator
+└── Sidecar Manager
           │ IPC
 Electron Preload
           │ allowlisted desktop API
 ellamaka-app Renderer
           │ HTTP / WebSocket
 Ellamaka node sidecar
-          │
-PTY / TUI processes
+├── PTY Session Registry
+├── Disconnect Grace Reaper
+└── PTY / TUI processes
 ```
 
 ### 3.1 Electron Main Process
 
-Main Process 是桌面运行时的所有者，负责：
+Main Process 是桌面应用与本地服务的所有者，负责：
 
 - 创建和管理 BrowserWindow。
 - 启动、监控和停止 Ellamaka sidecar。
-- 为每个窗口维护 PTY 所有权注册表。
-- 区分 Renderer 刷新、窗口关闭和应用退出。
 - 执行桌面菜单、文件选择、系统通知、更新和深链接能力。
-- 在窗口关闭和应用退出前完成进程清理。
+- 在应用退出时停止 sidecar，使 sidecar finalizer 释放全部 PTY。
 
 ### 3.2 Preload
 
-Preload 暴露最小化、可验证的 IPC 接口。Renderer 通过该接口访问桌面能力，不直接获得 Node.js 或 Electron 主进程权限。
-
-PTY 生命周期接口覆盖以下语义：
-
-- 注册当前窗口创建的 PTY。
-- 注销已经正常终止的 PTY。
-- 读取当前窗口的 PTY 注册信息。
-- 请求释放当前窗口拥有的全部 PTY。
+Preload 暴露最小化、可验证的桌面 IPC 接口。Renderer 通过该接口访问窗口、文件系统、菜单、更新和 sidecar 初始化能力。PTY 生命周期继续使用现有 HTTP 和 WebSocket 契约，Renderer 保持浏览器安全边界。
 
 ### 3.3 ellamaka-app Renderer
 
@@ -91,7 +81,9 @@ Renderer 负责 Workbench 的布局、交互和终端连接。桌面构建使用
 - i18n 字典。
 - `/workbench` 路由。
 
-Renderer 通过 `PlatformProvider` 获得 `platform: "desktop"`。Workbench 使用平台能力选择桌面生命周期策略，不通过 User-Agent 推断运行环境。
+Renderer 通过 `PlatformProvider` 获得 `platform: "desktop"`，用于文件选择、菜单、更新和系统集成。PTY 生命周期不按平台分叉，也不通过 User-Agent 推断运行环境。
+
+`ellamaka-app` 在浏览器和 Electron 中使用相同的 PTY 创建、探测、重连和显式删除逻辑。Electron Renderer 只增加桌面平台适配，不维护独立的 PTY 所有权副本。
 
 ### 3.4 Ellamaka sidecar
 
@@ -99,34 +91,36 @@ Sidecar 由当前仓库的 `packages/opencode` node runtime 构建，提供 Ella
 
 Sidecar 使用随机本地端口和临时认证凭据，仅监听 loopback。Main Process 保存连接信息并通过受控初始化接口交给 Renderer。
 
+PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subscriber 断开时，服务进入断连宽限期；同一 PTY 在宽限期内重新连接时继续运行，宽限期结束后仍未连接则自动终止。
+
 ## 4. 状态所有权
 
 桌面应用将持久化界面状态、临时运行时状态和后台进程分层管理。
 
 | 状态 | 权威所有者 | 生命周期 |
 |------|------------|----------|
-| Panel 布局、宽度、绑定 Session、directory | `ellamaka-app` / `localStorage` | 跨刷新、跨应用启动 |
-| PTY ID、directory、panelID、kind、windowID | Electron Main Process | 当前应用进程 |
-| PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前桌面运行期 |
+| Panel 布局、宽度、绑定 Session、directory、PTY ID 提示 | `ellamaka-app` / `localStorage` | 跨刷新、跨应用启动 |
+| PTY session、subscriber、断连回收计时 | Ellamaka sidecar | 当前 sidecar 运行期 |
+| PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前 sidecar 运行期 |
 | Sidecar 连接凭据 | Electron Main Process | 当前应用进程 |
 
-`localStorage` 继续负责 Workbench 布局。PTY ID 可以作为 Renderer 的连接缓存，但 Main Process 注册表是桌面运行期的所有权真相源。
+`localStorage` 继续负责 Workbench 布局，并将 PTY ID 作为重连提示保存。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。Renderer 每次使用持久化 PTY ID 前都通过 `ptyManager.ensure()` 探测；存活则复用，已回收则清除旧 ID 并创建新 PTY。
 
-## 5. PTY 所有权模型
+## 5. PTY 断连宽限模型
 
-每个 BrowserWindow 获得稳定的 `windowID`。Renderer 刷新沿用同一个窗口身份，窗口关闭后该身份失效。
+每个 PTY Session 维护当前 WebSocket subscribers 和一个可取消的回收任务。默认断连宽限期为 10 秒。
 
-每条 PTY 注册记录包含：
+| 状态 | 进入条件 | 行为 |
+|------|----------|------|
+| Connected | 至少一个 subscriber 已连接 | PTY 正常运行，回收任务保持取消状态 |
+| Grace | PTY 创建后尚未连接，或最后一个 subscriber 断开 | PTY 继续运行并开始 10 秒倒计时 |
+| Disposed | 宽限期结束仍无 subscriber，或收到显式 DELETE | 终止进程、关闭连接并从 Session Registry 删除 |
 
-| 字段 | 说明 |
-|------|------|
-| `ptyID` | sidecar 返回的 PTY 标识 |
-| `directory` | PTY 创建时的真实工作目录，也是后续 API 路由依据 |
-| `panelID` | Workbench Panel 标识 |
-| `kind` | `tui`、`term` 或 `split` |
-| `windowID` | 所属 Electron 窗口 |
+新连接进入时取消该 PTY 的回收任务。多个 subscribers 共享同一 PTY 时，只有最后一个连接断开才进入 Grace。
 
-`directory` 与 Workbench `spacePath` 保持独立。所有 PTY 查询和删除请求使用注册记录中的真实 directory。
+Workbench 对需要继续运行的隐藏 TUI 和收起的 Split Terminal 保持 subscriber 连接。普通视图切换只改变可见性，不让活跃 PTY 进入 Grace。
+
+`directory` 与 Workbench `spacePath` 保持独立。所有 PTY 探测和显式删除请求使用 PTY 创建时的真实 directory。
 
 ## 6. 生命周期行为
 
@@ -135,21 +129,21 @@ Sidecar 使用随机本地端口和临时认证凭据，仅监听 loopback。Mai
 1. Renderer 请求 sidecar 创建 PTY。
 2. Sidecar 返回 `ptyID`。
 3. Renderer 将 PTY 绑定到 Panel。
-4. Renderer 通过 Preload 向 Main Process 注册 PTY 所有权。
-5. Renderer 建立 PTY WebSocket 连接。
+4. Renderer 建立 PTY WebSocket 连接。
+5. Sidecar 将连接加入该 PTY 的 subscribers，并取消可能存在的回收任务。
 
-PTY 注册完成后，Renderer 刷新不会改变其后台进程所有权。
+PTY 连接建立后，Renderer 刷新不会改变其后台进程所有权。
 
 ### 6.2 Renderer 刷新
 
 1. Workbench flush 当前布局。
-2. 桌面生命周期分支保留 PTY，不执行 Web 端 `pagehide` 删除逻辑，也不显示浏览器离开警告。
+2. 页面生命周期分支保留 PTY ID，不执行 `pagehide` 删除逻辑，也不显示浏览器离开警告。
 3. Renderer 和 PTY WebSocket 连接被销毁。
-4. Main Process、sidecar 和 PTY 继续运行。
-5. 新 Renderer 读取布局和当前窗口 PTY 注册表。
+4. Sidecar 在最后一个 subscriber 断开后进入 10 秒 Grace。
+5. 新 Renderer 从 `localStorage` 读取布局和 PTY ID 提示。
 6. Renderer 使用 `ptyID + directory` 探测已有 PTY。
-7. 探测成功后重新建立 WebSocket 连接。
-8. 已失效的 PTY 从布局缓存和 Main Process 注册表中清除。
+7. 探测成功后重新建立 WebSocket 连接，sidecar 取消回收任务。
+8. 已失效的 PTY 从布局缓存中清除，并按需创建新 PTY。
 
 刷新前后复用同一个 PTY ID 和操作系统进程。
 
@@ -158,24 +152,21 @@ PTY 注册完成后，Renderer 刷新不会改变其后台进程所有权。
 1. Renderer 使用真实 directory 请求 sidecar 终止 PTY。
 2. Sidecar 确认终止。
 3. Renderer 清除 Panel 的 PTY 绑定。
-4. Renderer 通知 Main Process 注销对应记录。
 
 Space 关闭按相同流程处理该空间全部 Panel PTY。
 
 ### 6.4 桌面窗口关闭
 
-1. Main Process 捕获窗口关闭请求并进入清理状态。
-2. Main Process 读取该 `windowID` 的全部 PTY 注册记录。
-3. Main Process 使用每条记录的真实 directory 请求 sidecar 终止 PTY。
-4. Main Process 清空窗口注册表。
-5. Main Process 完成窗口关闭。
+1. BrowserWindow 销毁 Renderer，PTY WebSocket 随之断开。
+2. Sidecar 将失去最后 subscriber 的 PTY 置为 Grace。
+3. 窗口未恢复连接时，sidecar 在 10 秒宽限期结束后终止对应 PTY。
 
-窗口清理由 Main Process 驱动，不依赖 Renderer 的 `pagehide`、`beforeunload` 或 keepalive fetch。
+窗口关闭与浏览器 Tab 关闭共用同一套断连回收语义。Sidecar 通过 WebSocket subscriber 状态完成回收判定，Electron 保持轻量桌面外壳职责。
 
 ### 6.5 应用退出
 
-1. Main Process 关闭所有窗口拥有的 PTY。
-2. Main Process 停止本地 sidecar。
+1. Main Process 停止本地 sidecar。
+2. Sidecar finalizer 终止 Session Registry 中的全部 PTY。
 3. Main Process 终止 sidecar 子进程组。
 4. Electron 应用退出。
 
@@ -183,19 +174,19 @@ Sidecar 停止是应用级兜底，确保未完成单项清理的进程随应用
 
 ### 6.6 Renderer 异常退出
 
-Renderer 崩溃不会立即终止 PTY。Main Process 保留窗口注册表，使 Renderer 恢复后能够重新连接。窗口随后关闭时，Main Process 执行正常窗口清理。
+Renderer 崩溃不会立即终止 PTY。Sidecar 将断开的 PTY 置为 Grace，使 Renderer 在宽限期内恢复并重新连接。超过宽限期仍未恢复的 PTY 自动回收。
 
 ## 7. Web 与 Desktop 生命周期
 
 | 场景 | 浏览器 Workbench | ellamaka-desktop |
 |------|-------------------|-------------------|
-| Renderer/页面刷新 | Web 端策略处理 | 保留 PTY 并重新连接 |
-| 浏览器 Tab 关闭 | Web 端策略处理 | 不适用 |
-| Panel/Space 关闭 | 立即终止对应 PTY | 立即终止并注销对应 PTY |
-| 桌面窗口关闭 | 不适用 | Main Process 终止窗口 PTY |
+| Renderer/页面刷新 | 宽限期内重连并保留 PTY | 宽限期内重连并保留 PTY |
+| 浏览器 Tab 关闭 | 宽限期结束后回收 PTY | 不适用 |
+| Panel/Space 关闭 | 立即终止对应 PTY | 立即终止对应 PTY |
+| 桌面窗口关闭 | 不适用 | 宽限期结束后回收 PTY |
 | 应用退出 | 不适用 | 终止全部 PTY 和 sidecar |
 
-两种环境共享 `PtyManager` 的创建、探测和正常删除能力。销毁页面时的行为由平台适配层决定。
+两种环境共享 `PtyManager` 的创建、探测、重连和显式删除能力，也共享 sidecar 的断连宽限机制。Electron 只提供桌面外壳和 sidecar 生命周期。
 
 ## 8. Sidecar 集成
 
@@ -207,6 +198,9 @@ Sidecar 启动环境遵循 Ellamaka 路径和配置体系：
 - 加载 Ellamaka 品牌配置与 WopalSpace 能力。
 - 提供 Workbench 所需的 WopalSpace 注册表和 Session 归组 API。
 - 保持 `x-opencode-directory`/directory query 的实例路由契约。
+- 在 PTY 创建后启动首次连接宽限任务。
+- 在 PTY 最后一个 subscriber 断开时启动 10 秒回收任务，在重新连接时取消任务。
+- 在收到显式 PTY DELETE 或 Instance finalizer 执行时立即终止进程。
 - 禁用 sidecar 自身的嵌入式 Web UI，由 Electron Renderer 提供界面。
 
 Main Process 负责 sidecar 健康检查。Renderer 在 sidecar 可用并完成初始化后进入 Workbench。
@@ -215,11 +209,9 @@ Main Process 负责 sidecar 健康检查。Renderer 在 sidecar 可用并完成�
 
 - BrowserWindow 启用 context isolation，Renderer 不启用 Node integration。
 - Preload 只暴露明确允许的 IPC 方法。
-- IPC 校验 `windowID`、`ptyID`、directory 和 kind。
-- PTY 注册接口只管理 sidecar 已创建的 PTY，不接受任意进程 ID。
 - Sidecar 只监听 loopback，并使用每次启动生成的认证凭据。
 - 认证凭据由 Main Process 持有，不写入 `localStorage`。
-- 窗口关闭清理只影响该窗口拥有的 PTY。
+- PTY 探测、重连和删除继续经过现有认证与 directory 路由边界。
 - 应用退出由 Main Process 统一终止 sidecar 和子进程组。
 
 ## 10. 品牌与桌面身份
@@ -245,11 +237,15 @@ Main Process 负责 sidecar 健康检查。Renderer 在 sidecar 可用并完成�
 5. 刷新不会创建重复 PTY。
 6. Panel 关闭后对应 PTY 进程消失。
 7. Space 关闭后该空间全部 PTY 进程消失。
-8. 窗口关闭后该窗口注册的全部 PTY 进程消失。
+8. 浏览器 Tab 或桌面窗口关闭后，失去全部 subscribers 的 PTY 在宽限期结束时消失。
 9. 应用退出后 sidecar 和全部子进程消失。
 10. 多目录 Panel 的 PTY 删除始终路由到各自真实 directory。
 11. Renderer 异常退出并恢复后能够重新连接仍然存在的 PTY。
-12. 浏览器版 Workbench 保持独立的 Web 生命周期行为。
+12. 浏览器版 Workbench 与桌面版共享断连宽限和显式删除语义。
+13. 多个 subscribers 连接同一 PTY 时，单个连接断开不会启动回收。
+14. 显式 DELETE 不等待宽限期，立即终止 PTY。
+15. PTY 创建后始终在宽限期内建立第一个 subscriber；连接未建立时自动回收。
+16. TUI 视图隐藏或 Split Terminal 收起超过宽限期后，PTY 仍保持运行。
 
 ## 12. 上游同步
 
