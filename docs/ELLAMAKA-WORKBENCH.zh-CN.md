@@ -215,7 +215,7 @@ Workbench 状态不进行强行合并，而是通过分层 Store 实现解耦并
 - **View Store** (`view-store.tsx`)：维护显示设置（侧栏、标题栏状态等）及每个 Space 下的 Panel 布局（Panel 数组、宽度、工作目录、Session 绑定状态及 PTY ID 提示）。
 - **Session Store** (`session-store.tsx`)：维护本地与服务端的会话列表缓存及其绑定投影。
 
-PTY ID（`tuiPtyId`、`splitPtyId`）作为**重连提示**持久化在 Panel 布局中。PTY Manager 在使用前必须探测存活状态，存活则复用（保留 TUI 终端上下文），已死则创建新 PTY 并更新 ID。
+PTY ID（`tuiPtyId`、`splitPtyId`、`termPtyId`）是**运行时瞬态标识**，不跨浏览器会话持久化。关 tab 时由 unload handler 杀掉 PTY 并从持久化快照中剥离 ptyId 字段（`stripPtyIds`），重开浏览器时 panel 布局恢复但 PTY 为空，用户需重新点开 TUI/终端。
 
 ### 5.2 水合门控与协同 (allStoresReady)
 
@@ -252,7 +252,7 @@ const allStoresReady = () => spaceStore.ready() && viewStore.ready()
 
 ### 5.4 PTY 运行时管理器
 
-PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久化在 Panel 布局中，但使用前必须探测验证。
+PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 是运行时瞬态标识，不跨浏览器会话持久化。
 
 **资源键**：`spacePath + panelId + resourceKind`
 
@@ -262,13 +262,15 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 
 | 操作 | 行为 |
 |------|------|
-| `ensure()` | 检查持久化的 PTY ID 是否存在。存在则**先探测**：向服务端验证该 PTY 是否存活。存活则复用（终端上下文完整保留）。已死则清除旧 ID、创建新 PTY、更新持久化 ID。不存在则直接创建。创建请求附带 generation token，异步返回时检查 generation 是否过期。 |
-| `dispose(resource)` | 关闭指定 PTY 进程，清除持久化 ID，清理引用。 |
-| `disposePanel(panelId)` | 关闭该面板的所有 PTY（TUI + Split），清除对应持久化 ID。 |
-| `disposeSpace(spacePath)` | 关闭该 Space Tab 的全部 PTY，清除对应持久化 ID。 |
-| `disposeAll()` | 退出 Workbench 时关闭所有 PTY。 |
+| `ensure()` | 检查持久化的 PTY ID 是否存在。存在则**先探测**：向服务端验证该 PTY 是否存活。存活则复用（终端上下文完整保留）。已死则清除旧 ID、创建新 PTY、更新 PTY ID。不存在则直接创建。创建请求附带 generation token，异步返回时检查 generation 是否过期。同时记录 PTY 真实 cwd（`ptyDirectories` Map），用于后续 DELETE 的正确路由。 |
+| `delete()` | 从内存缓存移除 PTY 关联。同时将 PTY ID 加入 `disposedPendingCleanup` 集合——pagehide 时该集合会被回扫，确保 async 的 SDK remove 未发出前由 keepalive DELETE 兜底。 |
+| `disposePty()` / `disposePanel()` / `disposeSpace()` | 关闭指定 PTY/面板/Space 的全部 PTY 进程。成功后清除 `disposedPendingCleanup` 和 `ptyDirectories` 中的对应记录。 |
+| `disposeAllSyncOnUnload(sdkUrl, directory, ptyIds)` | 按 workspace 分组发出 keepalive DELETE。优先使用 `ptyDirectories` 中记录的 PTY 真实 cwd 作为 routing header，而不是调用方传入的 spacePath（可能为空字符串，导致路由错误）。 |
+| `disposeEverythingOnUnload(sdkUrl)` | pagehide 时的最终清理入口。不依赖 store 中的 ptyId（已被 Terminal.onClose 清空），而是扫 `activePtys` 和 `disposedPendingCleanup` 两个内部集合，用 `ptyDirectories` 中的真实 cwd 对所有 PTY 发 keepalive DELETE。 |
 
 **探测机制**：PTY Manager 在 `ensure()` 时，若持久化状态中存在 PTY ID，先向服务端发起探测请求（如 PTY 状态查询或轻量连接尝试）。探测成功 → 复用，TUI 终端的滚动位置、当前面板等本地状态完整保留。探测失败（404 或超时）→ 视为已死，创建新 PTY 并更新持久化 ID。
+
+**PTY 真实目录追踪**：PTY 的 `x-opencode-directory` routing header 必须指向 PTY 在服务端的实际 cwd（如 `session.directory`），而非 workbench 的 spacePath（如 General space 的 `""`）。`ptyDirectories` Map 在 `ensure()` 时记录 `ptyId → cwd`，所有 DELETE 操作优先使用该映射的值。
 
 **生命周期规则**：
 
@@ -278,12 +280,13 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 | Split Terminal 收起 | **不释放 PTY**。只隐藏 DOM，终端上下文保留。再次展开复用同一连接。 |
 | Panel 关闭 | `disposePanel()`：释放该面板所有 PTY，清除持久化 ID。 |
 | Space Tab 关闭 | `disposeSpace()`：释放该 Space 全部 PTY，清除持久化 ID。 |
-| Workbench 退出 | `disposeAll()`：释放所有 PTY。 |
-| 浏览器刷新 | **防泄露强物理销毁**。刷新或关闭页面时，通过 `beforeunload` 事件监听，调用 `disposeAllSyncOnUnload` 发送 `keepalive: true` 的 fetch DELETE 请求通知后端立即杀死并销毁所有活跃的 PTY 进程，不保持后台存活。 |
+| 浏览器刷新 | **防泄露强物理销毁**。`pagehide` 事件触发 `disposeEverythingOnUnload()`，发送 `keepalive: true` 的 fetch DELETE 通知后端杀死所有活跃 PTY 进程。 |
+| 浏览器页面卸载（关闭 tab） | 三阶段协作：<br>1. WebSocket 断开 → `Terminal.onClose`：异步调用 SDK `pty.remove`，将 PTY ID 移入 `disposedPendingCleanup`。<br>2. `pagehide` 事件 → `disposeEverythingOnUnload()`：回扫 `activePtys` + `disposedPendingCleanup`，对每个 PTY 用 `ptyDirectories` 中的真实 cwd 发 keepalive DELETE。<br>3. `beforeunload` 事件：有活跃 PTY 时弹浏览器原生确认框，提醒用户 TUI/终端将被销毁。 |
 | Panel 绑定到新 Session | 释放旧 Session 的 TUI PTY，清除旧 ID，为新 Session 创建新 PTY。 |
-| 浏览器页面卸载 (`beforeunload` / `pagehide`) | **同步销毁**。利用 `keepalive: true` 的 fetch 强行同步向后端发送 PTY DELETE 请求，确保浏览器标签页被关闭时所有后台 PTY 进程（包含终端及 TUI）彻底死亡，防僵尸进程堆积。 |
 
 **异步安全**：创建 PTY 的 Promise 必须携带 generation token。若 Promise resolve 时 Panel 已关闭或 Session 已变更，立即释放该 PTY，禁止将失效 ID 写入持久化状态。
+
+**多 workspace 分组清理**：`disposeAllSyncOnUnload` 在 pagehide 时按 workspace 分组发出 DELETE，每个 workspace 独立带 `x-opencode-directory` header，避免拍平后丢失 routing 信息。
 
 ### 5.5 TUI 进程关闭与自愈机制
 
@@ -347,7 +350,11 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 
 ### 5.8 持久化配置项
 
-- `workbench`：统一的 Workbench 状态快照。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局与 Session 绑定、Split Terminal 配置。
+- `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化（区别于上游 `sessionStorage`），确保关 tab 重开时布局保持。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局与 Session 绑定、Split Terminal 配置。
+
+存储引擎：`localStorage`（key: `"workbench"`）。
+
+**PTY ID 剥离机制**：`syncToPersisted()` 接受 `{ stripPtyIds?: boolean }` 选项。pagehide 时由 `flushPersisted({ stripPtyIds: true })` 调用，在写入 `localStorage` 前**深拷贝 store 并清空所有 panel 的 `tuiPtyId`/`termPtyId`/`splitPtyId`**。这避免了直接修改内存 store 触发 SolidJS createEffect 导致的 PTY 重复创建问题，同时确保 localStorage 中不保留已失效的 PTY ID。
 
 单一键，单一 Store，单一水合门控。
 
@@ -386,6 +393,33 @@ PTY 进程由 `pty-manager.tsx` 统一管理。PTY ID 作为重连提示持久�
 - **元数据洞察与响应式更新**：
   - 状态栏动态订阅当前活动空间下的聚焦激活面板 `space.activePanelID`、`panel.directory` 路径以及绑定会话标题。
   - 一旦发生面板点击切换、或者是 PTY 终端在后台通过命令变更了工作目录（CWD），层级链会立即响应式刷新最新现场。
+
+### 5.11 浏览器关闭保护与单 Tab 互斥
+
+**单 Tab 互斥（Web Locks API）**：
+- `WorkbenchSingletonGuard` 组件在 Workbench 初始化时通过 `navigator.locks.request(..., { ifAvailable: true })` 获取独占锁。
+- 第二个 Tab 尝试打开同一 workbench 时，锁被占用，显示"工作台已在其他标签页打开"提示页，不初始化 workbench。
+- Tab 关闭/刷新时浏览器自动释放锁，无需 `beforeunload` 参与（比心跳方案更可靠，不会因崩溃残留锁状态）。
+- 浏览器不支持 `navigator.locks` 时降级为不限制（边缘场景，不影响功能）。
+
+**关闭前提醒（beforeunload）**：
+- `handleBeforeUnload` 监听 `beforeunload` 事件。通过 `wb.hasActivePty()` 检查是否有活跃 PTY（TUI/Split Terminal）。
+- 有活跃 PTY 时调用 `e.preventDefault()` + `e.returnValue = ""`，触发浏览器原生离开确认对话框。
+- 无活跃 PTY 时不注册/不拦截，避免打扰用户关闭空 workbench。
+- 注意：浏览器出于安全策略，不允许自定义提示文案，只能显示标准文案。
+
+**页面卸载清理（pagehide）**：
+- `pagehide` 事件替代已废弃的 `unload` 事件（Chrome 逐步弃用 `unload`，`pagehide` 在所有现代浏览器可靠触发）。
+- `handleUnload` 执行 `ptyManager.disposeEverythingOnUnload(sdk.url)`，回扫 `activePtys` + `disposedPendingCleanup`，用 `ptyDirectories` 中的真实 cwd 发 keepalive DELETE。
+- 随后 `wb.flushPersisted({ stripPtyIds: true })` 将剥离 PTY ID 的布局快照写入 localStorage。
+
+**清理时序**：
+1. WebSocket 断开（浏览器开始卸载）→ `Terminal.onClose`：异步调 SDK `pty.remove`，PTY ID 移入 `disposedPendingCleanup`。
+2. `pagehide` 同步触发 → `disposeEverythingOnUnload`：回扫所有 PTY 发 keepalive DELETE。
+3. `pagehide` 同步触发 → `flushPersisted({ stripPtyIds: true })`：layout 写入 localStorage，PTY ID 不持久化。
+4. 浏览器完全卸载。
+
+此时序确保即使异步 SDK `pty.remove` 因页面销毁未执行，keepalive DELETE 也能兜底杀 PTY。
 
 ---
 
