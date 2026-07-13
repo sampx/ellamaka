@@ -6,7 +6,7 @@ type PtySDK = {
   client: {
     pty: {
       get: (input: { ptyID: string }) => Promise<unknown>
-      remove: (input: { ptyID: string }) => Promise<unknown>
+      remove: (input: { ptyID: string; directory?: string }) => Promise<unknown>
     }
   }
 }
@@ -257,7 +257,10 @@ export class PtyManager {
 
     await Promise.all(Array.from(ptyIds, async (ptyId) => {
       try {
-        await sdk.client.pty.remove({ ptyID: ptyId })
+        await sdk.client.pty.remove({
+          ptyID: ptyId,
+          directory: this.ptyDirectories.get(ptyId),
+        })
         // backend confirmed removal — drop from the close-cleanup fallback
         this.disposedPendingCleanup.delete(ptyId)
         this.ptyDirectories.delete(ptyId)

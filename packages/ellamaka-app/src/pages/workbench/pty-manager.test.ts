@@ -75,6 +75,39 @@ describe("PtyManager", () => {
     expect(removed).toEqual(["pty-racing"])
   })
 
+  test("routes normal disposal through the PTY's real directory", async () => {
+    const manager = new PtyManager()
+    const removals: Array<{ ptyID: string; directory?: string }> = []
+    const sdk = {
+      client: {
+        pty: {
+          get: async () => {
+            throw new Error("not found")
+          },
+          remove: async (input: { ptyID: string; directory?: string }) => {
+            removals.push(input)
+          },
+        },
+      },
+    }
+
+    await manager.ensure({
+      spacePath: "",
+      panelId: "panel-1",
+      kind: "tui",
+      existingPtyId: undefined,
+      sdk,
+      directory: "/real/session/directory",
+      createFn: async () => "pty-panel",
+    })
+    await manager.disposePanel("", "panel-1", sdk, { tui: "pty-panel" })
+
+    expect(removals).toEqual([{
+      ptyID: "pty-panel",
+      directory: "/real/session/directory",
+    }])
+  })
+
   test("disposeAllSyncOnUnload sends DELETE to /pty/:id with x-opencode-directory header", async () => {
     const manager = new PtyManager()
     const { calls, restore } = captureFetchCalls()

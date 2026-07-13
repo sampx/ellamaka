@@ -408,10 +408,10 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         }),
       )
     }
-    async function killPtySafe(path: string, ptyId: string | undefined) {
+    async function killPtySafe(directory: string, ptyId: string | undefined) {
       if (!ptyId) return
       try {
-        await sdk.createDirSdkContext(path).client.pty.remove({ ptyID: ptyId })
+        await sdk.createDirSdkContext(directory).client.pty.remove({ ptyID: ptyId })
       } catch (err) {
         console.error(`Failed to kill pty process ${ptyId}:`, err)
       }
@@ -421,9 +421,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       const space = store.spaces[path]
       if (space) {
         space.panels.forEach((panel) => {
-          void killPtySafe(path, panel.tuiPtyId)
-          void killPtySafe(path, panel.termPtyId)
-          void killPtySafe(path, panel.splitPtyId)
+          void killPtySafe(panel.directory, panel.tuiPtyId)
+          void killPtySafe(panel.directory, panel.termPtyId)
+          void killPtySafe(panel.directory, panel.splitPtyId)
         })
       }
 
@@ -480,9 +480,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       const space = store.spaces[path]
       const panel = space?.panels?.find((p) => p.id === panelId)
       if (panel) {
-        void killPtySafe(path, panel.tuiPtyId)
-        void killPtySafe(path, panel.termPtyId)
-        void killPtySafe(path, panel.splitPtyId)
+        void killPtySafe(panel.directory, panel.tuiPtyId)
+        void killPtySafe(panel.directory, panel.termPtyId)
+        void killPtySafe(panel.directory, panel.splitPtyId)
       }
 
       setStore(
@@ -584,9 +584,9 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
         const space = store.spaces[path]
         if (space) {
           space.panels.forEach((panel) => {
-            void killPtySafe(path, panel.tuiPtyId)
-            void killPtySafe(path, panel.termPtyId)
-            void killPtySafe(path, panel.splitPtyId)
+            void killPtySafe(panel.directory, panel.tuiPtyId)
+            void killPtySafe(panel.directory, panel.termPtyId)
+            void killPtySafe(panel.directory, panel.splitPtyId)
           })
         }
       }
