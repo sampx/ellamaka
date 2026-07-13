@@ -100,7 +100,7 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     }
 
     // 1. 使用 localStorage 持久化界面布局（panel 结构、session 绑定、directory 等）
-    //    PTY id 不持久化——关 tab 时由 unload handler 杀掉 PTY 并清空 ptyId
+    //    PTY id 作为重连提示持久化——刷新后通过 ensure() 探测 sidecar 决定重连或新建
     const [persistedStore, setPersistedStore] = makePersisted(
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
       {
@@ -160,27 +160,14 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     let saveTimer: any = null
     let isDirty = false
 
-    const syncToPersisted = (opts?: { stripPtyIds?: boolean }) => {
-      if (!isDirty && !opts?.stripPtyIds) return
+    const syncToPersisted = () => {
+      if (!isDirty) return
       isDirty = false
       if (saveTimer) {
         clearTimeout(saveTimer)
         saveTimer = null
       }
       const snapshot = JSON.parse(JSON.stringify(store)) as PersistedWorkbench
-      if (opts?.stripPtyIds) {
-        // Persisted state is layout only — PTY ids are transient and backend-killed
-        // on unload. Stripping them here (rather than mutating the store) avoids
-        // re-triggering SolidJS createEffects that would re-create PTYs during the
-        // pagehide window before the page is torn down.
-        for (const space of Object.values(snapshot.spaces)) {
-          for (const panel of space.panels) {
-            panel.tuiPtyId = undefined
-            panel.termPtyId = undefined
-            panel.splitPtyId = undefined
-          }
-        }
-      }
       batch(() => {
         setPersistedStore("display", snapshot.display)
         setPersistedStore("spaces", snapshot.spaces)
@@ -220,13 +207,13 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       })
     })
 
-    const flushPersisted = (opts?: { stripPtyIds?: boolean }) => {
+    const flushPersisted = () => {
       isDirty = true
       if (saveTimer) {
         clearTimeout(saveTimer)
         saveTimer = null
       }
-      syncToPersisted(opts)
+      syncToPersisted()
     }
 
     const display = createMemo(() => store.display)
@@ -656,25 +643,6 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       closeTab,
       setActive,
       validateTabs,
-      clearAllPtyIds() {
-        for (const path of Object.keys(store.spaces)) {
-          const space = store.spaces[path]
-          if (!space) continue
-          setStore("spaces", path, "panels", () => true, produce((panel) => {
-            panel.tuiPtyId = undefined
-            panel.termPtyId = undefined
-            panel.splitPtyId = undefined
-          }))
-        }
-      },
-      hasActivePty() {
-        for (const path of Object.keys(store.spaces)) {
-          const space = store.spaces[path]
-          if (!space) continue
-          if (space.panels.some((p) => p.tuiPtyId || p.termPtyId || p.splitPtyId)) return true
-        }
-        return false
-      },
       flushPersisted,
       get statusMessage() { return statusMessage() },
       setStatusMessage,

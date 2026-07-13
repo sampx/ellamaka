@@ -8,13 +8,11 @@ import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
 import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
-import { ptyManager } from "./pty-manager"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
-  const spaceStore = useSpaceStore()
-  const sessionStore = useSessionStore()
+  const spaceStore = useSessionStore()
   const allStoresReady = () => wb.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
@@ -29,51 +27,26 @@ function WorkbenchShell() {
       if (shouldUnbindSessionFromEvent({ type: session.type, timeArchived: session.timeArchived })) {
         if (session.sessionId) {
           wb.unbindSessionGlobal(session.sessionId)
-          sessionStore.deleteSession(session.sessionId)
+          spaceStore.deleteSession(session.sessionId)
         }
-        sessionStore.triggerRefresh()
+        spaceStore.triggerRefresh()
         return
       }
       if (session.type === "session.created") {
-        sessionStore.triggerRefresh()
+        spaceStore.triggerRefresh()
       }
-      if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: sessionStore.getSession(session.sessionId ?? "")?.title })) {
-        sessionStore.syncSessionReference(session.sessionId!, { title: session.title! })
-        sessionStore.triggerRefresh()
+      if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: spaceStore.getSession(session.sessionId ?? "")?.title })) {
+        spaceStore.syncSessionReference(session.sessionId!, { title: session.title! })
+        spaceStore.triggerRefresh()
       }
     })
 
-    const handleUnload = () => {
-      // By the time pagehide fires, Terminal.onClose has already mutated the
-      // store (ptyIds set to undefined, viewMode switched to chat) and called
-      // ptyManager.delete for each panel — so wb.spaces is empty of ptyIds.
-      // Drain the ptyManager's own registry (plus its disposedPendingCleanup
-      // fallback) instead, where each PTY's real backend cwd is recorded at
-      // ensure time so the x-opencode-directory header routes correctly.
-      ptyManager.disposeEverythingOnUnload(sdk.url)
-      // Persist layout with ptyIds stripped — do NOT mutate the in-memory
-      // store (wb.clearAllPtyIds), because that would re-trigger SolidJS
-      // createEffects in view-registry and re-create the very PTYs we just
-      // killed before the page is torn down.
-      wb.flushPersisted({ stripPtyIds: true })
-    }
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!wb.hasActivePty()) return
-      e.preventDefault()
-      e.returnValue = ""
-    }
     const preventContextMenu = (e: MouseEvent) => {
       e.preventDefault()
     }
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    // use pagehide instead of unload — Chrome is deprecating unload; pagehide
-    // fires reliably before the tab is torn down and lets keepalive fetch escape.
-    window.addEventListener("pagehide", handleUnload)
     window.addEventListener("contextmenu", preventContextMenu)
     onCleanup(() => {
       unsub()
-      window.removeEventListener("beforeunload", handleBeforeUnload)
-      window.removeEventListener("pagehide", handleUnload)
       window.removeEventListener("contextmenu", preventContextMenu)
     })
   })

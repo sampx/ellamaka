@@ -38,12 +38,6 @@ export class PtyManager {
   // DELETE/GET against that PTY — NOT the workbench spacePath, which can be
   // an empty string (the General space) and does not match the PTY cwd.
   private ptyDirectories = new Map<string, string>()
-  // PTYs that were disposed via panel-close / Terminal.onClose while the page
-  // was still alive. The caller also fires sdk.client.pty.remove, but that is
-  // async and on pagehide the Promise may never reach the underlying fetch —
-  // leaving the backend PTY orphaned. We remember the id here so the pagehide
-  // handler can re-send a keepalive DELETE to guarantee cleanup.
-  private disposedPendingCleanup = new Set<string>()
 
   private makeKey(spacePath: string, panelId: string, kind: PtyKind): PtyKey {
     return `${spacePath}::${panelId}::${kind}`
@@ -51,8 +45,6 @@ export class PtyManager {
 
   delete(spacePath: string, panelId: string, kind: PtyKind) {
     const key = this.makeKey(spacePath, panelId, kind)
-    const activeId = this.activePtys.get(key)
-    if (activeId) this.disposedPendingCleanup.add(activeId)
     this.activePtys.delete(key)
     this.pendingEnsures.delete(key)
   }
@@ -92,7 +84,6 @@ export class PtyManager {
           await opts.sdk.client.pty.get({ ptyID: opts.existingPtyId })
           this.activePtys.set(key, opts.existingPtyId)
           this.ptyDirectories.set(opts.existingPtyId, opts.directory)
-          this.disposedPendingCleanup.delete(opts.existingPtyId)
           return opts.existingPtyId
         } catch {
           // Stale ID, ignore and fall through to create
@@ -160,85 +151,6 @@ export class PtyManager {
     this.pendingEnsures.clear()
   }
 
-  disposeAllSyncOnUnload(sdkUrl: string, directory: string, ptyIds: Iterable<string> = []) {
-    const urlBase = (sdkUrl || window.location.origin).replace(/\/$/, "")
-    const all = new Set<string>(ptyIds)
-    for (const [key, ptyId] of this.activePtys) {
-      const ptyDir = this.ptyDirectories.get(ptyId)
-      // Only include if either the recorded directory matches or the
-      // entry's key prefix matches `directory::` (legacy lookup).
-      if (ptyDir === directory || key.startsWith(`${directory}::`)) all.add(ptyId)
-    }
-    for (const ptyId of all) {
-      // Prefer the stored PTY cwd for the routing header — caller's `directory`
-      // may be the (possibly empty) spacePath and not match the backend.
-      const headerDir = this.ptyDirectories.get(ptyId) ?? directory
-      try {
-        fetch(`${urlBase}/pty/${ptyId}`, {
-          method: "DELETE",
-          keepalive: true,
-          mode: "cors",
-          headers: { "x-opencode-directory": encodeURIComponent(headerDir) },
-        }).catch(() => {})
-      } catch (err) {
-        console.error("Failed to send keepalive unload delete for PTY", ptyId, err)
-      }
-    }
-    for (const key of [...this.activePtys.keys(), ...this.pendingEnsures.keys()]) {
-      if (key.startsWith(`${directory}::`)) {
-        const ptyId = this.activePtys.get(key)
-        if (ptyId) {
-          this.ptyDirectories.delete(ptyId)
-          this.disposedPendingCleanup.delete(ptyId)
-        }
-        this.activePtys.delete(key)
-        this.pendingEnsures.delete(key)
-      }
-    }
-  }
-
-  // Unload path that does NOT depend on the in-memory store: by the time
-  // pagehide fires, Terminal.onClose has already cleared store ptyIds and
-  // called ptyManager.delete for each panel — so wb.spaces is empty of
-  // ptyIds and disposeAllSyncOnUnload(per-space, knownIds) would find nothing.
-  // This method drains the still-active ptyManager registry plus the
-  // disposedPendingCleanup fallback set, sending a keepalive DELETE for each
-  // against the PTY's real backend directory (stored at ensure time).
-  disposeEverythingOnUnload(sdkUrl: string) {
-    const urlBase = (sdkUrl || window.location.origin).replace(/\/$/, "")
-    const sendDelete = (ptyId: string) => {
-      const directory = this.ptyDirectories.get(ptyId)
-      if (!directory) {
-        console.error("[unload] no directory recorded for PTY", ptyId, "— skipping")
-        return
-      }
-      try {
-        fetch(`${urlBase}/pty/${ptyId}`, {
-          method: "DELETE",
-          keepalive: true,
-          mode: "cors",
-          headers: { "x-opencode-directory": encodeURIComponent(directory) },
-        }).catch(() => {})
-      } catch (err) {
-        console.error("Failed to send keepalive unload delete for PTY", ptyId, err)
-      }
-    }
-    // Active (still-bound) PTYs.
-    for (const ptyId of this.activePtys.values()) {
-      sendDelete(ptyId)
-    }
-    // PTYs already disposed by Terminal.onClose during the close cascade —
-    // their sdk.client.pty.remove was async and may not have actually fired
-    // before the page is torn down. Re-send with keepalive.
-    for (const ptyId of this.disposedPendingCleanup) {
-      sendDelete(ptyId)
-    }
-    this.activePtys.clear()
-    this.pendingEnsures.clear()
-    this.disposedPendingCleanup.clear()
-    this.ptyDirectories.clear()
-  }
-
   private async disposeKey(key: PtyKey, sdk: PtySDK, knownPtyId?: string): Promise<void> {
     const ptyIds = new Set<string>()
     if (knownPtyId) ptyIds.add(knownPtyId)
@@ -261,8 +173,6 @@ export class PtyManager {
           ptyID: ptyId,
           directory: this.ptyDirectories.get(ptyId),
         })
-        // backend confirmed removal — drop from the close-cleanup fallback
-        this.disposedPendingCleanup.delete(ptyId)
         this.ptyDirectories.delete(ptyId)
       } catch (err) {
         console.error(`Failed to dispose PTY ${ptyId}`, err)
