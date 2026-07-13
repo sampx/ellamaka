@@ -927,6 +927,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "workbench.entry": "工作台",
+  "workbench.singleton.title": "工作台已在其他标签页打开",
+  "workbench.singleton.message": "另一个浏览器标签页正在运行工作台。请关闭它后刷新本页，或切换到那个标签页。",
   "workbench.returnToApp": "返回官方应用",
   "workbench.view.tui": "TUI",
   "workbench.view.chat": "对话",

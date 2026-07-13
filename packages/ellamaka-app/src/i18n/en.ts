@@ -982,6 +982,8 @@ export const dict = {
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
 
   "workbench.entry": "Workbench",
+  "workbench.singleton.title": "Workbench is already open",
+  "workbench.singleton.message": "Another browser tab is already running the workbench. Please close it and reload this page, or switch to that tab.",
   "workbench.returnToApp": "Return to Official App",
   "workbench.view.tui": "TUI",
   "workbench.view.chat": "Chat",

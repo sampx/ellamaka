@@ -70,6 +70,7 @@ registerView({
         kind: "tui",
         existingPtyId: existingId,
         sdk: ctx.sdk,
+        directory: ctx.directory,
         createFn: async () => {
           const res = await ctx.sdk.client.pty.create({
             command: "ellamaka",

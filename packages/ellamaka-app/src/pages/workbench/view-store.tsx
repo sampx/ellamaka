@@ -99,12 +99,13 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       }
     }
 
-    // 1. 使用 sessionStorage 进行多 Tab 隔离存储
+    // 1. 使用 localStorage 持久化界面布局（panel 结构、session 绑定、directory 等）
+    //    PTY id 不持久化——关 tab 时由 unload handler 杀掉 PTY 并清空 ptyId
     const [persistedStore, setPersistedStore] = makePersisted(
       createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
       {
         name: "workbench",
-        storage: typeof window !== "undefined" ? window.sessionStorage : undefined,
+        storage: typeof window !== "undefined" ? window.localStorage : undefined,
       }
     )
 
@@ -159,14 +160,27 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     let saveTimer: any = null
     let isDirty = false
 
-    const syncToPersisted = () => {
-      if (!isDirty) return
+    const syncToPersisted = (opts?: { stripPtyIds?: boolean }) => {
+      if (!isDirty && !opts?.stripPtyIds) return
       isDirty = false
       if (saveTimer) {
         clearTimeout(saveTimer)
         saveTimer = null
       }
-      const snapshot = JSON.parse(JSON.stringify(store))
+      const snapshot = JSON.parse(JSON.stringify(store)) as PersistedWorkbench
+      if (opts?.stripPtyIds) {
+        // Persisted state is layout only — PTY ids are transient and backend-killed
+        // on unload. Stripping them here (rather than mutating the store) avoids
+        // re-triggering SolidJS createEffects that would re-create PTYs during the
+        // pagehide window before the page is torn down.
+        for (const space of Object.values(snapshot.spaces)) {
+          for (const panel of space.panels) {
+            panel.tuiPtyId = undefined
+            panel.termPtyId = undefined
+            panel.splitPtyId = undefined
+          }
+        }
+      }
       batch(() => {
         setPersistedStore("display", snapshot.display)
         setPersistedStore("spaces", snapshot.spaces)
@@ -196,14 +210,24 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
           syncToPersisted()
         }
       }
+      const handlePageHide = () => syncToPersisted()
       window.addEventListener("visibilitychange", handleVisibility)
-      window.addEventListener("pagehide", syncToPersisted)
+      window.addEventListener("pagehide", handlePageHide)
       onCleanup(() => {
         window.removeEventListener("visibilitychange", handleVisibility)
-        window.removeEventListener("pagehide", syncToPersisted)
+        window.removeEventListener("pagehide", handlePageHide)
         if (saveTimer) clearTimeout(saveTimer)
       })
     })
+
+    const flushPersisted = (opts?: { stripPtyIds?: boolean }) => {
+      isDirty = true
+      if (saveTimer) {
+        clearTimeout(saveTimer)
+        saveTimer = null
+      }
+      syncToPersisted(opts)
+    }
 
     const display = createMemo(() => store.display)
 
@@ -632,6 +656,26 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       closeTab,
       setActive,
       validateTabs,
+      clearAllPtyIds() {
+        for (const path of Object.keys(store.spaces)) {
+          const space = store.spaces[path]
+          if (!space) continue
+          setStore("spaces", path, "panels", () => true, produce((panel) => {
+            panel.tuiPtyId = undefined
+            panel.termPtyId = undefined
+            panel.splitPtyId = undefined
+          }))
+        }
+      },
+      hasActivePty() {
+        for (const path of Object.keys(store.spaces)) {
+          const space = store.spaces[path]
+          if (!space) continue
+          if (space.panels.some((p) => p.tuiPtyId || p.termPtyId || p.splitPtyId)) return true
+        }
+        return false
+      },
+      flushPersisted,
       get statusMessage() { return statusMessage() },
       setStatusMessage,
       get persistentHint() { return persistentHint() },

@@ -9,6 +9,7 @@ import { StatusBar } from "./parts/status-bar"
 import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { ptyManager } from "./pty-manager"
+import { WorkbenchSingletonGuard } from "./singleton-guard"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
@@ -43,23 +44,36 @@ function WorkbenchShell() {
     })
 
     const handleUnload = () => {
-      ptyManager.disposeAllSyncOnUnload(
-        sdk.url,
-        Object.values(wb.spaces).flatMap((space) =>
-          space.panels.flatMap((panel) =>
-            [panel.tuiPtyId, panel.termPtyId, panel.splitPtyId].filter((ptyId): ptyId is string => !!ptyId),
-          ),
-        ),
-      )
+      // By the time pagehide fires, Terminal.onClose has already mutated the
+      // store (ptyIds set to undefined, viewMode switched to chat) and called
+      // ptyManager.delete for each panel — so wb.spaces is empty of ptyIds.
+      // Drain the ptyManager's own registry (plus its disposedPendingCleanup
+      // fallback) instead, where each PTY's real backend cwd is recorded at
+      // ensure time so the x-opencode-directory header routes correctly.
+      ptyManager.disposeEverythingOnUnload(sdk.url)
+      // Persist layout with ptyIds stripped — do NOT mutate the in-memory
+      // store (wb.clearAllPtyIds), because that would re-trigger SolidJS
+      // createEffects in view-registry and re-create the very PTYs we just
+      // killed before the page is torn down.
+      wb.flushPersisted({ stripPtyIds: true })
+    }
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!wb.hasActivePty()) return
+      e.preventDefault()
+      e.returnValue = ""
     }
     const preventContextMenu = (e: MouseEvent) => {
       e.preventDefault()
     }
-    window.addEventListener("beforeunload", handleUnload)
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    // use pagehide instead of unload — Chrome is deprecating unload; pagehide
+    // fires reliably before the tab is torn down and lets keepalive fetch escape.
+    window.addEventListener("pagehide", handleUnload)
     window.addEventListener("contextmenu", preventContextMenu)
     onCleanup(() => {
       unsub()
-      window.removeEventListener("beforeunload", handleUnload)
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      window.removeEventListener("pagehide", handleUnload)
       window.removeEventListener("contextmenu", preventContextMenu)
     })
   })
@@ -93,12 +107,14 @@ function WorkbenchShell() {
 
 export default function Workbench() {
   return (
-    <SessionStoreProvider>
-      <WorkbenchStateProvider>
-        <SpaceStoreProvider>
-          <WorkbenchShell />
-        </SpaceStoreProvider>
-      </WorkbenchStateProvider>
-    </SessionStoreProvider>
+    <WorkbenchSingletonGuard>
+      <SessionStoreProvider>
+        <WorkbenchStateProvider>
+          <SpaceStoreProvider>
+            <WorkbenchShell />
+          </SpaceStoreProvider>
+        </WorkbenchStateProvider>
+      </SessionStoreProvider>
+    </WorkbenchSingletonGuard>
   )
 }

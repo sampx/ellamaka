@@ -132,6 +132,7 @@ export function Panel(props: {
         kind: "split",
         existingPtyId: existingId,
         sdk,
+        directory,
         createFn: async () => {
           const res = await sdk.client.pty.create({
             cwd: directory,
