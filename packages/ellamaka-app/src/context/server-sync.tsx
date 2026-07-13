@@ -313,7 +313,7 @@ export function createServerSyncContext() {
 
   async function bootstrapInstance(directory: string) {
     const key = directoryKey(directory)
-    if (!key) return
+    if (key === undefined || key === null) return
     const pending = booting.get(key)
     if (pending) return pending
 

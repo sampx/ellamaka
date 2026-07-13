@@ -53,7 +53,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
 
     const permissionsEnabled = createMemo(() => {
       const directory = decode64(params.dir)
-      if (!directory) return false
+      if (directory === undefined || directory === null) return false
       const [store] = serverSync.child(directory)
       return hasPermissionPromptRules(store.config.permission)
     })
@@ -85,7 +85,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     createEffect(() => {
       if (!ready()) return
       const directory = decode64(params.dir)
-      if (!directory) return
+      if (directory === undefined || directory === null) return
       const [childStore] = serverSync.child(directory)
       const perm = childStore.config.permission
       if (typeof perm === "string" && perm === "allow") {
@@ -230,7 +230,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       setStore(
         produce((draft) => {
           draft.autoAccept[key] = false
-          if (!directory) return
+          if (directory === undefined || directory === null) return
           delete draft.autoAccept[sessionID]
         }),
       )

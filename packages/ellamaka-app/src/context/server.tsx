@@ -21,7 +21,7 @@ export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = fals
 }
 
 function projectsKey(key: ServerConnection.Key) {
-  if (!key) return ""
+  if (key === undefined || key === null) return ""
   if (key === "sidecar") return "local"
   if (isLocalHost(key)) return "local"
   return key
@@ -212,14 +212,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         list: projectsList,
         open(directory: string) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           const current = store.projects[key] ?? []
           if (current.find((x) => x.worktree === directory)) return
           setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
         },
         close(directory: string) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           const current = store.projects[key] ?? []
           setStore(
             "projects",
@@ -229,21 +229,21 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         },
         expand(directory: string) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           const current = store.projects[key] ?? []
           const index = current.findIndex((x) => x.worktree === directory)
           if (index !== -1) setStore("projects", key, index, "expanded", true)
         },
         collapse(directory: string) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           const current = store.projects[key] ?? []
           const index = current.findIndex((x) => x.worktree === directory)
           if (index !== -1) setStore("projects", key, index, "expanded", false)
         },
         move(directory: string, toIndex: number) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           const current = store.projects[key] ?? []
           const fromIndex = current.findIndex((x) => x.worktree === directory)
           if (fromIndex === -1 || fromIndex === toIndex) return
@@ -254,12 +254,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         },
         last() {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           return store.lastProject[key]
         },
         touch(directory: string) {
           const key = origin()
-          if (!key) return
+          if (key === undefined || key === null) return
           setStore("lastProject", key, directory)
         },
       },

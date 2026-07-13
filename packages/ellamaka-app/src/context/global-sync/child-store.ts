@@ -44,7 +44,7 @@ export function createChildStoreManager(input: {
   const mcpToggles = new Map<string, (enabled: boolean) => void>()
 
   const markKey = (key: DirectoryKey) => {
-    if (!key) return
+    if (key === undefined || key === null) return
     lifecycle.set(key, { lastAccessAt: Date.now() })
     runEviction(key)
   }
@@ -56,14 +56,14 @@ export function createChildStoreManager(input: {
 
   const pin = (directory: string) => {
     const key = directoryKey(directory)
-    if (!key) return
+    if (key === undefined || key === null) return
     pins.set(key, (pins.get(key) ?? 0) + 1)
     markKey(key)
   }
 
   const unpin = (directory: string) => {
     const key = directoryKey(directory)
-    if (!key) return
+    if (key === undefined || key === null) return
     const next = (pins.get(key) ?? 0) - 1
     if (next > 0) {
       pins.set(key, next)
@@ -144,7 +144,7 @@ export function createChildStoreManager(input: {
 
   function ensureChild(directory: string) {
     const key = directoryKey(directory)
-    if (!key) console.error("No directory provided")
+    if (key === undefined || key === null) console.error("No directory provided")
     if (!children[key]) {
       const vcs = runWithOwner(input.owner, () =>
         persisted(
