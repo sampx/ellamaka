@@ -214,10 +214,20 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       initialValue: dicts.get(initial) ?? base,
     })
 
-    const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (
+    const rawT = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (
       key: keyof Dictionary,
       params?: Record<string, string | number | boolean>,
     ) => string
+
+    const t = (key: keyof Dictionary, params?: Record<string, string | number | boolean>) => {
+      const res = rawT(key, params)
+      if (typeof res === "string") {
+        return res
+          .replace(/OpenCode/g, "Ellamaka")
+          .replace(/opencode/g, "ellamaka")
+      }
+      return res
+    }
 
     const label = (value: Locale) => t(LABEL_KEY[value])
 

@@ -234,6 +234,7 @@ export const dict = {
   "model.tooltip.reasoning.none": "不支持推理",
   "model.tooltip.context": "上下文上限 {{limit}}",
 
+  "common.appName": "Ellamaka",
   "common.search.placeholder": "搜索",
   "common.goBack": "返回",
   "common.goForward": "前进",

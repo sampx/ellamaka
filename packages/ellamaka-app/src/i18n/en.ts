@@ -215,6 +215,7 @@ export const dict = {
   "model.tooltip.reasoning.none": "No reasoning",
   "model.tooltip.context": "Context limit {{limit}}",
 
+  "common.appName": "Ellamaka",
   "common.search.placeholder": "Search",
   "common.goBack": "Navigate back",
   "common.goForward": "Navigate forward",
