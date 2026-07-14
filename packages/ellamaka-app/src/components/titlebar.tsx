@@ -30,7 +30,7 @@ import {
   SESSION_TABS_REMOVED_EVENT,
   type SessionTabsRemovedDetail,
 } from "@/components/titlebar-session-events"
-import { rememberOfficialRoute } from "@/pages/workbench/surface-route"
+import { rememberOfficialRoute } from "@/utils/official-route"
 
 type TauriDesktopWindow = {
   startDragging?: () => Promise<void>
@@ -50,7 +50,13 @@ type TauriApi = {
   }
 }
 
-const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
+declare global {
+  interface Window {
+    __TAURI__?: TauriApi
+  }
+}
+
+const tauriApi = () => window.__TAURI__
 const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
 const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 const legacyTitlebarHeight = 40
@@ -170,8 +176,8 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     },
   ])
 
-  const getWin = () => {
-    if (platform.platform !== "desktop") return
+  const getWin = (): TauriDesktopWindow | undefined => {
+    if (platform.platform !== "desktop") return undefined
     return currentDesktopWindow()
   }
 
@@ -356,7 +362,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
             )
 
             const currentSessionTab = () => {
-              if (!params.dir || !params.id) return
+              if (!params.dir || !params.id) return undefined
               const href = makeSessionHref(params.dir, params.id)
               return tabsStore.find((tab) => tab.href === href)
             }
@@ -479,7 +485,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   href="/"
                   class="!w-9"
                   icon={<IconV2 name="grid-plus" />}
-                  state={!!homeMatch() ? "pressed" : undefined}
+                  state={homeMatch() ? "pressed" : undefined}
                 />
                 <ButtonV2
                   variant="ghost"
@@ -561,7 +567,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                     icon="menu"
                     variant="ghost"
                     class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
+                    onClick={() => layout.mobileSidebar.toggle()}
                     aria-label={language.t("sidebar.menu.toggle")}
                     aria-expanded={layout.mobileSidebar.opened()}
                   />
@@ -573,7 +579,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                     icon="menu"
                     variant="ghost"
                     class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
+                    onClick={() => layout.mobileSidebar.toggle()}
                     aria-label={language.t("sidebar.menu.toggle")}
                     aria-expanded={layout.mobileSidebar.opened()}
                   />
@@ -589,7 +595,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   <Button
                     variant="ghost"
                     class="group/sidebar-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                    onClick={layout.sidebar.toggle}
+                    onClick={() => layout.sidebar.toggle()}
                     aria-label={language.t("command.sidebar.toggle")}
                     aria-expanded={layout.sidebar.opened()}
                   >

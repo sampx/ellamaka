@@ -16,14 +16,14 @@ export function WorkbenchSingletonGuard(props: { children: any }) {
       setState("locked")
       return
     }
-    navigator.locks.request(LOCK_NAME, { ifAvailable: true }, (lock) => {
+    void navigator.locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
       if (!lock) {
         setState("blocked")
         return
       }
       setState("locked")
-      return new Promise<void>(() => {
-        releaseLock = () => {}
+      await new Promise<void>((resolve) => {
+        releaseLock = resolve
       })
     })
   })

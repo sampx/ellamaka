@@ -1,10 +1,10 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { createSessionPersist, limitSessions } from "./services/session-store-service"
+import { removeLegacySessionStorage } from "./services/session-store-legacy"
+import { limitSessions } from "./services/session-store-service"
 
 export type SessionType = "tui" | "chat"
-
 export type DirectoryHealth = "healthy" | "missing" | "unavailable"
 
 export type Session = {
@@ -19,211 +19,87 @@ export type Session = {
   lastActiveAt: number
 }
 
-export function serverSessionReferenceUpdates(input: Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">) {
+export type SessionProjectionInput = Session
+export type SessionProjectionPatch = Partial<
+  Pick<Session, "title" | "type" | "projectPath" | "directoryHealth" | "timeArchived" | "lastActiveAt">
+>
+
+type SessionProjectionState = {
+  spaces: Record<string, Session[]>
+}
+
+export function createSessionProjection() {
+  const [store, setStore] = createStore<SessionProjectionState>({ spaces: {} })
+  const [refreshKey, setRefreshKey] = createSignal(0)
+
+  const find = (id: string) => {
+    for (const [spaceName, sessions] of Object.entries(store.spaces)) {
+      const index = sessions.findIndex((session) => session.id === id)
+      if (index !== -1) return { spaceName, index, session: sessions[index] }
+    }
+    return undefined
+  }
+
+  const getSession = (id: string) => find(id)?.session
+
+  const upsert = (input: SessionProjectionInput) => {
+    const existing = find(input.id)
+    if (existing?.spaceName === input.spaceName) {
+      setStore("spaces", input.spaceName, existing.index, { ...input })
+      return
+    }
+    if (existing) {
+      setStore("spaces", existing.spaceName, (sessions) => sessions.filter((session) => session.id !== input.id))
+    }
+    if (!store.spaces[input.spaceName]) setStore("spaces", input.spaceName, [])
+    setStore("spaces", input.spaceName, (sessions) => limitSessions([...sessions, { ...input }]))
+  }
+
+  const patch = (id: string, updates: SessionProjectionPatch) => {
+    const existing = find(id)
+    if (!existing) return false
+    setStore("spaces", existing.spaceName, existing.index, produce((session) => {
+      if (updates.title !== undefined) session.title = updates.title
+      if (updates.type !== undefined) session.type = updates.type
+      if (updates.projectPath !== undefined) session.projectPath = updates.projectPath
+      if (updates.directoryHealth !== undefined) session.directoryHealth = updates.directoryHealth
+      if (Object.hasOwn(updates, "timeArchived")) session.timeArchived = updates.timeArchived
+      if (updates.lastActiveAt !== undefined) session.lastActiveAt = updates.lastActiveAt
+    }))
+    return true
+  }
+
+  const remove = (id: string) => {
+    const existing = find(id)
+    if (!existing) return false
+    setStore("spaces", existing.spaceName, (sessions) => sessions.filter((session) => session.id !== id))
+    return true
+  }
+
   return {
-    title: input.title,
-    type: input.type,
-    projectPath: input.projectPath,
-    directoryHealth: input.directoryHealth,
+    reader: {
+      sessions: createMemo(() => store.spaces),
+      spaceSessions: (spaceName: string) => store.spaces[spaceName] ?? [],
+      getSession,
+      refreshKey,
+    },
+    writer: {
+      upsert,
+      patch,
+      remove,
+      invalidate: () => setRefreshKey((key) => key + 1),
+    },
   }
 }
 
-let _nextSessionSeq = 0
-function uniqueSessionID(): string {
-  _nextSessionSeq++
-  const ts = Date.now().toString(36)
-  return `s-${ts}-${_nextSessionSeq}`
-}
-
-export const { use: useSessionStore, provider: SessionStoreProvider } = createSimpleContext({
-  name: "SessionStore",
+const SessionProjectionContext = createSimpleContext({
+  name: "SessionProjection",
   init: () => {
-    const [store, setStore] = createSessionPersist()
-    const [refreshKey, setRefreshKey] = createSignal(0)
-
-    function triggerRefresh() {
-      setRefreshKey((k) => k + 1)
-    }
-
-    function spaceSessions(spaceName: string): Session[] {
-      return store.spaces[spaceName] ?? []
-    }
-
-    const sessions = createMemo(() => store.spaces)
-
-    function ensureSpace(spaceName: string) {
-      if (!store.spaces[spaceName]) setStore("spaces", spaceName, [])
-    }
-
-    function createSession(
-      spaceName: string,
-      projectPath: string,
-      type: SessionType,
-      title: string,
-    ): Session {
-      ensureSpace(spaceName)
-      const now = Date.now()
-      const session: Session = {
-        id: uniqueSessionID(),
-        spaceName,
-        projectPath,
-        type,
-        title,
-        directoryHealth: "healthy",
-        createdAt: now,
-        lastActiveAt: now,
-      }
-      setStore(
-        "spaces",
-        spaceName,
-        produce((list: Session[]) => {
-          list.push(session)
-        }),
-      )
-      triggerRefresh()
-      return session
-    }
-
-    function applySessionUpdates(
-      id: string,
-      updates: Partial<Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">>,
-      options?: { touch?: boolean; refresh?: boolean },
-    ) {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          idx,
-          produce((s: Session) => {
-            if (updates.title !== undefined) s.title = updates.title
-            if (updates.type !== undefined) s.type = updates.type
-            if (updates.projectPath !== undefined) s.projectPath = updates.projectPath
-            if (updates.directoryHealth !== undefined) s.directoryHealth = updates.directoryHealth
-            if (options?.touch !== false) s.lastActiveAt = Date.now()
-          }),
-        )
-        if (options?.refresh !== false) triggerRefresh()
-        return
-      }
-    }
-
-    function updateSession(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath">>) {
-      applySessionUpdates(id, updates)
-    }
-
-    function deleteSession(id: string) {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          produce((list: Session[]) => {
-            const index = list.findIndex((s) => s.id === id)
-            if (index !== -1) {
-              list.splice(index, 1)
-            }
-          }),
-        )
-        triggerRefresh()
-        return
-      }
-    }
-
-    function archiveSession(id: string, archive: boolean = true) {
-      const now = Date.now()
-      for (const spaceName of Object.keys(store.spaces)) {
-        const idx = store.spaces[spaceName].findIndex((s) => s.id === id)
-        if (idx === -1) continue
-        setStore(
-          "spaces",
-          spaceName,
-          idx,
-          produce((s: Session) => {
-            s.timeArchived = archive ? now : undefined
-            s.lastActiveAt = now
-          }),
-        )
-        triggerRefresh()
-        return
-      }
-    }
-
-    function renameSession(id: string, title: string) {
-      applySessionUpdates(id, { title })
-    }
-
-    // sync session updates without touching lastActiveAt or triggering heavy rerenders
-    function syncSessionReference(id: string, updates: Partial<Pick<Session, "title" | "type" | "projectPath" | "directoryHealth">>) {
-      applySessionUpdates(id, updates, { touch: false, refresh: false })
-    }
-
-    function getSession(id: string): Session | undefined {
-      for (const spaceName of Object.keys(store.spaces)) {
-        const found = store.spaces[spaceName].find((s) => s.id === id)
-        if (found) return found
-      }
-      return undefined
-    }
-
-    function ensureSessionReference(
-      id: string,
-      spaceName: string,
-      projectPath: string,
-      type: SessionType,
-      title: string,
-    ): Session {
-      const existing = getSession(id)
-      if (existing) {
-        syncSessionReference(id, serverSessionReferenceUpdates({ title, type, projectPath, directoryHealth: "healthy" }))
-        return getSession(id) ?? existing
-      }
-      ensureSpace(spaceName)
-      const now = Date.now()
-      const session: Session = {
-        id,
-        spaceName,
-        projectPath,
-        type,
-        title,
-        directoryHealth: "healthy",
-        createdAt: now,
-        lastActiveAt: now,
-      }
-      setStore(
-        "spaces",
-        spaceName,
-        produce((list: Session[]) => {
-          list.push(session)
-        }),
-      )
-      return session
-    }
-
-    function trimSessions(spaceName: string) {
-      const list = store.spaces[spaceName]
-      if (!list || list.length <= 50) return
-      const trimmed = limitSessions(list)
-      setStore("spaces", spaceName, trimmed)
-    }
-
-    return {
-      sessions,
-      spaceSessions,
-      ensureSpace,
-      createSession,
-      updateSession,
-      deleteSession,
-      archiveSession,
-      renameSession,
-      syncSessionReference,
-      getSession,
-      ensureSessionReference,
-      trimSessions,
-      refreshKey,
-      triggerRefresh,
-    }
+    removeLegacySessionStorage(typeof window !== "undefined" ? window.localStorage : undefined)
+    return createSessionProjection()
   },
 })
+
+export const useSessionStore = () => SessionProjectionContext.use().reader
+export const useSessionProjectionWriter = () => SessionProjectionContext.use().writer
+export const SessionStoreProvider = SessionProjectionContext.provider

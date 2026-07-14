@@ -2,9 +2,9 @@ import { Show, createMemo, For } from "solid-js"
 import { useServer } from "@/context/server"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
-import { SDKProvider } from "@/context/sdk"
 import { StatusBarStatusPopover } from "@/components/status-popover"
 import { getStatusBarSegments } from "./status-bar-segments"
+import { WorkbenchActiveDirectoryProvider } from "../workbench-directory-provider"
 
 export function StatusBar() {
   const wb = useWorkbenchState()
@@ -14,12 +14,6 @@ export function StatusBar() {
   const activePath = createMemo(() => wb.activeTab()?.path ?? "")
   const space = createMemo(() => wb.spaceState(activePath()))
   const spaceName = createMemo(() => wb.activeTab()?.name ?? "")
-
-  const activeDirectoryContext = createMemo(() => {
-    // MCP and plugin state is directory-scoped. The space path only groups
-    // sessions; the active panel carries the bound session's real directory.
-    return { dir: wb.activeDirectory }
-  })
 
   const segments = createMemo(() => {
     const name = spaceName()
@@ -56,13 +50,9 @@ export function StatusBar() {
 
       {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
-        <Show when={activeDirectoryContext()} keyed>
-          {({ dir }) => (
-            <SDKProvider directory={dir}>
-              <StatusBarStatusPopover />
-            </SDKProvider>
-          )}
-        </Show>
+        <WorkbenchActiveDirectoryProvider>
+          {() => <StatusBarStatusPopover />}
+        </WorkbenchActiveDirectoryProvider>
         <span class="truncate select-none ml-1">{server.name}</span>
       </div>
     </footer>

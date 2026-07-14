@@ -1,7 +1,6 @@
-import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useWorkbenchState } from "@/pages/workbench/view-store"
+import { useWorkbenchActions } from "@/pages/workbench/workbench-actions-context"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
@@ -17,12 +16,10 @@ const withCategory = (category: string) => {
 export const useWorkbenchCommands = () => {
   const command = useCommand()
   const language = useLanguage()
-  const wb = useWorkbenchState()
+  const actions = useWorkbenchActions()
   const layout = useLayout()
   const platform = usePlatform()
   const settings = useSettings()
-  const navigate = useNavigate()
-
   const sessionCommand = withCategory(language.t("command.category.session"))
   const fileCommand = withCategory(language.t("command.category.file"))
   const contextCommand = withCategory(language.t("command.category.context"))
@@ -37,8 +34,8 @@ export const useWorkbenchCommands = () => {
   const shown = () => (desktopV2() ? settings.general.showFileTree() : true)
 
   const proxyAction = (id: string) => ({
-    get disabled() { return !wb.canExecuteActivePanelAction(id) },
-    onSelect: () => wb.executeActivePanelAction(id),
+    get disabled() { return !actions.canExecuteActivePanelAction(id) },
+    onSelect: () => actions.executeActivePanelAction(id),
   })
 
   const sessionCmds = () => [
@@ -48,11 +45,8 @@ export const useWorkbenchCommands = () => {
       keybind: "mod+shift+s",
       slash: "new",
       onSelect: () => {
-        // Find active space and add a panel
-        const path = wb.activeTab()?.path
-        if (path !== undefined) {
-          wb.addPanel(path)
-        }
+        const active = actions.activeTarget()
+        if (active) actions.addPanel(active.scope)
       },
     }),
     sessionCommand({

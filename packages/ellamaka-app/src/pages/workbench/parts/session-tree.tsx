@@ -1,14 +1,14 @@
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { For, Show, createSignal, createMemo, createEffect, onCleanup, onMount, untrack, batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
-import { useSessionStore } from "../session-store"
+import { useSessionProjectionWriter, useSessionStore } from "../session-store"
 import { useWorkbenchState, type WorkbenchPanel } from "../view-store"
 import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
-import { ptyManager, ptyReferences } from "../pty-manager"
+import { useWorkbenchActions } from "../workbench-actions-context"
+import { scopeFromTab } from "../workbench-scope"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -60,7 +60,9 @@ export function SessionTree(props: {
   const language = useLanguage()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
   const sessionStore = useSessionStore()
+  const projection = useSessionProjectionWriter()
   const wb = useWorkbenchState()
+  const actions = useWorkbenchActions()
   const dialog = useDialog()
 
 
@@ -93,8 +95,8 @@ export function SessionTree(props: {
   const initialSpaces = new Set(saved)
   if (props.activeSpaceName) initialSpaces.add(props.activeSpaceName)
 
-  const [expandedSpaces, setExpandedSpaces] = createSignal<Set<string>>(initialSpaces)
-  const [pinnedSessions, setPinnedSessions] = createSignal<Set<string>>(new Set(loadPinned()))
+  const [expandedSpaces, setExpandedSpaces] = createSignal(initialSpaces)
+  const [pinnedSessions, setPinnedSessions] = createSignal(new Set(loadPinned()))
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | undefined>(undefined)
 
   createEffect(() => {
@@ -133,7 +135,6 @@ export function SessionTree(props: {
   })
 
   const [contextMenu, setContextMenu] = createSignal<ContextMenu | null>(null)
-  const [groupCache, setGroupCache] = createStore<Record<string, SessionGroup[]>>({})
   const [allGroups, setAllGroups] = createStore<SessionGroup[]>([])
   const [loading, setLoading] = createSignal(false)
   let fetchVersion = -1
@@ -223,24 +224,25 @@ export function SessionTree(props: {
   function syncGroupTitles(spaceName: string, sessions: GroupSession[]) {
     batch(() => {
       for (const s of sessions) {
-        sessionStore.ensureSessionReference(
-          s.id,
+        projection.upsert({
+          id: s.id,
           spaceName,
-          s.directory,
-          (s.agent === "tui" ? "tui" : "chat"),
-          s.title,
-        )
-        sessionStore.syncSessionReference(s.id, { directoryHealth: s.directoryHealth })
+          projectPath: s.directory,
+          type: s.agent === "tui" ? "tui" : "chat",
+          title: s.title,
+          directoryHealth: s.directoryHealth,
+          createdAt: s.timeCreated,
+          lastActiveAt: s.timeUpdated,
+        })
       }
     })
   }
 
   let treeContainerRef: HTMLDivElement | undefined
-  let scrollTimeout: any = null
+  let scrollTimeout: ReturnType<typeof setTimeout> | undefined
 
-  const handleScroll = (e: Event) => {
-    const target = e.currentTarget as HTMLDivElement
-    if (!target) return
+  const handleScroll = (e: Event & { currentTarget: HTMLDivElement }) => {
+    const target = e.currentTarget
     const scrollTop = target.scrollTop
     if (scrollTimeout) clearTimeout(scrollTimeout)
     scrollTimeout = setTimeout(() => {
@@ -265,14 +267,14 @@ export function SessionTree(props: {
     const VISIBLE_REFRESH_MS = 30_000
     const treeInterval = setInterval(() => {
       if (document.visibilityState === "visible") {
-        loadSessionGroups()
+        void loadSessionGroups()
       }
     }, VISIBLE_REFRESH_MS)
 
     // Refresh tree when page becomes visible again (D-04)
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        loadSessionGroups(true)
+        void loadSessionGroups(true)
       }
     }
     document.addEventListener("visibilitychange", handleVisibility)
@@ -364,12 +366,7 @@ export function SessionTree(props: {
     }
   }
 
-
-  function handleSessionClick(sessionId: string) {
-    props.onSessionClick(sessionId)
-  }
-
-  function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string) {
+  function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string, sessionData: GroupSession) {
     e.preventDefault()
     e.stopPropagation()
     const isPinned = pinnedSessions().has(session.id)
@@ -383,7 +380,7 @@ export function SessionTree(props: {
             let inputEl: HTMLInputElement | undefined
             const [val, setVal] = createSignal(session.title)
 
-            dialog.show(() => (
+            void dialog.show(() => (
               <Dialog title={t("workbench.tree.rename") || "重命名会话"} fit>
                 <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
                   <div class="flex flex-col gap-2">
@@ -397,8 +394,15 @@ export function SessionTree(props: {
                         if (e.key === "Enter") {
                           const trimmed = val().trim()
                           if (trimmed && trimmed !== session.title) {
-                            sessionStore.renameSession(session.id, trimmed)
-                            void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+                            const targetSpace = props.spaces.find((space) => space.name === spaceName)
+                            if (targetSpace) {
+                              void actions.renameSession({
+                                scope: scopeFromTab(targetSpace),
+                                sessionID: session.id,
+                                directory: sessionData.directory,
+                                title: trimmed,
+                              }).catch((error) => console.error("Failed to rename Workbench session:", error))
+                            }
                           }
                           dialog.close()
                         }
@@ -416,8 +420,15 @@ export function SessionTree(props: {
                       onClick={() => {
                         const trimmed = val().trim()
                         if (trimmed && trimmed !== session.title) {
-                          sessionStore.renameSession(session.id, trimmed)
-                          void sdk.client.session.update({ sessionID: session.id, title: trimmed }).catch(() => {})
+                          const targetSpace = props.spaces.find((space) => space.name === spaceName)
+                          if (targetSpace) {
+                            void actions.renameSession({
+                              scope: scopeFromTab(targetSpace),
+                              sessionID: session.id,
+                              directory: sessionData.directory,
+                              title: trimmed,
+                            }).catch((error) => console.error("Failed to rename Workbench session:", error))
+                          }
                         }
                         dialog.close()
                       }}
@@ -449,7 +460,7 @@ export function SessionTree(props: {
         {
           label: t("common.delete"),
           action: () => {
-            dialog.show(() => (
+            void dialog.show(() => (
               <Dialog title={t("common.delete") || "删除会话"} fit>
                 <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
                   <div class="flex flex-col gap-1">
@@ -469,9 +480,13 @@ export function SessionTree(props: {
                       size="large"
                       onClick={async () => {
                         try {
-                          await sdk.client.session.delete({ sessionID: session.id, directory: "" })
-                          sessionStore.deleteSession(session.id)
-                          wb.unbindSessionGlobal(session.id)
+                          const targetSpace = props.spaces.find((space) => space.name === spaceName)
+                          if (!targetSpace) return
+                          await actions.deleteSession({
+                            scope: scopeFromTab(targetSpace),
+                            sessionID: session.id,
+                            directory: sessionData.directory,
+                          })
                         } catch (err) {
                           console.error("Failed to delete session:", err)
                         }
@@ -501,38 +516,22 @@ export function SessionTree(props: {
           label: t("workbench.tree.newSession"),
           action: async () => {
             try {
-              const target = space.name === "General"
-                ? { type: "general" as const }
-                : { type: "space" as const, space: space.name }
-
-              const res = await sdk.client.workbench.createSession({ target })
-              const serverSession = res.data
-              if (!serverSession?.id) return
-              const title = serverSession.title ?? t("workbench.tree.newSession")
-              sessionStore.ensureSessionReference(serverSession.id, space.name, serverSession.directory, "chat", title)
-              sessionStore.triggerRefresh()
-
               if (wb.activeSpaceName !== space.name) {
                 wb.setActive(space.name)
               }
 
               wb.ensureSpace(space.path)
               const targetSpaceState = wb.spaces[space.path]
-              if (targetSpaceState) {
-                let targetPanel = targetSpaceState.panels.find((p) => p.slotState === "empty")
-                if (!targetPanel && targetSpaceState.panels.length < 3) {
-                  const newPanelId = wb.addPanel(space.path)
-                  if (newPanelId) {
-                    const updatedSpace = wb.spaces[space.path]
-                    targetPanel = updatedSpace?.panels?.find((p) => p.id === newPanelId)
-                  }
-                }
-                if (targetPanel) {
-                  wb.bindSessionToPanel(space.path, targetPanel.id, serverSession.id)
-                  wb.setPanelViewMode(space.path, targetPanel.id, "chat")
-                  wb.setActivePanel(space.path, targetPanel.id)
+              if (!targetSpaceState) return
+              const scope = scopeFromTab(space)
+              let targetPanel = targetSpaceState.panels.find((panel) => panel.slotState === "empty")
+              if (!targetPanel && targetSpaceState.panels.length < 3) {
+                const newPanelID = actions.addPanel(scope)
+                if (newPanelID) {
+                  targetPanel = wb.spaceState(space.path)?.panels.find((panel) => panel.id === newPanelID)
                 }
               }
+              if (targetPanel) await actions.createSession({ scope, panelID: targetPanel.id })
             } catch (err) {
               console.error("Failed to create session:", err)
             }
@@ -626,29 +625,18 @@ export function SessionTree(props: {
 
       const targetSpacePath = targetSpace.path
 
-      const loadSessionIntoPanel = (panel: WorkbenchPanel) => {
-        if (panel.slotState === "bound") {
-          // 先物理杀死并注销该面板原有的 PTY 资源，并解绑
-          void ptyManager.disposePanel(targetSpacePath, panel.id, sdk, ptyReferences(panel))
-
-          // 清理原有面板上关联 of PTY ID
-          wb.setPanelPtyId(targetSpacePath, panel.id, "tui", undefined)
-          wb.setPanelPtyId(targetSpacePath, panel.id, "term", undefined)
-          wb.setPanelPtyId(targetSpacePath, panel.id, "split", undefined)
-          wb.setPanelSplitTerminal(targetSpacePath, panel.id, false)
-
-          wb.unbindSessionFromPanel(targetSpacePath, panel.id)
-        }
-
-        let localSession = sessionStore.getSession(session.id)
-        if (!localSession) {
-          const projectPath = sessionData?.directory ?? targetSpacePath
-          localSession = sessionStore.ensureSessionReference(session.id, spaceName, projectPath, "chat", session.title)
-        }
-        wb.bindSessionToPanel(targetSpacePath, panel.id, session.id)
-        wb.setPanelViewMode(targetSpacePath, panel.id, "chat")
-        wb.setActivePanel(targetSpacePath, panel.id)
-
+      const scope = scopeFromTab(targetSpace)
+      const loadSessionIntoPanel = async (panel: WorkbenchPanel) => {
+        await actions.replaceSession({
+          scope,
+          panelID: panel.id,
+          session: {
+            id: session.id,
+            title: session.title,
+            directory: sessionData?.directory ?? targetSpacePath,
+            type: "chat",
+          },
+        })
         const newBadge = getPanelBadge(session.id)
         wb.setStatusMessage(t("workbench.status.sessionLoaded", { badge: newBadge ?? "" }))
       }
@@ -662,7 +650,7 @@ export function SessionTree(props: {
       let targetPanel = space.panels.find((p) => p.slotState === "empty")
 
       if (!targetPanel && space.panels.length < 3) {
-        const newPanelId = wb.addPanel(targetSpacePath)
+        const newPanelId = actions.addPanel(scope)
         if (newPanelId) {
           const updatedSpace = wb.spaces[targetSpacePath]
           targetPanel = updatedSpace?.panels?.find((p) => p.id === newPanelId)
@@ -674,28 +662,32 @@ export function SessionTree(props: {
         const activePanel = space.panels.find((p) => p.id === activePanelId)
         if (activePanel) {
           const idx = space.panels.findIndex((p) => p.id === activePanelId)
-          dialog.show(() => (
+          void dialog.show(() => (
             <DialogOverwritePanel
               panelIndex={idx + 1}
               onConfirm={() => {
-                loadSessionIntoPanel(activePanel)
-                dialog.close()
+                void loadSessionIntoPanel(activePanel)
+                  .then(() => dialog.close())
+                  .catch((error) => console.error("Failed to replace Workbench session:", error))
               }}
             />
           ))
         } else {
-          dialog.show(() => (
+          void dialog.show(() => (
             <DialogOverwritePanel
               panelIndex={1}
               onConfirm={() => {
-                loadSessionIntoPanel(space.panels[0])
-                dialog.close()
+                void loadSessionIntoPanel(space.panels[0])
+                  .then(() => dialog.close())
+                  .catch((error) => console.error("Failed to replace Workbench session:", error))
               }}
             />
           ))
         }
       } else {
-        loadSessionIntoPanel(targetPanel)
+        void loadSessionIntoPanel(targetPanel).catch((error) => {
+          console.error("Failed to load Workbench session:", error)
+        })
       }
     }
 
@@ -730,7 +722,7 @@ export function SessionTree(props: {
         }}
         onClick={handleSessionClick}
         onDblClick={handleSessionDblClick}
-        onContextMenu={(e) => showSessionMenu(e, session, spaceName)}
+        onContextMenu={(e) => sessionData && showSessionMenu(e, session, spaceName, sessionData)}
       >
         <Show when={getPanelBadge(session.id)}
           fallback={
@@ -776,7 +768,7 @@ export function SessionTree(props: {
           // Trigger group load when expanded
           createEffect(() => {
             if (isExpanded() && allGroups.length === 0) {
-              untrack(() => loadSessionGroups())
+              void untrack(() => loadSessionGroups())
             }
           })
 
@@ -785,7 +777,7 @@ export function SessionTree(props: {
             const key = sessionStore.refreshKey()
             void key
             if (untrack(isExpanded)) {
-              untrack(() => loadSessionGroups())
+              void untrack(() => loadSessionGroups())
             }
           })
 
@@ -793,7 +785,7 @@ export function SessionTree(props: {
           createEffect(() => {
             const ver = wb.refreshVersion
             if (ver > 0 && untrack(isExpanded)) {
-              untrack(() => loadSessionGroups(true))
+              void untrack(() => loadSessionGroups(true))
             }
           })
 

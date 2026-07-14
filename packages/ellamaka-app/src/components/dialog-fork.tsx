@@ -11,6 +11,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLanguage } from "@/context/language"
+import { completeFork } from "./dialog-fork-completion"
 
 interface ForkableMessage {
   id: string
@@ -77,11 +78,12 @@ export const DialogFork: Component<{ onSuccess?: (newSessionID: string) => void 
         }
         dialog.close()
         prompt.set(restored, undefined, { dir, id: forked.data.id })
-        if (props.onSuccess) {
-          props.onSuccess(forked.data.id)
-        } else {
-          navigate(`/${dir}/session/${forked.data.id}`)
-        }
+        completeFork({
+          sessionID: forked.data.id,
+          href: `/${dir}/session/${forked.data.id}`,
+          onSuccess: props.onSuccess,
+          navigate,
+        })
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)

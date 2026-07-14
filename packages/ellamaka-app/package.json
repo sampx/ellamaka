@@ -15,6 +15,8 @@
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
+    "check:workbench-boundaries": "bun ./script/check-workbench-boundaries.ts",
+    "lint:workbench": "cd ../.. && find packages/ellamaka-app/src/pages/workbench -type f \\( -name '*.ts' -o -name '*.tsx' \\) -print0 | xargs -0 oxlint --deny-warnings",
     "test": "bun run test:unit",
     "test:ci": "mkdir -p .artifacts/unit && bun test --preload ./happydom.ts ./src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:unit": "bun test --preload ./happydom.ts ./src",

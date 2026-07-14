@@ -68,8 +68,7 @@ import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
-// WopalSpace workbench injection — minimal import + early-return guard (see AGENTS.md)
-import { useWorkbenchChat } from "@/pages/workbench/parts/workbench-chat-context"
+import { useSessionSurface } from "./session-surface-context"
 import { makeTimer } from "@solid-primitives/timer"
 import { MessageComment, SummaryDiff, Timeline, TimelineRow, TimelineRowMap } from "./message-timeline.data"
 
@@ -80,7 +79,6 @@ const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "BottomSpacer" }>
-type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
 
 function sameKeys(a: readonly string[] | undefined, b: readonly string[] | undefined) {
   if (a === b) return true
@@ -93,11 +91,12 @@ const timelineCacheLimit = 16
 const timelineFallbackItemSize = 60
 const timelineCache = new Map<string, { keys: readonly string[]; cache: VirtualizerHandle["cache"] }>()
 
-function readTimelineCache(id: string, keys: readonly string[]) {
+function readTimelineCache(id: string, keys: readonly string[]): VirtualizerHandle["cache"] | undefined {
   const entry = timelineCache.get(id)
-  if (!entry) return
+  if (!entry) return undefined
   if (sameKeys(entry.keys, keys)) return entry.cache
   timelineCache.delete(id)
+  return undefined
 }
 
 function writeTimelineCache(id: string, keys: readonly string[], handle: VirtualizerHandle | undefined) {
@@ -117,12 +116,13 @@ function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefined, rows
   })
 }
 
-const taskDescription = (part: PartType, sessionID: string) => {
-  if (part.type !== "tool" || part.tool !== "task") return
+const taskDescription = (part: PartType, sessionID: string): string | undefined => {
+  if (part.type !== "tool" || part.tool !== "task") return undefined
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
-  if (metadata?.sessionId !== sessionID) return
+  if (metadata?.sessionId !== sessionID) return undefined
   const value = part.state.input?.description
   if (typeof value === "string" && value) return value
+  return undefined
 }
 
 const pace = (width: number) => Math.round(Math.max(1200, Math.min(3200, (Math.max(width, 360) * 2000) / 900)))
@@ -367,19 +367,19 @@ export function MessageTimeline(props: {
   })
   const info = createMemo(() => {
     const id = sessionID()
-    if (!id) return
+    if (!id) return undefined
     return sync.session.get(id)
   })
   // WopalSpace workbench injection: detect workbench context for directory display
-  const workbench = useWorkbenchChat()
+  const embedded = useSessionSurface()?.kind === "embedded"
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
-  const shareEnabled = createMemo(() => sync.data.config.share !== "disabled" && !workbench)
+  const shareEnabled = createMemo(() => sync.data.config.share !== "disabled" && !embedded)
   const parentID = createMemo(() => info()?.parentID)
   const parent = createMemo(() => {
     const id = parentID()
-    if (!id) return
+    if (!id) return undefined
     return sync.session.get(id)
   })
   const parentMessages = createMemo(() => {
@@ -391,7 +391,7 @@ export function MessageTimeline(props: {
   const getMsgParts = (msgId: string) => sync.data.part[msgId] ?? emptyParts
   const childTaskDescription = createMemo(() => {
     const id = sessionID()
-    if (!id) return
+    if (!id) return undefined
     return parentMessages()
       .flatMap((message) => getMsgParts(message.id))
       .map((part) => taskDescription(part, id))
@@ -400,7 +400,7 @@ export function MessageTimeline(props: {
   const childTitle = createMemo(() => {
     // WopalSpace workbench injection: show directory path instead of session title
     // to avoid duplication with panel header
-    if (workbench) {
+    if (embedded) {
       const dir = info()?.directory
       if (dir) {
         // Truncate path, keep tail (last 2-3 segments)
@@ -464,10 +464,10 @@ export function MessageTimeline(props: {
   })
   const keepMounted = createMemo(() => {
     const id = activeMessageID()
-    if (!id) return
+    if (!id) return undefined
     const rows = timelineRows()
     const index = rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === id)
-    if (index < 0) return
+    if (index < 0) return undefined
     return [index]
   })
   const activeAssistantMessages = createMemo(() => {
@@ -737,8 +737,10 @@ export function MessageTimeline(props: {
 
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
-      const data = (err as { data?: { message?: string } }).data
-      if (data?.message) return data.message
+      const data = err.data
+      if (data && typeof data === "object" && "message" in data && typeof data.message === "string") {
+        return data.message
+      }
     }
     if (err instanceof Error) return err.message
     return language.t("common.requestFailed")
@@ -991,9 +993,9 @@ export function MessageTimeline(props: {
 
   const workingTurn = (userMessageID: string) => sessionStatus().type !== "idle" && activeMessageID() === userMessageID
 
-  const turnDurationMs = (userMessageID: string) => {
+  const turnDurationMs = (userMessageID: string): number | undefined => {
     const message = messageByID().get(userMessageID)
-    if (!message || message.role !== "user") return
+    if (!message || message.role !== "user") return undefined
     const end = (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
       (max, item) => {
         const completed = item.time.completed
@@ -1003,12 +1005,12 @@ export function MessageTimeline(props: {
       },
       undefined,
     )
-    if (typeof end !== "number") return
-    if (end < message.time.created) return
+    if (typeof end !== "number") return undefined
+    if (end < message.time.created) return undefined
     return end - message.time.created
   }
 
-  const assistantCopyPartID = (userMessageID: string) => {
+  const assistantCopyPartID = (userMessageID: string): string | null | undefined => {
     if (workingTurn(userMessageID)) return null
     const messages = assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
 
@@ -1023,6 +1025,7 @@ export function MessageTimeline(props: {
         return part.id
       }
     }
+    return undefined
   }
 
   const getMsgPart = (messageID: string, partID: string) => getMsgParts(messageID).find((part) => part.id === partID)
@@ -1050,17 +1053,17 @@ export function MessageTimeline(props: {
 
     const message = createMemo(() => {
       const group = row().group
-      if (group.type !== "part") return
+      if (group.type !== "part") return undefined
       return messageByID().get(group.ref.messageID)
     })
     const part = createMemo(() => {
       const group = row().group
-      if (group.type !== "part") return
+      if (group.type !== "part") return undefined
       return getMsgPart(group.ref.messageID, group.ref.partID)
     })
     const defaultOpen = createMemo(() => {
       const item = part()
-      if (!item) return
+      if (!item) return undefined
       return partDefaultOpen(item, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())
     })
 
@@ -1124,7 +1127,11 @@ export function MessageTimeline(props: {
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>) => {
     switch (row()._tag) {
       case "CommentStrip": {
-        const commentStripRow = row as Accessor<TimelineRowByTag<"CommentStrip">>
+        const commentStripRow = () => {
+          const value = row()
+          if (value._tag !== "CommentStrip") throw new Error("Expected CommentStrip timeline row")
+          return value
+        }
         const comments = createMemo(() =>
           getMsgParts(commentStripRow().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []),
         )
@@ -1162,10 +1169,15 @@ export function MessageTimeline(props: {
         )
       }
       case "UserMessage": {
-        const userMessageRow = row as Accessor<TimelineRowByTag<"UserMessage">>
+        const userMessageRow = () => {
+          const value = row()
+          if (value._tag !== "UserMessage") throw new Error("Expected UserMessage timeline row")
+          return value
+        }
         const message = createMemo(() => {
           const m = messageByID().get(userMessageRow().userMessageID)
           if (m?.role === "user") return m
+          return undefined
         })
         return (
           <TimelineRowFrame row={userMessageRow}>
@@ -1186,7 +1198,11 @@ export function MessageTimeline(props: {
         )
       }
       case "TurnDivider": {
-        const turnDividerRow = row as Accessor<TimelineRowByTag<"TurnDivider">>
+        const turnDividerRow = () => {
+          const value = row()
+          if (value._tag !== "TurnDivider") throw new Error("Expected TurnDivider timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1202,7 +1218,11 @@ export function MessageTimeline(props: {
         )
       }
       case "AssistantPart": {
-        const assistantPartRow = row as Accessor<TimelineRowByTag<"AssistantPart">>
+        const assistantPartRow = () => {
+          const value = row()
+          if (value._tag !== "AssistantPart") throw new Error("Expected AssistantPart timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={assistantPartRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1217,7 +1237,11 @@ export function MessageTimeline(props: {
         )
       }
       case "Thinking": {
-        const thinkingRow = row as Accessor<TimelineRowByTag<"Thinking">>
+        const thinkingRow = () => {
+          const value = row()
+          if (value._tag !== "Thinking") throw new Error("Expected Thinking timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={thinkingRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1230,7 +1254,11 @@ export function MessageTimeline(props: {
         )
       }
       case "Retry": {
-        const retryRow = row as Accessor<TimelineRowByTag<"Retry">>
+        const retryRow = () => {
+          const value = row()
+          if (value._tag !== "Retry") throw new Error("Expected Retry timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={retryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1240,7 +1268,11 @@ export function MessageTimeline(props: {
         )
       }
       case "DiffSummary": {
-        const diffSummaryRow = row as Accessor<TimelineRowByTag<"DiffSummary">>
+        const diffSummaryRow = () => {
+          const value = row()
+          if (value._tag !== "DiffSummary") throw new Error("Expected DiffSummary timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={diffSummaryRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1250,7 +1282,11 @@ export function MessageTimeline(props: {
         )
       }
       case "Error": {
-        const errorRow = row as Accessor<TimelineRowByTag<"Error">>
+        const errorRow = () => {
+          const value = row()
+          if (value._tag !== "Error") throw new Error("Expected Error timeline row")
+          return value
+        }
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
@@ -1264,6 +1300,7 @@ export function MessageTimeline(props: {
       case "BottomSpacer":
         return <div data-timeline-row="bottom-spacer" aria-hidden="true" class="h-16" />
     }
+    return undefined
   }
 
   function TimelineRowView(props: { row: TimelineRow.TimelineRow }) {
@@ -1399,7 +1436,7 @@ export function MessageTimeline(props: {
                           event.stopPropagation()
                           if (event.key === "Enter") {
                             event.preventDefault()
-                            void saveTitleEditor()
+                            saveTitleEditor()
                             return
                           }
                           if (event.key === "Escape") {

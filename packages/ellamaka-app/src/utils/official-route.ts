@@ -1,3 +1,4 @@
+// Shared navigation memory used by both the canonical app and Workbench.
 const LAST_OFFICIAL_ROUTE_KEY = "ellamaka.workbench.last-official-route"
 
 export function rememberOfficialRoute(path: string) {

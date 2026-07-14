@@ -9,7 +9,7 @@ export type WopalSpace = {
   type?: string
 }
 
-export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimpleContext({
+const SpaceStoreContext = createSimpleContext({
   name: "SpaceStore",
   init: () => {
     const sdk = useServerSDK()
@@ -42,3 +42,5 @@ export const { use: useSpaceStore, provider: SpaceStoreProvider } = createSimple
   },
 })
 
+export const useSpaceStore = () => SpaceStoreContext.use()
+export const SpaceStoreProvider = SpaceStoreContext.provider

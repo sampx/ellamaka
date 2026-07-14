@@ -1,0 +1,123 @@
+import { describe, expect, test } from "bun:test"
+import { createWorkbenchStore, type PersistedWorkbench } from "./workbench-store"
+import { selectWorkbenchDirectoryTarget } from "./workbench-directory-provider"
+import {
+  WORKBENCH_FIXTURES,
+  WORKBENCH_SCENARIO,
+  createControlledDirectoryTransport,
+} from "./testing/workbench-test-harness"
+
+const persisted = (): PersistedWorkbench => ({
+  display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+  spaces: {
+    "": {
+      activePanelID: WORKBENCH_SCENARIO.panels.general,
+      panels: [{
+        id: WORKBENCH_SCENARIO.panels.general,
+        slotState: "bound",
+        boundSessionId: WORKBENCH_SCENARIO.sessions.general.id,
+        mode: "chat",
+        directory: WORKBENCH_SCENARIO.sessions.general.directory,
+        width: 1,
+      }],
+    },
+    [WORKBENCH_FIXTURES.spaceA.path]: {
+      activePanelID: WORKBENCH_SCENARIO.panels.spaceA,
+      panels: [{
+        id: WORKBENCH_SCENARIO.panels.spaceA,
+        slotState: "bound",
+        boundSessionId: WORKBENCH_SCENARIO.sessions.spaceA.id,
+        mode: "chat",
+        directory: WORKBENCH_SCENARIO.sessions.spaceA.directory,
+        width: 1,
+      }],
+    },
+    [WORKBENCH_FIXTURES.spaceB.path]: {
+      activePanelID: WORKBENCH_SCENARIO.panels.spaceB,
+      panels: [{
+        id: WORKBENCH_SCENARIO.panels.spaceB,
+        slotState: "bound",
+        boundSessionId: WORKBENCH_SCENARIO.sessions.spaceB.id,
+        mode: "chat",
+        directory: WORKBENCH_SCENARIO.sessions.spaceB.directory,
+        width: 1,
+      }],
+    },
+  },
+  tabs: [
+    { name: WORKBENCH_FIXTURES.general.name, path: WORKBENCH_FIXTURES.general.path, type: "general" },
+    { name: WORKBENCH_FIXTURES.spaceA.name, path: WORKBENCH_FIXTURES.spaceA.path, type: "space" },
+    { name: WORKBENCH_FIXTURES.spaceB.name, path: WORKBENCH_FIXTURES.spaceB.path, type: "space" },
+  ],
+  activeSpaceName: WORKBENCH_FIXTURES.general.name,
+})
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string")
+
+describe("Workbench directory status", () => {
+  test("selects exact capability source paths across General, Space A, Space B and General", async () => {
+    const store = createWorkbenchStore(persisted())
+    const transport = createControlledDirectoryTransport()
+    const order = [
+      WORKBENCH_FIXTURES.general,
+      WORKBENCH_FIXTURES.spaceA,
+      WORKBENCH_FIXTURES.spaceB,
+      WORKBENCH_FIXTURES.general,
+    ]
+    const observed: { directory: string; sources: string[] }[] = []
+
+    for (const fixture of order) {
+      store.setActive(fixture.name)
+      const target = selectWorkbenchDirectoryTarget({
+        spaces: store.spaces,
+        tabs: store.tabs,
+        activeSpaceName: store.activeSpaceName,
+      })
+      if (!target) throw new Error(`Missing active directory target for ${fixture.name}`)
+      const response = transport.prepare("capabilities.list", target.directory)
+      const pending = transport.request("capabilities.list", target.directory)
+      response.resolve(fixture.capabilitySources)
+      const sources = await pending
+      if (!isStringArray(sources)) throw new Error(`Invalid capability response for ${fixture.name}`)
+      observed.push({ directory: target.directory, sources })
+    }
+
+    expect(observed).toEqual(order.map((fixture) => ({
+      directory: fixture.directory,
+      sources: fixture.capabilitySources,
+    })))
+  })
+
+  test("keeps a late Space A response in the Space A cache while Space B stays visible", async () => {
+    const store = createWorkbenchStore(persisted())
+    const transport = createControlledDirectoryTransport()
+    const projection = new Map<string, string[]>()
+    const spaceA = transport.prepare("capabilities.list", WORKBENCH_FIXTURES.spaceA.directory)
+    const spaceB = transport.prepare("capabilities.list", WORKBENCH_FIXTURES.spaceB.directory)
+
+    const load = async (directory: string) => {
+      const value = await transport.request("capabilities.list", directory)
+      if (!isStringArray(value)) throw new Error(`Invalid capability response for ${directory}`)
+      projection.set(directory, value)
+    }
+
+    store.setActive(WORKBENCH_FIXTURES.spaceA.name)
+    const pendingA = load(WORKBENCH_FIXTURES.spaceA.directory)
+    store.setActive(WORKBENCH_FIXTURES.spaceB.name)
+    const pendingB = load(WORKBENCH_FIXTURES.spaceB.directory)
+    spaceB.resolve(WORKBENCH_FIXTURES.spaceB.capabilitySources)
+    await pendingB
+    spaceA.resolve(WORKBENCH_FIXTURES.spaceA.capabilitySources)
+    await pendingA
+
+    const active = selectWorkbenchDirectoryTarget({
+      spaces: store.spaces,
+      tabs: store.tabs,
+      activeSpaceName: store.activeSpaceName,
+    })
+    if (!active) throw new Error("Missing active Space B directory target")
+    expect(projection.get(active.directory)).toEqual(WORKBENCH_FIXTURES.spaceB.capabilitySources)
+    expect(projection.get(WORKBENCH_FIXTURES.spaceA.directory)).toEqual(WORKBENCH_FIXTURES.spaceA.capabilitySources)
+  })
+})

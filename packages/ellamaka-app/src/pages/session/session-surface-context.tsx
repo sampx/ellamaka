@@ -1,7 +1,8 @@
 import { createContext, useContext, type JSX } from "solid-js"
 
 /**
- * WorkbenchChatContext — marks a SolidJS subtree as the workbench chat panel.
+ * SessionSurfaceContext marks a Session subtree as embedded outside the
+ * canonical Session page layout.
  *
  * 官方 `SessionContextUsage` 组件的圆环点击默认行为是「打开侧边 context tab」。
  * 但 workbench 的 chat 视图没有官方 Layout 的 side-panel / fileTree / reviewPanel
@@ -13,20 +14,20 @@ import { createContext, useContext, type JSX } from "solid-js"
  * 注入点：`components/session-context-usage.tsx` 内的 early-return guard。
  * 上游 merge 时保留 import + guard 这两行最小注入即可。
  */
-type WorkbenchChatContextValue = {
-  readonly isWorkbench: true
+type SessionSurfaceContextValue = {
+  readonly kind: "embedded"
 }
 
-const WorkbenchChatContext = createContext<WorkbenchChatContextValue>()
+const SessionSurfaceContext = createContext<SessionSurfaceContextValue>()
 
-export function WorkbenchChatProvider(props: { children: JSX.Element }) {
+export function EmbeddedSessionSurfaceProvider(props: { children: JSX.Element }) {
   return (
-    <WorkbenchChatContext.Provider value={{ isWorkbench: true }}>
+    <SessionSurfaceContext.Provider value={{ kind: "embedded" }}>
       {props.children}
-    </WorkbenchChatContext.Provider>
+    </SessionSurfaceContext.Provider>
   )
 }
 
-export function useWorkbenchChat(): WorkbenchChatContextValue | undefined {
-  return useContext(WorkbenchChatContext)
+export function useSessionSurface(): SessionSurfaceContextValue | undefined {
+  return useContext(SessionSurfaceContext)
 }

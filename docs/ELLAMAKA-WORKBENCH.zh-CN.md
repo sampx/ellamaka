@@ -1,7 +1,7 @@
 # Ellamaka Workbench 设计与状态管理规范
 
 > **状态**：核心设计与开发规范。本项目的后续所有开发与重构工作必须严格遵循本文档。
-> **更新时间**：2026-07-13
+> **更新时间**：2026-07-14
 > **相关文档**：`DESKTOP.md`（Electron 桌面承载与共享 PTY 生命周期）
 
 ---
@@ -156,10 +156,9 @@ type PanelViewCtx = {
   panel: WorkbenchPanel
   session?: Session
   directory: string
-  sdk: any
+  sdk: DirectorySdk                 // 由 Panel 的唯一 Provider 注入
   spaceName: string
   spacePath: string
-  ptyManager: PtyManager    // 从运行时管理器获取 PTY，而非自行创建
 }
 
 type PanelViewDef = {
@@ -173,7 +172,7 @@ type PanelViewDef = {
 
 系统已默认注册 `tui`、`chat` 和 `context` 视图。`bound` 槽位的头部呈现 `TUI / Chat / Context` 主视图按钮，并在 `TUI` 左侧提供终端图标，用于切换面板底部的 Split Terminal。
 
-**视图组件不拥有 PTY 生命周期**。视图通过 `ctx.ptyManager` 获取或复用 PTY 实例。PTY 的创建、复用、释放由运行时管理器统一负责。视图的 `onCleanup` 只能断开前端连接（WebSocket 等），不得调用 `pty.remove` 杀止进程。
+**视图组件不拥有 PTY 生命周期**。视图只把“确保、关闭、连接断开”的意图交给 `WorkbenchActions`；Action 再调用 `PtyManager` 和目录 SDK。PTY 的创建、复用、存活探测、释放、布局提交和视图回退必须是同一个 Action 的一致性边界。视图的 `onCleanup` 只能断开前端连接（WebSocket 等），不得直接调用 `pty.remove`、`PtyManager` 或 Workbench Store。
 
 ### 4.4 Canvas 终端的无缝贴边尺寸规则
 
@@ -211,20 +210,25 @@ Workbench 状态管理的核心目标是：
 
 ### 5.1 状态模型分层设计
 
-Workbench 状态不进行强行合并，而是通过分层 Store 实现解耦并由统一门控协同。状态存入以下 Store：
+Workbench 不再把布局、服务端会话和运行时资源塞进一个控制器。每类状态只有一个规范所有者：
 
-- **Space Store** (`space-store.tsx`)：维护已打开的 Space Path 列表及当前激活的 Space Tab 状态。
-- **View Store** (`view-store.tsx`)：维护显示设置（侧栏、标题栏状态等）及每个 Space 下的 Panel 布局（Panel 数组、宽度、工作目录、Session 绑定状态及 PTY ID 提示）。
-- **Session Store** (`session-store.tsx`)：维护本地与服务端的会话列表缓存及其绑定投影。
+- **WorkbenchStore** (`workbench-store.ts`)：唯一持久化布局所有者，保存 Display、Space Tab、Panel 布局、活动 Panel、`boundSessionId`、Split Terminal 设置和 PTY 重连提示；它只做同步纯状态变更。
+- **View Store adapter** (`view-store.tsx`)：负责水合、`localStorage` 写入和短暂 UI 消息；它不是第二个领域 Store，不能拥有 SDK、PTY、router、Dialog 或 Toast 副作用。
+- **WorkbenchActions** (`workbench-actions.ts` / `workbench-actions-context.ts`)：唯一跨所有者事务入口。创建、装载、替换、fork、解绑、关闭 Panel/Space、PTY 创建、PTY 断连恢复都先由 Action 分配 generation，再执行资源副作用，最后一次性提交布局或 Projection。
+- **Session Projection** (`session-store.tsx`)：只在内存中保存服务端会话的只读投影。Action 的服务端响应和 Shell/SessionTree 的 SSE 对账是唯一 writer；组件、Dialog、命令和持久化层只能读取。
+- **Directory SDK/sync**：插件、MCP、LSP 和配置按规范化 directory 缓存，不持久化。Panel 使用该 Panel 的 directory；TopBar 与 StatusPopover 通过活动 `SpaceScope` 和活动 Panel selector 获得同一 directory。
+- **Space Store** (`space-store.tsx`)：读取可打开 Space 的目录列表，用于校验和展示；已打开 Tab 及其布局归 WorkbenchStore 所有。
+
+`SpaceScope` 在领域边界明确表示 General 或 Space；General 不能依赖空字符串真假判断。General 的 Panel directory 可以是后端生成的 General task 目录，但能力组成仍只来自全局配置。Space 的能力是全局能力与该 Space 定义能力的并集；验收必须核对完整来源路径，而非数量。
 
 PTY ID（`tuiPtyId`、`splitPtyId`、`termPtyId`）作为**重连提示**随 Workbench 布局持久化。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。刷新后 PTY Manager 先探测旧 ID：存活则重连，已回收则清除旧 ID 并按需创建新 PTY。浏览器 Tab 关闭后没有新连接，sidecar 在断连宽限期结束时终止对应 PTY；下次打开时持久化的旧 ID 会在探测阶段自然失效。
 
 ### 5.2 水合门控与协同 (allStoresReady)
 
-所有持久化 Store 分别声明 `ready` 状态。在 `index.tsx` 中使用 `allStoresReady` 汇合成统一的 **Workbench Bootstrap Gate**：
+WorkbenchStore 完成水合后，`index.tsx` 以 `wb.ready()` 作为唯一的 **Workbench Bootstrap Gate**：
 
 ```tsx
-const allStoresReady = () => spaceStore.ready() && viewStore.ready()
+const allStoresReady = () => wb.ready()
 ```
 
 > [!IMPORTANT]
@@ -313,28 +317,26 @@ WebSocket 连接关闭与 PTY 进程退出是两个独立事件。前端先确�
 
 服务端 Session 是 Session 标题、归档状态、消息内容的**唯一事实来源**。
 
-本地持久化只保存：Panel 绑定了哪个 Session ID（存储在 Panel 布局状态中）。
+本地持久化只保存：Panel 绑定了哪个 Session ID（存储在 Panel 布局状态中）。Session Projection 只存在于内存中，刷新后必须从服务端和 SSE 重新构建。
 
 不持久化：
 
-- Session `status`（bound / idle / archived）——从 Panel 布局的 `sessionId` 绑定关系派生。
+- Session `status`（bound / idle / archived）——从 Panel 布局绑定和服务端归档字段派生。
 - Session `boundPanelId`——从 Panel 布局反向查找。
-- Session title 副本——从服务端 `sync.data.session` 获取，本地只做临时 optimistic 缓存。
-- Session 列表——从服务端 `spaceOverview` 获取。
+- Session title、副本、目录、时间戳和状态——由服务端投影提供，UI 不做 optimistic 伪造。
+- Session 列表——由 SessionTree 的服务端加载和 Shell SSE 对账写入内存 Projection。
 
 **事件处理规则**：
 
 | 事件 | 行为 |
 |------|------|
-| `session.created` | 按需刷新对应 Space 的 Session 树。 |
-| `session.deleted` | 解绑所有引用该 Session 的 Panel，释放对应 TUI PTY。 |
-| `session.updated`（含 `timeArchived`） | 同 `session.deleted`。 |
-| `session.updated`（标题变更） | 仅更新对应 `PanelChat` 内的本地投影，不触发树级 API 刷新。 |
+| `session.created` | 使对应 Space 的 SessionTree 加载失效；服务器返回后写入 Projection。 |
+| `session.deleted` | 通过 Action 解绑所有引用该 Session 的 Panel、释放对应 PTY，再删除 Projection。 |
+| `session.updated`（含 `timeArchived`） | 同 `session.deleted` 的归档/解绑语义，不能保留本地完整副本。 |
+| `session.updated`（标题变更） | Shell SSE 只 patch 对应 Projection 项；不伪造 Session 或触发无关树级重载。 |
 | `message.part.*` | 仅更新对应 `PanelChat` 的消息流，不触发树或其它 Panel 的更新。 |
 
-远端数据加载完成前（`sync.data.status !== "complete"`）不执行"会话是否在服务端缺失"的解绑检测，避免初始空数组误判。
-
-移除全局 `refreshKey` 信号，改为按 Space 定向的 Session 树失效。
+远端数据加载完成前不得根据空列表解绑 Panel，避免初始空数组误判。Projection 的失效信号只用于通知树重新拉取，不能承载会话领域数据，也不能写入持久化。
 
 ### 5.7 响应式与副作用约束
 

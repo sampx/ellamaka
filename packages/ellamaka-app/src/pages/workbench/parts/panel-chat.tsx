@@ -1,12 +1,11 @@
 import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
-import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
+import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { DataProvider } from "@opencode-ai/ui/context"
-import { base64Encode } from "@opencode-ai/core/util/encode"
-import { SDKProvider, useSDK } from "@/context/sdk"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
@@ -24,10 +23,13 @@ import { createSessionHistoryLoader } from "./panel-chat-helpers"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
-import { WorkbenchChatProvider } from "./workbench-chat-context"
-import { useWorkbenchState, type WorkbenchPanel } from "../view-store"
+import { EmbeddedSessionSurfaceProvider } from "@/pages/session/session-surface-context"
+import type { WorkbenchPanel } from "../view-store"
 import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
+import { useWorkbenchActions } from "../workbench-actions-context"
+import { scopeFromTab } from "../workbench-scope"
+import { panelChatRoute } from "./panel-chat-route"
 
 const emptyUserMessages: UserMessage[] = []
 
@@ -42,29 +44,38 @@ function PanelChatInner(props: {
   const sdk = useSDK()
   const prompt = usePrompt()
   const language = useLanguage()
-  const wb = useWorkbenchState()
+  const actions = useWorkbenchActions()
   const local = useLocal()
+  const scope = createMemo(() => scopeFromTab({ name: props.spaceName, path: props.spacePath }))
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
 
   useLocalPanelActions({
     sessionID: () => props.session.id,
-    navigateMessageByOffset: (offset) => {
+    navigateMessageByOffset: (_offset) => {
       // Not fully implemented here, stub
     },
-    setActiveMessage: (message) => {
+    setActiveMessage: (_message) => {
       // Stub
     },
     focusInput: () => inputRef?.focus(),
     registerAction: (id, execute, disabled) =>
-      wb.registerPanelAction(props.panel.id, {
+      actions.registerPanelAction(scope(), props.panel.id, {
         id,
         execute,
         disabled: typeof disabled === "function" ? disabled : disabled !== undefined ? () => disabled : undefined,
       }),
-    unregisterAction: (id) => wb.unregisterPanelAction(props.panel.id, id),
-    onForked: (newSessionID) => wb.handleSessionForked(props.spacePath, props.panel.id, newSessionID),
+    unregisterAction: (id) => actions.unregisterPanelAction(scope(), props.panel.id, id),
+    onForked: (newSessionID) => {
+      void actions.bindForkedSession({
+        scope: scope(),
+        sourcePanelID: props.panel.id,
+        sessionID: newSessionID,
+      }).catch((error) => {
+        console.error("Failed to bind forked Session", error)
+      })
+    },
   })
 
   const [ui, setUi] = createStore({
@@ -72,10 +83,8 @@ function PanelChatInner(props: {
   })
 
   let scroller: HTMLDivElement | undefined
-  let content: HTMLDivElement | undefined
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
-  let revealMessage = (_id: string) => {}
 
   const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
 
@@ -115,7 +124,6 @@ function PanelChatInner(props: {
   }
 
   const setContentRef = (el: HTMLDivElement) => {
-    content = el
     autoScroll.contentRef(el)
     const root = scroller
     if (root) scheduleScrollState(root)
@@ -130,16 +138,15 @@ function PanelChatInner(props: {
   })
 
   let inputRef: HTMLDivElement | undefined
-  let promptDockRef: HTMLDivElement | undefined
 
-  const messages = createMemo(() => (sync.data.message[props.session.id] ?? []) as Message[])
+  const messages = createMemo(() => sync.data.message[props.session.id] ?? [])
   const messagesReady = createMemo(() => sync.data.message[props.session.id] !== undefined)
 
-  const info = createMemo(() => (sync.data.session as any[]).find((item) => item.id === props.session.id))
+  const info = createMemo(() => sync.data.session.find((item) => item.id === props.session.id))
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
 
   const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    () => messages().filter((m) => m.role === "user"),
     emptyUserMessages,
     { equals: same },
   )
@@ -296,12 +303,12 @@ function PanelChatInner(props: {
   const restoring = createMemo(() => (restoreMutation.isPending ? restoreMutation.variables : undefined))
 
   const revert = (input: { sessionID: string; messageID: string }) => {
-    if (reverting()) return
+    if (reverting()) return undefined
     return revertMutation.mutateAsync(input)
   }
 
   const restore = (id: string) => {
-    if (!props.session.id || reverting()) return
+    if (!props.session.id || reverting()) return undefined
     return restoreMutation.mutateAsync(id)
   }
 
@@ -334,7 +341,7 @@ function PanelChatInner(props: {
             historyShift={historyLoader.shift()}
             userMessages={historyLoader.userMessages()}
             anchor={() => "#"}
-            setRevealMessage={(fn) => { revealMessage = fn }}
+            setRevealMessage={() => {}}
             actions={{ revert }}
           />
         </Show>
@@ -344,7 +351,7 @@ function PanelChatInner(props: {
         ready={messagesReady()}
         directory={props.directory}
         inputRef={(el) => { inputRef = el }}
-        setPromptDockRef={(el) => { promptDockRef = el }}
+        setPromptDockRef={() => {}}
         onSubmit={resumeScroll}
         onResponseSubmit={resumeScroll}
         revert={{
@@ -366,27 +373,25 @@ function PanelChatRoute(props: {
   spaceName: string
 }) {
   return (
-    <SDKProvider directory={props.directory}>
-      <PanelChatDataProvider session={props.session} directory={props.directory}>
-        <TerminalProvider>
-          <FileProvider>
-            <PromptProvider>
-              <CommentsProvider>
-                <WorkbenchChatProvider>
-                  <PanelChatInner
-                    panel={props.panel}
-                    session={props.session}
-                    directory={props.directory}
-                    spacePath={props.spacePath}
-                    spaceName={props.spaceName}
-                  />
-                </WorkbenchChatProvider>
-              </CommentsProvider>
-            </PromptProvider>
-          </FileProvider>
-        </TerminalProvider>
-      </PanelChatDataProvider>
-    </SDKProvider>
+    <PanelChatDataProvider session={props.session} directory={props.directory}>
+      <TerminalProvider>
+        <FileProvider>
+          <PromptProvider>
+            <CommentsProvider>
+              <EmbeddedSessionSurfaceProvider>
+                <PanelChatInner
+                  panel={props.panel}
+                  session={props.session}
+                  directory={props.directory}
+                  spacePath={props.spacePath}
+                  spaceName={props.spaceName}
+                />
+              </EmbeddedSessionSurfaceProvider>
+            </CommentsProvider>
+          </PromptProvider>
+        </FileProvider>
+      </TerminalProvider>
+    </PanelChatDataProvider>
   )
 }
 
@@ -394,32 +399,34 @@ export function PanelChat(props: {
   panel: WorkbenchPanel
   session: Session
   directory: string
-  sdk: any
   spacePath: string
   spaceName: string
 }) {
-  const dirSlug = createMemo(() => base64Encode(props.directory))
-  const history = createMemo(() => {
-    const h = createMemoryHistory()
-    h.set({ value: `/${dirSlug()}/session/${props.session.id}`, replace: true })
-    return h
-  })
+  const route = createMemo(() => panelChatRoute(props.directory, props.session.id))
 
   return (
-    <MemoryRouter history={history()}>
-      <Route
-        path="/:dir/session/:id"
-        component={() => (
-          <PanelChatRoute
-            panel={props.panel}
-            session={props.session}
-            directory={props.directory}
-            spacePath={props.spacePath}
-            spaceName={props.spaceName}
-          />
-        )}
-      />
-    </MemoryRouter>
+    <Show when={route()} keyed>
+      {(current) => {
+        const history = createMemoryHistory()
+        history.set({ value: current.path, replace: true })
+        return (
+          <MemoryRouter history={history}>
+            <Route
+              path="/:dir/session/:id"
+              component={() => (
+                <PanelChatRoute
+                  panel={props.panel}
+                  session={props.session}
+                  directory={props.directory}
+                  spacePath={props.spacePath}
+                  spaceName={props.spaceName}
+                />
+              )}
+            />
+          </MemoryRouter>
+        )
+      }}
+    </Show>
   )
 }
 
@@ -438,7 +445,7 @@ function PanelChatDataProvider(props: { session: Session; directory: string; chi
 
   return (
     <DataProvider
-      data={sync.data as any}
+      data={sync.data}
       directory={props.directory}
       onNavigateToSession={() => {}}
       onSessionHref={() => ""}

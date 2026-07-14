@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { PtyManager } from "./pty-manager"
 
 function createSDK() {
@@ -127,7 +127,7 @@ describe("PtyManager", () => {
 
   test("does not expose unload disposal methods", () => {
     const manager = new PtyManager()
-    expect((manager as any).disposeEverythingOnUnload).toBeUndefined()
-    expect((manager as any).disposeAllSyncOnUnload).toBeUndefined()
+    expect("disposeEverythingOnUnload" in manager).toBeFalse()
+    expect("disposeAllSyncOnUnload" in manager).toBeFalse()
   })
 })

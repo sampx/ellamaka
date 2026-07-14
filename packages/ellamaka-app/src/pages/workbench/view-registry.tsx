@@ -1,13 +1,13 @@
-import { type JSX, createSignal, createEffect, onCleanup, Show, batch } from "solid-js"
+import { type JSX, createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { MemoryRouter, createMemoryHistory, Route } from "@solidjs/router"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Terminal } from "@/components/terminal"
 import { SessionContextTab } from "@/components/session"
 import { PanelChat } from "./parts/panel-chat"
-import { useWorkbenchState, type WorkbenchPanel } from "./view-store"
-import { ptyManager } from "./pty-manager"
-import { disconnectRecovery } from "./parts/panel-session-lifecycle"
+import { type WorkbenchPanel } from "./view-store"
 import type { Session } from "./session-store"
+import { useWorkbenchActions } from "./workbench-actions-context"
+import { scopeFromTab } from "./workbench-scope"
 
 export type PanelViewCtx = {
   panel: WorkbenchPanel
@@ -49,7 +49,7 @@ registerView({
   requiresSession: true,
   showContext: false,
   render: (ctx) => {
-    const wb = useWorkbenchState()
+    const actions = useWorkbenchActions()
     const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
     let disposed = false
     onCleanup(() => {
@@ -60,20 +60,16 @@ registerView({
       if (ctx.panel.slotState !== "bound") return
       if (ctx.panel.viewMode !== "tui" && !ctx.panel.tuiPtyId) return
 
-      const existingId = ctx.panel.tuiPtyId
       const sessionId = ctx.session?.id
       const args = sessionId
         ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", sessionId, "--dir", ctx.directory]
         : undefined
 
-      ptyManager.ensure({
-        spacePath: ctx.spacePath,
-        panelId: ctx.panel.id,
+      void actions.ensurePanelPty({
+        scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
+        panelID: ctx.panel.id,
         kind: "tui",
-        existingPtyId: existingId,
-        sdk: ctx.sdk,
-        directory: ctx.directory,
-        createFn: async () => {
+        create: async () => {
           const res = await ctx.sdk.client.pty.create({
             command: "ellamaka",
             args,
@@ -82,13 +78,10 @@ registerView({
           })
           if (!res.data?.id) throw new Error("No PTY ID returned")
           return res.data.id
-        }
-      }).then((id) => {
+        },
+      }).then((result) => {
         if (disposed) return
-        setPtyId(id)
-        if (id !== existingId) {
-          wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", id)
-        }
+        if (result.ptyID) setPtyId(result.ptyID)
       }).catch(console.error)
     })
 
@@ -110,32 +103,24 @@ registerView({
             noPadding={true}
             isTui={true}
             onConnectError={() => {
-              ctx.sdk.client.pty.get({ ptyID: id }).then(() => {
-                // PTY still alive — keep state, Terminal will retry
-              }).catch(() => {
-                batch(() => {
-                  setPtyId(undefined)
-                  wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
-                  ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
-                  wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
-                })
-              })
+              void actions.recoverPanelPty({
+                scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
+                panelID: ctx.panel.id,
+                kind: "tui",
+                ptyID: id,
+              }).then((result) => {
+                if (result.status === "committed") setPtyId(undefined)
+              }).catch(console.error)
             }}
             onClose={() => {
-              ctx.sdk.client.pty.get({ ptyID: id }).then(() => {
-                const action = disconnectRecovery({ ptyAlive: true })
-                if (action === "reconnect") return
-              }).catch(() => {
-                const action = disconnectRecovery({ ptyAlive: false })
-                if (action === "reconnect") return
-                batch(() => {
-                  setPtyId(undefined)
-                  wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
-                  ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
-                  ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
-                  wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
-                })
-              })
+              void actions.recoverPanelPty({
+                scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
+                panelID: ctx.panel.id,
+                kind: "tui",
+                ptyID: id,
+              }).then((result) => {
+                if (result.status === "committed") setPtyId(undefined)
+              }).catch(console.error)
             }}
           />
         )}
@@ -160,7 +145,7 @@ registerView({
         </div>
       )
     }
-    return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} sdk={ctx.sdk} spacePath={ctx.spacePath} spaceName={ctx.spaceName} />
+    return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} spacePath={ctx.spacePath} spaceName={ctx.spaceName} />
   },
 })
 

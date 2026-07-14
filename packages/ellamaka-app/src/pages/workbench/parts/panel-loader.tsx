@@ -1,17 +1,14 @@
 import { createSignal, Show, createEffect } from "solid-js"
-import { useSDK } from "@/context/sdk"
-import { useSessionStore } from "../session-store"
-import { useWorkbenchState } from "../view-store"
 import type { WorkbenchPanel } from "../view-store"
+import { useWorkbenchActions } from "../workbench-actions-context"
+import { scopeFromTab } from "../workbench-scope"
 
 export function PanelLoader(props: {
   panel: WorkbenchPanel
   spaceName: string
   spacePath: string
 }) {
-  const sdk = useSDK()
-  const sessionStore = useSessionStore()
-  const wb = useWorkbenchState()
+  const actions = useWorkbenchActions()
 
   const [creating, setCreating] = createSignal(false)
   const [error, setError] = createSignal<string | undefined>()
@@ -28,19 +25,10 @@ export function PanelLoader(props: {
     setCreating(true)
     setError(undefined)
     try {
-      const target = isGeneral()
-        ? { type: "general" as const }
-        : { type: "space" as const, space: props.spaceName }
-
-      const res = await sdk.client.workbench.createSession({ target })
-      const session = res.data
-      if (!session?.id) {
-        throw new Error("Session creation returned no session id")
-      }
-      const title = session.title ?? (isGeneral() ? "New chat" : `${props.spaceName} chat`)
-      sessionStore.ensureSessionReference(session.id, props.spaceName, session.directory, "chat", title)
-      wb.bindSessionToPanel(props.spacePath, props.panel.id, session.id)
-      sessionStore.triggerRefresh()
+      await actions.createSession({
+        scope: scopeFromTab({ name: props.spaceName, path: props.spacePath }),
+        panelID: props.panel.id,
+      })
     } catch (err) {
       console.error("Failed to create session", err)
       setError("创建会话失败，请重试")

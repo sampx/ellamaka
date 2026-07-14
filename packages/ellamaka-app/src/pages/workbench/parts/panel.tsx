@@ -4,19 +4,20 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, onCleanup, For, createSignal, on, batch, onMount, createMemo } from "solid-js"
+import { Show, createEffect, For, createSignal, on, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
-import { ptyManager, ptyReferences } from "../pty-manager"
+import { useWorkbenchActions } from "../workbench-actions-context"
+import { scopeFromTab } from "../workbench-scope"
 import { getView, listViews } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
-import { disconnectRecovery, sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
+import { shouldRestoreBoundSession } from "./panel-session-lifecycle"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function Panel(props: {
@@ -27,25 +28,21 @@ export function Panel(props: {
   panelCount: number
   onActivate: () => void
   onModeChange: (mode: PanelMode) => void
-  onRemove: () => void
 }) {
   const language = useLanguage()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
   const sdk = useSDK()
   const wb = useWorkbenchState()
-  const { setPanelPtyId, setPanelSplitTerminal } = wb
+  const actions = useWorkbenchActions()
+  const { setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
+  const panelScope = () => scopeFromTab({ name: props.spaceName, path: props.spacePath })
 
 
 
-  const [mountedViews, setMountedViews] = createSignal<Set<string>>(new Set())
+  const [mountedViews, setMountedViews] = createSignal(new Set<string>())
   const [terminalTitle, setTerminalTitle] = createSignal<string>()
-  let unmounted = false
-  onCleanup(() => {
-    unmounted = true
-  })
-
   createEffect(
     on(
       () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode, props.panel.tuiPtyId] as const,
@@ -95,18 +92,12 @@ export function Panel(props: {
     if (!sessionID || restoringSessionIDs.has(sessionID)) return
 
     restoringSessionIDs.add(sessionID)
-    void sdk.client.session.get({ sessionID })
-      .then((result) => {
-        const session = result.data
-        if (!session) return
-        sessionStore.ensureSessionReference(
-          session.id,
-          props.spaceName,
-          session.directory || props.panel.directory,
-          "chat",
-          session.title || session.id,
-        )
-      })
+    void actions.refreshSession({
+      scope: panelScope(),
+      panelID: props.panel.id,
+      sessionID,
+      directory: props.panel.directory,
+    })
       .catch((error) => {
         console.error("Failed to restore bound session:", error)
       })
@@ -115,128 +106,32 @@ export function Panel(props: {
       })
   })
 
-
-  // Split terminal PTY is managed by panel.tsx via ptyManager
   createEffect(() => {
     const splitOpen = props.panel.splitTerminal
     const directory = props.panel.directory
-    const spacePath = props.spacePath
     const existingId = props.panel.splitPtyId
-
-    if (spacePath === undefined || spacePath === null) return
 
     if (splitOpen) {
       if (!existingId) setTerminalTitle(undefined)
-      ptyManager.ensure({
-        spacePath,
-        panelId: props.panel.id,
+      void actions.ensurePanelPty({
+        scope: panelScope(),
+        panelID: props.panel.id,
         kind: "split",
-        existingPtyId: existingId,
-        sdk,
-        directory,
-        createFn: async () => {
+        create: async () => {
           const res = await sdk.client.pty.create({
             cwd: directory,
             title: t("terminal.title"),
           })
           if (!res.data?.id) throw new Error("No PTY ID returned")
           return res.data.id
-        }
-      }).then((id) => {
-        if (unmounted || !props.panel.splitTerminal) return
-        if (id !== existingId) {
-          wb.setPanelPtyId(spacePath, props.panel.id, "split", id)
-        }
+        },
+      }).then((result) => {
+        if (result.status === "stale" || !props.panel.splitTerminal) return
       }).catch((err) => {
         console.error("Failed to create split pty:", err)
       })
     }
   })
-
-  // --- Session operations ---
-  const sessionId = () => props.panel.boundSessionId
-  const sessionInfo = () => sessionId() ? sessionStore.getSession(sessionId()!) : undefined
-
-  const handleRename = () => {
-    const id = sessionId()
-    if (!id) return
-    const current = sessionInfo()?.title ?? ""
-
-    let inputEl: HTMLInputElement | undefined
-    const [val, setVal] = createSignal(current)
-
-    dialog.show(() => (
-      <Dialog title={t("workbench.tree.rename") || "重命名会话"} fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3 min-w-[320px]">
-          <div class="flex flex-col gap-2">
-            <input
-              ref={inputEl}
-              type="text"
-              class="w-full px-3 py-1.5 text-12-regular text-text-strong bg-v2-background-bg-deep border border-v2-border-border-base rounded-md focus:outline-none focus:border-v2-border-border-brand-strong"
-              value={val()}
-              onInput={(e) => setVal(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const trimmed = val().trim()
-                  if (trimmed && trimmed !== current) {
-                    const directory = props.panel.directory
-                    sessionStore.renameSession(id, trimmed)
-                    void sdk.client.session.update({ sessionID: id, title: trimmed, directory }).catch(() => {})
-                  }
-                  dialog.close()
-                }
-                if (e.key === "Escape") dialog.close()
-              }}
-            />
-          </div>
-          <div class="flex justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-              {t("common.cancel") || "取消"}
-            </Button>
-            <Button
-              variant="primary"
-              size="large"
-              onClick={() => {
-                const trimmed = val().trim()
-                if (trimmed && trimmed !== current) {
-                  const directory = props.panel.directory
-                  sessionStore.renameSession(id, trimmed)
-                  void sdk.client.session.update({ sessionID: id, title: trimmed, directory }).catch(() => {})
-                }
-                dialog.close()
-              }}
-            >
-              {t("common.confirm") || "确认"}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
-    ))
-
-    setTimeout(() => {
-      inputEl?.focus()
-      inputEl?.select()
-    }, 50)
-  }
-
-  const handleCopyLink = () => {
-    const id = sessionId()
-    if (!id) return
-    const url = `${window.location.origin}${window.location.pathname}#/${btoa(props.panel.directory)}/session/${id}`
-    void navigator.clipboard.writeText(url).catch(() => {})
-  }
-
-  const handleOpenInNewPanel = () => {
-    const id = sessionId()
-    if (!id) return
-    const newPanelId = wb.addPanel(props.spacePath)
-    if (!newPanelId) return
-    // Unbind from current panel first to avoid double-binding
-    wb.unbindSessionFromPanel(props.spacePath, props.panel.id)
-    wb.bindSessionToPanel(props.spacePath, newPanelId, id)
-    wb.setActivePanel(props.spacePath, newPanelId)
-  }
-
   const handleToggleSplit = () => {
     const spacePath = props.spacePath
     if (spacePath === undefined || spacePath === null) return
@@ -248,44 +143,17 @@ export function Panel(props: {
   }
 
   const handleCloseSplit = () => {
-    const spacePath = props.spacePath
-    if (spacePath === undefined || spacePath === null) return
-    const ptyId = props.panel.splitPtyId
-    const next = reconcileSplitTerminalState({ open: !!props.panel.splitTerminal, ptyId }, "teardown")
-    batch(() => {
-      setPanelSplitTerminal(spacePath, props.panel.id, next.open)
-      setPanelPtyId(spacePath, props.panel.id, "split", next.ptyId)
-      setTerminalTitle(undefined)
-    })
-    void ptyManager.disposePty({
-      spacePath,
-      panelId: props.panel.id,
-      kind: "split",
-      knownPtyId: ptyId,
-      sdk,
-    })
+    void actions.closeSplitTerminal({ scope: panelScope(), panelID: props.panel.id })
+      .then(() => setTerminalTitle(undefined))
+      .catch((error) => console.error("Failed to close split terminal:", error))
   }
 
   const handleClose = () => {
     const spacePath = props.spacePath
     if (spacePath === undefined || spacePath === null) return
-
-    const slotState = props.panel.slotState
-
-    // bound Panel: unbind session, dispose PTYs and optionally remove panel
-    if (slotState === "bound") {
-      if (props.panelCount > 1) {
-        wb.removePanel(spacePath, props.panel.id)
-        return
-      }
-      wb.unbindSessionFromPanel(spacePath, props.panel.id)
-      void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
-      return
-    }
-
-    // empty Panel: direct remove if multiple exist
-    if (props.panelCount <= 1) return
-    wb.removePanel(spacePath, props.panel.id)
+    void actions.closePanel({ scope: panelScope(), panelID: props.panel.id }).catch((error) => {
+      console.error("Failed to close Workbench panel:", error)
+    })
   }
 
   function DialogOverwritePanel(props: {
@@ -350,7 +218,7 @@ export function Panel(props: {
 
     // Cross-space check
     if (dragSpaceName !== props.spaceName) {
-      dialog.show(() => (
+      void dialog.show(() => (
         <DialogCrossSpaceWarning
           dragSpace={dragSpaceName}
           targetSpace={props.spaceName}
@@ -363,13 +231,7 @@ export function Panel(props: {
       return
     }
 
-    // Try local session store first; if not found, it's a server session — create a local reference
-    let session = sessionStore.getSession(sessionId)
-    if (!session) {
-      const projectPath = e.dataTransfer?.getData("text/projectPath") || props.panel.directory
-      const sessionTitle = e.dataTransfer?.getData("text/sessionTitle") || sessionId
-      session = sessionStore.ensureSessionReference(sessionId, dragSpaceName, projectPath, "chat", sessionTitle)
-    }
+    const projectPath = e.dataTransfer?.getData("text/projectPath") || props.panel.directory
 
     const sessionBoundPanelId = wb.boundPanelIdForSession(sessionId)
     const boundPanel = sessionBoundPanelId && sessionBoundPanelId !== props.panel.id
@@ -382,61 +244,41 @@ export function Panel(props: {
       return
     }
 
-    const loadSessionIntoPanel = () => {
-      if (props.panel.slotState === "bound") {
-        void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
-        wb.setPanelPtyId(spacePath, props.panel.id, "tui", undefined)
-        wb.setPanelPtyId(spacePath, props.panel.id, "term", undefined)
-        wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
-        wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
-        wb.unbindSessionFromPanel(spacePath, props.panel.id)
-      }
-      wb.bindSessionToPanel(spacePath, props.panel.id, sessionId!)
-      wb.setPanelViewMode(spacePath, props.panel.id, "chat")
-      wb.setActivePanel(spacePath, props.panel.id)
+    const loadSessionIntoPanel = async () => {
+      await actions.loadSessionIntoPanel({
+        scope: panelScope(),
+        panelID: props.panel.id,
+        sessionID: sessionId,
+        directory: projectPath || spacePath,
+      })
     }
 
     if (props.panel.slotState === "bound") {
       const panelsList = wb.spaceState(spacePath)?.panels ?? []
       const idx = panelsList.findIndex((p) => p.id === props.panel.id)
-      dialog.show(() => (
+      void dialog.show(() => (
         <DialogOverwritePanel
           panelIndex={idx !== -1 ? idx + 1 : 1}
           onConfirm={() => {
-            loadSessionIntoPanel()
-            dialog.close()
+            void loadSessionIntoPanel()
+              .then(() => dialog.close())
+              .catch((error) => console.error("Failed to replace Workbench session:", error))
           }}
         />
       ))
     } else {
-      loadSessionIntoPanel()
+      void loadSessionIntoPanel().catch((error) => console.error("Failed to load Workbench session:", error))
     }
   }
 
-  function DialogClosePanel(props: { panel: WorkbenchPanel; spacePath: string; panelCount: number }) {
-    const session = () => sessionStore.getSession(props.panel.boundSessionId ?? "")
+  function DialogClosePanel(dialogProps: { panel: WorkbenchPanel }) {
+    const session = () => sessionStore.getSession(dialogProps.panel.boundSessionId ?? "")
     const sessionTitle = () => session()?.title ?? t("workbench.panelClose.title")
 
     const handleConfirm = () => {
-      const spacePath = props.spacePath
-      if (props.panelCount > 1) {
-        wb.removePanel(spacePath, props.panel.id)
-        dialog.close()
-        return
-      }
-
-      wb.unbindSessionFromPanel(spacePath, props.panel.id)
-      void ptyManager.disposePanel(spacePath, props.panel.id, sdk, ptyReferences(props.panel))
-      wb.setPanelSplitTerminal(spacePath, props.panel.id, false)
-      wb.setPanelPtyId(spacePath, props.panel.id, "split", undefined)
-
-      if (props.panelCount <= 1) {
-        // Last panel: clear to empty instead of removing
-        wb.setPanelSlotState(spacePath, props.panel.id, "empty")
-        wb.resetPanelWidths(spacePath)
-        dialog.close()
-        return
-      }
+      void actions.closePanel({ scope: panelScope(), panelID: dialogProps.panel.id })
+        .then(() => dialog.close())
+        .catch((error) => console.error("Failed to close Workbench panel:", error))
     }
 
     return (
@@ -617,12 +459,8 @@ export function Panel(props: {
               e.stopPropagation()
               e.preventDefault()
               if (props.panel.slotState === "bound") {
-                dialog.show(() => (
-                  <DialogClosePanel
-                    panel={props.panel}
-                    spacePath={props.spacePath}
-                    panelCount={props.panelCount}
-                  />
+                void dialog.show(() => (
+                  <DialogClosePanel panel={props.panel} />
                 ))
               } else {
                 setTimeout(() => handleClose(), 0)
@@ -737,28 +575,25 @@ export function Panel(props: {
                   class="w-full h-full"
                   noPadding={true}
                   onConnectError={() => {
-                    sdk.client.pty.get({ ptyID: ptyId }).then(() => {
-                      // PTY still alive — keep state, Terminal will retry
-                    }).catch(() => {
-                      setTerminalTitle(undefined)
-                      setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
-                    })
+                    void actions.recoverPanelPty({
+                      scope: panelScope(),
+                      panelID: props.panel.id,
+                      kind: "split",
+                      ptyID: ptyId,
+                    }).then((result) => {
+                      if (result.status === "committed") setTerminalTitle(undefined)
+                    }).catch(console.error)
                   }}
                   onTitleChange={(title) => setTerminalTitle(title)}
                   onClose={() => {
-                    sdk.client.pty.get({ ptyID: ptyId }).then(() => {
-                      const action = disconnectRecovery({ ptyAlive: true })
-                      if (action === "reconnect") return
-                    }).catch(() => {
-                      const action = disconnectRecovery({ ptyAlive: false })
-                      if (action === "reconnect") return
-                      batch(() => {
-                        setTerminalTitle(undefined)
-                        setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
-                        setPanelSplitTerminal(props.spacePath, props.panel.id, false)
-                        ptyManager.delete(props.spacePath, props.panel.id, "split")
-                      })
-                    })
+                    void actions.recoverPanelPty({
+                      scope: panelScope(),
+                      panelID: props.panel.id,
+                      kind: "split",
+                      ptyID: ptyId,
+                    }).then((result) => {
+                      if (result.status === "committed") setTerminalTitle(undefined)
+                    }).catch(console.error)
                   }}
                 />
               </div>

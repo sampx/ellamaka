@@ -3,22 +3,19 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { For, Show, createEffect, createMemo, batch, onMount, onCleanup, Suspense } from "solid-js"
+import { For, Show, createEffect, createMemo, batch, Suspense } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view-store"
-import { useSessionStore } from "../session-store"
 import { Panel } from "./panel"
 import { SDKProvider } from "@/context/sdk"
-import { useServerSDK } from "@/context/server-sdk"
-import { ptyManager } from "../pty-manager"
+import { useWorkbenchActions } from "../workbench-actions-context"
+import { scopeFromTab } from "../workbench-scope"
 
 import type { WorkbenchPanel } from "../view-store"
 
 export function Workspace() {
   const wb = useWorkbenchState()
   const language = useLanguage()
-  const sdk = useServerSDK()
   const t = (k: string) => language.t(k)
 
   const dialog = useDialog()
@@ -38,17 +35,17 @@ export function Workspace() {
   const currentPanels = () => currentSpace()?.panels ?? []
 
   const handlePanelResizeStart = (
-    e: MouseEvent,
+    e: MouseEvent & { currentTarget: HTMLDivElement },
     leftIndex: number,
     path: string,
     tabPanels: WorkbenchPanel[]
   ) => {
     e.preventDefault()
-    const handleEl = e.currentTarget as HTMLElement
-    const container = handleEl.closest(".tab-container") as HTMLElement
-    if (!container) return
+    const handleEl = e.currentTarget
+    const container = handleEl.closest(".tab-container")
+    if (!(container instanceof HTMLElement)) return
 
-    const panelElements = Array.from(container.querySelectorAll("[data-panel-id]")) as HTMLElement[]
+    const panelElements = Array.from(container.querySelectorAll<HTMLElement>("[data-panel-id]"))
     const leftPanelEl = panelElements[leftIndex]
     const rightPanelEl = panelElements[leftIndex + 1]
     if (!leftPanelEl || !rightPanelEl) return
@@ -94,7 +91,7 @@ export function Workspace() {
       const finalLeftFlex = parseFloat(leftPanelEl.style.flex)
       const finalRightFlex = parseFloat(rightPanelEl.style.flex)
 
-      if (path !== undefined && path !== null && !isNaN(finalLeftFlex) && !isNaN(finalRightFlex)) {
+      if (!isNaN(finalLeftFlex) && !isNaN(finalRightFlex)) {
         batch(() => {
           wb.setPanelWidth(path, leftPanelID, finalLeftFlex)
           wb.setPanelWidth(path, rightPanelID, finalRightFlex)
@@ -107,7 +104,7 @@ export function Workspace() {
   }
 
   const handleCloseTab = (name: string, path: string) => {
-    dialog.show(() => <DialogCloseTab name={name} path={path} />)
+    void dialog.show(() => <DialogCloseTab name={name} path={path} />)
   }
 
   return (
@@ -159,7 +156,6 @@ export function Workspace() {
                             panelCount={tabPanels().length}
                             onActivate={() => wb.setActivePanel(tab.path, panel.id)}
                             onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
-                            onRemove={() => wb.removePanel(tab.path, panel.id)}
                           />
                         </SDKProvider>
                       </Suspense>
@@ -242,7 +238,7 @@ function StageHeader(props: {
 
 function DialogCloseTab(props: { name: string; path: string }) {
   const wb = useWorkbenchState()
-  const sdk = useServerSDK()
+  const actions = useWorkbenchActions()
   const language = useLanguage()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k, params)
   const dialog = useDialog()
@@ -253,15 +249,7 @@ function DialogCloseTab(props: { name: string; path: string }) {
     wb.spaceState(props.path)?.panels.filter((p) => p.slotState === "bound").length ?? 0
 
   const handleConfirm = async () => {
-    const path = props.path
-    const panels = wb.spaceState(path)?.panels ?? []
-
-    // 1. Kill all PTYs owned by this space's panels using project-specific SDK context
-    await ptyManager.disposeSpace(path, sdk.createDirSdkContext(path), panels)
-
-    // 2. Destroy the entire space state from persisted store (will also trigger tab closure)
-    wb.removeSpace(path)
-
+    await actions.closeSpace(scopeFromTab({ name: props.name, path: props.path }))
     dialog.close()
   }
 

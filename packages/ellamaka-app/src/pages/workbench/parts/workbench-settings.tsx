@@ -16,7 +16,7 @@ export function WorkbenchSettingsMenu() {
   function openGlobalSettings() {
     setOpen(false)
     void import("@/components/dialog-settings").then((x) => {
-      dialog.show(() => <x.DialogSettings />)
+      void dialog.show(() => <x.DialogSettings />)
     })
   }
 

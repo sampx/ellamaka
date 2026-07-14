@@ -1,25 +1,19 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/components/button-v2.jsx"
-import { createMemo, Show } from "solid-js"
+import { Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
-import { useServerSDK } from "@/context/server-sdk"
+import { useSDK } from "@/context/sdk"
 import { useWorkbenchState } from "../view-store"
-import { resolveOfficialRoute } from "../surface-route"
+import { resolveOfficialRoute } from "@/utils/official-route"
 
 export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
-  const sdk = useServerSDK()
+  const sdk = useSDK()
   const language = useLanguage()
   const navigate = useNavigate()
   const t = (k: string) => language.t(k)
 
-  const activeDir = () => wb.activeDirectory
-  const dirSdk = createMemo(() => {
-    const dir = activeDir()
-    if (!dir) return
-    return sdk.createDirSdkContext(dir)
-  })
-  const isWopalSpace = () => dirSdk()?.isWopalSpace ?? false
+  const isWopalSpace = () => sdk.isWopalSpace
 
   const activeTab = () => wb.activeTab()
   const spaceType = () => activeTab()?.type?.toUpperCase() ?? ""

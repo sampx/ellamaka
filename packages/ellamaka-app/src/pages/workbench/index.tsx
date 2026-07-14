@@ -1,7 +1,7 @@
-import { Show, createMemo, onMount, onCleanup } from "solid-js"
-import { SpaceStoreProvider, useSpaceStore } from "./space-store"
+import { Show, onMount, onCleanup } from "solid-js"
+import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
-import { SessionStoreProvider, useSessionStore } from "./session-store"
+import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
 import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
@@ -10,36 +10,38 @@ import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionE
 import { useServerSDK } from "@/context/server-sdk"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
+import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions-context"
+import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
+  const actions = useWorkbenchActions()
   useWorkbenchCommands()
   const spaceStore = useSessionStore()
+  const projection = useSessionProjectionWriter()
   const allStoresReady = () => wb.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
 
   onMount(() => {
-    console.log("=== WORKBENCH MOUNTED ===", Date.now())
     const unsub = sdk.event.listen((e) => {
-      const session = workbenchSessionEvent(e.details as {
-        type?: string
-        properties?: { sessionID?: string; info?: { id?: string; title?: string; time?: { archived?: number } } }
-      } | undefined)
+      const session = workbenchSessionEvent(e.details)
       if (shouldUnbindSessionFromEvent({ type: session.type, timeArchived: session.timeArchived })) {
         if (session.sessionId) {
-          wb.unbindSessionGlobal(session.sessionId)
-          spaceStore.deleteSession(session.sessionId)
+          void actions.unbindSessionEverywhere(session.sessionId).catch((error) => {
+            console.error("Failed to unbind deleted Workbench session:", error)
+          })
+          projection.remove(session.sessionId)
         }
-        spaceStore.triggerRefresh()
+        projection.invalidate()
         return
       }
       if (session.type === "session.created") {
-        spaceStore.triggerRefresh()
+        projection.invalidate()
       }
       if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: spaceStore.getSession(session.sessionId ?? "")?.title })) {
-        spaceStore.syncSessionReference(session.sessionId!, { title: session.title! })
-        spaceStore.triggerRefresh()
+        projection.patch(session.sessionId!, { title: session.title! })
+        projection.invalidate()
       }
     })
 
@@ -64,7 +66,9 @@ function WorkbenchShell() {
         }
       >
         <Show when={display().showTitlebar}>
-          <WorkbenchTitlebar />
+          <WorkbenchActiveDirectoryProvider>
+            {() => <WorkbenchTitlebar />}
+          </WorkbenchActiveDirectoryProvider>
         </Show>
         <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <SpaceRail />
@@ -85,9 +89,11 @@ export default function Workbench() {
     <WorkbenchSingletonGuard>
       <SessionStoreProvider>
         <WorkbenchStateProvider>
-          <SpaceStoreProvider>
-            <WorkbenchShell />
-          </SpaceStoreProvider>
+          <WorkbenchActionsProvider>
+            <SpaceStoreProvider>
+              <WorkbenchShell />
+            </SpaceStoreProvider>
+          </WorkbenchActionsProvider>
         </WorkbenchStateProvider>
       </SessionStoreProvider>
     </WorkbenchSingletonGuard>

@@ -13,6 +13,7 @@ export function sessionDropRejection(input: {
 }) {
   if (input.targetSlotState !== "empty") return "target-occupied" as const
   if (input.sourceHasLiveBinding) return "session-already-open" as const
+  return undefined
 }
 
 export function shouldRestoreBoundSession(input: {
@@ -48,18 +49,20 @@ export function disconnectRecovery(input: { ptyAlive: boolean }): DisconnectReco
   return input.ptyAlive ? "reconnect" : "fallback"
 }
 
-export function workbenchSessionEvent(input?: {
-  type?: string
-  properties?: {
-    sessionID?: string
-    info?: { id?: string; title?: string; time?: { archived?: number } }
-  }
-}) {
-  const info = input?.properties?.info
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+export function workbenchSessionEvent(input?: unknown) {
+  const properties = record(input) && record(input.properties) ? input.properties : undefined
+  const info = record(properties?.info) ? properties.info : undefined
+  const time = record(info?.time) ? info.time : undefined
   return {
-    type: input?.type,
-    sessionId: input?.properties?.sessionID ?? info?.id,
-    title: info?.title,
-    timeArchived: info?.time?.archived,
+    type: record(input) && typeof input.type === "string" ? input.type : undefined,
+    sessionId:
+      (typeof properties?.sessionID === "string" ? properties.sessionID : undefined) ??
+      (typeof info?.id === "string" ? info.id : undefined),
+    title: typeof info?.title === "string" ? info.title : undefined,
+    timeArchived: typeof time?.archived === "number" ? time.archived : undefined,
   }
 }

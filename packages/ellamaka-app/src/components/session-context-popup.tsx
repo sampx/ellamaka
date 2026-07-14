@@ -7,7 +7,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 
 /**
- * ContextPopup — context usage 浮层入口。
+ * SessionContextPopup — context usage 浮层入口。
  *
  * 渲染一个圆形进度环 trigger + popover 浮层（tokens / usage bar / cost / metrics）。
  * 圆环填充度反映 token 使用率。
@@ -18,7 +18,7 @@ import { getSessionContextMetrics } from "@/components/session/session-context-m
  *   圆环一致，但点击行为切到弹出 popover 而不是打开侧边 tab）。
  *   外部 trigger 必须是可点击元素且能被 Popover 的 trigger ref 接管（一般为 Button）。
  */
-export function ContextPopup(props: {
+export function SessionContextPopup(props: {
   sessionId?: string
   directory?: string
   children?: JSX.Element

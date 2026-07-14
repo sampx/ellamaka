@@ -1,20 +1,41 @@
 import { describe, expect, test } from "bun:test"
-import { serverSessionReferenceUpdates } from "./session-store"
+import { createSessionProjection, type Session } from "./session-store"
 
-describe("ensureSessionReference", () => {
-  test("replaces a stale local title with the authoritative server title", () => {
-    expect(
-      serverSessionReferenceUpdates({
-        title: "New session - 2026-07-09T04:04:53.724Z",
-        type: "chat",
-        projectPath: "/repo",
-        directoryHealth: "healthy",
-      }),
-    ).toEqual({
-      title: "New session - 2026-07-09T04:04:53.724Z",
-      type: "chat",
-      projectPath: "/repo",
-      directoryHealth: "healthy",
-    })
+const serverSession = (updates: Partial<Session> = {}): Session => ({
+  id: "session-a",
+  spaceName: "Space A",
+  projectPath: "/fixtures/space-a",
+  type: "chat",
+  title: "Server title",
+  directoryHealth: "healthy",
+  createdAt: 10,
+  lastActiveAt: 20,
+  ...updates,
+})
+
+describe("SessionProjection", () => {
+  test("replaces stale fields with the latest authoritative server projection", () => {
+    const projection = createSessionProjection()
+
+    projection.writer.upsert(serverSession({ title: "Old title", lastActiveAt: 15 }))
+    projection.writer.upsert(serverSession())
+
+    expect(projection.reader.getSession("session-a")).toEqual(serverSession())
+  })
+
+  test("moves a Session when the server projection changes its owning Space", () => {
+    const projection = createSessionProjection()
+
+    projection.writer.upsert(serverSession())
+    projection.writer.upsert(serverSession({ spaceName: "Space B", projectPath: "/fixtures/space-b" }))
+
+    expect(projection.reader.spaceSessions("Space A")).toEqual([])
+    expect(projection.reader.spaceSessions("Space B")).toHaveLength(1)
+  })
+
+  test("keeps mutation methods off the UI reader", () => {
+    const projection = createSessionProjection()
+
+    expect(Object.keys(projection.reader).sort()).toEqual(["getSession", "refreshKey", "sessions", "spaceSessions"])
   })
 })

@@ -1,279 +1,90 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, onMount, createEffect, createSignal, onCleanup } from "solid-js"
-import { createStore, produce } from "solid-js/store"
 import { makePersisted } from "@solid-primitives/storage"
-import { useServerSDK } from "@/context/server-sdk"
-import { useSessionStore } from "./session-store"
-import { ptyManager, ptyReferences } from "./pty-manager"
+import { batch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { createStore } from "solid-js/store"
+import {
+  clonePersistedWorkbench,
+  createWorkbenchStore,
+  PERSISTED_DEFAULTS,
+  type PersistedWorkbench,
+  type WorkbenchSessionBinding,
+} from "./workbench-store"
 
-export type PanelMode = "tui" | "chat"
-export type PanelSlotState = "empty" | "bound"
-export type PanelViewMode = string
+export {
+  DISPLAY_DEFAULTS,
+  GENERAL_TAB_NAME,
+  GENERAL_TAB_PATH,
+  type PanelMode,
+  type PanelSlotState,
+  type PanelViewMode,
+  type SpaceWorkbenchState,
+  type WorkbenchDisplayState,
+  type WorkbenchPanel,
+  type WopalSpace,
+} from "./workbench-store"
 
-export interface WorkbenchAction {
-  id: string
-  disabled?: () => boolean
-  execute: () => void
-}
-export type PanelActionRegistry = Record<string, WorkbenchAction>
-
-export type WorkbenchPanel = {
-  id: string
-  slotState: PanelSlotState
-  boundSessionId?: string
-  viewMode?: PanelViewMode
-  mode: PanelMode
-  directory: string
-  width: number
-  splitTerminal?: boolean
-  tuiPtyId?: string
-  termPtyId?: string
-  splitPtyId?: string
-  splitHeight?: number
-}
-
-export type SpaceWorkbenchState = {
-  panels: WorkbenchPanel[]
-  activePanelID: string
-}
-
-export type WorkbenchDisplayState = {
-  showTitlebar: boolean
-  showStatusbar: boolean
-  showSpaceRail: boolean
-}
-
-export type WopalSpace = {
-  name: string
-  path: string
-  type?: string
-}
-
-type PersistedWorkbench = {
-  display: WorkbenchDisplayState
-  spaces: Record<string, SpaceWorkbenchState>
-  tabs: WopalSpace[]
-  activeSpaceName?: string
-}
-
-function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
-  const firstID = uniqueID()
-  return {
-    panels: [{ id: firstID, slotState: "empty", mode: "" as PanelMode, directory, width: 1 }],
-    activePanelID: firstID,
-  }
-}
-
-let _nextPanelSeq = 0
-function uniqueID(): string {
-  _nextPanelSeq++
-  const ts = Date.now().toString(36)
-  return `p-${ts}-${_nextPanelSeq}`
-}
-
-const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
-  showTitlebar: true,
-  showStatusbar: true,
-  showSpaceRail: true,
-}
-
-export const GENERAL_TAB_NAME = "General"
-export const GENERAL_TAB_PATH = ""
 const STATUS_MESSAGE_DURATION = 5_000
 
-const PERSISTED_DEFAULTS: PersistedWorkbench = {
-  display: { ...DISPLAY_DEFAULTS },
-  spaces: {},
-  tabs: [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }],
-  activeSpaceName: GENERAL_TAB_NAME,
-}
-
-export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = createSimpleContext({
+const WorkbenchStateContext = createSimpleContext({
   name: "WorkbenchState",
   init: () => {
-    const sdk = useServerSDK()
-    const sessionStore = useSessionStore()
+    const workbench = createWorkbenchStore()
+    const [hydrated, setHydrated] = createSignal(false)
 
-    // 物理擦除历史 Key 债务，干净无污染
     if (typeof window !== "undefined" && window.localStorage) {
-      const dirtyKeys = ["workbench.v2", "workbench.v1", "workbench.spacetabs", "workbench.activespace"]
-      for (const key of dirtyKeys) {
+      for (const key of ["workbench.v2", "workbench.v1", "workbench.spacetabs", "workbench.activespace"]) {
         try {
           window.localStorage.removeItem(key)
-        } catch (e) {
-          console.error("Failed to remove legacy storage key", key, e)
+        } catch (error) {
+          console.error("Failed to remove legacy storage key", key, error)
         }
       }
     }
 
-    // 1. 使用 localStorage 持久化界面布局（panel 结构、session 绑定、directory 等）
-    //    PTY id 不持久化——关 tab 时由 unload handler 杀掉 PTY 并清空 ptyId
-    const [persistedStore, setPersistedStore] = makePersisted(
-      createStore<PersistedWorkbench>(PERSISTED_DEFAULTS),
+    const [persisted, setPersisted] = makePersisted(
+      createStore<PersistedWorkbench>(clonePersistedWorkbench(PERSISTED_DEFAULTS)),
       {
         name: "workbench",
         storage: typeof window !== "undefined" ? window.localStorage : undefined,
-      }
+      },
     )
 
-    // 2. 内存工作 Store - 支持 0 延迟实时交互
-    const [store, setStore] = createStore<PersistedWorkbench>(JSON.parse(JSON.stringify(PERSISTED_DEFAULTS)))
-    const [storeHydrated, setStoreHydrated] = createSignal(false)
-
-    // 在 mounted 时，一次性同步复制 sessionStorage 的数据至运行 Store
     onMount(() => {
-      const snapshot = JSON.parse(JSON.stringify(persistedStore))
-      let tabs = snapshot.tabs || []
-      if (!tabs.some((t: any) => t.path === GENERAL_TAB_PATH)) {
-        tabs = [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...tabs]
-      }
-      batch(() => {
-        setStore("display", snapshot.display)
-        setStore("spaces", snapshot.spaces)
-        setStore("tabs", tabs)
-        setStore("activeSpaceName", snapshot.activeSpaceName || GENERAL_TAB_NAME)
-      })
-      setStoreHydrated(true)
+      workbench.hydrate(persisted)
+      setHydrated(true)
     })
 
-    const ready = () => storeHydrated()
+    let saveTimer: ReturnType<typeof setTimeout> | undefined
+    let dirty = false
 
-    const [refreshVersion, setRefreshVersion] = createSignal(0)
-    function triggerRefresh() {
-      setRefreshVersion((v) => v + 1)
-    }
-
-    const [panelActions, setPanelActions] = createSignal<Record<string, PanelActionRegistry>>({})
-
-    function registerPanelAction(panelID: string, action: WorkbenchAction) {
-      setPanelActions((prev) => ({
-        ...prev,
-        [panelID]: {
-          ...(prev[panelID] || {}),
-          [action.id]: action,
-        },
-      }))
-    }
-
-    function unregisterPanelAction(panelID: string, actionId: string) {
-      setPanelActions((prev) => {
-        const next = { ...prev }
-        if (next[panelID]) {
-          next[panelID] = { ...next[panelID] }
-          delete next[panelID][actionId]
-        }
-        return next
-      })
-    }
-
-    const activeTabInfo = () => store.tabs.find((t) => t.name === store.activeSpaceName)
-
-    function getActivePanelAction(actionId: string): WorkbenchAction | undefined {
-      const activeTab = activeTabInfo()
-      if (!activeTab) return undefined
-      const space = store.spaces[activeTab.path]
-      if (!space) return undefined
-      const actionsForPanel = panelActions()[space.activePanelID]
-      return actionsForPanel ? actionsForPanel[actionId] : undefined
-    }
-
-    function canExecuteActivePanelAction(actionId: string): boolean {
-      const action = getActivePanelAction(actionId)
-      if (!action) return false
-      return action.disabled ? !action.disabled() : true
-    }
-
-    function executeActivePanelAction(actionId: string) {
-      const action = getActivePanelAction(actionId)
-      if (action) action.execute()
-    }
-
-    const [persistentHint, setPersistentHintValue] = createSignal("")
-    let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
-
-    function setPersistentHint(message: string) {
-      if (persistentHintTimer) clearTimeout(persistentHintTimer)
-      persistentHintTimer = undefined
-      setPersistentHintValue(message)
-      if (!message) return
-      persistentHintTimer = setTimeout(() => {
-        setPersistentHintValue("")
-        persistentHintTimer = undefined
-      }, STATUS_MESSAGE_DURATION)
-    }
-
-    const [statusMessage, setStatusMessageValue] = createSignal("")
-    let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
-
-    function setStatusMessage(message: string) {
-      if (statusMessageTimer) clearTimeout(statusMessageTimer)
-      statusMessageTimer = undefined
-      setStatusMessageValue(message)
-      if (!message) return
-      statusMessageTimer = setTimeout(() => {
-        setStatusMessageValue("")
-        statusMessageTimer = undefined
-      }, STATUS_MESSAGE_DURATION)
-    }
-
-    onCleanup(() => {
-      if (statusMessageTimer) clearTimeout(statusMessageTimer)
-      if (persistentHintTimer) clearTimeout(persistentHintTimer)
-    })
-
-    // 3. 150ms debounce 防抖优化写入
-    let saveTimer: any = null
-    let isDirty = false
-
-    const syncToPersisted = (opts?: { stripPtyIds?: boolean }) => {
-      if (!isDirty && !opts?.stripPtyIds) return
-      isDirty = false
-      if (saveTimer) {
-        clearTimeout(saveTimer)
-        saveTimer = null
-      }
-      const snapshot = JSON.parse(JSON.stringify(store)) as PersistedWorkbench
-      if (opts?.stripPtyIds) {
-        // Persisted state is layout only — PTY ids are transient and backend-killed
-        // on unload. Stripping them here (rather than mutating the store) avoids
-        // re-triggering SolidJS createEffects that would re-create PTYs during the
-        // pagehide window before the page is torn down.
-        for (const space of Object.values(snapshot.spaces)) {
-          for (const panel of space.panels) {
-            panel.tuiPtyId = undefined
-            panel.termPtyId = undefined
-            panel.splitPtyId = undefined
-          }
-        }
-      }
+    const syncToPersisted = () => {
+      if (!dirty) return
+      dirty = false
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = undefined
+      const snapshot = workbench.snapshot()
       batch(() => {
-        setPersistedStore("display", snapshot.display)
-        setPersistedStore("spaces", snapshot.spaces)
-        setPersistedStore("tabs", snapshot.tabs)
-        setPersistedStore("activeSpaceName", snapshot.activeSpaceName)
+        setPersisted("display", snapshot.display)
+        setPersisted("spaces", snapshot.spaces)
+        setPersisted("tabs", snapshot.tabs)
+        setPersisted("activeSpaceName", snapshot.activeSpaceName)
       })
     }
 
     const queueSave = () => {
-      isDirty = true
+      dirty = true
       if (saveTimer) clearTimeout(saveTimer)
       saveTimer = setTimeout(syncToPersisted, 150)
     }
 
     createEffect(() => {
-      // 建立深度响应式依赖
-      JSON.stringify(store)
-      if (ready() && storeHydrated()) {
-        queueSave()
-      }
+      JSON.stringify(workbench.snapshot())
+      if (hydrated()) queueSave()
     })
 
-    // 4. visibilitychange/pagehide 事件同步 Flush 门禁
     onMount(() => {
       const handleVisibility = () => {
-        if (document.visibilityState === "hidden") {
-          syncToPersisted()
-        }
+        if (document.visibilityState === "hidden") syncToPersisted()
       }
       const handlePageHide = () => syncToPersisted()
       window.addEventListener("visibilitychange", handleVisibility)
@@ -285,490 +96,85 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       })
     })
 
-    const flushPersisted = (opts?: { stripPtyIds?: boolean }) => {
-      isDirty = true
-      if (saveTimer) {
-        clearTimeout(saveTimer)
-        saveTimer = null
-      }
-      syncToPersisted(opts)
+    const [refreshVersion, setRefreshVersion] = createSignal(0)
+    const [persistentHint, setPersistentHintValue] = createSignal("")
+    const [statusMessage, setStatusMessageValue] = createSignal("")
+    let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
+    let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
+
+    const timedMessage = (
+      message: string,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      setTimer: (value: ReturnType<typeof setTimeout> | undefined) => void,
+      setValue: (value: string) => void,
+    ) => {
+      if (timer) clearTimeout(timer)
+      setTimer(undefined)
+      setValue(message)
+      if (!message) return
+      setTimer(setTimeout(() => {
+        setValue("")
+        setTimer(undefined)
+      }, STATUS_MESSAGE_DURATION))
     }
 
-    const display = createMemo(() => store.display)
-
-    function spaceState(path: string): SpaceWorkbenchState | undefined {
-      return store.spaces[path]
+    const setPersistentHint = (message: string) => {
+      timedMessage(message, persistentHintTimer, (value) => { persistentHintTimer = value }, setPersistentHintValue)
+    }
+    const setStatusMessage = (message: string) => {
+      timedMessage(message, statusMessageTimer, (value) => { statusMessageTimer = value }, setStatusMessageValue)
     }
 
-    function ensureSpace(path: string) {
-      if (!store.spaces[path]) {
-        setStore("spaces", path, defaultSpaceState(path))
-        return
-      }
-      migrateLegacyPanels(path)
-    }
+    onCleanup(() => {
+      if (persistentHintTimer) clearTimeout(persistentHintTimer)
+      if (statusMessageTimer) clearTimeout(statusMessageTimer)
+    })
 
-    function migrateLegacyPanels(path: string) {
-      const space = store.spaces[path]
-      if (!space) return
-      const needsMigration = space.panels.some(
-        (p) => (p as Record<string, unknown>).slotState === undefined,
-      )
-      if (!needsMigration) return
-      setStore("spaces", path, "panels", (panels) =>
-        panels.map((panel) => {
-          if ((panel as Record<string, unknown>).slotState !== undefined) return panel
-          if (panel.tuiPtyId) {
-            return { ...panel, slotState: "bound" as PanelSlotState, viewMode: "tui" }
-          }
-          return { ...panel, slotState: "empty" as PanelSlotState }
-        }),
-      )
-    }
-
-    function addPanel(path: string): string | undefined {
-      ensureSpace(path)
-      const space = store.spaces[path]
-      if (!space || space.panels.length >= 3) return
-      const id = uniqueID()
-      setStore("spaces", path, "panels", space.panels.length, {
-        id,
-        slotState: "empty" as PanelSlotState,
-        mode: "" as PanelMode,
-        viewMode: "chat",
-        directory: path,
-        width: 1,
-      })
-      return id
-    }
-
-    function removePanel(path: string, id: string) {
-      const space = store.spaces[path]
-      if (!space || space.panels.length <= 1) return
-
-      const panel = space.panels.find((p) => p.id === id)
-      if (panel) {
-        void ptyManager.disposePanel(path, id, sdk, ptyReferences(panel))
-      }
-
-      batch(() => {
-        setStore(
-          "spaces",
-          path,
-          produce((s) => {
-            const index = s.panels.findIndex((p) => p.id === id)
-            if (index !== -1) {
-              s.panels.splice(index, 1)
-            }
-            if (s.activePanelID === id) s.activePanelID = s.panels[0]?.id ?? ""
-            
-            // Auto reset widths of remaining panels to ensure they fill the screen
-            s.panels.forEach((p) => {
-              p.width = 1
-            })
-          }),
-        )
-      })
-    }
-
-    function setPanelMode(path: string, id: string, mode: PanelMode) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          panel.mode = mode
-          panel.viewMode = mode
-        }),
-      )
-    }
-
-    function setPanelPtyId(path: string, id: string, type: "tui" | "term" | "split", ptyId: string | undefined) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          if (type === "tui") panel.tuiPtyId = ptyId
-          else if (type === "term") panel.termPtyId = ptyId
-          else if (type === "split") panel.splitPtyId = ptyId
-        }),
-      )
-    }
-
-    function setPanelSplitTerminal(path: string, id: string, open: boolean) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          panel.splitTerminal = open
-        }),
-      )
-    }
-
-    function setActivePanel(path: string, id: string) {
-      ensureSpace(path)
-      setStore("spaces", path, "activePanelID", id)
-    }
-
-    function setPanelDirectory(path: string, id: string, directory: string) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          panel.directory = directory
-        }),
-      )
-    }
-
-    function setDisplay<K extends keyof WorkbenchDisplayState>(key: K, value: WorkbenchDisplayState[K]) {
-      setStore("display", key, value)
-    }
-
-    function setPanelWidth(path: string, id: string, width: number) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          panel.width = width
-        }),
-      )
-    }
-
-    function setPanelSplitHeight(path: string, id: string, height: number) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === id,
-        produce((panel) => {
-          panel.splitHeight = height
-        }),
-      )
-    }
-
-    function resetPanelWidths(path: string) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        () => true,
-        produce((panel) => {
-          panel.width = 1
-        }),
-      )
-    }
-    async function killPtySafe(directory: string, ptyId: string | undefined) {
-      if (!ptyId) return
-      try {
-        await sdk.createDirSdkContext(directory).client.pty.remove({ ptyID: ptyId })
-      } catch (err) {
-        console.error(`Failed to kill pty process ${ptyId}:`, err)
-      }
-    }
-    function clearSpacePtyIds(path: string) {
-      ensureSpace(path)
-      const space = store.spaces[path]
-      if (space) {
-        space.panels.forEach((panel) => {
-          void killPtySafe(panel.directory, panel.tuiPtyId)
-          void killPtySafe(panel.directory, panel.termPtyId)
-          void killPtySafe(panel.directory, panel.splitPtyId)
-        })
-      }
-
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        () => true,
-        produce((panel) => {
-          panel.tuiPtyId = undefined
-          panel.termPtyId = undefined
-          panel.splitPtyId = undefined
-        }),
-      )
-    }
-
-    function removeSpace(path: string) {
-      if (!store.spaces[path]) return
-      // 同时在 Tabs 中关闭对应的 tab
-      const foundTab = store.tabs.find((t) => t.path === path)
-      if (foundTab) {
-        closeTab(foundTab.name)
-      }
-      setStore(
-        "spaces",
-        produce((spaces) => {
-          delete spaces[path]
-        }),
-      )
-    }
-
-    function bindSessionToPanel(path: string, panelId: string, sessionId: string) {
-      ensureSpace(path)
-      const session = sessionStore.getSession(sessionId)
-      if (!session) return
-      const sessionDir = session.projectPath || path
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === panelId,
-        produce((panel) => {
-          panel.slotState = "bound"
-          panel.boundSessionId = sessionId
-          panel.viewMode = session.type
-          panel.mode = session.type as PanelMode
-          panel.directory = sessionDir
-        }),
-      )
-    }
-
-    function unbindSessionFromPanel(path: string, panelId: string) {
-      ensureSpace(path)
-      const space = store.spaces[path]
-      const panel = space?.panels?.find((p) => p.id === panelId)
-      if (panel) {
-        void killPtySafe(panel.directory, panel.tuiPtyId)
-        void killPtySafe(panel.directory, panel.termPtyId)
-        void killPtySafe(panel.directory, panel.splitPtyId)
-      }
-
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === panelId,
-        produce((panel) => {
-          panel.slotState = "empty"
-          panel.boundSessionId = undefined
-          panel.tuiPtyId = undefined
-          panel.termPtyId = undefined
-          panel.splitPtyId = undefined
-        }),
-      )
-    }
-
-    function unbindSessionGlobal(sessionId: string) {
-      batch(() => {
-        Object.keys(store.spaces).forEach((path) => {
-          const space = store.spaces[path]
-          if (!space) return
-          space.panels.forEach((panel) => {
-            if (panel.boundSessionId === sessionId) {
-              unbindSessionFromPanel(path, panel.id)
-            }
-          })
-        })
-      })
-    }
-
-    function setPanelSlotState(path: string, panelId: string, state: PanelSlotState) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === panelId,
-        produce((panel) => {
-          panel.slotState = state
-        }),
-      )
-    }
-
-    function setPanelViewMode(path: string, panelId: string, mode: PanelViewMode) {
-      ensureSpace(path)
-      setStore(
-        "spaces",
-        path,
-        "panels",
-        (p) => p.id === panelId,
-        produce((panel) => {
-          panel.viewMode = mode
-          panel.mode = mode as PanelMode
-        }),
-      )
-    }
-
-    // 5. 动态计算 Session 状态派生，实现单向解耦
-    function isSessionBound(sessionId: string): boolean {
-      for (const spacePath of Object.keys(store.spaces)) {
-        const space = store.spaces[spacePath]
-        if (!space) continue
-        const found = space.panels.some((p) => p.boundSessionId === sessionId && p.slotState === "bound")
-        if (found) return true
-      }
-      return false
-    }
-
-    function boundPanelIdForSession(sessionId: string): string | undefined {
-      for (const spacePath of Object.keys(store.spaces)) {
-        const space = store.spaces[spacePath]
-        if (!space) continue
-        const found = space.panels.find((p) => p.boundSessionId === sessionId && p.slotState === "bound")
-        if (found) return found.id
-      }
-      return undefined
-    }
-
-    // 6. Tabs 和 Active Space 逻辑合并
-    const activeTab = createMemo(() => store.tabs.find((t) => t.name === store.activeSpaceName))
-
-    function openTab(space: WopalSpace) {
-      batch(() => {
-        if (!store.tabs.find((t) => t.name === space.name)) {
-          setStore("tabs", store.tabs.length, { name: space.name, path: space.path, type: space.type })
-        }
-        setStore("activeSpaceName", space.name)
-      })
-    }
-
-    function closeTab(name: string) {
-      if (name === GENERAL_TAB_NAME) return
-
-      const targetTab = store.tabs.find((t) => t.name === name)
-      const path = targetTab?.path
-
-      if (path) {
-        const space = store.spaces[path]
-        if (space) {
-          space.panels.forEach((panel) => {
-            void killPtySafe(panel.directory, panel.tuiPtyId)
-            void killPtySafe(panel.directory, panel.termPtyId)
-            void killPtySafe(panel.directory, panel.splitPtyId)
-          })
-        }
-      }
-
-      batch(() => {
-        const idx = store.tabs.findIndex((t) => t.name === name)
-        if (idx === -1) return
-        setStore("tabs", (arr) => arr.filter((t) => t.name !== name))
-        if (store.activeSpaceName === name) {
-          const next = store.tabs[idx + 1] ?? store.tabs[idx - 1]
-          setStore("activeSpaceName", next?.name)
-        }
-      })
-    }
-
-    function setActive(name: string) {
-      if (store.tabs.find((t) => t.name === name)) {
-        setStore("activeSpaceName", name)
-      }
-    }
-
-    function validateTabs(validNames: Set<string>) {
-      batch(() => {
-        setStore("tabs", (prev) => {
-          const filtered = prev.filter((t) => t.name === GENERAL_TAB_NAME || validNames.has(t.name))
-          return filtered.length === prev.length ? prev : filtered
-        })
-        const current = store.activeSpaceName
-        if (current && current !== GENERAL_TAB_NAME && !validNames.has(current)) {
-          setStore("activeSpaceName", store.tabs[0]?.name)
-        } else if (!current && store.tabs.length > 0) {
-          setStore("activeSpaceName", store.tabs[0].name)
-        }
-      })
-    }
-
-    function handleSessionForked(spacePath: string, sourcePanelID: string, newSessionID: string) {
-      const newPanelId = addPanel(spacePath)
-      if (newPanelId) {
-        bindSessionToPanel(spacePath, newPanelId, newSessionID)
-      } else {
-        bindSessionToPanel(spacePath, sourcePanelID, newSessionID)
-      }
-    }
+    const bindSessionToPanel = (path: string, panelID: string, session: WorkbenchSessionBinding) =>
+      workbench.bindSessionToPanel(path, panelID, session)
 
     return {
-      ready: storeHydrated,
-      display,
-      get spaces() { return store.spaces },
-      spaceState,
-      ensureSpace,
-      addPanel,
-      removePanel,
-      setPanelMode,
-      setPanelPtyId,
-      setPanelSplitTerminal,
-      setActivePanel,
-      setPanelDirectory,
-      setDisplay,
-      clearSpacePtyIds,
-      removeSpace,
-      setPanelWidth,
-      setPanelSplitHeight,
-      resetPanelWidths,
+      ready: hydrated,
+      display: () => workbench.display,
+      get spaces() { return workbench.spaces },
+      spaceState: workbench.spaceState,
+      ensureSpace: workbench.ensureSpace,
+      addPanel: workbench.addPanel,
+      removePanel: workbench.removePanel,
+      setPanelMode: workbench.setPanelMode,
+      setPanelPtyId: workbench.setPanelPtyId,
+      setPanelSplitTerminal: workbench.setPanelSplitTerminal,
+      setActivePanel: workbench.setActivePanel,
+      setPanelDirectory: workbench.setPanelDirectory,
+      setDisplay: workbench.setDisplay,
+      removeSpace: workbench.removeSpace,
+      setPanelWidth: workbench.setPanelWidth,
+      setPanelSplitHeight: workbench.setPanelSplitHeight,
+      resetPanelWidths: workbench.resetPanelWidths,
       bindSessionToPanel,
-      unbindSessionFromPanel,
-      registerPanelAction,
-      unregisterPanelAction,
-      canExecuteActivePanelAction,
-      executeActivePanelAction,
-      handleSessionForked,
-      unbindSessionGlobal,
-      setPanelSlotState,
-      setPanelViewMode,
-      isSessionBound,
-      boundPanelIdForSession,
-      get tabs() { return store.tabs },
-      activeTab,
-      get activeDirectory() {
-        const tab = activeTab()
-        if (!tab) return ""
-        const space = store.spaces[tab.path]
-        if (!space) return ""
-        const panel = space.panels.find((p) => p.id === space.activePanelID)
-        return panel?.directory ?? ""
-      },
-      get activeSpaceName() { return store.activeSpaceName },
-      openTab,
-      closeTab,
-      setActive,
-      validateTabs,
-      clearAllPtyIds() {
-        for (const path of Object.keys(store.spaces)) {
-          const space = store.spaces[path]
-          if (!space) continue
-          setStore("spaces", path, "panels", () => true, produce((panel) => {
-            panel.tuiPtyId = undefined
-            panel.termPtyId = undefined
-            panel.splitPtyId = undefined
-          }))
-        }
-      },
-      hasActivePty() {
-        for (const path of Object.keys(store.spaces)) {
-          const space = store.spaces[path]
-          if (!space) continue
-          if (space.panels.some((p) => p.tuiPtyId || p.termPtyId || p.splitPtyId)) return true
-        }
-        return false
-      },
-      flushPersisted,
+      unbindSessionFromPanel: workbench.unbindSessionFromPanel,
+      unbindSessionGlobal: workbench.unbindSessionGlobal,
+      setPanelSlotState: workbench.setPanelSlotState,
+      setPanelViewMode: workbench.setPanelViewMode,
+      isSessionBound: workbench.isSessionBound,
+      boundPanelIdForSession: workbench.boundPanelIdForSession,
+      get tabs() { return workbench.tabs },
+      activeTab: workbench.activeTab,
+      get activeDirectory() { return workbench.activeDirectory },
+      get activeSpaceName() { return workbench.activeSpaceName },
+      openTab: workbench.openTab,
+      closeTab: workbench.closeTab,
+      setActive: workbench.setActive,
+      validateTabs: workbench.validateTabs,
       get statusMessage() { return statusMessage() },
       setStatusMessage,
       get persistentHint() { return persistentHint() },
       setPersistentHint,
       get refreshVersion() { return refreshVersion() },
-      triggerRefresh,
+      triggerRefresh: () => setRefreshVersion((version) => version + 1),
     }
   },
 })
+
+export const useWorkbenchState = () => WorkbenchStateContext.use()
+export const WorkbenchStateProvider = WorkbenchStateContext.provider

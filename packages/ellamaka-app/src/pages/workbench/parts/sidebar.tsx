@@ -1,5 +1,4 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
-import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Show, createMemo, createSignal, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"

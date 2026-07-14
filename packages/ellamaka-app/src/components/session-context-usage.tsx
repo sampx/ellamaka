@@ -11,9 +11,8 @@ import { useProviders } from "@/hooks/use-providers"
 import { getSessionContextMetrics } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
-// WopalSpace workbench injection — minimal import + early-return guard (see AGENTS.md)
-import { useWorkbenchChat } from "@/pages/workbench/parts/workbench-chat-context"
-import { ContextPopup } from "@/pages/workbench/parts/context-popup"
+import { SessionContextPopup } from "@/components/session-context-popup"
+import { useSessionSurface } from "@/pages/session/session-surface-context"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -41,7 +40,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   // WopalSpace workbench injection: workbench 上下文中圆环点击应弹 popup 而不是打开侧边 tab。
   // 官方 Layout 的 reviewPanel/fileTree/tabs 基础设施在 workbench PanelChat 中不存在，
   // 调用 openSessionContext 会失败。用 ContextPopup popover 替代。
-  const workbench = useWorkbenchChat()
+  const embedded = useSessionSurface()?.kind === "embedded"
 
   const variant = createMemo(() => props.variant ?? "button")
   const tabState = createSessionTabs({
@@ -111,7 +110,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   return (
     <Show when={params.id}>
       {/* WopalSpace workbench injection: workbench 上下文中弹 popup 替代打开侧边 tab */}
-      <Show when={workbench} fallback={
+      <Show when={embedded} fallback={
         <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
           <Switch>
             <Match when={variant() === "indicator"}>{circle()}</Match>
@@ -129,7 +128,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
           </Switch>
         </Tooltip>
       }>
-        <ContextPopup sessionId={params.id} />
+        <SessionContextPopup sessionId={params.id} />
       </Show>
     </Show>
   )
