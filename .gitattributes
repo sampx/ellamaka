@@ -9,3 +9,4 @@ scripts/** merge=ours
 docs/** merge=ours
 .husky/** merge=ours
 packages/ellamaka-app/** merge=ours
+packages/ellamaka-desktop/** merge=ours

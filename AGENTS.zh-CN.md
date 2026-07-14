@@ -17,7 +17,9 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
+- DESKTOP: `docs/DESKTOP.md` — ellamaka-desktop 架构设计、状态所有权、PTY 生命周期与侧车集成
 - opencode package rules: `packages/opencode/AGENTS.md`
+- desktop package rules: `packages/ellamaka-desktop/AGENTS.md`
 
 ## 2. Architecture and Directories
 
@@ -31,6 +33,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | `packages/plugin/`, `packages/script/`, `packages/util/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
 | `packages/ellamaka/` | 品牌常量（branding.ts/channel）、品牌字模（logo.ts）、构建包装（build.ts）、WopalSpace 自动检测（detect.ts）、安装路径判断（is-wopal-install.ts）及包级测试 |
+| `packages/ellamaka-desktop/` | Electron 桌面应用（v1.15.13 基线），承载 ellamaka-app Workbench 和本地 Ellamaka sidecar；包级规则见 `packages/ellamaka-desktop/AGENTS.md` |
 | `docs/` | project DESIGN、BRANDING、DISTRIBUTION、references、research 和 plans |
 
 ### 2.1 Wopal 集成模块
@@ -78,6 +81,11 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | Workbench 开发服务 | `./scripts/dev.sh serve` | 从任意目录调用；启动后端 `:4096` 与 `ellamaka-app` `:3000/workbench` |
 | 停止 Workbench 开发服务 | `./scripts/dev.sh stop` | 停止当前端口组合记录的后端与 Workbench 进程 |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
+| Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | TypeScript 类型检查 |
+| Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | 运行桌面测试（需 electron mock） |
+| Desktop build | `bun run build` from `packages/ellamaka-desktop` | 构建 main/preload/renderer |
+| Desktop package:mac | `bun run package:mac` from `packages/ellamaka-desktop` | 生成未签名 macOS DMG/ZIP 开发构建 |
+| Sidecar build | `cd ../opencode && bun script/build-node.ts` | 构建 sidecar node runtime（桌面构建前置条件） |
 
 测试不能从 repo root 运行；root `test` script 是 guard。
 
