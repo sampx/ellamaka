@@ -34,7 +34,7 @@
 
 | 路径 | 原用途 | 删除原因 |
 |------|--------|----------|
-| `packages/desktop/` | OpenCode v1.15.13 Electron 桌面端 | 上游包不直接保留；桌面产品由独立 `packages/ellamaka-desktop/` 承接（§17） |
+| `packages/desktop/` | OpenCode Electron 桌面端上游基线 | **保留**作为 `ellamaka-desktop` 的上游参照；定期 diff 并选择性回移安全/兼容修复（§17.4） |
 | `packages/enterprise/`、`console/`、`function/` | SaaS/Cloud 后台 | ellamaka 无云端服务 |
 | `packages/containers/` | Docker 构建 | 不通过 Docker 分发 |
 | `packages/shared/` | 旧共享包（上游 v1.14.25 重命名为 `packages/core/`） | 上游 rename 后残留，合并时清理 |

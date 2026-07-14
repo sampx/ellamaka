@@ -266,7 +266,7 @@ Install contract：
 ellamaka 安装完成后，运行时加载链路按 WopalSpace mode 工作：
 
 1. 读取全局配置根 `~/.wopal/ellamaka/config/`
-2. 在 `--wopal-space` 模式下发现 `<space>/.wopal/`
+2. 自动检测到 WopalSpace 后加载 `<space>/.wopal/`
 3. 合并 `<space>/.wopal/config/settings.jsonc` 中的 `ellamaka` 与 `tui` 配置
 4. 加载 `<space>/.wopal/agents/*.md`
 5. 加载 `<space>/.wopal/commands/*.md`
