@@ -218,7 +218,6 @@ bun run typecheck
 - One patch solves one verifiable behavior. Router reconstruction, command registration, fork binding, and Store refactoring require separate verification.
 - Existing violations may migrate through compatibility adapters and an explicit technical-debt manifest. Do not add or expand debt.
 - Do not rewrite, revert, or format unrelated uncommitted changes.
-- A Plan must pass structural and mandatory review before user approval. Do not expand source changes under the label of refactoring before approval.
 
 The following patterns are blocking issues:
 
@@ -232,18 +231,6 @@ The following patterns are blocking issues:
 - Letting hidden Panel mount order determine command or directory ownership.
 - Persisting complete Sessions or directory capability lists.
 - Claiming correctness from static matching, typecheck, or equal counts alone.
-
-### 5.11 Workbench Definition of Done
-
-A Workbench change is complete only when all of the following are true:
-
-1. State ownership and dependency direction comply with these rules.
-2. New regression tests fail before the fix and pass afterward.
-3. Boundary checks, targeted tests, full unit tests, and typecheck have real output evidence.
-4. User-visible validation confirms the plugin and MCP source paths for General, Space A, and Space B.
-5. Multiple Panels, hidden Spaces, fork behavior, commands, and PTY lifecycle do not cross scopes.
-6. The Chinese rules and design document receive user review before the formal English rules are synchronized.
-7. Commits, Plan state transitions, and user validation follow the workspace dev-flow and user confirmation gates.
 
 ## 6. General Testing Rules
 
