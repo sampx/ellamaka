@@ -16,7 +16,7 @@ import { PanelLoader } from "./panel-loader"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
-import { sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
+import { disconnectRecovery, sessionDropRejection, shouldAcceptSessionDrop, shouldRestoreBoundSession } from "./panel-session-lifecycle"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function Panel(props: {
@@ -48,13 +48,14 @@ export function Panel(props: {
 
   createEffect(
     on(
-      () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode] as const,
-      ([nextBoundSessionId, slotState, viewMode], previous) => {
+      () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode, props.panel.tuiPtyId] as const,
+      ([nextBoundSessionId, slotState, viewMode, tuiPtyId], previous) => {
         setMountedViews((prev) => reconcileMountedViews(prev, {
           prevBoundSessionId: previous?.[0],
           nextBoundSessionId,
           slotState,
           viewMode,
+          hasTuiPtyId: !!tuiPtyId,
         }))
       },
     ),
@@ -713,55 +714,56 @@ export function Panel(props: {
           />
         </Show>
 
-        {/* Lower Split Terminal Area */}
-        <Show when={props.panel.splitTerminal}>
-          <div
-            class="min-w-0 flex flex-col relative overflow-hidden bg-v2-background-bg-deep flex-shrink-0"
-            style={{ height: `${splitHeight()}px` }}
-          >
-            <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
-              <span class="tracking-wider">{splitTitle()}</span>
-              <button
-                class="hover:text-v2-text-text-base cursor-pointer p-0.5 rounded transition-colors"
-                onClick={handleCloseSplit}
-              >
-                ✕
-              </button>
-            </div>
-            <div class="flex-1 min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
-              <Show
-                when={props.panel.splitPtyId}
-                keyed
-                fallback={
-                  <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-                    <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-                    <span class="text-10-regular">{t("workbench.panel.splitTerminal.loading")}</span>
-                  </div>
-                }
-              >
-                {(ptyId) => (
-                  <Terminal
-                    pty={{ id: ptyId, title: splitTitle(), titleNumber: 3 }}
-                    class="w-full h-full"
-                    noPadding={true}
-                    onConnectError={() => {
+        {/* Lower Split Terminal Area — kept mounted when collapsed to preserve WebSocket subscriber */}
+        <Show when={props.panel.splitPtyId} keyed>
+          {(ptyId) => (
+            <div
+              class="min-w-0 flex flex-col relative overflow-hidden bg-v2-background-bg-deep flex-shrink-0"
+              classList={{ "hidden": !props.panel.splitTerminal }}
+              style={{ height: `${splitHeight()}px` }}
+            >
+              <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
+                <span class="tracking-wider">{splitTitle()}</span>
+                <button
+                  class="hover:text-v2-text-text-base cursor-pointer p-0.5 rounded transition-colors"
+                  onClick={handleCloseSplit}
+                >
+                  ✕
+                </button>
+              </div>
+              <div class="flex-1 min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
+                <Terminal
+                  pty={{ id: ptyId, title: splitTitle(), titleNumber: 3 }}
+                  class="w-full h-full"
+                  noPadding={true}
+                  onConnectError={() => {
+                    sdk.client.pty.get({ ptyID: ptyId }).then(() => {
+                      // PTY still alive — keep state, Terminal will retry
+                    }).catch(() => {
                       setTerminalTitle(undefined)
                       setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
-                    }}
-                    onTitleChange={(title) => setTerminalTitle(title)}
-                    onClose={() => {
+                    })
+                  }}
+                  onTitleChange={(title) => setTerminalTitle(title)}
+                  onClose={() => {
+                    sdk.client.pty.get({ ptyID: ptyId }).then(() => {
+                      const action = disconnectRecovery({ ptyAlive: true })
+                      if (action === "reconnect") return
+                    }).catch(() => {
+                      const action = disconnectRecovery({ ptyAlive: false })
+                      if (action === "reconnect") return
                       batch(() => {
                         setTerminalTitle(undefined)
                         setPanelPtyId(props.spacePath, props.panel.id, "split", undefined)
                         setPanelSplitTerminal(props.spacePath, props.panel.id, false)
                         ptyManager.delete(props.spacePath, props.panel.id, "split")
                       })
-                    }}
-                  />
-                )}
-              </Show>
+                    })
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
         </Show>
       </div>
       <style>

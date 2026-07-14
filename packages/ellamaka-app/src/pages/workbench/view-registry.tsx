@@ -6,6 +6,7 @@ import { SessionContextTab } from "@/components/session"
 import { PanelChat } from "./parts/panel-chat"
 import { useWorkbenchState, type WorkbenchPanel } from "./view-store"
 import { ptyManager } from "./pty-manager"
+import { disconnectRecovery } from "./parts/panel-session-lifecycle"
 import type { Session } from "./session-store"
 
 export type PanelViewCtx = {
@@ -56,7 +57,8 @@ registerView({
     })
 
     createEffect(() => {
-      if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return
+      if (ctx.panel.slotState !== "bound") return
+      if (ctx.panel.viewMode !== "tui" && !ctx.panel.tuiPtyId) return
 
       const existingId = ctx.panel.tuiPtyId
       const sessionId = ctx.session?.id
@@ -108,19 +110,31 @@ registerView({
             noPadding={true}
             isTui={true}
             onConnectError={() => {
-              batch(() => {
-                setPtyId(undefined)
-                wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
-                ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
+              ctx.sdk.client.pty.get({ ptyID: id }).then(() => {
+                // PTY still alive — keep state, Terminal will retry
+              }).catch(() => {
+                batch(() => {
+                  setPtyId(undefined)
+                  wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+                  ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
+                  wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
+                })
               })
             }}
             onClose={() => {
-              batch(() => {
-                setPtyId(undefined)
-                wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
-                ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
-                ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
-                wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
+              ctx.sdk.client.pty.get({ ptyID: id }).then(() => {
+                const action = disconnectRecovery({ ptyAlive: true })
+                if (action === "reconnect") return
+              }).catch(() => {
+                const action = disconnectRecovery({ ptyAlive: false })
+                if (action === "reconnect") return
+                batch(() => {
+                  setPtyId(undefined)
+                  wb.setPanelPtyId(ctx.spacePath, ctx.panel.id, "tui", undefined)
+                  ptyManager.delete(ctx.spacePath, ctx.panel.id, "tui")
+                  ctx.sdk.client.pty.remove({ ptyID: id }).catch(console.error)
+                  wb.setPanelViewMode(ctx.spacePath, ctx.panel.id, "chat")
+                })
               })
             }}
           />

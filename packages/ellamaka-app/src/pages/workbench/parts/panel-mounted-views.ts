@@ -5,6 +5,7 @@ type ReconcileMountedViewsInput = {
   nextBoundSessionId?: string
   slotState: PanelSlotState
   viewMode?: PanelViewMode
+  hasTuiPtyId?: boolean
 }
 
 export function reconcileMountedViews(prev: Set<string>, input: ReconcileMountedViewsInput): Set<string> {
@@ -14,6 +15,10 @@ export function reconcileMountedViews(prev: Set<string>, input: ReconcileMounted
 
   if (input.slotState !== "empty" && input.viewMode) {
     next.add(input.viewMode)
+  }
+
+  if (input.slotState !== "empty" && input.hasTuiPtyId) {
+    next.add("tui")
   }
 
   if (prev.size === next.size && [...prev].every((item) => next.has(item))) {

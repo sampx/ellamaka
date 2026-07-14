@@ -1,8 +1,8 @@
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
-import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
+import { InstanceState } from "@/effect/instance-state"
 import { lazy } from "@opencode-ai/core/util/lazy"
 import { Plugin } from "@/plugin"
 import { Shell } from "@/shell/shell"
@@ -34,6 +34,8 @@ type Active = {
   bufferCursor: number
   cursor: number
   subscribers: Map<unknown, Socket>
+  bridge: EffectBridge.Shape
+  reaper?: ReturnType<typeof setTimeout>
 }
 
 type State = {
@@ -122,14 +124,18 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Pty") {}
 
-export const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
+const DEFAULT_GRACE_MS = 10_000
+
+export const makeLayer = (graceMs: number = DEFAULT_GRACE_MS) =>
+  Layer.effect(
+    Service,
+    Effect.gen(function* () {
     const config = yield* Config.Service
     const bus = yield* Bus.Service
     const plugin = yield* Plugin.Service
 
     function teardown(session: Active) {
+      cancelReaper(session)
       try {
         session.process.kill()
       } catch {}
@@ -171,10 +177,28 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       const session = yield* requireSession(id)
       s.sessions.delete(id)
+      cancelReaper(session)
       log.info("removing session", { id })
+      session.info.status = "exited"
       teardown(session)
       yield* bus.publish(Event.Deleted, { id: session.info.id })
     })
+
+    const cancelReaper = (session: Active) => {
+      if (!session.reaper) return
+      clearTimeout(session.reaper)
+      session.reaper = undefined
+    }
+
+    const startReaper = (session: Active) => {
+      cancelReaper(session)
+      session.reaper = setTimeout(() => {
+        session.reaper = undefined
+        if (session.subscribers.size === 0) {
+          session.bridge.fork(remove(session.info.id).pipe(Effect.ignore))
+        }
+      }, graceMs)
+    }
 
     const list = Effect.fn("Pty.list")(function* () {
       const s = yield* InstanceState.get(state)
@@ -238,8 +262,10 @@ export const layer = Layer.effect(
         bufferCursor: 0,
         cursor: 0,
         subscribers: new Map(),
+        bridge,
       }
       s.sessions.set(id, session)
+      startReaper(session)
       proc.onData((chunk) => {
         session.cursor += chunk.length
 
@@ -257,6 +283,10 @@ export const layer = Layer.effect(
           } catch {
             session.subscribers.delete(key)
           }
+        }
+
+        if (session.subscribers.size === 0 && !session.reaper) {
+          startReaper(session)
         }
 
         session.buffer += chunk
@@ -315,6 +345,7 @@ export const layer = Layer.effect(
       const sub = sock(ws)
       session.subscribers.delete(sub)
       session.subscribers.set(sub, ws)
+      cancelReaper(session)
 
       const cleanup = () => {
         session.subscribers.delete(sub)
@@ -360,6 +391,9 @@ export const layer = Layer.effect(
         onClose: () => {
           log.info("client disconnected from session", { id })
           cleanup()
+          if (session.subscribers.size === 0) {
+            startReaper(session)
+          }
         },
       }
     })
@@ -367,6 +401,8 @@ export const layer = Layer.effect(
     return Service.of({ list, get, create, update, remove, resize, write, connect })
   }),
 )
+
+export const layer = makeLayer()
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Bus.layer),

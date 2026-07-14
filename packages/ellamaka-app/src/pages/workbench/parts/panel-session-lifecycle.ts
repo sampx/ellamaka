@@ -42,6 +42,12 @@ export function shouldSyncSessionTitle(input: {
   return input.title !== input.localTitle
 }
 
+export type DisconnectRecovery = "reconnect" | "fallback"
+
+export function disconnectRecovery(input: { ptyAlive: boolean }): DisconnectRecovery {
+  return input.ptyAlive ? "reconnect" : "fallback"
+}
+
 export function workbenchSessionEvent(input?: {
   type?: string
   properties?: {

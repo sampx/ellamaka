@@ -34,4 +34,16 @@ describe("reconcileMountedViews", () => {
 
     expect([...next]).toEqual([])
   })
+
+  test("preserves TUI view in background when hasTuiPtyId is true", () => {
+    const next = reconcileMountedViews(new Set(), {
+      prevBoundSessionId: "ses-1",
+      nextBoundSessionId: "ses-1",
+      slotState: "bound",
+      viewMode: "chat",
+      hasTuiPtyId: true,
+    })
+
+    expect([...next]).toEqual(["chat", "tui"])
+  })
 })
