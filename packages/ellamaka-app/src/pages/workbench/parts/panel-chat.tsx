@@ -1,4 +1,4 @@
-import { createMemo, createEffect, onCleanup, Show, batch } from "solid-js"
+import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -12,18 +12,21 @@ import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
 import { CommentsProvider } from "@/context/comments"
-import { LocalProvider } from "@/context/local"
+import { LocalProvider, useLocal } from "@/context/local"
 import { useLanguage } from "@/context/language"
 import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { extractPromptFromParts } from "@/utils/prompt"
+import { findLast } from "@opencode-ai/core/util/array"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { createSessionHistoryLoader } from "./panel-chat-helpers"
+import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
 import { WorkbenchChatProvider } from "./workbench-chat-context"
-import type { WorkbenchPanel } from "../view-store"
+import { useWorkbenchState, type WorkbenchPanel } from "../view-store"
+import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
 
 const emptyUserMessages: UserMessage[] = []
@@ -39,9 +42,30 @@ function PanelChatInner(props: {
   const sdk = useSDK()
   const prompt = usePrompt()
   const language = useLanguage()
+  const wb = useWorkbenchState()
+  const local = useLocal()
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
+
+  useLocalPanelActions({
+    sessionID: () => props.session.id,
+    navigateMessageByOffset: (offset) => {
+      // Not fully implemented here, stub
+    },
+    setActiveMessage: (message) => {
+      // Stub
+    },
+    focusInput: () => inputRef?.focus(),
+    registerAction: (id, execute, disabled) =>
+      wb.registerPanelAction(props.panel.id, {
+        id,
+        execute,
+        disabled: typeof disabled === "function" ? disabled : disabled !== undefined ? () => disabled : undefined,
+      }),
+    unregisterAction: (id) => wb.unregisterPanelAction(props.panel.id, id),
+    onForked: (newSessionID) => wb.handleSessionForked(props.spacePath, props.panel.id, newSessionID),
+  })
 
   const [ui, setUi] = createStore({
     scroll: { overflow: false, bottom: true, jump: false },
@@ -128,6 +152,19 @@ function PanelChatInner(props: {
     },
     emptyUserMessages,
     { equals: same },
+  )
+
+  const lastUserMessage = createMemo(() => findLast(visibleUserMessages(), (m) => m.role === "user"))
+
+  createEffect(
+    on(
+      () => lastUserMessage()?.id,
+      () => {
+        const msg = lastUserMessage()
+        if (!msg) return
+        syncSessionModel(local, msg)
+      },
+    ),
   )
 
   const historyMore = () => sync.session.history.more(props.session.id)
@@ -406,7 +443,7 @@ function PanelChatDataProvider(props: { session: Session; directory: string; chi
       onNavigateToSession={() => {}}
       onSessionHref={() => ""}
     >
-      <LocalProvider>{props.children}</LocalProvider>
+      <LocalProvider sessionID={props.session.id}>{props.children}</LocalProvider>
     </DataProvider>
   )
 }

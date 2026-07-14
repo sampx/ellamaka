@@ -10,6 +10,13 @@ export type PanelMode = "tui" | "chat"
 export type PanelSlotState = "empty" | "bound"
 export type PanelViewMode = string
 
+export interface WorkbenchAction {
+  id: string
+  disabled?: () => boolean
+  execute: () => void
+}
+export type PanelActionRegistry = Record<string, WorkbenchAction>
+
 export type WorkbenchPanel = {
   id: string
   slotState: PanelSlotState
@@ -134,6 +141,51 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
     const [refreshVersion, setRefreshVersion] = createSignal(0)
     function triggerRefresh() {
       setRefreshVersion((v) => v + 1)
+    }
+
+    const [panelActions, setPanelActions] = createSignal<Record<string, PanelActionRegistry>>({})
+
+    function registerPanelAction(panelID: string, action: WorkbenchAction) {
+      setPanelActions((prev) => ({
+        ...prev,
+        [panelID]: {
+          ...(prev[panelID] || {}),
+          [action.id]: action,
+        },
+      }))
+    }
+
+    function unregisterPanelAction(panelID: string, actionId: string) {
+      setPanelActions((prev) => {
+        const next = { ...prev }
+        if (next[panelID]) {
+          next[panelID] = { ...next[panelID] }
+          delete next[panelID][actionId]
+        }
+        return next
+      })
+    }
+
+    const activeTabInfo = () => store.tabs.find((t) => t.name === store.activeSpaceName)
+
+    function getActivePanelAction(actionId: string): WorkbenchAction | undefined {
+      const activeTab = activeTabInfo()
+      if (!activeTab) return undefined
+      const space = store.spaces[activeTab.path]
+      if (!space) return undefined
+      const actionsForPanel = panelActions()[space.activePanelID]
+      return actionsForPanel ? actionsForPanel[actionId] : undefined
+    }
+
+    function canExecuteActivePanelAction(actionId: string): boolean {
+      const action = getActivePanelAction(actionId)
+      if (!action) return false
+      return action.disabled ? !action.disabled() : true
+    }
+
+    function executeActivePanelAction(actionId: string) {
+      const action = getActivePanelAction(actionId)
+      if (action) action.execute()
     }
 
     const [persistentHint, setPersistentHintValue] = createSignal("")
@@ -636,6 +688,15 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       })
     }
 
+    function handleSessionForked(spacePath: string, sourcePanelID: string, newSessionID: string) {
+      const newPanelId = addPanel(spacePath)
+      if (newPanelId) {
+        bindSessionToPanel(spacePath, newPanelId, newSessionID)
+      } else {
+        bindSessionToPanel(spacePath, sourcePanelID, newSessionID)
+      }
+    }
+
     return {
       ready: storeHydrated,
       display,
@@ -657,6 +718,11 @@ export const { use: useWorkbenchState, provider: WorkbenchStateProvider } = crea
       resetPanelWidths,
       bindSessionToPanel,
       unbindSessionFromPanel,
+      registerPanelAction,
+      unregisterPanelAction,
+      canExecuteActivePanelAction,
+      executeActivePanelAction,
+      handleSessionForked,
       unbindSessionGlobal,
       setPanelSlotState,
       setPanelViewMode,

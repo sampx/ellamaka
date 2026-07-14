@@ -9,9 +9,11 @@ import { StatusBar } from "./parts/status-bar"
 import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
+import { useWorkbenchCommands } from "./use-workbench-commands"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
+  useWorkbenchCommands()
   const spaceStore = useSessionStore()
   const allStoresReady = () => wb.ready()
   const display = () => wb.display()

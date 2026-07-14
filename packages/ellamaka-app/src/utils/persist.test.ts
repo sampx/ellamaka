@@ -82,14 +82,14 @@ describe("persist localStorage resilience", () => {
     expect(storageApi.getItem("value")).toBeNull()
   })
 
-  test("disables only the failing scope when storage throws", () => {
+  test("keeps the latest value in memory after a storage scope fails", () => {
     const bad = persistTesting.localStorageWithPrefix("opencode.throw.scope")
     bad.setItem("value", '{"value":1}')
 
     const before = storage.calls.set
     bad.setItem("value", '{"value":2}')
     expect(storage.calls.set).toBe(before)
-    expect(bad.getItem("value")).toBeNull()
+    expect(bad.getItem("value")).toBe('{"value":2}')
 
     const healthy = persistTesting.localStorageWithPrefix("opencode.safe.scope")
     healthy.setItem("value", '{"value":3}')

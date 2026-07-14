@@ -23,6 +23,7 @@
     "./icons/app": "./src/components/app-icons/types.ts",
     "./fonts/*": "./src/assets/fonts/*",
     "./audio/*": "./src/assets/audio/*",
+    "./v2/components/*.jsx": "./src/v2/components/*.tsx",
     "./v2/*": "./src/v2/*"
   },
   "scripts": {

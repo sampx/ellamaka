@@ -179,6 +179,8 @@ Forbidden persisted state:
 
 The persistence schema must have a version and explicit migrations. Legacy reads may migrate layout fields only. Historical projections must never be injected back into server-owned domain state.
 
+Workbench Chat model selection is isolated by Session. An explicit user selection is the authoritative model for that Session and must not be overwritten by an Agent default, a hidden Panel mount, or a same-value callback from a controlled selector. Without an explicit selection, resolve the model in this fixed order: the last visible user message, the Agent default, then an available-model fallback. Same-value Agent updates must be idempotent and must not write model persistence.
+
 ### 5.8 Established Presentation and Lifecycle Contracts
 
 - Derive the TUI liveness marker in the Panel title bar directly from `panel.tuiPtyId`. Do not store a second UI marker. Set the ID at startup and clear it on close or disconnect.

@@ -1,11 +1,19 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { findLast } from "@opencode-ai/core/util/array"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
-import { Persist, persisted } from "@/utils/persist"
+import { persisted } from "@/utils/persist"
+import {
+  modelSelectionPersistTarget,
+  resolveSessionModel,
+  shouldApplyAgentSelection,
+  shouldSyncSessionModel,
+  type ModelSelectionSource,
+} from "./local-model-selection"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
@@ -15,6 +23,7 @@ export type ModelKey = { providerID: string; modelID: string; variant?: string }
 type State = {
   agent?: string
   model?: ModelKey
+  modelSource?: ModelSelectionSource
   variant?: string | null
 }
 
@@ -53,20 +62,20 @@ const clone = (value: State | undefined) => {
 
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
-  init: () => {
+  init: (props: { sessionID?: string } = {}) => {
     const params = useParams()
     const sdk = useSDK()
     const sync = useSync()
     const providers = useProviders()
     const models = useModels()
 
-    const id = createMemo(() => params.id || undefined)
+    const id = createMemo(() => props.sessionID ?? params.id ?? undefined)
     const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
       {
-        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"]),
+        ...modelSelectionPersistTarget(sdk.directory, props.sessionID),
         migrate,
       },
       createStore<Saved>({
@@ -92,14 +101,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const validModel = (model: ModelKey) => {
       const provider = providers.all().get(model.providerID)
       return !!provider?.models[model.modelID] && connected().has(model.providerID)
-    }
-
-    const firstModel = (...items: Array<() => ModelKey | undefined>) => {
-      for (const item of items) {
-        const model = item()
-        if (!model) continue
-        if (validModel(model)) return model
-      }
     }
 
     const pickAgent = (name: string | undefined) => {
@@ -171,6 +172,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
 
+    const lastSessionModel = () => {
+      const session = id()
+      if (!session) return
+
+      const revert = sync.session.get(session)?.revert?.messageID
+      const message = findLast(
+        sync.data.message[session] ?? [],
+        (item) => item.role === "user" && (!revert || item.id < revert),
+      )
+      if (message?.role !== "user") return
+      return message.model
+    }
+
     const agent = {
       list,
       current() {
@@ -178,10 +192,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
       set(name: string | undefined) {
         const item = pickAgent(name)
+        const current = agent.current()?.name
         if (!item) {
           setStore("current", undefined)
           return
         }
+        if (!shouldApplyAgentSelection(current, item.name)) return
 
         batch(() => {
           setStore("current", item.name)
@@ -195,6 +211,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const next = {
             agent: item.name,
             model: item.model ?? prev?.model,
+            modelSource: item.model ? "selected" : prev?.modelSource,
             variant: item.variant ?? prev?.variant,
           } satisfies State
           const session = id()
@@ -222,11 +239,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const current = () => {
-      const item = firstModel(
-        () => scope()?.model,
-        () => agent.current()?.model,
-        fallback,
-      )
+      const item = resolveSessionModel({
+        state: scope(),
+        lastMessage: lastSessionModel(),
+        agentDefault: agent.current()?.model,
+        fallback: fallback(),
+        valid: validModel,
+      })
       if (!item) return
       return models.find(item)
     }
@@ -248,6 +267,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       return {
         agent: agent.current()?.name,
         model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
+        modelSource: scope()?.modelSource,
         variant: selected(),
       } satisfies State
     }
@@ -297,7 +317,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             model: item ?? null,
             variant: selected(),
           })
-          write({ model: item })
+          write({ model: item, modelSource: "selected" })
           if (!item) return
           models.setVisibility(item, true)
           if (!options?.recent) return
@@ -384,12 +404,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           const session = id()
           if (!session) return
           if (msg.sessionID !== session) return
-          if (saved.session[session] !== undefined) return
+          if (!shouldSyncSessionModel(saved.session[session])) return
           if (handoff.has(handoffKey(sdk.directory, session))) return
 
           setSaved("session", session, {
             agent: msg.agent,
             model: msg.model,
+            modelSource: "message",
             variant: msg.model?.variant ?? null,
           })
         },

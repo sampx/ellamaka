@@ -57,7 +57,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
-import { useSessionCommands } from "@/pages/session/use-session-commands"
+import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { shouldUseV2NewSessionPage } from "@/pages/session/new-session-layout"
 import { Identifier } from "@/utils/id"
@@ -899,7 +899,7 @@ export default function Page() {
     inputRef?.focus()
   }
 
-  useSessionCommands({
+  useLocalPanelActions({
     navigateMessageByOffset,
     setActiveMessage,
     focusInput,

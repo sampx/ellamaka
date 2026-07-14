@@ -1,4 +1,5 @@
 import { useNavigate } from "@solidjs/router"
+import { createEffect, onCleanup } from "solid-js"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
@@ -20,11 +21,15 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-export type SessionCommandContext = {
+export type LocalPanelActionContext = {
   navigateMessageByOffset: (offset: number) => void
   setActiveMessage: (message: UserMessage | undefined) => void
   focusInput: () => void
   review?: () => boolean
+  registerAction?: (id: string, execute: () => void, disabled?: boolean | (() => boolean)) => void
+  unregisterAction?: (id: string) => void
+  onForked?: (newSessionID: string) => void
+  sessionID?: () => string | undefined
 }
 
 const withCategory = (category: string) => {
@@ -34,7 +39,7 @@ const withCategory = (category: string) => {
   })
 }
 
-export const useSessionCommands = (actions: SessionCommandContext) => {
+export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
   const command = useCommand()
   const dialog = useDialog()
   const file = useFile()
@@ -51,12 +56,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const navigate = useNavigate()
   const { params, tabs, view } = useSessionLayout()
 
+  const getSessionID = () => actions.sessionID?.() ?? params.id
+
   const info = () => {
-    const id = params.id
+    const id = getSessionID()
     if (!id) return
     return sync.session.get(id)
   }
-  const hasReview = () => !!params.id
+  const hasReview = () => !!getSessionID()
   const normalizeTab = (tab: string) => {
     if (!tab.startsWith("file://")) return tab
     return file.tab(tab)
@@ -74,7 +81,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const shown = () => (desktopV2() ? settings.general.showFileTree() : true)
 
   const messages = () => {
-    const id = params.id
+    const id = getSessionID()
     if (!id) return []
     return sync.data.message[id] ?? []
   }
@@ -169,7 +176,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const share = async () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (!sessionID) return
 
     const existing = info()?.share?.url
@@ -195,7 +202,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const unshare = async () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (!sessionID) return
 
     await sdk.client.session
@@ -265,7 +272,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const toggleAutoAccept = () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (sessionID) permission.toggleAutoAccept(sessionID, sdk.directory)
     else permission.toggleAutoAcceptDirectory(sdk.directory)
 
@@ -283,10 +290,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const undo = async () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (!sessionID) return
 
-    if (sync.data.session_working(params.id ?? "")) {
+    if (sync.data.session_working(sessionID)) {
       await sdk.client.session.abort({ sessionID }).catch(() => {})
     }
 
@@ -306,7 +313,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const redo = async () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (!sessionID) return
 
     const revertMessageID = info()?.revert?.messageID
@@ -327,7 +334,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const compact = async () => {
-    const sessionID = params.id
+    const sessionID = getSessionID()
     if (!sessionID) return
 
     const model = local.model.current()
@@ -348,7 +355,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
 
   const fork = () => {
     void import("@/components/dialog-fork").then((x) => {
-      dialog.show(() => <x.DialogFork />)
+      dialog.show(() => <x.DialogFork onSuccess={actions.onForked} />)
     })
   }
 
@@ -362,7 +369,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           ? language.t("toast.session.share.success.description")
           : language.t("command.session.share.description"),
         slash: "share",
-        disabled: !params.id,
+        disabled: !getSessionID(),
         onSelect: share,
       }),
       sessionCommand({
@@ -370,7 +377,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         title: language.t("command.session.unshare"),
         description: language.t("command.session.unshare.description"),
         slash: "unshare",
-        disabled: !params.id || !info()?.share?.url,
+        disabled: !getSessionID() || !info()?.share?.url,
         onSelect: unshare,
       }),
     ]
@@ -389,7 +396,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.undo"),
       description: language.t("command.session.undo.description"),
       slash: "undo",
-      disabled: !params.id || visibleUserMessages().length === 0,
+      disabled: !getSessionID() || visibleUserMessages().length === 0,
       onSelect: undo,
     }),
     sessionCommand({
@@ -397,7 +404,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.redo"),
       description: language.t("command.session.redo.description"),
       slash: "redo",
-      disabled: !params.id || !info()?.revert?.messageID,
+      disabled: !getSessionID() || !info()?.revert?.messageID,
       onSelect: redo,
     }),
     sessionCommand({
@@ -405,7 +412,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.compact"),
       description: language.t("command.session.compact.description"),
       slash: "compact",
-      disabled: !params.id || visibleUserMessages().length === 0,
+      disabled: !getSessionID() || visibleUserMessages().length === 0,
       onSelect: compact,
     }),
     sessionCommand({
@@ -413,7 +420,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.session.fork"),
       description: language.t("command.session.fork.description"),
       slash: "fork",
-      disabled: !params.id || visibleUserMessages().length === 0,
+      disabled: !getSessionID() || visibleUserMessages().length === 0,
       onSelect: fork,
     }),
   ]
@@ -458,7 +465,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     viewCommand({
       id: "review.toggle",
       title: language.t("command.review.toggle"),
-      keybind: "mod+shift+r",
       onSelect: () => view().reviewPanel.toggle(),
     }),
     ...(shown()
@@ -495,7 +501,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.message.previous"),
       description: language.t("command.message.previous.description"),
       keybind: "mod+alt+[",
-      disabled: !params.id,
+      disabled: !getSessionID(),
       onSelect: () => navigateMessageByOffset(-1),
     }),
     sessionCommand({
@@ -503,7 +509,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.message.next"),
       description: language.t("command.message.next.description"),
       keybind: "mod+alt+]",
-      disabled: !params.id,
+      disabled: !getSessionID(),
       onSelect: () => navigateMessageByOffset(1),
     }),
   ]
@@ -567,7 +573,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
-  command.register("session", () => [
+  const allCmds = () => [
     ...sessionCmds(),
     ...shareCmds(),
     ...fileCmds(),
@@ -579,5 +585,28 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     ...mcpCmds(),
     ...agentCmds(),
     ...permissionsCmds(),
-  ])
+  ]
+
+  if (actions.registerAction) {
+    // Workbench mode: register local implementations to the active panel's action registry.
+    // We run an effect so when reactivity updates (like disabled states), they are captured.
+    createEffect(() => {
+      const cmds = allCmds()
+      cmds.forEach((cmd) => {
+        if (cmd.onSelect) {
+          // Since disabled can be a boolean or an accessor, we wrap it
+          const disabledFn = typeof cmd.disabled === "function" ? cmd.disabled : () => !!cmd.disabled
+          actions.registerAction!(cmd.id, cmd.onSelect, disabledFn)
+        }
+      })
+    })
+    onCleanup(() => {
+      if (actions.unregisterAction) {
+        allCmds().forEach((cmd) => actions.unregisterAction!(cmd.id))
+      }
+    })
+  } else {
+    // Standard Single-Session mode
+    command.register("session", allCmds)
+  }
 }

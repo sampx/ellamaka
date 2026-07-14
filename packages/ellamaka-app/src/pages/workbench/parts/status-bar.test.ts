@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { getStatusBarSegments } from "./status-bar"
+import { getStatusBarSegments } from "./status-bar-segments"
 
 describe("getStatusBarSegments", () => {
   test("returns space name segment only when activePanelID is undefined", () => {

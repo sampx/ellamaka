@@ -179,6 +179,8 @@ UI 组件 -> WorkbenchActions -> Store / PtyManager / directory-bound SDK / Proj
 
 持久化 schema 必须有版本和显式迁移。读取旧数据时只能迁移布局字段，不能把历史投影重新注入服务端领域状态。
 
+Workbench Chat 的模型选择按 Session 隔离。用户显式选择是当前 Session 的权威模型，不得被 Agent 默认模型、隐藏 Panel 挂载或受控选择器的同值回调覆盖；没有显式选择时，解析顺序固定为最后一条可见用户消息的模型、Agent 默认模型、可用模型兜底。同值 Agent 更新必须幂等，不得产生模型持久化写入。
+
 ### 5.8 已确立的展示与生命周期契约
 
 - Panel 标题栏中 TUI 的存活标记直接由 `panel.tuiPtyId` 派生，不得另存 UI 标记。该 PTY ID 在启动时写入，关闭或断连时清空。

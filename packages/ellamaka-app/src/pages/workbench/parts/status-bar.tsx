@@ -4,58 +4,7 @@ import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { SDKProvider } from "@/context/sdk"
 import { StatusBarStatusPopover } from "@/components/status-popover"
-
-export type StatusBarSegment = {
-  type: "space" | "panel" | "session" | "path"
-  text: string
-}
-
-export type StatusBarMetadataInput = {
-  spaceName: string
-  activePanelID: string | undefined
-  panels: Array<{
-    id: string
-    slotState: string
-    directory: string
-    boundSessionId?: string
-  }>
-  getSessionTitle: (sessionId: string) => string | undefined
-}
-
-export function getStatusBarSegments(input: StatusBarMetadataInput): StatusBarSegment[] {
-  const { spaceName, activePanelID, panels, getSessionTitle } = input
-  const segments: StatusBarSegment[] = []
-  if (!spaceName) return segments
-
-  segments.push({ type: "space", text: spaceName })
-
-  if (!activePanelID) return segments
-  const idx = panels.findIndex((p) => p.id === activePanelID)
-  if (idx === -1) return segments
-  const panel = panels[idx]
-  const pIndex = idx + 1
-
-  segments.push({
-    type: "panel",
-    text: `P${pIndex}/${panels.length}`,
-  })
-
-  if (panel.slotState === "bound" && panel.boundSessionId) {
-    const title = getSessionTitle(panel.boundSessionId)
-    if (title) {
-      segments.push({ type: "session", text: title })
-    }
-  }
-
-  if (panel.directory) {
-    const pathText = panel.directory.startsWith("/")
-      ? panel.directory.slice(1)
-      : panel.directory
-    segments.push({ type: "path", text: pathText })
-  }
-
-  return segments
-}
+import { getStatusBarSegments } from "./status-bar-segments"
 
 export function StatusBar() {
   const wb = useWorkbenchState()

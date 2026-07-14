@@ -381,11 +381,15 @@ function localStorageWithPrefix(prefix: string): SyncStorage {
     },
     setItem: (key, value) => {
       const name = item(key)
-      if (fallbackDisabled(scope)) return
+      if (fallbackDisabled(scope)) {
+        cacheSet(name, value)
+        return
+      }
       try {
         if (write(localStorage, name, value)) return
       } catch {
         fallbackSet(scope)
+        cacheSet(name, value)
         return
       }
       fallbackSet(scope)
@@ -423,11 +427,15 @@ function localStorageDirect(): SyncStorage {
       return stored
     },
     setItem: (key, value) => {
-      if (fallbackDisabled(scope)) return
+      if (fallbackDisabled(scope)) {
+        cacheSet(key, value)
+        return
+      }
       try {
         if (write(localStorage, key, value)) return
       } catch {
         fallbackSet(scope)
+        cacheSet(key, value)
         return
       }
       fallbackSet(scope)
