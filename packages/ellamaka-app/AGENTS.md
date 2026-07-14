@@ -243,7 +243,7 @@ A Workbench change is complete only when all of the following are true:
 4. User-visible validation confirms the plugin and MCP source paths for General, Space A, and Space B.
 5. Multiple Panels, hidden Spaces, fork behavior, commands, and PTY lifecycle do not cross scopes.
 6. The Chinese rules and design document receive user review before the formal English rules are synchronized.
-7. Commits, Plan state transitions, and user validation follow the workspace dev-flow and user confirmation gates. This Workbench Plan must not request or require Rook review; use the executable boundary checks, targeted tests, full verification, and user confirmation instead.
+7. Commits, Plan state transitions, and user validation follow the workspace dev-flow and user confirmation gates.
 
 ## 6. General Testing Rules
 
