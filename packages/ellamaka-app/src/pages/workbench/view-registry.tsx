@@ -57,7 +57,8 @@ registerView({
     })
 
     createEffect(() => {
-      if (ctx.panel.viewMode !== "tui" || ctx.panel.slotState !== "bound") return
+      if (ctx.panel.slotState !== "bound") return
+      if (ctx.panel.viewMode !== "tui" && !ctx.panel.tuiPtyId) return
 
       const existingId = ctx.panel.tuiPtyId
       const sessionId = ctx.session?.id

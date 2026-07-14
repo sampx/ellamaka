@@ -48,13 +48,14 @@ export function Panel(props: {
 
   createEffect(
     on(
-      () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode] as const,
-      ([nextBoundSessionId, slotState, viewMode], previous) => {
+      () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode, props.panel.tuiPtyId] as const,
+      ([nextBoundSessionId, slotState, viewMode, tuiPtyId], previous) => {
         setMountedViews((prev) => reconcileMountedViews(prev, {
           prevBoundSessionId: previous?.[0],
           nextBoundSessionId,
           slotState,
           viewMode,
+          hasTuiPtyId: !!tuiPtyId,
         }))
       },
     ),
