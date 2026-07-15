@@ -745,7 +745,7 @@ export function MessageTimeline(props: {
 
   const titleMutation = useMutation(() => ({
     mutationFn: (input: { id: string; title: string }) =>
-      sdk.client.session.update({ sessionID: input.id, title: input.title, directory: sdk.directory }),
+      sdk.client.session.update({ sessionID: input.id, title: input.title }),
     onSuccess: (_, input) => {
       sync.set(
         produce((draft) => {
