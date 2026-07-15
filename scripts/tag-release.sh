@@ -81,6 +81,18 @@ fi
 
 # --- 执行 ---
 
+# 0. 发布前检查：禁止 dirty tree
+if ! git -C "$REPO_ROOT" diff --quiet HEAD -- . 2>/dev/null; then
+  echo "错误: 工作区有未提交变更，请先提交或 stash"
+  git -C "$REPO_ROOT" status --short
+  exit 1
+fi
+if ! git -C "$REPO_ROOT" diff --cached --quiet HEAD -- . 2>/dev/null; then
+  echo "错误: 暂存区有未提交变更，请先提交"
+  git -C "$REPO_ROOT" diff --cached --stat
+  exit 1
+fi
+
 # 1. 检测重发 & 清理
 echo "→ 检查远程 tag: $TAG"
 if git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$TAG" | grep -q "$TAG"; then
