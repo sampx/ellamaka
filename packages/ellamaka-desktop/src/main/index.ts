@@ -39,12 +39,12 @@ import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from ".
 import { Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "Ellamaka Dev",
+  main: "Ellamaka Main",
   beta: "Ellamaka Beta",
   prod: "Ellamaka",
 }
 const APP_IDS: Record<string, string> = {
-  dev: "ai.ellamaka.desktop.dev",
+  main: "ai.ellamaka.desktop.main",
   beta: "ai.ellamaka.desktop.beta",
   prod: "ai.ellamaka.desktop",
 }
@@ -118,7 +118,7 @@ const main = Effect.gen(function* () {
 
   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
-  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.ellamaka.desktop.dev"
+  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.ellamaka.desktop.main"
   const onboardingTestRoot = ((): string | undefined => {
     if (!TEST_ONBOARDING) return
 

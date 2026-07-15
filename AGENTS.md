@@ -45,13 +45,16 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | opencode build | `bun run build` from `packages/opencode` | After runtime / CLI / package build changes |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | After branding, logo, or detection changes |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | When building ellamaka-branded CLI locally; use `--web-ui app` for upstream UI or `--web-ui none` for no embedded UI |
+| Build CLI binary | `./scripts/build.sh cli` | One-click CLI build for current platform; supports `--platform`, `--arch`, `--install` |
+| Build Desktop app | `./scripts/build.sh desktop` | Build Electron desktop app (default main channel); `--channel prod --install` for release |
 | Workbench dev server | `./scripts/dev.sh serve` | From any directory; starts backend `:4096` + `ellamaka-app` `:3000/workbench` |
 | Stop Workbench dev server | `./scripts/dev.sh stop` | Stops backend and Workbench for the current port combination |
+| Desktop dev app | `./scripts/dev.sh desktop` | Build sidecar + desktop, start Electron dev mode; `--channel local|main` |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | After desktop package TypeScript changes |
 | Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | After desktop behavior changes (requires electron mock) |
 | Desktop build | `bun run build` from `packages/ellamaka-desktop` | After main/preload/renderer changes |
-| Desktop package:mac | `bun run package:mac` from `packages/ellamaka-desktop` | Produces unsigned macOS DMG/ZIP dev build |
+| Desktop package:mac | `bun run package:mac` from `packages/ellamaka-desktop` | Produces unsigned macOS DMG/ZIP main build |
 | Sidecar build | `cd ../opencode && bun script/build-node.ts` | Build sidecar node runtime (prerequisite for desktop build) |
 
 Tests cannot run from repo root; the root `test` script is a guard.

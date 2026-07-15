@@ -157,7 +157,7 @@
 
 ### 本地构建
 
-`scripts/build.sh` 是一键构建脚本，dist 路径和 binary 名均已品牌化。
+`scripts/build.sh` 是一键构建脚本，子命令 `cli` 编译 CLI 二进制，`desktop` 编译 Electron 桌面应用。dist 路径和 binary 名均已品牌化。
 
 ---
 

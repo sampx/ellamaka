@@ -10,8 +10,8 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
-  return "dev"
+  if (raw === "main" || raw === "beta" || raw === "prod") return raw
+  return "main"
 })()
 
 const getBase = (): Configuration => ({
@@ -70,12 +70,12 @@ function getConfig() {
   const base = getBase()
 
   switch (channel) {
-    case "dev": {
+    case "main": {
       return {
         ...base,
-        appId: "ai.ellamaka.desktop.dev",
-        productName: "Ellamaka Dev",
-        rpm: { packageName: "ellamaka-dev" },
+        appId: "ai.ellamaka.desktop.main",
+        productName: "Ellamaka Main",
+        rpm: { packageName: "ellamaka-main" },
       }
     }
     case "beta": {

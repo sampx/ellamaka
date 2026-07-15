@@ -60,9 +60,6 @@ wopal ellamaka install
 
 # 在任意目录启动——它就是你的 AI 搭档
 ellamaka
-
-# 在 WopalSpace 中启动——加载你的空间本体
-ellamaka --wopal-space
 ```
 
 ## 参与开发
@@ -70,7 +67,9 @@ ellamaka --wopal-space
 | 做什么 | 命令 |
 |---|---|
 | 启动开发环境 | `./scripts/dev.sh` |
-| 本地编译二进制 | `./scripts/build.sh` |
+| 启动桌面开发 | `./scripts/dev.sh desktop` |
+| 编译 CLI 二进制 | `./scripts/build.sh cli` |
+| 编译桌面应用 | `./scripts/build.sh desktop` |
 | 品牌化构建 | `bun packages/ellamaka/build.ts` |
 | 类型检查 | `bun typecheck` |
 | 上游合并后清理 | `./scripts/check-cleanup.sh --clean` |

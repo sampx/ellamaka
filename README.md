@@ -61,9 +61,6 @@ wopal ellamaka install
 
 # Launch from any directory — it's your AI partner
 ellamaka
-
-# Launch inside WopalSpace — loads your space ontology
-ellamaka --wopal-space
 ```
 
 ## Development
@@ -71,7 +68,9 @@ ellamaka --wopal-space
 | Action | Command |
 |---|---|
 | Start dev environment | `./scripts/dev.sh` |
-| Build binary locally | `./scripts/build.sh` |
+| Start Desktop dev | `./scripts/dev.sh desktop` |
+| Build CLI binary | `./scripts/build.sh cli` |
+| Build Desktop app | `./scripts/build.sh desktop` |
 | Branded build | `bun packages/ellamaka/build.ts` |
 | Type check | `bun typecheck` |
 | Clean up after upstream merge | `./scripts/check-cleanup.sh --clean` |

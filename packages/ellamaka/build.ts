@@ -51,7 +51,11 @@ const migrations = await Promise.all(
 )
 console.log(`Loaded ${migrations.length} migrations`)
 
-// --arch: "primary" | "x64" | "x64,arm64" | etc.
+// --platform: "mac" | "linux" | "win" | "mac,linux" etc.
+const platformIndex = process.argv.indexOf("--platform")
+const platformArg = platformIndex !== -1 ? process.argv[platformIndex + 1] : null
+
+// --arch: "arm64" | "x64" | "arm64,x64" etc.
 const archIndex = process.argv.indexOf("--arch")
 const archArg = archIndex !== -1 ? process.argv[archIndex + 1] : null
 
@@ -168,10 +172,18 @@ const allTargets: {
   },
 ]
 
-let targets: typeof allTargets
+let targets: typeof allTargets = [...allTargets]
 
+// --platform filter: user-friendly names, comma-separated
+if (platformArg) {
+  const map: Record<string, string> = { mac: "darwin", linux: "linux", win: "win32" }
+  const platforms = platformArg.split(",").map((p) => map[p.trim()] ?? p.trim())
+  targets = targets.filter((item) => platforms.includes(item.os))
+}
+
+// --arch filter: comma-separated arch values
 if (archArg === "primary") {
-  targets = allTargets.filter((item) => {
+  targets = targets.filter((item) => {
     if (item.os === "darwin" && item.arch === "arm64") return true
     if (item.os === "darwin" && item.arch === "x64") return true
     if (item.os === "linux" && item.arch === "x64" && item.abi === undefined) return true
@@ -180,9 +192,7 @@ if (archArg === "primary") {
   })
 } else if (archArg) {
   const arches = archArg.split(",")
-  targets = allTargets.filter((item) => arches.includes(item.arch))
-} else {
-  targets = [...allTargets]
+  targets = targets.filter((item) => arches.includes(item.arch))
 }
 
 if (singleFlag) {

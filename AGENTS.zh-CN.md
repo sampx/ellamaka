@@ -17,7 +17,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
-- DESKTOP: `docs/DESKTOP.md` — ellamaka-desktop 架构设计、状态所有权、PTY 生命周期与侧车集成
+- DESKTOP: `docs/DESKTOP.md` — ellamaka-desktop 架构设计、状态所有权、PTY 生命周期与 Side Car 集成
 - opencode package rules: `packages/opencode/AGENTS.md`
 - desktop package rules: `packages/ellamaka-desktop/AGENTS.md`
 
@@ -78,14 +78,14 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | opencode build | `bun run build` from `packages/opencode` | runtime / CLI / package build 相关变更后 |
 | ellamaka package tests | `bun test` from `packages/ellamaka` | 修改 branding、logo、detection 逻辑后 |
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | 本地构建 ellamaka 品牌 CLI 时；用 `--web-ui app` 嵌入上游 UI，用 `--web-ui none` 不嵌入 UI |
+| 构建 CLI 二进制 | `./scripts/build.sh cli` | 一键 CLI 构建，当前平台；支持 `--platform`、`--arch`、`--install` |
+| 构建桌面应用 | `./scripts/build.sh desktop` | 构建 Electron 桌面应用（默认 main 渠道）；`--channel prod --install` 发布安装 |
 | Workbench 开发服务 | `./scripts/dev.sh serve` | 从任意目录调用；启动后端 `:4096` 与 `ellamaka-app` `:3000/workbench` |
 | 停止 Workbench 开发服务 | `./scripts/dev.sh stop` | 停止当前端口组合记录的后端与 Workbench 进程 |
+| 桌面开发应用 | `./scripts/dev.sh desktop` | 构建 sidecar + 桌面应用，启动 Electron dev 模式；`--channel local|main` |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | TypeScript 类型检查 |
 | Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | 运行桌面测试（需 electron mock） |
-| Desktop build | `bun run build` from `packages/ellamaka-desktop` | 构建 main/preload/renderer |
-| Desktop package:mac | `bun run package:mac` from `packages/ellamaka-desktop` | 生成未签名 macOS DMG/ZIP 开发构建 |
-| Sidecar build | `cd ../opencode && bun script/build-node.ts` | 构建 sidecar node runtime（桌面构建前置条件） |
 
 测试不能从 repo root 运行；root `test` script 是 guard。
 

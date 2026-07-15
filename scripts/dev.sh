@@ -52,6 +52,7 @@ Usage: $self [command|option]
 
   Commands:
     serve        Start the backend and Ellamaka Workbench
+    desktop      Build and start the Electron desktop app
     stop          Stop the backend and Ellamaka Workbench
     help          Show this help message
 
@@ -61,6 +62,8 @@ Usage: $self [command|option]
                        Modules: task, rules, or comma-separated list
     --port <port>      Backend port (default: 4096)
     --app-port <port>  Workbench port (default: 3000)
+    --channel <local|main|beta|prod>
+                       Desktop channel (default: local)
     -ns               Disable WopalSpace mode (native opencode behavior)
     -h, --help        Forwarded to ellamaka
 
@@ -87,11 +90,12 @@ debug_modules=""
 passthrough=()
 PORT=4096
 APP_PORT=3000
+DESKTOP_CHANNEL="local"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --) shift; passthrough+=("$@"); break ;;
-    stop|help|serve) cmd="$1"; shift ;;
+    stop|help|serve|desktop) cmd="$1"; shift ;;
     -a|--attach) attach=true; shift ;;
     -h|--help) passthrough+=(--help); shift ;;
     --debug)
@@ -104,6 +108,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --port) PORT="$2"; shift 2 ;;
     --app-port) APP_PORT="$2"; shift 2 ;;
+    --channel) DESKTOP_CHANNEL="$2"; shift 2 ;;
     -ns) passthrough+=(--disable-wopalspace); shift ;;
     *) passthrough+=("$1"); shift ;;
   esac
@@ -116,6 +121,31 @@ FRONTEND_LOG="$LOGDIR/ellamaka-dev-$APP_PORT-frontend.log"
 case "$cmd" in
   stop) stop; exit ;;
   help) usage; exit ;;
+  desktop)
+    DESKTOP_DIR="$root/packages/ellamaka-desktop"
+    export OPENCODE_CHANNEL="$DESKTOP_CHANNEL"
+
+    # Kill any running electron-vite from this project
+    if pkill -f "electron-vite.*ellamaka-desktop" 2>/dev/null; then
+      echo "==> Stopped previous desktop session"
+      sleep 1
+    fi
+
+    echo "🖥  Starting Desktop (channel: $DESKTOP_CHANNEL)..."
+    echo ""
+
+    echo "==> Building sidecar (packages/opencode)..."
+    (cd "$opencode_dir" && bun script/build-node.ts)
+
+    echo ""
+    echo "==> Building desktop..."
+    (cd "$DESKTOP_DIR" && bun run build)
+
+    echo ""
+    echo "==> Starting Electron..."
+    cd "$DESKTOP_DIR"
+    exec bun run dev
+    ;;
 esac
 
 if ! $attach && [ "$cmd" != "serve" ]; then

@@ -75,7 +75,7 @@ jobs:
       - name: Build
         run: |
           echo "Embedding web UI: ${WEB_UI}"
-          bash scripts/build.sh --arch primary --web-ui "${WEB_UI}"
+          bash scripts/build.sh cli --arch primary --web-ui "${WEB_UI}"
         env:
           WEB_UI: ${{ github.event.inputs.web_ui || 'ellamaka-app' }}
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
