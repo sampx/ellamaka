@@ -51,9 +51,7 @@ $self serve [options]
   --debug [mods]    Debug mode
   -ns               Disable WopalSpace mode
 
-$self desktop [options]
-  --channel <local|main|beta|prod>
-                    Channel (default: local)
+$self desktop
 EOF
   exit 0
 }
@@ -100,6 +98,19 @@ cmd_stop() {
     for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
       kill "$pid" 2>/dev/null
     done
+    # wait for processes to actually exit
+    for i in $(seq 1 20); do
+      if ! is_running "$port" && ! is_running "$app_port"; then
+        echo "stopped"
+        return 0
+      fi
+      sleep 0.1
+    done
+    # force kill if still alive
+    for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
+      kill -9 "$pid" 2>/dev/null
+    done
+    sleep 0.5
     echo "stopped"
   else
     echo "not running"
@@ -284,9 +295,8 @@ cmd_desktop() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --channel) CHANNEL="$2"; shift 2 ;;
       -h|--help) usage ;;
-      *) shift ;;
+      *) echo "Unknown option: $1"; usage ;;
     esac
   done
 
