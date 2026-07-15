@@ -68,6 +68,12 @@ function show(out: string) {
   process.stderr.write(out)
 }
 
+// Server commands host multiple instances per-request; their space config is
+// resolved per-instance in config.ts (tryLoadWopalSpaceConfig). Setting a
+// process-wide WOPAL_SPACE flag from launch cwd here would be wrong for them —
+// one server can host both space and General instances at the same time.
+const SERVER_COMMANDS = new Set(["serve", "web"])
+
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
   .scriptName(BINARY_NAME)
@@ -102,7 +108,8 @@ const cli = yargs(args)
       process.env.OPENCODE_PURE = "1"
     }
 
-    if (!opts.disableWopalspace) {
+    const command = typeof opts._?.[0] === "string" ? opts._[0] : ""
+    if (!opts.disableWopalspace && !SERVER_COMMANDS.has(command)) {
       const detection = detectWopalSpace(process.cwd())
       if (detection) {
         process.env.WOPAL_SPACE = "1"
