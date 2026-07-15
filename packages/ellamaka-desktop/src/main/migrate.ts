@@ -28,7 +28,7 @@ const TAURI_APP_IDS: Record<string, string> = {
   prod: "ai.ellamaka.desktop",
 }
 function tauriAppId() {
-  return app.isPackaged ? TAURI_APP_IDS[CHANNEL] : "ai.ellamaka.desktop.main"
+  return app.isPackaged ? TAURI_APP_IDS[CHANNEL] : `ai.ellamaka.desktop.${CHANNEL}`
 }
 
 // Migrate a single Tauri .dat file into the corresponding electron-store.

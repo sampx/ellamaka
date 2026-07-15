@@ -118,7 +118,7 @@ const main = Effect.gen(function* () {
 
   process.env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
 
-  const appId = app.isPackaged ? APP_IDS[CHANNEL] : "ai.ellamaka.desktop.main"
+  const appId = app.isPackaged ? APP_IDS[CHANNEL] : `ai.ellamaka.desktop.${CHANNEL}`
   const onboardingTestRoot = ((): string | undefined => {
     if (!TEST_ONBOARDING) return
 

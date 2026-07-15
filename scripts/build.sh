@@ -184,6 +184,13 @@ function build_desktop() {
 
   DESKTOP_DIR="$PROJECT_ROOT/packages/ellamaka-desktop"
 
+  if $INSTALL && [[ "$(uname -s)" == "Darwin" ]]; then
+    if pgrep -f "${APP_NAME}.app/Contents/MacOS" >/dev/null 2>&1; then
+      echo "❌ ${APP_NAME} is running. Quit it first, then retry."
+      exit 1
+    fi
+  fi
+
   echo ""
   echo "🖥  Building Desktop (channel: $CHANNEL, app: $APP_NAME)..."
 
