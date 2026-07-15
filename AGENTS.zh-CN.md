@@ -83,7 +83,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | TUI 开发客户端 | `./scripts/dev.sh tui` | 启动 TUI（内嵌后端）；`-a` 连接已有后端，`--debug`、`-ns` |
 | Workbench 开发服务 | `./scripts/dev.sh serve` | 启动后端 `:4096` + `ellamaka-app` `:3000/workbench` |
 | 停止开发服务 | `./scripts/dev.sh stop` | 停止后端与 Workbench |
-| 桌面开发应用 | `./scripts/dev.sh desktop` | 构建 sidecar + 桌面应用，启动 Electron dev 模式；`--channel local|main` |
+| 桌面开发应用 | `./scripts/dev.sh desktop` | 构建 sidecar + 桌面应用，启动 Electron dev 模式 |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | TypeScript 类型检查 |
 | Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | 运行桌面测试（需 electron mock） |

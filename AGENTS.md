@@ -50,7 +50,7 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | TUI dev client | `./scripts/dev.sh tui` | Start TUI (in-process backend); `-a` attach mode, `--debug`, `-ns` |
 | Workbench dev server | `./scripts/dev.sh serve` | Start backend `:4096` + `ellamaka-app` `:3000/workbench` |
 | Stop dev server | `./scripts/dev.sh stop` | Stop backend and Workbench |
-| Desktop dev app | `./scripts/dev.sh desktop` | Build sidecar + desktop, start Electron dev mode; `--channel local|main` |
+| Desktop dev app | `./scripts/dev.sh desktop` | Build sidecar + desktop, start Electron dev mode |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | After desktop package TypeScript changes |
 | Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | After desktop behavior changes (requires electron mock) |
