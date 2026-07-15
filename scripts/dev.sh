@@ -80,41 +80,62 @@ cmd_stop() {
   local port="${1:-4096}"
   local app_port="${2:-3000}"
   local pidfile="$LOGDIR/ellamaka-dev-$port-$app_port.pid"
+  local log_files=(
+    "$LOGDIR/ellamaka-dev-$port-server.log"
+    "$LOGDIR/ellamaka-dev-$app_port-frontend.log"
+    "$LOGDIR/wopal-plugins-debug.log"
+  )
+
+  echo "checking backend (port $port) and Workbench (port $app_port)..."
 
   local pids=()
   if [ -f "$pidfile" ]; then
     while IFS= read -r pid; do
       pids+=("$pid")
     done < "$pidfile"
+    echo "  pidfile: $pidfile ($(printf '%s ' "${pids[@]}"))"
     rm -f "$pidfile"
   fi
-  rm -f "$LOGDIR/ellamaka-dev-$port-server.log" "$LOGDIR/ellamaka-dev-$app_port-frontend.log" "$LOGDIR/wopal-plugins-debug.log"
+
+  local removed=0
+  local f
+  for f in "${log_files[@]}"; do
+    if [ -f "$f" ]; then
+      rm -f "$f" && echo "  log removed: $(basename "$f")" && ((removed++))
+    fi
+  done
+  [ "$removed" -eq 0 ] && echo "  no log files to clean"
 
   local pp
   pp="$(lsof -ti :"$port" 2>/dev/null)" && pids+=($pp)
   pp="$(lsof -ti :"$app_port" 2>/dev/null)" && pids+=($pp)
 
-  if [ ${#pids[@]} -gt 0 ]; then
-    for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
-      kill "$pid" 2>/dev/null
-    done
-    # wait for processes to actually exit
-    for i in $(seq 1 20); do
-      if ! is_running "$port" && ! is_running "$app_port"; then
-        echo "stopped"
-        return 0
-      fi
-      sleep 0.1
-    done
-    # force kill if still alive
-    for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
-      kill -9 "$pid" 2>/dev/null
-    done
-    sleep 0.5
-    echo "stopped"
-  else
-    echo "not running"
+  if [ ${#pids[@]} -eq 0 ]; then
+    echo "  not running"
+    return 0
   fi
+
+  local unique_pids=($(printf '%s\n' "${pids[@]}" | sort -u))
+  echo "  stopping PIDs: ${unique_pids[*]}"
+
+  for pid in "${unique_pids[@]}"; do
+    kill "$pid" 2>/dev/null
+  done
+
+  for i in $(seq 1 50); do
+    if ! is_running "$port" && ! is_running "$app_port"; then
+      echo "  stopped"
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "  graceful kill timed out, sending SIGKILL..."
+  for pid in "${unique_pids[@]}"; do
+    kill -9 "$pid" 2>/dev/null
+  done
+  sleep 0.5
+  echo "  stopped (force killed)"
 }
 
 # ── helpers for serve/attach ───────────────────────────────
