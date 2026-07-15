@@ -34,6 +34,7 @@ import {
   setDockIcon,
 } from "./windows"
 import { migrate } from "./migrate"
+import { needsJsonMigration } from "./migration-check"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
@@ -167,7 +168,7 @@ const main = Effect.gen(function* () {
     return
   }
 
-  preferAppEnv(app.getPath("userData"))
+  preferAppEnv()
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("ellamaka://"))
@@ -269,13 +270,7 @@ const main = Effect.gen(function* () {
     ),
   )
 
-  const needsMigration = ((): boolean => {
-    if (process.env.OPENCODE_DB === ":memory:") return false
-
-    const xdg = process.env.XDG_DATA_HOME
-    const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
-    return !existsSync(join(base, "ellamaka", "ellamaka.db"))
-  })()
+  const needsMigration = needsJsonMigration()
   let overlay: BrowserWindow | null = null
 
   const port = yield* Effect.gen(function* () {
@@ -321,7 +316,6 @@ const main = Effect.gen(function* () {
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         needsMigration,
-        userDataPath: app.getPath("userData"),
         onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),

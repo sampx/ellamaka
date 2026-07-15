@@ -25,7 +25,6 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
   needsMigration: boolean
-  userDataPath: string
   onSqliteProgress?: (progress: SqliteMigrationProgress) => void
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
@@ -55,14 +54,13 @@ export function setWslConfig(config: WslConfig) {
   getStore().set(WSL_ENABLED_KEY, config.enabled)
 }
 
-export function preferAppEnv(userDataPath: string) {
+export function preferAppEnv() {
   const shell = process.platform === "win32" ? null : getUserShell()
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell) : null),
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "ellamaka-desktop",
-    XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
 }
 
@@ -151,7 +149,6 @@ export async function spawnLocalServer(
       hostname,
       port,
       password,
-      userDataPath: options.userDataPath,
       needsMigration: options.needsMigration,
     })
   }).catch((error) => {
