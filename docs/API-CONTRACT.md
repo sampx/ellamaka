@@ -1,13 +1,14 @@
 # Ellamaka API 与 SDK 契约
 
 > **状态**：Active
-> **更新时间**：2026-07-11
+> **更新时间**：2026-07-15
 > **上级架构**：`../../../docs/products/wopal-space/DESIGN-wopalspace.md` §1.1
 
 ## 0. 变更记录
 
 | 日期 | 类型 | 摘要 |
 |---|---|---|
+| 2026-07-15 | Updated | 明确 `GET /workbench/session-groups` 只返回未归档根会话，不暴露归档会话或带 `parentID` 的子会话。 |
 | 2026-07-11 | Added | 定义 Effect HttpApi、OpenAPI、生成 SDK 和 Wopal CLI adapter 的统一 Runtime API 契约。 |
 
 ## 1. 目的
@@ -42,6 +43,8 @@ HTTP 路径表达领域资源与自然从属关系。集合使用复数名词，
 领域操作以其所属资源和产生的领域状态命名。服务端内部的文件系统、Shell、任意目录创建和 CLI 执行属于领域服务实现，不形成浏览器可直接调用的通用原语。General Session 工作目录由 Session Runtime 内部 provisioner 管理。
 
 视图专用投影仍是明确的读模型。它声明所属领域、输入、输出和刷新边界，并使用资源范围表达归属。产品设计决定投影名称和路径，避免以临时 UI 名称扩展公共 API。
+
+`GET /workbench/session-groups` 是 Workbench 左侧会话列表的 Root 级读模型。它按 Space/General 分组，只返回数据库中 `time_archived IS NULL` 且 `parent_id IS NULL` 的 Session；归档会话和子会话不得进入响应、`sessionCount` 或客户端 Session Projection。
 
 ## 4. Schema、错误与版本
 

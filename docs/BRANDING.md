@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-07-13
+> **更新时间**: 2026-07-15
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-15 | Updated | Workbench Session Projection 在数据库查询边界排除已归档会话和带 `parentID` 的子会话，保证左侧树只展示可直接装载的根会话。 |
 | 2026-07-13 | Updated | §17 简化桌面 PTY 生命周期：Web 与 Desktop 共用 sidecar 断连宽限回收，移除 Electron Main PTY 注册表与专用 IPC 设计；同步更新 `DESKTOP.md` 和 Workbench 设计 |
 | 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
 | 2026-07-13 | Updated | §0 更新桌面端裁剪决策；新增 §17 ellamaka-desktop，采用 OpenCode v1.15.13 Electron desktop 作为固定复制基线，由独立包承载 ellamaka-app、sidecar 与桌面进程生命周期 |
@@ -866,7 +867,7 @@ Space
 
 #### 数据来源
 
-- **session**：`Session.Service.list()` 获取所有 session，用 `session.directory` 归组（不用 `session.project_id`）。**已归档会话（`timeArchived != null`）过滤掉**，不进入任何归组，左侧树不展示
+- **session**：Workbench Session Projection 用 `session.directory` 归组（不用 `session.project_id`），并在数据库查询边界只选择 `time_archived IS NULL` 且 `parent_id IS NULL` 的会话。已归档会话和子会话不进入任何归组、`sessionCount` 或左侧树
 - **project name**：`Project.Service.list()` 仅用于取 project.name（opencode project 表记录），归组逻辑不依赖它
 - **一级 git repo**：扫描 `spaceRealPath` 下一层目录（不含 spaceRealPath 本身），`git -C <child> rev-parse --show-toplevel` 检测是否 git repo
 - **worktree**：对每个 project root 执行 `git worktree list --porcelain`，关联独立 worktree 回主项目

@@ -324,7 +324,7 @@ WebSocket 连接关闭与 PTY 进程退出是两个独立事件。前端先确�
 - Session `status`（bound / idle / archived）——从 Panel 布局绑定和服务端归档字段派生。
 - Session `boundPanelId`——从 Panel 布局反向查找。
 - Session title、副本、目录、时间戳和状态——由服务端投影提供，UI 不做 optimistic 伪造。
-- Session 列表——由 SessionTree 的服务端加载和 Shell SSE 对账写入内存 Projection。
+- Session 列表——由 SessionTree 的服务端加载和 Shell SSE 对账写入内存 Projection。`GET /workbench/session-groups` 只返回 `time_archived IS NULL` 且 `parent_id IS NULL` 的未归档根会话；归档会话和子会话不得进入列表、`sessionCount` 或客户端 Projection。
 
 **事件处理规则**：
 
@@ -332,17 +332,19 @@ WebSocket 连接关闭与 PTY 进程退出是两个独立事件。前端先确�
 |------|------|
 | `session.created` | 使对应 Space 的 SessionTree 加载失效；服务器返回后写入 Projection。 |
 | `session.deleted` | 通过 Action 解绑所有引用该 Session 的 Panel、释放对应 PTY，再删除 Projection。 |
-| `session.updated`（含 `timeArchived`） | 同 `session.deleted` 的归档/解绑语义，不能保留本地完整副本。 |
+| `session.updated`（含 `timeArchived`） | 将归档视为服务端权威状态变化：使 SessionTree 加载失效，通过 Action 解绑所有引用该 Session 的 Panel、释放对应 PTY、删除 Projection，并向用户显示状态变化提示。后续 SessionTree 查询会在服务端过滤该会话。 |
 | `session.updated`（标题变更） | Shell SSE 只 patch 对应 Projection 项；不伪造 Session 或触发无关树级重载。 |
 | `message.part.*` | 仅更新对应 `PanelChat` 的消息流，不触发树或其它 Panel 的更新。 |
 
-远端数据加载完成前不得根据空列表解绑 Panel，避免初始空数组误判。Projection 的失效信号只用于通知树重新拉取，不能承载会话领域数据，也不能写入持久化。
+Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.deleted` 事件或带归档时间的 `session.updated` 事件解除。外部删除或归档已经装载的 Session 时，Workbench 必须释放对应 PTY 和 Panel 绑定，并向用户显示状态变化提示。远端数据加载完成前不得根据空列表解绑 Panel，避免初始空数组误判。Projection 的失效信号只用于通知树重新拉取，不能承载会话领域数据，也不能写入持久化。
 
 ### 5.7 响应式与副作用约束
 
 - `createMemo` 必须是纯函数，**禁止**在 memo 内写 store 或触发 API 请求。副作用使用 `createEffect`。
-- SSE 事件订阅只在结构性事件（`session.created` / `session.deleted`）时触发 Session 树定向刷新。高频属性变更（标题、消息流）由对应组件局部处理。
+- SSE 事件订阅只在结构性事件（`session.created` / `session.deleted` / 含 `timeArchived` 的 `session.updated`）时触发 Session 树定向刷新。高频属性变更（标题、消息流）由对应组件局部处理。
 - Space Path 是所有 Store 操作的**主键**。Panel directory 是面板 CWD 上下文，禁止用 `panel.directory` 替代 Space Path 作为 Store 读写 key。`workspace.tsx` 或 `space-workspace.tsx` 必须将 `spacePath` 作为属性向下透传。
+- `SDKProvider` 在创建时捕获目录，不能依赖后续 prop 变化自动切换上下文。每个 Panel 的 Provider 边界必须以 `panelID + directory` 作为 keyed identity；Panel 绑定到不同目录的 Session 时，必须重建目录 SDK、消息 Store 与 SSE 订阅，禁止继续复用旧目录上下文。
+- Titlebar 等 Workbench 外壳只能把目录 mode/capability 当作渐进增强信息。资源仍在 loading 时不得读取会触发根级 `Suspense` 的值；先显示保守状态，加载完成后再局部更新，避免切换 Session 时整页退回 splash。
 
 ### 5.8 持久化性能优化
 

@@ -1,13 +1,14 @@
 # Ellamaka
 
 > **状态**: Active
-> **更新时间**: 2026-07-11
+> **更新时间**: 2026-07-15
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 
 ## 0. Change Log
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-15 | Updated | Workbench Session Projection 只暴露未归档根会话，归档会话和带 `parentID` 的子会话不进入左侧会话列表。 |
 | 2026-07-11 | Major | §7.1 新增 Runtime API 与 SDK 契约。Effect HttpApi、OpenAPI 和生成 SDK 形成单一 API 链路；Wopal CLI adapter 通过版本化 capability contract 集成空间控制能力。 |
 | 2026-07-04 | Updated | §9 新增 ellamaka-app Web UI 架构设计决策;§1.1 补充 ellamaka-app 引用 |
 | 2026-06-18 | Updated | §3 放弃 opencode 配置兼容：普通模式下不再加载 opencode XDG 全局配置和项目级 opencode.jsonc；§2 适配点表格同步 |
@@ -113,6 +114,8 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 ### 7.1 Runtime API 与 SDK 契约
 
 Ellamaka 的 HTTP API 是 Workbench 和外部集成使用运行时能力的唯一网络表面。领域 schema 同时驱动 Effect HttpApi 路由、运行时校验、OpenAPI 和生成 SDK。Root API 承载全局控制能力，Instance API 承载工作目录相关运行时能力。
+
+Workbench Session Projection 是左侧会话列表的服务端只读模型，只返回 `time_archived IS NULL` 且 `parent_id IS NULL` 的 Session。归档会话和子会话不属于可直接装载的根会话资源。
 
 Wopal CLI adapter 作为 Runtime 的领域服务使用 `wopal ... --json --api-version` capability。它维护非权威空间快照，并将稳定的 CLI 结果映射为 Ellamaka 领域资源和错误。浏览器只使用 Ellamaka API。
 
