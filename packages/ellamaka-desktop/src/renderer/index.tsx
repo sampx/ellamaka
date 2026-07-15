@@ -16,8 +16,8 @@ import {
 } from "@opencode-ai/ellamaka-app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { MemoryRouter, createMemoryHistory, type BaseRouterProps } from "@solidjs/router"
-import { createEffect, createResource, onCleanup, onMount, Show, type Component } from "solid-js"
+import { MemoryRouter, useNavigate } from "@solidjs/router"
+import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -261,12 +261,12 @@ window.api.onMenuCommand((id) => {
 })
 listenForDeepLinks()
 
-/** Desktop MemoryRouter defaults to /workbench */
-const workbenchHistory = createMemoryHistory()
-workbenchHistory.set({ value: "/workbench", replace: true, scroll: false })
-const DesktopRouter: Component<BaseRouterProps> = (props) => (
-  <MemoryRouter history={workbenchHistory}>{props.children}</MemoryRouter>
-)
+/** Desktop defaults to /workbench */
+function WorkbenchRedirect() {
+  const navigate = useNavigate()
+  onMount(() => navigate("/workbench", { replace: true }))
+  return null
+}
 
   render(() => {
     const platform = createPlatform()
@@ -361,9 +361,10 @@ const DesktopRouter: Component<BaseRouterProps> = (props) => (
               <AppInterface
                 defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
                 servers={servers()}
-                router={DesktopRouter}
+                router={MemoryRouter}
               >
                 <Inner />
+                <WorkbenchRedirect />
               </AppInterface>
             )
           }}
