@@ -86,6 +86,28 @@ const unusedSessionPort = {
 }
 
 describe("WorkbenchActions", () => {
+  test("reports how many Panel bindings an external Session removal affected", async () => {
+    const state = createStorePort({ withPty: false })
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async () => {},
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+      },
+      session: unusedSessionPort,
+    })
+
+    expect(await actions.unbindSessionEverywhere("session-old")).toEqual({
+      status: "committed",
+      affectedPanelCount: 1,
+    })
+    expect(await actions.unbindSessionEverywhere("session-missing")).toEqual({
+      status: "unchanged",
+      affectedPanelCount: 0,
+    })
+  })
+
   test("creates a General session through an explicit scope and commits it", async () => {
     const state = createStorePort()
     const scopes: string[] = []
@@ -175,6 +197,64 @@ describe("WorkbenchActions", () => {
     expect(await pending).toEqual({ status: "stale", panelID: "panel-space-a" })
     expect(projected).toEqual([])
     expect(state.commits).toEqual([])
+  })
+
+  test("releases a restored Panel when the server Session is archived", async () => {
+    const state = createStorePort()
+    const disposed: string[] = []
+    const projected: string[] = []
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async ({ panel }) => { disposed.push(panel.id) },
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+      },
+      session: {
+        ...unusedSessionPort,
+        get: async () => ({ ...nextSession, id: "session-old", timeArchived: 1 }),
+        project: ({ session }) => { projected.push(session.id) },
+      },
+    })
+
+    expect(await actions.refreshSession({
+      scope,
+      panelID: state.panel().id,
+      sessionID: "session-old",
+      directory: state.panel().directory,
+    })).toEqual({ status: "committed", panelID: "panel-space-a", unavailableReason: "archived" })
+    expect(disposed).toEqual(["panel-space-a"])
+    expect(projected).toEqual([])
+    expect(state.panel().slotState).toBe("empty")
+  })
+
+  test("releases a restored Panel when it points to a child Session", async () => {
+    const state = createStorePort()
+    const disposed: string[] = []
+    const projected: string[] = []
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async ({ panel }) => { disposed.push(panel.id) },
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+      },
+      session: {
+        ...unusedSessionPort,
+        get: async () => ({ ...nextSession, id: "session-old", parentID: "session-parent" }),
+        project: ({ session }) => { projected.push(session.id) },
+      },
+    })
+
+    expect(await actions.refreshSession({
+      scope,
+      panelID: state.panel().id,
+      sessionID: "session-old",
+      directory: state.panel().directory,
+    })).toEqual({ status: "committed", panelID: "panel-space-a", unavailableReason: "child" })
+    expect(disposed).toEqual(["panel-space-a"])
+    expect(projected).toEqual([])
+    expect(state.panel().slotState).toBe("empty")
   })
 
   test("disposes resources before committing a replacement once", async () => {

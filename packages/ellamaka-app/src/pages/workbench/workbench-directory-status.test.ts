@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createWorkbenchStore, type PersistedWorkbench } from "./workbench-store"
-import { selectWorkbenchDirectoryTarget } from "./workbench-directory-provider"
+import {
+  readWorkbenchDirectoryMode,
+  selectWorkbenchDirectoryTarget,
+  selectWorkbenchPanelDirectoryTarget,
+} from "./workbench-directory-provider"
 import {
   WORKBENCH_FIXTURES,
   WORKBENCH_SCENARIO,
@@ -56,6 +60,34 @@ const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
 
 describe("Workbench directory status", () => {
+  test("changes the Panel SDK boundary when a bound Session changes directory", () => {
+    const panel = { id: "panel-general", directory: "/fixtures/general/old" }
+    const before = selectWorkbenchPanelDirectoryTarget(panel)
+    const after = selectWorkbenchPanelDirectoryTarget({
+      ...panel,
+      directory: "/fixtures/general/new",
+    })
+
+    expect(after.directory).toBe("/fixtures/general/new")
+    expect(after.key).not.toBe(before.key)
+    expect(selectWorkbenchPanelDirectoryTarget({ id: panel.id, directory: "" }).key).not.toBe("")
+  })
+
+  test("does not suspend the Workbench shell while directory mode is loading", () => {
+    let reads = 0
+    const loading = readWorkbenchDirectoryMode({
+      isWopalSpaceLoading: true,
+      get isWopalSpace(): boolean {
+        reads += 1
+        throw new Error("pending resource was read")
+      },
+    })
+
+    expect(loading).toBe(false)
+    expect(reads).toBe(0)
+    expect(readWorkbenchDirectoryMode({ isWopalSpaceLoading: false, isWopalSpace: true })).toBe(true)
+  })
+
   test("selects exact capability source paths across General, Space A, Space B and General", async () => {
     const store = createWorkbenchStore(persisted())
     const transport = createControlledDirectoryTransport()

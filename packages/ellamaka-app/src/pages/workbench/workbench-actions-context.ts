@@ -115,6 +115,7 @@ const WorkbenchActionsContext = createSimpleContext({
         if (!result.data?.id) throw new Error(`Forked Session not found: ${sessionID}`)
         return {
           id: result.data.id,
+          parentID: result.data.parentID,
           title: result.data.title ?? result.data.id,
           directory: result.data.directory,
           type: "chat",

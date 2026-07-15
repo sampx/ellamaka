@@ -16,6 +16,7 @@ export type WorkbenchActionPanel = {
 
 export type WorkbenchActionSession = {
   id: string
+  parentID?: string
   title: string
   directory: string
   type: "tui" | "chat"
@@ -87,6 +88,7 @@ export type WorkbenchActionResult = {
   status: "committed" | "unchanged" | "stale"
   panelID: string
   ptyID?: string
+  unavailableReason?: "archived" | "child"
 }
 
 export type WorkbenchActionStatus = Pick<WorkbenchActionResult, "status">
@@ -210,11 +212,14 @@ export function createWorkbenchActions(input: {
     }) {
       return unbindPanel(options.scope, options.panelID)
     },
-    async unbindSessionEverywhere(sessionID: string): Promise<WorkbenchActionStatus> {
+    async unbindSessionEverywhere(sessionID: string): Promise<WorkbenchActionStatus & { affectedPanelCount: number }> {
       const targets = input.store.boundPanels(sessionID)
-      if (targets.length === 0) return { status: "unchanged" }
+      if (targets.length === 0) return { status: "unchanged", affectedPanelCount: 0 }
       const results = await Promise.all(targets.map((target) => unbindPanel(target.scope, target.panelID)))
-      return { status: results.some((result) => result.status === "stale") ? "stale" : "committed" }
+      return {
+        status: results.some((result) => result.status === "stale") ? "stale" : "committed",
+        affectedPanelCount: targets.length,
+      }
     },
     async closeSpace(scope: SpaceScope): Promise<WorkbenchActionStatus> {
       if (scope.kind === "general") return { status: "unchanged" }
@@ -278,6 +283,14 @@ export function createWorkbenchActions(input: {
       if (!panel || panel.boundSessionId !== options.sessionID) {
         return { status: "stale", panelID: options.panelID }
       }
+      const unavailableReason = typeof session.timeArchived === "number"
+        ? "archived" as const
+        : session.parentID
+          ? "child" as const
+          : undefined
+      if (unavailableReason) {
+        return { ...await unbindPanel(options.scope, options.panelID), unavailableReason }
+      }
       input.session.project({ scope: options.scope, session })
       return { status: "committed", panelID: options.panelID }
     },
@@ -295,6 +308,14 @@ export function createWorkbenchActions(input: {
       })
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
+      }
+      const unavailableReason = typeof session.timeArchived === "number"
+        ? "archived" as const
+        : session.parentID
+          ? "child" as const
+          : undefined
+      if (unavailableReason) {
+        return { status: "unchanged", panelID: options.panelID, unavailableReason }
       }
       const panel = panelOrThrow(options.scope, options.panelID)
       if (

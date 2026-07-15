@@ -7,9 +7,9 @@ import { For, Show, createEffect, createMemo, batch, Suspense } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { Panel } from "./panel"
-import { SDKProvider } from "@/context/sdk"
 import { useWorkbenchActions } from "../workbench-actions-context"
 import { scopeFromTab } from "../workbench-scope"
+import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
 
 import type { WorkbenchPanel } from "../view-store"
 
@@ -147,17 +147,19 @@ export function Workspace() {
                   {(panel, index) => (
                     <div class="contents">
                       <Suspense>
-                        <SDKProvider directory={panel.directory}>
-                          <Panel
-                            panel={panel}
-                            spaceName={tab.name}
-                            spacePath={tab.path}
-                            isActive={panel.id === tabActivePanelID()}
-                            panelCount={tabPanels().length}
-                            onActivate={() => wb.setActivePanel(tab.path, panel.id)}
-                            onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
-                          />
-                        </SDKProvider>
+                        <WorkbenchPanelDirectoryProvider panelID={panel.id} directory={panel.directory}>
+                          {() => (
+                            <Panel
+                              panel={panel}
+                              spaceName={tab.name}
+                              spacePath={tab.path}
+                              isActive={panel.id === tabActivePanelID()}
+                              panelCount={tabPanels().length}
+                              onActivate={() => wb.setActivePanel(tab.path, panel.id)}
+                              onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
+                            />
+                          )}
+                        </WorkbenchPanelDirectoryProvider>
                       </Suspense>
                       <Show when={index() < tabPanels().length - 1}>
                         <div

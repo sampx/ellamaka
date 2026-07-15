@@ -60,10 +60,22 @@ function ensureGlobalProject() {
   })
 }
 
-function insertSession(directory: string, title: string): string {
+function insertSession(directory: string, title: string, options?: { parentID?: string; timeArchived?: number }): string {
   const id = Identifier.ascending("session")
   Database.use((db) =>
-    db.insert(SessionTable).values({ id: id as never, project_id: ProjectID.global, slug: Slug.create(), directory, title, version: InstallationVersion, agent: null, time_created: Date.now(), time_updated: Date.now() }).run(),
+    db.insert(SessionTable).values({
+      id: id as never,
+      project_id: ProjectID.global,
+      parent_id: options?.parentID as never,
+      slug: Slug.create(),
+      directory,
+      title,
+      version: InstallationVersion,
+      agent: null,
+      time_created: Date.now(),
+      time_updated: Date.now(),
+      time_archived: options?.timeArchived,
+    }).run(),
   )
   return id
 }
@@ -105,6 +117,28 @@ function queryProjectionColdStart(spaces: SpaceEntry[], sessionDir: string, subD
 }
 
 describe("session-projection-group-resolution", () => {
+  it.instance("returns only active root sessions to the Workbench list", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const rootID = yield* Effect.sync(() => {
+        ensureGlobalProject()
+        const id = insertSession(instance.directory, "active root")
+        insertSession(instance.directory, "archived root", { timeArchived: Date.now() })
+        insertSession(instance.directory, "child session", { parentID: id })
+        return id
+      })
+
+      const projection = yield* SessionProjection.Service
+      const groups = yield* projection.getSessionGroups()
+      const group = groups.find((item) => item.type === "general" && item.id === instance.directory)
+
+      expect(group?.sessionCount).toBe(1)
+      expect(group?.sessions.map((session) => ({ id: session.id, title: session.title }))).toEqual([
+        { id: rootID, title: "active root" },
+      ])
+    }),
+  )
+
   it.instance("returns space group for sessions under a registered space path", () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance

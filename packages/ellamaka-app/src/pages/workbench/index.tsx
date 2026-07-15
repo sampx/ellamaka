@@ -6,8 +6,9 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
-import { shouldUnbindSessionFromEvent, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
+import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
+import { useLanguage } from "@/context/language"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions-context"
@@ -22,18 +23,34 @@ function WorkbenchShell() {
   const allStoresReady = () => wb.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
+  const language = useLanguage()
+  const t = (key: string, params?: Record<string, string | number | boolean>) => language.t(key as Parameters<typeof language.t>[0], params)
 
   onMount(() => {
     const unsub = sdk.event.listen((e) => {
       const session = workbenchSessionEvent(e.details)
-      if (shouldUnbindSessionFromEvent({ type: session.type, timeArchived: session.timeArchived })) {
-        if (session.sessionId) {
-          void actions.unbindSessionEverywhere(session.sessionId).catch((error) => {
-            console.error("Failed to unbind deleted Workbench session:", error)
-          })
-          projection.remove(session.sessionId)
-        }
+      const removalReason = sessionRemovalReasonFromEvent({ type: session.type, timeArchived: session.timeArchived })
+      if (removalReason) {
         projection.invalidate()
+        if (session.sessionId) {
+          const sessionID = session.sessionId
+          const title = spaceStore.getSession(sessionID)?.title ?? session.title ?? sessionID
+          void actions
+            .unbindSessionEverywhere(sessionID)
+            .then((result) => {
+              projection.remove(sessionID)
+              if (!shouldNotifySessionRemoval({ affectedPanelCount: result.affectedPanelCount, isBound: wb.isSessionBound(sessionID) })) return
+              wb.setStatusMessage(t(
+                removalReason === "archived"
+                  ? "workbench.status.sessionArchivedExternally"
+                  : "workbench.status.sessionDeletedExternally",
+                { title },
+              ))
+            })
+            .catch((error) => {
+              console.error("Failed to release externally removed Workbench session:", error)
+            })
+        }
         return
       }
       if (session.type === "session.created") {

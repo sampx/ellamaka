@@ -11,6 +11,26 @@ export type WorkbenchDirectoryTarget = {
   directory: string
 }
 
+export type WorkbenchPanelDirectoryTarget = Pick<WorkbenchDirectoryTarget, "key" | "directory">
+
+export function selectWorkbenchPanelDirectoryTarget(input: {
+  id: string
+  directory: string
+}): WorkbenchPanelDirectoryTarget {
+  return {
+    key: `${input.id}\n${input.directory}`,
+    directory: input.directory,
+  }
+}
+
+export function readWorkbenchDirectoryMode(input: {
+  isWopalSpaceLoading: boolean
+  isWopalSpace: boolean
+}) {
+  if (input.isWopalSpaceLoading) return false
+  return input.isWopalSpace
+}
+
 export function selectWorkbenchDirectoryTarget(input: ActiveWorkbenchSnapshot): WorkbenchDirectoryTarget | undefined {
   const active = selectActiveWorkbenchContext(input)
   if (active) {
@@ -39,6 +59,27 @@ export function WorkbenchActiveDirectoryProvider(props: {
     spaces: wb.spaces,
     tabs: wb.tabs,
     activeSpaceName: wb.activeSpaceName,
+  }))
+
+  return (
+    <Show when={target()} keyed>
+      {(current) => (
+        <SDKProvider directory={current.directory}>
+          {props.children(current)}
+        </SDKProvider>
+      )}
+    </Show>
+  )
+}
+
+export function WorkbenchPanelDirectoryProvider(props: {
+  panelID: string
+  directory: string
+  children: (target: WorkbenchPanelDirectoryTarget) => JSX.Element
+}) {
+  const target = createMemo(() => selectWorkbenchPanelDirectoryTarget({
+    id: props.panelID,
+    directory: props.directory,
   }))
 
   return (

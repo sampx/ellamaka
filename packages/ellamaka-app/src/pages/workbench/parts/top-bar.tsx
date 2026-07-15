@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useWorkbenchState } from "../view-store"
 import { resolveOfficialRoute } from "@/utils/official-route"
+import { readWorkbenchDirectoryMode } from "../workbench-directory-provider"
 
 export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
@@ -13,7 +14,7 @@ export function WorkbenchTitlebar() {
   const navigate = useNavigate()
   const t = (k: string) => language.t(k)
 
-  const isWopalSpace = () => sdk.isWopalSpace
+  const isWopalSpace = () => readWorkbenchDirectoryMode(sdk)
 
   const activeTab = () => wb.activeTab()
   const spaceType = () => activeTab()?.type?.toUpperCase() ?? ""

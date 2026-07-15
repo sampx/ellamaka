@@ -7,6 +7,7 @@ import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import type { SpaceEntry } from "@/wopal/cli-schema"
 import type { DirectoryHealth } from "./session-directory-health"
+import { and, isNull } from "drizzle-orm"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,6 +82,7 @@ const make = Effect.gen(function* () {
               time_archived: SessionTable.time_archived,
             })
             .from(SessionTable)
+            .where(and(isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)))
             .all(),
         ),
       )

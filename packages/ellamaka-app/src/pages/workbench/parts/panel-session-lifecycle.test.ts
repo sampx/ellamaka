@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
   shouldAcceptSessionDrop,
+  shouldNotifySessionRemoval,
   sessionDropRejection,
+  sessionRemovalReasonFromEvent,
   shouldRestoreBoundSession,
-  shouldUnbindSessionFromEvent,
   shouldSyncSessionTitle,
   disconnectRecovery,
   workbenchSessionEvent,
@@ -42,14 +43,28 @@ describe("shouldRestoreBoundSession", () => {
   })
 })
 
-describe("shouldUnbindSessionFromEvent", () => {
+describe("sessionRemovalReasonFromEvent", () => {
   test("ignores cache state and non-destructive session updates", () => {
-    expect(shouldUnbindSessionFromEvent({ type: "session.updated" })).toBe(false)
+    expect(sessionRemovalReasonFromEvent({ type: "session.updated" })).toBeUndefined()
   })
 
-  test("unbinds only on an explicit server deletion or archive event", () => {
-    expect(shouldUnbindSessionFromEvent({ type: "session.deleted" })).toBe(true)
-    expect(shouldUnbindSessionFromEvent({ type: "session.updated", timeArchived: 1 })).toBe(true)
+  test("identifies an explicit server deletion", () => {
+    expect(sessionRemovalReasonFromEvent({ type: "session.deleted" })).toBe("deleted")
+  })
+
+  test("identifies an externally archived session", () => {
+    expect(sessionRemovalReasonFromEvent({ type: "session.updated", timeArchived: 1 })).toBe("archived")
+  })
+})
+
+describe("shouldNotifySessionRemoval", () => {
+  test("notifies when an externally removed Session was bound and is now released", () => {
+    expect(shouldNotifySessionRemoval({ affectedPanelCount: 1, isBound: false })).toBe(true)
+  })
+
+  test("does not notify for an unbound Session or before its binding is released", () => {
+    expect(shouldNotifySessionRemoval({ affectedPanelCount: 0, isBound: false })).toBe(false)
+    expect(shouldNotifySessionRemoval({ affectedPanelCount: 1, isBound: true })).toBe(false)
   })
 })
 

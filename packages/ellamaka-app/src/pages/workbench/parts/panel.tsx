@@ -98,6 +98,14 @@ export function Panel(props: {
       sessionID,
       directory: props.panel.directory,
     })
+      .then((result) => {
+        if (result.unavailableReason === "archived") {
+          wb.setStatusMessage(t("workbench.status.restoredSessionArchived"))
+        }
+        if (result.unavailableReason === "child") {
+          wb.setStatusMessage(t("workbench.status.restoredSessionChild"))
+        }
+      })
       .catch((error) => {
         console.error("Failed to restore bound session:", error)
       })

@@ -24,11 +24,22 @@ export function shouldRestoreBoundSession(input: {
   return input.slotState === "bound" && !!input.boundSessionId && !input.hasLocalSession
 }
 
-export function shouldUnbindSessionFromEvent(input: {
+export type SessionRemovalReason = "deleted" | "archived"
+
+export function sessionRemovalReasonFromEvent(input: {
   type?: string
   timeArchived?: number
+}): SessionRemovalReason | undefined {
+  if (input.type === "session.deleted") return "deleted"
+  if (input.type === "session.updated" && typeof input.timeArchived === "number") return "archived"
+  return undefined
+}
+
+export function shouldNotifySessionRemoval(input: {
+  affectedPanelCount: number
+  isBound: boolean
 }) {
-  return input.type === "session.deleted" || (input.type === "session.updated" && typeof input.timeArchived === "number")
+  return input.affectedPanelCount > 0 && !input.isBound
 }
 
 export function shouldSyncSessionTitle(input: {

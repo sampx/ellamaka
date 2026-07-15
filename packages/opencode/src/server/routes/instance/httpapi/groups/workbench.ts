@@ -79,7 +79,7 @@ export const WorkbenchApi = HttpApi.make("workbench").add(
           identifier: "workbench.sessionGroups",
           summary: "List Workbench session groups",
           description:
-            "Return all sessions grouped by space or general, with directory health per session. Sessions from external TUI are included in the projection.",
+            "Return active root sessions grouped by space or general, with directory health per session. Archived sessions and child sessions are excluded; root sessions from external TUI are included.",
         }),
       ),
     )
