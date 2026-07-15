@@ -21,6 +21,11 @@ async function makeTmpPluginDir(base: string, name: string, deps?: Record<string
 }
 
 describe("collectPluginDeps", () => {
+  test("does not depend on Bun filesystem APIs used outside the Bun runtime", async () => {
+    const source = await fs.readFile(new URL("../../src/config/wopal-space.ts", import.meta.url), "utf8")
+    expect(source).not.toMatch(/\bBun\.(file|write)\b/)
+  })
+
   test("flattens dependencies from multiple plugins", async () => {
     const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-deps-test-"))
     try {

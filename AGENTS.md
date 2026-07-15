@@ -11,11 +11,13 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - API CONTRACT: `docs/API-CONTRACT.md` — Runtime API, OpenAPI, generated SDK, and Wopal CLI adapter contract
 - BRANDING: `docs/BRANDING.md` — single source of truth for all upstream injection changes (per-file, per-line, per-pattern)
 - WORKBENCH: [docs/ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md) — Workbench design specification, covering multi-panel layout, session browser, and state persistence
+- DESKTOP: `docs/DESKTOP.md` — ellamaka-desktop architecture, state ownership, PTY lifecycle, and sidecar integration
 - `.gitattributes` — fork-specific file merge protection (`merge=ours`); upstream merges automatically preserve ellamaka versions
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
 - opencode package rules: `packages/opencode/AGENTS.md`
+- desktop package rules: `packages/ellamaka-desktop/AGENTS.md`
 
 ## 2. Architecture and Directories
 
@@ -29,6 +31,7 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | `packages/plugin/`, `packages/script/`, `packages/util/` | Workspace support packages |
 | `packages/sdk/` | SDK workspace; JS SDK regeneration uses existing script |
 | `packages/ellamaka/` | Brand constants (branding.ts/channel), logo (logo.ts), build wrapper (build.ts), WopalSpace auto-detection (detect.ts), install path detection (is-wopal-install.ts), and package-level tests |
+| `packages/ellamaka-desktop/` | Electron desktop app (v1.15.13 baseline), hosts ellamaka-app Workbench and local Ellamaka sidecar; see `packages/ellamaka-desktop/AGENTS.md` |
 | `docs/` | Project DESIGN, BRANDING, DISTRIBUTION, references, research, and plans |
 
 ## 3. Development Commands (build format test)
@@ -45,6 +48,11 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | Workbench dev server | `./scripts/dev.sh serve` | From any directory; starts backend `:4096` + `ellamaka-app` `:3000/workbench` |
 | Stop Workbench dev server | `./scripts/dev.sh stop` | Stops backend and Workbench for the current port combination |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
+| Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | After desktop package TypeScript changes |
+| Desktop tests | `bun test --preload ./electron-mock.ts --force-exit src` from `packages/ellamaka-desktop` | After desktop behavior changes (requires electron mock) |
+| Desktop build | `bun run build` from `packages/ellamaka-desktop` | After main/preload/renderer changes |
+| Desktop package:mac | `bun run package:mac` from `packages/ellamaka-desktop` | Produces unsigned macOS DMG/ZIP dev build |
+| Sidecar build | `cd ../opencode && bun script/build-node.ts` | Build sidecar node runtime (prerequisite for desktop build) |
 
 Tests cannot run from repo root; the root `test` script is a guard.
 

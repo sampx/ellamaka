@@ -20,7 +20,23 @@
 
 ## 2. 包定位与版本基线
 
-### 2.1 独立复制模式
+### 2.1 双包模型
+
+本项目同时保留两个 `packages/desktop/` 目录，各司其职：
+
+| 包 | 路径 | 角色 | 修改规则 |
+|------|------|------|----------|
+| 上游基线 | `packages/desktop/` | 冻结的 OpenCode v1.15.13 参照源 | **禁止修改**。仅通过 `git diff` 读取，作为安全/兼容修复的评估基准 |
+| 品牌产品 | `packages/ellamaka-desktop/` | 可编辑的 Ellamaka 桌面应用 | 正常开发、修改、定制 |
+
+**基线使用规则**：
+
+- `packages/desktop/` 是只读参照，不作为产品包或运行时依赖。
+- 上游安全修复或兼容修复通过 `git diff 385cb694419f98103af0e8fc6187ddcbcbb6eecb -- packages/desktop/` 评估后，手工移植到 `packages/ellamaka-desktop/`。
+- 基线完整性由 `scripts/check-desktop-baseline.sh` 守护，任何对 `packages/desktop/` 的误修改均被检测为 drift 并阻止提交。
+- `packages/desktop/` 不在 `CLEANUP_PATHS` 中，不在构建图中，turbo 不为其编排 Task。
+
+### 2.2 独立复制模式
 
 `packages/ellamaka-desktop` 从 OpenCode v1.15.13 的 `packages/desktop` 独立复制。它与 `ellamaka-app` 采用相同的品牌包模式，集中承载 Ellamaka 桌面定制。
 
@@ -35,7 +51,7 @@
 
 OpenCode v1.15.13 的 desktop 已经采用 Electron。Tauri 运行时不属于 ellamaka-desktop 的基线。
 
-### 2.2 版本协同
+### 2.3 版本协同
 
 `ellamaka-desktop`、`ellamaka-app`、`packages/opencode` 和 JS SDK 共同组成一套版本单元。桌面包消费同版本的 app 公共接口和 node sidecar，不跨版本引入 1.17 desktop 实现。
 
