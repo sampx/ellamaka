@@ -81,7 +81,7 @@ fi
 
 # --- 执行 ---
 
-# 0. 发布前检查：禁止 dirty tree
+# 0. 发布前检查：变更必须先提交并 push 到 remote
 if ! git -C "$REPO_ROOT" diff --quiet HEAD -- . 2>/dev/null; then
   echo "错误: 工作区有未提交变更，请先提交或 stash"
   git -C "$REPO_ROOT" status --short
@@ -90,6 +90,19 @@ fi
 if ! git -C "$REPO_ROOT" diff --cached --quiet HEAD -- . 2>/dev/null; then
   echo "错误: 暂存区有未提交变更，请先提交"
   git -C "$REPO_ROOT" diff --cached --stat
+  exit 1
+fi
+git -C "$REPO_ROOT" fetch "$REMOTE" main 2>/dev/null || true
+REMOTE_MAIN=$(git -C "$REPO_ROOT" rev-parse "$REMOTE/main" 2>/dev/null || echo "")
+if [ -z "$REMOTE_MAIN" ]; then
+  echo "错误: $REMOTE/main 不存在，请先 git push $REMOTE main"
+  exit 1
+fi
+UNPUSHED=$(git -C "$REPO_ROOT" rev-list --count HEAD "^$REMOTE_MAIN" 2>/dev/null)
+if [ "$UNPUSHED" -gt 0 ]; then
+  echo "错误: local main 有 $UNPUSHED 个 commit 未推送至 $REMOTE/main:"
+  git -C "$REPO_ROOT" log --oneline "$REMOTE_MAIN..HEAD"
+  echo "请先 git push $REMOTE main"
   exit 1
 fi
 
