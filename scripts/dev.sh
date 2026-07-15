@@ -1,4 +1,12 @@
 #!/bin/bash
+# ellamaka 开发启动器
+# dev.sh tui      — 启动 TUI（-a 连接已有后端）
+# dev.sh serve    — 启动后端 + Workbench
+# dev.sh desktop  — 构建并启动 Electron 桌面应用
+# dev.sh stop     — 停止后端和 Workbench
+
+set -e
+
 self="$(basename "$0")"
 
 resolve() {
@@ -17,23 +25,77 @@ opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 ellamaka_app_dir="$root/packages/ellamaka-app"
-
 LOGDIR="$space/.wopal-space/logs"
-APP_DEBUG_LOG="$LOGDIR/dev.log"
 
-stop() {
+usage() {
+  cat <<EOF
+Usage: $self <command> [options]
+
+Commands:
+  tui        Start TUI (default: in-process backend)
+  serve      Start HTTP backend + Workbench
+  desktop    Build and start Electron desktop app
+  stop       Stop backend and Workbench
+  help       Show this help
+
+$self tui [options]
+  -a, --attach     Start HTTP backend and attach TUI client
+  --port <port>    Backend port for attach mode (default: 4096)
+  --debug [mods]   Debug mode (modules: task,rules; default: all)
+  -ns              Disable WopalSpace mode
+  -- <args>        Forward args to ellamaka
+
+$self serve [options]
+  --port <port>     Backend port (default: 4096)
+  --app-port <port> Workbench port (default: 3000)
+  --debug [mods]    Debug mode
+  -ns               Disable WopalSpace mode
+
+$self desktop [options]
+  --channel <local|main|beta|prod>
+                    Channel (default: local)
+EOF
+  exit 0
+}
+
+# ── Shared helpers ─────────────────────────────────────────
+
+is_running() { lsof -ti :"$1" >/dev/null 2>&1; }
+
+wait_backend() {
+  local port="${1:-4096}"
+  for i in $(seq 1 30); do
+    curl -sf "http://127.0.0.1:$port/global/health" >/dev/null 2>&1 && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+warmup_config() {
+  local port="${1:-4096}"
+  curl -sf "http://127.0.0.1:$port/global/config" >/dev/null 2>&1 || true
+}
+
+# ── stop ───────────────────────────────────────────────────
+
+cmd_stop() {
+  local port="${1:-4096}"
+  local app_port="${2:-3000}"
+  local pidfile="$LOGDIR/ellamaka-dev-$port-$app_port.pid"
+
   local pids=()
-  if [ -f "$PIDFILE" ]; then
+  if [ -f "$pidfile" ]; then
     while IFS= read -r pid; do
       pids+=("$pid")
-    done < "$PIDFILE"
-    rm -f "$PIDFILE"
+    done < "$pidfile"
+    rm -f "$pidfile"
   fi
-  rm -f "$BACKEND_LOG" "$FRONTEND_LOG" "$LOGDIR/wopal-plugins-debug.log"
-  local pp="$(lsof -ti :"$PORT" 2>/dev/null)"
-  [ -n "$pp" ] && pids+=($pp)
-  pp="$(lsof -ti :"$APP_PORT" 2>/dev/null)"
-  [ -n "$pp" ] && pids+=($pp)
+  rm -f "$LOGDIR/ellamaka-dev-$port-server.log" "$LOGDIR/ellamaka-dev-$app_port-frontend.log" "$LOGDIR/wopal-plugins-debug.log"
+
+  local pp
+  pp="$(lsof -ti :"$port" 2>/dev/null)" && pids+=($pp)
+  pp="$(lsof -ti :"$app_port" 2>/dev/null)" && pids+=($pp)
+
   if [ ${#pids[@]} -gt 0 ]; then
     for pid in $(printf '%s\n' "${pids[@]}" | sort -u); do
       kill "$pid" 2>/dev/null
@@ -44,168 +106,12 @@ stop() {
   fi
 }
 
-usage() {
-  cat <<EOF
-ellamaka - EllaMaka dev launcher
-
-Usage: $self [command|option]
-
-  Commands:
-    serve        Start the backend and Ellamaka Workbench
-    desktop      Build and start the Electron desktop app
-    stop          Stop the backend and Ellamaka Workbench
-    help          Show this help message
-
-  Options:
-    -a, --attach      Start HTTP server + attach TUI client
-    --debug [mods]    Enable debug mode (default: all)
-                       Modules: task, rules, or comma-separated list
-    --port <port>      Backend port (default: 4096)
-    --app-port <port>  Workbench port (default: 3000)
-    --channel <local|main|beta|prod>
-                       Desktop channel (default: local)
-    -ns               Disable WopalSpace mode (native opencode behavior)
-    -h, --help        Forwarded to ellamaka
-
-  Without args, starts TUI directly (no HTTP server, backend in-process).
-
-  Pass-through:
-    After --, all args are forwarded to ellamaka verbatim.
-    Example: $self -- --help
-
-Debug logs:
-  $LOGDIR/ellamaka-dev-<port>-server.log    Backend stdout/stderr
-  $LOGDIR/ellamaka-dev-<port>-frontend.log  Workbench stdout/stderr
-  $LOGDIR/wopal-plugins-debug.log    Plugin debug output
-
-Backend:   http://127.0.0.1:4096 (default, use --port to override)
-Workbench: http://127.0.0.1:3000/workbench (use --app-port to override)
-EOF
-}
-
-cmd=""
-attach=false
-debug=false
-debug_modules=""
-passthrough=()
-PORT=4096
-APP_PORT=3000
-DESKTOP_CHANNEL="local"
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --) shift; passthrough+=("$@"); break ;;
-    stop|help|serve|desktop) cmd="$1"; shift ;;
-    -a|--attach) attach=true; shift ;;
-    -h|--help) passthrough+=(--help); shift ;;
-    --debug)
-      debug=true
-      if [[ $# -gt 1 ]] && [[ ! "$2" =~ ^- ]]; then
-        debug_modules="$2"; shift 2
-      else
-        debug_modules="all"; shift
-      fi
-      ;;
-    --port) PORT="$2"; shift 2 ;;
-    --app-port) APP_PORT="$2"; shift 2 ;;
-    --channel) DESKTOP_CHANNEL="$2"; shift 2 ;;
-    -ns) passthrough+=(--disable-wopalspace); shift ;;
-    *) passthrough+=("$1"); shift ;;
-  esac
-done
-
-PIDFILE="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
-BACKEND_LOG="$LOGDIR/ellamaka-dev-$PORT-server.log"
-FRONTEND_LOG="$LOGDIR/ellamaka-dev-$APP_PORT-frontend.log"
-
-case "$cmd" in
-  stop) stop; exit ;;
-  help) usage; exit ;;
-  desktop)
-    DESKTOP_DIR="$root/packages/ellamaka-desktop"
-    export OPENCODE_CHANNEL="$DESKTOP_CHANNEL"
-
-    # Kill any running electron-vite from this project
-    if pkill -f "electron-vite.*ellamaka-desktop" 2>/dev/null; then
-      echo "==> Stopped previous desktop session"
-      sleep 1
-    fi
-
-    echo "🖥  Starting Desktop (channel: $DESKTOP_CHANNEL)..."
-    echo ""
-
-    echo "==> Building sidecar (packages/opencode)..."
-    (cd "$opencode_dir" && bun script/build-node.ts)
-
-    echo ""
-    echo "==> Building desktop..."
-    (cd "$DESKTOP_DIR" && bun run build)
-
-    echo ""
-    echo "==> Starting Electron..."
-    cd "$DESKTOP_DIR"
-    exec bun run dev
-    ;;
-esac
-
-if ! $attach && [ "$cmd" != "serve" ]; then
-  # ----- default: TUI with in-process backend (no HTTP server) -----
-  mkdir -p "$LOGDIR"
-  caller_pwd="$(pwd)"
-  tui_args=()
-  tui_env=()
-
-  if [ "$debug" = true ]; then
-    tui_args+=(--log-level DEBUG)
-    tui_env+=(
-      WOPAL_PLUGIN_DEBUG="$debug_modules"
-      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
-      WOPAL_DEBUG_LOG_DIR="$LOGDIR"
-    )
-    echo "debug enabled (modules: $debug_modules)"
-    echo "  plugin log: $LOGDIR/wopal-plugins-debug.log"
-    echo "  app log:    $APP_DEBUG_LOG"
-    echo ""
-    echo "watch: tail -f $LOGDIR/wopal-plugins-debug.log"
-    sleep 1
-  fi
-
-  # TUI 在用户调用目录下启动，识别项目上下文
-  cd "$caller_pwd"
-  exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${tui_args[@]}" "${passthrough[@]}"
-fi
-
-mkdir -p "$LOGDIR"
-
-# ----- helpers -----
-
-is_running() { lsof -ti :"$1" > /dev/null 2>&1; }
-
-wait_backend() {
-  local i
-  for i in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:$PORT/global/health" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
-}
-
-wait_frontend() {
-  local i
-  for i in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:$APP_PORT/workbench" > /dev/null 2>&1 && return 0
-    sleep 0.5
-  done
-  return 1
-}
-
-warmup_config() {
-  curl -sf "http://127.0.0.1:$PORT/global/config" > /dev/null 2>&1 || true
-}
+# ── helpers for serve/attach ───────────────────────────────
 
 start_backend() {
-  local srv_env=()
-  local srv_args=(serve --port "$PORT" --print-logs)
+  local port="$1" pidfile="$2" debug="$3" debug_modules="$4" preload="$5" passthrough=("${@:6}")
+
+  local srv_env=() srv_args=(serve --port "$port" --print-logs)
 
   if [ "$debug" = true ]; then
     srv_args+=(--log-level DEBUG)
@@ -215,95 +121,208 @@ start_backend() {
       WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
   fi
-
   srv_args+=("${passthrough[@]}")
 
-  if [ ! -f "$opencode_preload" ]; then
-    echo "missing OpenTUI preload: $opencode_preload"
+  if [ ! -f "$preload" ]; then
+    echo "missing OpenTUI preload: $preload"
     return 1
   fi
 
   (
     cd "$opencode_dir" || exit 1
-    exec env "${srv_env[@]}" nohup bun --preload "$opencode_preload" "$opencode_entry" "${srv_args[@]}"
-  ) > "$BACKEND_LOG" 2>&1 &
+    exec env "${srv_env[@]}" nohup bun --preload "$preload" "$opencode_entry" "${srv_args[@]}"
+  ) > "$LOGDIR/ellamaka-dev-$port-server.log" 2>&1 &
   local pid=$!
-  echo "$pid" >> "$PIDFILE"
+  echo "$pid" >> "$pidfile"
 }
 
 start_frontend() {
+  local app_port="$1" pidfile="$2"
   if [ ! -d "$ellamaka_app_dir" ]; then
     echo "missing Ellamaka Workbench: $ellamaka_app_dir"
     return 1
   fi
-
   (
     cd "$ellamaka_app_dir" || exit 1
-    exec nohup bun run dev -- --host 127.0.0.1 --port "$APP_PORT" --strictPort
-  ) > "$FRONTEND_LOG" 2>&1 &
-  echo "$!" >> "$PIDFILE"
+    exec nohup bun run dev -- --host 127.0.0.1 --port "$app_port" --strictPort
+  ) > "$LOGDIR/ellamaka-dev-$app_port-frontend.log" 2>&1 &
+  echo "$!" >> "$pidfile"
 }
 
-# ----- attach mode (HTTP server + TUI client) -----
+# ── tui ────────────────────────────────────────────────────
 
-if $attach; then
-if ! is_running "$PORT"; then
-    [ "$debug" = true ] && echo "logs: $BACKEND_LOG"
-    start_backend
-    echo -n "starting server (pid $(cat "$PIDFILE"))"
-    wait_backend && echo " ready" || echo " (health check timeout)"
-  else
-    echo "attaching to running server"
-    if ! wait_backend; then
-      echo "backend not healthy, please run '$self stop' first"
-      exit 1
+cmd_tui() {
+  local attach=false PORT=4096 debug=false debug_modules="all" ns=false passthrough=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --) shift; passthrough+=("$@"); break ;;
+      -a|--attach) attach=true; shift ;;
+      --port) PORT="$2"; shift 2 ;;
+      --debug)
+        debug=true
+        [[ $# -gt 1 && ! "$2" =~ ^- ]] && { debug_modules="$2"; shift 2; } || { debug_modules="all"; shift; }
+        ;;
+      -ns) ns=true; shift ;;
+      -h|--help) usage ;;
+      *) passthrough+=("$1"); shift ;;
+    esac
+  done
+
+  $ns && passthrough+=(--disable-wopalspace)
+
+  # ── attach mode: start backend + connect TUI client ──
+  if $attach; then
+    mkdir -p "$LOGDIR"
+    local pidfile="$LOGDIR/ellamaka-dev-$PORT.pid"
+
+    if ! is_running "$PORT"; then
+      $debug && echo "logs: $LOGDIR/ellamaka-dev-$PORT-server.log"
+      start_backend "$PORT" "$pidfile" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}"
+      echo -n "starting server (pid $(cat "$pidfile"))"
+      wait_backend "$PORT" && echo " ready" || echo " (health check timeout)"
+    else
+      echo "attaching to running server"
+      wait_backend "$PORT" || { echo "backend not healthy, run '$self stop' first"; exit 1; }
     fi
+
+    warmup_config "$PORT"
+    cd "$opencode_dir"
+    exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:$PORT" --dir "$space"
   fi
-  warmup_config
-  cd "$opencode_dir"
-  exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:$PORT" --dir "$space"
-fi
 
-# ----- serve mode -----
+  # ── default: in-process backend ──
+  mkdir -p "$LOGDIR"
+  local caller_pwd="$(pwd)"
+  local tui_env=()
+  local tui_args=()
 
-if [ "$cmd" = "serve" ]; then
-if [ -f "$PIDFILE" ] || is_running "$PORT" || is_running "$APP_PORT"; then
-  echo "already running."
-  read -p "stop and restart? [Y/n] " yn
-  case "${yn:-Y}" in
-    [Yy]*) stop; echo "";;
-    *) exit 0;;
-  esac
-fi
+  if $debug; then
+    tui_args+=(--log-level DEBUG)
+    tui_env+=(
+      WOPAL_PLUGIN_DEBUG="$debug_modules"
+      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+      WOPAL_DEBUG_LOG_DIR="$LOGDIR"
+    )
+    echo "debug enabled (modules: $debug_modules)"
+    echo "  plugin log: $LOGDIR/wopal-plugins-debug.log"
+    echo "watch: tail -f $LOGDIR/wopal-plugins-debug.log"
+    sleep 1
+  fi
 
-[ "$debug" = true ] && echo "debug: modules=$debug_modules"
-echo "logs: $LOGDIR/"
+  cd "$caller_pwd"
+  exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" \
+    "${tui_args[@]}" \
+    "${passthrough[@]}"
+}
 
-rm -f "$PIDFILE"
-if ! start_backend; then
-  exit 1
-fi
+# ── serve ──────────────────────────────────────────────────
 
-if ! wait_backend; then
-  echo "backend failed to start; see $BACKEND_LOG"
-  stop
-  exit 1
-fi
+cmd_serve() {
+  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=()
 
-warmup_config
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --) shift; passthrough+=("$@"); break ;;
+      --port) PORT="$2"; shift 2 ;;
+      --app-port) APP_PORT="$2"; shift 2 ;;
+      --debug)
+        debug=true
+        [[ $# -gt 1 && ! "$2" =~ ^- ]] && { debug_modules="$2"; shift 2; } || { debug_modules="all"; shift; }
+        ;;
+      -ns) ns=true; shift ;;
+      -h|--help) usage ;;
+      *) passthrough+=("$1"); shift ;;
+    esac
+  done
 
-if ! start_frontend; then
-  stop
-  exit 1
-fi
+  $ns && passthrough+=(--disable-wopalspace)
 
-if ! wait_frontend; then
-  echo "Workbench failed to start; see $FRONTEND_LOG"
-  stop
-  exit 1
-fi
+  local pidfile="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
 
-echo "started (backend :$PORT, Workbench :$APP_PORT)"
-echo "open http://127.0.0.1:$APP_PORT/workbench"
-echo "run '$self stop' to stop"
-fi
+  if [ -f "$pidfile" ] || is_running "$PORT" || is_running "$APP_PORT"; then
+    echo "already running."
+    read -p "stop and restart? [Y/n] " yn
+    case "${yn:-Y}" in
+      [Yy]*) cmd_stop "$PORT" "$APP_PORT"; echo "" ;;
+      *) exit 0 ;;
+    esac
+  fi
+
+  mkdir -p "$LOGDIR"
+  $debug && echo "debug: modules=$debug_modules"
+  echo "logs: $LOGDIR/"
+
+  rm -f "$pidfile"
+  start_backend "$PORT" "$pidfile" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
+
+  if ! wait_backend "$PORT"; then
+    echo "backend failed to start; see $LOGDIR/ellamaka-dev-$PORT-server.log"
+    cmd_stop "$PORT" "$APP_PORT"
+    exit 1
+  fi
+
+  warmup_config "$PORT"
+  start_frontend "$APP_PORT" "$pidfile" || { cmd_stop "$PORT" "$APP_PORT"; exit 1; }
+
+  if ! curl -sf "http://127.0.0.1:$APP_PORT/workbench" >/dev/null 2>&1; then
+    for i in $(seq 1 30); do
+      curl -sf "http://127.0.0.1:$APP_PORT/workbench" >/dev/null 2>&1 && break
+      sleep 0.5
+    done
+  fi
+
+  echo "started (backend :$PORT, Workbench :$APP_PORT)"
+  echo "open http://127.0.0.1:$APP_PORT/workbench"
+  echo "run '$self stop' to stop"
+}
+
+# ── desktop ────────────────────────────────────────────────
+
+cmd_desktop() {
+  local CHANNEL="local"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --channel) CHANNEL="$2"; shift 2 ;;
+      -h|--help) usage ;;
+      *) shift ;;
+    esac
+  done
+
+  export OPENCODE_CHANNEL="$CHANNEL"
+  local DESKTOP_DIR="$root/packages/ellamaka-desktop"
+
+  if pkill -f "electron-vite.*ellamaka-desktop" 2>/dev/null; then
+    echo "==> Stopped previous desktop session"
+    sleep 1
+  fi
+
+  echo "🖥  Starting Desktop (channel: $CHANNEL)..."
+  echo ""
+
+  echo "==> Building sidecar (packages/opencode)..."
+  (cd "$opencode_dir" && bun script/build-node.ts)
+
+  echo ""
+  echo "==> Building desktop..."
+  (cd "$DESKTOP_DIR" && bun run build)
+
+  echo ""
+  echo "==> Starting Electron..."
+  cd "$DESKTOP_DIR"
+  exec bun run dev
+}
+
+# ── Dispatch ───────────────────────────────────────────────
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+  tui)      cmd_tui "$@" ;;
+  serve)    cmd_serve "$@" ;;
+  desktop)  cmd_desktop "$@" ;;
+  stop)     cmd_stop ;;
+  help|*)   usage ;;
+esac

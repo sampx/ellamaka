@@ -80,8 +80,9 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | 本地构建 ellamaka 品牌 CLI 时；用 `--web-ui app` 嵌入上游 UI，用 `--web-ui none` 不嵌入 UI |
 | 构建 CLI 二进制 | `./scripts/build.sh cli` | 一键 CLI 构建，当前平台；支持 `--platform`、`--arch`、`--install` |
 | 构建桌面应用 | `./scripts/build.sh desktop` | 构建 Electron 桌面应用（默认 main 渠道）；`--channel prod --install` 发布安装 |
-| Workbench 开发服务 | `./scripts/dev.sh serve` | 从任意目录调用；启动后端 `:4096` 与 `ellamaka-app` `:3000/workbench` |
-| 停止 Workbench 开发服务 | `./scripts/dev.sh stop` | 停止当前端口组合记录的后端与 Workbench 进程 |
+| TUI 开发客户端 | `./scripts/dev.sh tui` | 启动 TUI（内嵌后端）；`-a` 连接已有后端，`--debug`、`-ns` |
+| Workbench 开发服务 | `./scripts/dev.sh serve` | 启动后端 `:4096` + `ellamaka-app` `:3000/workbench` |
+| 停止开发服务 | `./scripts/dev.sh stop` | 停止后端与 Workbench |
 | 桌面开发应用 | `./scripts/dev.sh desktop` | 构建 sidecar + 桌面应用，启动 Electron dev 模式；`--channel local|main` |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh [--clean]` | 合并 opencode 上游后检查是否有应删除的文件/目录被错误并入 |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | TypeScript 类型检查 |

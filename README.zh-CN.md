@@ -66,7 +66,8 @@ ellamaka
 
 | 做什么 | 命令 |
 |---|---|
-| 启动开发环境 | `./scripts/dev.sh` |
+| 启动 TUI | `./scripts/dev.sh tui` |
+| 启动 Workbench | `./scripts/dev.sh serve` |
 | 启动桌面开发 | `./scripts/dev.sh desktop` |
 | 编译 CLI 二进制 | `./scripts/build.sh cli` |
 | 编译桌面应用 | `./scripts/build.sh desktop` |

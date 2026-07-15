@@ -15,6 +15,6 @@ describe("desktop dev channel", () => {
 
   test("one-click dev launcher defaults the full build chain to local", async () => {
     const source = await Bun.file(new URL("../../../../scripts/dev.sh", import.meta.url)).text()
-    expect(source).toContain('DESKTOP_CHANNEL="local"')
+    expect(source).toContain('local CHANNEL="local"')
   })
 })

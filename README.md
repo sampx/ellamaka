@@ -67,7 +67,8 @@ ellamaka
 
 | Action | Command |
 |---|---|
-| Start dev environment | `./scripts/dev.sh` |
+| Start TUI | `./scripts/dev.sh tui` |
+| Start Workbench | `./scripts/dev.sh serve` |
 | Start Desktop dev | `./scripts/dev.sh desktop` |
 | Build CLI binary | `./scripts/build.sh cli` |
 | Build Desktop app | `./scripts/build.sh desktop` |

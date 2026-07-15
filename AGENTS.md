@@ -47,8 +47,9 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | ellamaka build | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` | When building ellamaka-branded CLI locally; use `--web-ui app` for upstream UI or `--web-ui none` for no embedded UI |
 | Build CLI binary | `./scripts/build.sh cli` | One-click CLI build for current platform; supports `--platform`, `--arch`, `--install` |
 | Build Desktop app | `./scripts/build.sh desktop` | Build Electron desktop app (default main channel); `--channel prod --install` for release |
-| Workbench dev server | `./scripts/dev.sh serve` | From any directory; starts backend `:4096` + `ellamaka-app` `:3000/workbench` |
-| Stop Workbench dev server | `./scripts/dev.sh stop` | Stops backend and Workbench for the current port combination |
+| TUI dev client | `./scripts/dev.sh tui` | Start TUI (in-process backend); `-a` attach mode, `--debug`, `-ns` |
+| Workbench dev server | `./scripts/dev.sh serve` | Start backend `:4096` + `ellamaka-app` `:3000/workbench` |
+| Stop dev server | `./scripts/dev.sh stop` | Stop backend and Workbench |
 | Desktop dev app | `./scripts/dev.sh desktop` | Build sidecar + desktop, start Electron dev mode; `--channel local|main` |
 | Post-upstream clean check | `./scripts/check-cleanup.sh [--clean]` | After merging upstream opencode to check for erroneously merged files/dirs |
 | Desktop typecheck | `bun run typecheck` from `packages/ellamaka-desktop` | After desktop package TypeScript changes |
