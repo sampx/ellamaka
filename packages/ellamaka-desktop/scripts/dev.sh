@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DESKTOP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$DESKTOP_DIR/../.." && pwd)"
+export OPENCODE_CHANNEL="${OPENCODE_CHANNEL:-local}"
 
 echo "==> Building sidecar (packages/opencode) ..."
 cd "$REPO_DIR/packages/opencode"

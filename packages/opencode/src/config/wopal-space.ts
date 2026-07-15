@@ -14,6 +14,7 @@ import { Effect, Exit, Fiber } from "effect"
 import type { Info } from "./config"
 import type { ConsoleState } from "./console-state"
 import { existsSync } from "fs"
+import { readFile, unlink, writeFile } from "fs/promises"
 
 const log = Log.create({ service: "config" })
 
@@ -54,13 +55,13 @@ export function hashDeps(deps: InstallDependency[]): string {
 }
 
 async function readDepsState(): Promise<PluginDepsState> {
-  return Bun.file(depsStatePath())
-    .json()
+  return readFile(depsStatePath(), "utf8")
+    .then((text) => JSON.parse(text) as PluginDepsState)
     .catch(() => ({ version: 1 as const, dirs: {} }))
 }
 
 async function writeDepsState(state: PluginDepsState): Promise<void> {
-  await Bun.write(depsStatePath(), JSON.stringify(state, null, 2))
+  await writeFile(depsStatePath(), JSON.stringify(state, null, 2))
 }
 
 export async function writeDirDepFingerprint(dir: string, fingerprint: string, plugins: Record<string, PluginDepSnapshot>): Promise<void> {
@@ -78,7 +79,7 @@ export async function writeInstallManifest(dir: string, deps: InstallDependency[
   for (const dep of [...(extraDeps ?? []), ...deps]) {
     dependencies[dep.name] = dep.version ?? "latest"
   }
-  await Bun.write(path.join(dir, "package.json"), JSON.stringify({ dependencies }, null, 2))
+  await writeFile(path.join(dir, "package.json"), JSON.stringify({ dependencies }, null, 2))
 }
 
 // --- Plugin dependency collection ---
@@ -97,11 +98,21 @@ export async function collectPluginDeps(dir: string): Promise<CollectedPluginDep
     cwd: dir,
     absolute: true,
   })) {
-    const json = await Bun.file(pkgPath).json().catch(() => undefined)
-    const name = typeof json?.name === "string" ? json.name.trim() : undefined
+    const json = await readFile(pkgPath, "utf8")
+      .then((text) => JSON.parse(text) as Record<string, unknown>)
+      .catch(() => undefined)
+    if (!json) continue
+    const name = typeof json.name === "string" ? json.name.trim() : undefined
     if (!name) continue
 
-    const deps = (json?.dependencies ?? {}) as Record<string, string>
+    const deps =
+      json.dependencies && typeof json.dependencies === "object" && !Array.isArray(json.dependencies)
+        ? Object.fromEntries(
+            Object.entries(json.dependencies).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          )
+        : {}
     plugins[name] = {
       path: path.relative(dir, pkgPath),
       deps,
@@ -138,10 +149,7 @@ export async function needsPluginDepInstall(dir: string, fingerprint: string): P
 }
 
 export async function cleanPluginDepArtifacts(dir: string): Promise<void> {
-  try {
-    const fs = await import("fs/promises")
-    await fs.unlink(path.join(dir, "package-lock.json")).catch(() => {})
-  } catch {}
+  await unlink(path.join(dir, "package-lock.json")).catch(() => {})
 }
 
 export interface WopalSpaceDeps {
