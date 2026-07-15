@@ -60,3 +60,30 @@ describe("electron vite publicDir", () => {
     expect(existsSync(join(resolved, "oc-theme-preload.js"))).toBe(true)
   })
 })
+
+describe("macOS workbench titlebar", () => {
+  test("keeps traffic lights in a dedicated drag strip above the app toolbar", async () => {
+    const entry = await Bun.file(join(dir, "index.tsx")).text()
+    const styles = await Bun.file(join(dir, "styles.css")).text()
+    const titlebar = await Bun.file(join(root, "../ellamaka-app/src/pages/workbench/parts/top-bar.tsx")).text()
+
+    expect(entry).toContain("document.documentElement.dataset.platform")
+    expect(styles).toContain(".workbench-macos-window-chrome")
+    expect(styles).toContain("height: 28px")
+    expect(titlebar).toContain("workbench-macos-window-chrome")
+    expect(titlebar).toContain("workbench-titlebar-toolbar")
+    expect(titlebar).not.toContain("workbench-titlebar-left-inset")
+  })
+})
+
+describe("desktop initial route", () => {
+  test("starts on workbench without mounting the official app route first", async () => {
+    const entry = await Bun.file(join(dir, "index.tsx")).text()
+    const router = await Bun.file(join(dir, "desktop-router.tsx")).text()
+
+    expect(entry).toContain('import { DesktopRouter } from "./desktop-router"')
+    expect(entry).not.toContain("WorkbenchRedirect")
+    expect(router).toContain('value: "/workbench"')
+    expect(router).toContain("<MemoryRouter {...props} history={desktopHistory} />")
+  })
+})

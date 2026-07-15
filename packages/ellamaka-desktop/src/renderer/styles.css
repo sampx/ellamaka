@@ -1,0 +1,8 @@
+.workbench-macos-window-chrome {
+  display: none;
+}
+
+html[data-platform="desktop-macos"] .workbench-macos-window-chrome {
+  display: block;
+  height: 28px;
+}

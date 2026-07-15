@@ -16,7 +16,6 @@ import {
 } from "@opencode-ai/ellamaka-app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { MemoryRouter, useNavigate } from "@solidjs/router"
 import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
@@ -24,6 +23,7 @@ import { initI18n, t } from "./i18n"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
+import { DesktopRouter } from "./desktop-router"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -261,15 +261,9 @@ window.api.onMenuCommand((id) => {
 })
 listenForDeepLinks()
 
-/** Desktop defaults to /workbench */
-function WorkbenchRedirect() {
-  const navigate = useNavigate()
-  onMount(() => navigate("/workbench", { replace: true }))
-  return null
-}
-
   render(() => {
     const platform = createPlatform()
+    document.documentElement.dataset.platform = platform.os ? `desktop-${platform.os}` : "desktop"
     const [windowConfig] = createResource(() => window.api.getWindowConfig().catch(() => ({ updaterEnabled: false })))
     const loadLocale = async () => {
     const current = await platform.storage?.("ellamaka.global.dat").getItem("language")
@@ -361,10 +355,9 @@ function WorkbenchRedirect() {
               <AppInterface
                 defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
                 servers={servers()}
-                router={MemoryRouter}
+                router={DesktopRouter}
               >
                 <Inner />
-                <WorkbenchRedirect />
               </AppInterface>
             )
           }}
