@@ -25,9 +25,7 @@ fi
 # Paths that should NOT exist in ellamaka.
 # Listed by category — keep in sync with docs/BRANDING.md §0.
 CLEANUP_PATHS=(
-  # Desktop
-  "packages/desktop"
-  "desktop-electron"
+  # Desktop (kept as upstream reference for ellamaka-desktop diff/sync)
   # SaaS / Cloud
   "packages/enterprise"
   "console"

@@ -162,6 +162,61 @@
         "@types/semver": "catalog:",
       },
     },
+    "packages/desktop": {
+      "name": "@opencode-ai/desktop",
+      "version": "1.15.13",
+      "dependencies": {
+        "@zip.js/zip.js": "2.7.62",
+        "drizzle-orm": "catalog:",
+        "effect": "catalog:",
+        "electron-context-menu": "4.1.2",
+        "electron-log": "^5",
+        "electron-store": "^10",
+        "electron-updater": "^6",
+        "electron-window-state": "^5.0.3",
+        "marked": "^15",
+      },
+      "devDependencies": {
+        "@actions/artifact": "4.0.0",
+        "@lydell/node-pty": "catalog:",
+        "@opencode-ai/app": "workspace:*",
+        "@opencode-ai/ui": "workspace:*",
+        "@sentry/solid": "catalog:",
+        "@sentry/vite-plugin": "catalog:",
+        "@solid-primitives/i18n": "2.2.1",
+        "@solid-primitives/storage": "catalog:",
+        "@solidjs/meta": "catalog:",
+        "@solidjs/router": "0.15.4",
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "@valibot/to-json-schema": "1.6.0",
+        "electron": "41.2.1",
+        "electron-builder": "^26",
+        "electron-vite": "^5",
+        "solid-js": "catalog:",
+        "sury": "11.0.0-alpha.4",
+        "typescript": "~5.6.2",
+        "vite": "catalog:",
+        "zod-openapi": "5.4.6",
+      },
+      "optionalDependencies": {
+        "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",
+        "@lydell/node-pty-darwin-x64": "1.2.0-beta.12",
+        "@lydell/node-pty-linux-arm64": "1.2.0-beta.12",
+        "@lydell/node-pty-linux-x64": "1.2.0-beta.12",
+        "@lydell/node-pty-win32-arm64": "1.2.0-beta.12",
+        "@lydell/node-pty-win32-x64": "1.2.0-beta.12",
+        "@parcel/watcher-darwin-arm64": "2.5.1",
+        "@parcel/watcher-darwin-x64": "2.5.1",
+        "@parcel/watcher-linux-arm64-glibc": "2.5.1",
+        "@parcel/watcher-linux-arm64-musl": "2.5.1",
+        "@parcel/watcher-linux-x64-glibc": "2.5.1",
+        "@parcel/watcher-linux-x64-musl": "2.5.1",
+        "@parcel/watcher-win32-arm64": "2.5.1",
+        "@parcel/watcher-win32-x64": "2.5.1",
+      },
+    },
     "packages/effect-drizzle-sqlite": {
       "name": "@opencode-ai/effect-drizzle-sqlite",
       "version": "1.15.13",
@@ -1224,6 +1279,8 @@
     "@opencode-ai/cli": ["@opencode-ai/cli@workspace:packages/cli"],
 
     "@opencode-ai/core": ["@opencode-ai/core@workspace:packages/core"],
+
+    "@opencode-ai/desktop": ["@opencode-ai/desktop@workspace:packages/desktop"],
 
     "@opencode-ai/effect-drizzle-sqlite": ["@opencode-ai/effect-drizzle-sqlite@workspace:packages/effect-drizzle-sqlite"],
 
@@ -3889,6 +3946,12 @@
 
     "@opencode-ai/core/semver": ["semver@7.8.1", "https://registry.npmmirror.com/semver/-/semver-7.8.1.tgz", { "bin": { "semver": "bin/semver.js" } }, "sha512-rkVq3IXh+4FDGch+KwzX3aV9W3kO54GyEgpvBzSyctDA6Xtd7RJQV1xmXbeQp5v7+VzLOfVqiutSE6GICgPFvg=="],
 
+    "@opencode-ai/desktop/@actions/artifact": ["@actions/artifact@4.0.0", "https://registry.npmmirror.com/@actions/artifact/-/artifact-4.0.0.tgz", { "dependencies": { "@actions/core": "^1.10.0", "@actions/github": "^6.0.1", "@actions/http-client": "^2.1.0", "@azure/core-http": "^3.0.5", "@azure/storage-blob": "^12.15.0", "@octokit/core": "^5.2.1", "@octokit/plugin-request-log": "^1.0.4", "@octokit/plugin-retry": "^3.0.9", "@octokit/request": "^8.4.1", "@octokit/request-error": "^5.1.1", "@protobuf-ts/plugin": "^2.2.3-alpha.1", "archiver": "^7.0.1", "jwt-decode": "^3.1.2", "unzip-stream": "^0.3.1" } }, "sha512-HCc2jMJRAfviGFAh0FsOR/jNfWhirxl7W6z8zDtttt0GltwxBLdEIjLiweOPFl9WbyJRW1VWnPUSAixJqcWUMQ=="],
+
+    "@opencode-ai/desktop/marked": ["marked@15.0.12", "https://registry.npmmirror.com/marked/-/marked-15.0.12.tgz", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
+
+    "@opencode-ai/desktop/typescript": ["typescript@5.6.3", "https://registry.npmmirror.com/typescript/-/typescript-5.6.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw=="],
+
     "@opencode-ai/ellamaka-desktop/@actions/artifact": ["@actions/artifact@4.0.0", "https://registry.npmmirror.com/@actions/artifact/-/artifact-4.0.0.tgz", { "dependencies": { "@actions/core": "^1.10.0", "@actions/github": "^6.0.1", "@actions/http-client": "^2.1.0", "@azure/core-http": "^3.0.5", "@azure/storage-blob": "^12.15.0", "@octokit/core": "^5.2.1", "@octokit/plugin-request-log": "^1.0.4", "@octokit/plugin-retry": "^3.0.9", "@octokit/request": "^8.4.1", "@octokit/request-error": "^5.1.1", "@protobuf-ts/plugin": "^2.2.3-alpha.1", "archiver": "^7.0.1", "jwt-decode": "^3.1.2", "unzip-stream": "^0.3.1" } }, "sha512-HCc2jMJRAfviGFAh0FsOR/jNfWhirxl7W6z8zDtttt0GltwxBLdEIjLiweOPFl9WbyJRW1VWnPUSAixJqcWUMQ=="],
 
     "@opencode-ai/ellamaka-desktop/marked": ["marked@15.0.12", "https://registry.npmmirror.com/marked/-/marked-15.0.12.tgz", { "bin": { "marked": "bin/marked.js" } }, "sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA=="],
@@ -4447,6 +4510,8 @@
 
     "@octokit/rest/@octokit/core/before-after-hook": ["before-after-hook@4.0.0", "https://registry.npmmirror.com/before-after-hook/-/before-after-hook-4.0.0.tgz", {}, "sha512-q6tR3RPqIB1pMiTRMFcZwuG5T8vwp+vUvEG0vuI6B+Rikh5BfPp2fQ82c925FOs+b0lcFQ8CFrL+KbilfZFhOQ=="],
 
+    "@opencode-ai/desktop/@actions/artifact/@actions/http-client": ["@actions/http-client@2.2.3", "https://registry.npmmirror.com/@actions/http-client/-/http-client-2.2.3.tgz", { "dependencies": { "tunnel": "^0.0.6", "undici": "^5.25.4" } }, "sha512-mx8hyJi/hjFvbPokCg4uRd4ZX78t+YyRPtnKWwIl+RzNaVuFpQHfmlGVfsKEJN8LwTCvL+DfVgAM04XaHkm6bA=="],
+
     "@opencode-ai/ellamaka-desktop/@actions/artifact/@actions/http-client": ["@actions/http-client@2.2.3", "https://registry.npmmirror.com/@actions/http-client/-/http-client-2.2.3.tgz", { "dependencies": { "tunnel": "^0.0.6", "undici": "^5.25.4" } }, "sha512-mx8hyJi/hjFvbPokCg4uRd4ZX78t+YyRPtnKWwIl+RzNaVuFpQHfmlGVfsKEJN8LwTCvL+DfVgAM04XaHkm6bA=="],
 
     "@opentui/solid/@babel/core/semver": ["semver@6.3.1", "https://registry.npmmirror.com/semver/-/semver-6.3.1.tgz", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
@@ -4622,6 +4687,8 @@
     "@octokit/rest/@octokit/core/@octokit/request/@octokit/endpoint": ["@octokit/endpoint@11.0.3", "https://registry.npmmirror.com/@octokit/endpoint/-/endpoint-11.0.3.tgz", { "dependencies": { "@octokit/types": "^16.0.0", "universal-user-agent": "^7.0.2" } }, "sha512-FWFlNxghg4HrXkD3ifYbS/IdL/mDHjh9QcsNyhQjN8dplUoZbejsdpmuqdA76nxj2xoWPs7p8uX2SNr9rYu0Ag=="],
 
     "@octokit/rest/@octokit/core/@octokit/types/@octokit/openapi-types": ["@octokit/openapi-types@27.0.0", "https://registry.npmmirror.com/@octokit/openapi-types/-/openapi-types-27.0.0.tgz", {}, "sha512-whrdktVs1h6gtR+09+QsNk2+FO+49j6ga1c55YZudfEG+oKJVvJLQi3zkOm5JjiUXAagWK2tI2kTGKJ2Ys7MGA=="],
+
+    "@opencode-ai/desktop/@actions/artifact/@actions/http-client/undici": ["undici@5.29.0", "https://registry.npmmirror.com/undici/-/undici-5.29.0.tgz", { "dependencies": { "@fastify/busboy": "^2.0.0" } }, "sha512-raqeBD6NQK4SkWhQzeYKd1KmIG6dllBOTt55Rmkt4HtI9mwdWtJljnrXjAFUBLTSN67HWrOIZ3EPF4kjUw80Bg=="],
 
     "@opencode-ai/ellamaka-desktop/@actions/artifact/@actions/http-client/undici": ["undici@5.29.0", "https://registry.npmmirror.com/undici/-/undici-5.29.0.tgz", { "dependencies": { "@fastify/busboy": "^2.0.0" } }, "sha512-raqeBD6NQK4SkWhQzeYKd1KmIG6dllBOTt55Rmkt4HtI9mwdWtJljnrXjAFUBLTSN67HWrOIZ3EPF4kjUw80Bg=="],
 
