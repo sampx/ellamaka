@@ -90,6 +90,13 @@ export default defineConfig({
           main: "src/renderer/index.html",
           loading: "src/renderer/loading.html",
         },
+        output: {
+          manualChunks(id) {
+            if (id.includes("ellamaka-app/src/context/") || id.includes("ui/src/context")) {
+              return "context"
+            }
+          },
+        },
       },
     },
   },

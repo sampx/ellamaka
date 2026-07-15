@@ -50,7 +50,7 @@ import { ServersProvider } from "./context/servers"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
-import WorkbenchPage from "@/pages/workbench"
+const WorkbenchPage = lazy(() => import("@/pages/workbench"))
 
 const SessionRoute = Object.assign(
   () => (
