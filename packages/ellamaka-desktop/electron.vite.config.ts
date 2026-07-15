@@ -7,9 +7,9 @@ const OPENCODE_SERVER_DIST = "../opencode/dist/node"
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
+  if (raw === "local" || raw === "main" || raw === "beta" || raw === "prod") return raw
   if (process.env.OPENCODE_CHANNEL === "latest") return "prod"
-  return "dev"
+  return "local"
 })()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`

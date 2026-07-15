@@ -1,8 +1,8 @@
 import { app } from "electron"
 
-type Channel = "main" | "beta" | "prod"
+type Channel = "local" | "main" | "beta" | "prod"
 const raw = import.meta.env.OPENCODE_CHANNEL
-export const CHANNEL: Channel = raw === "main" || raw === "beta" || raw === "prod" ? raw : "main"
+export const CHANNEL: Channel = raw === "local" || raw === "main" || raw === "beta" || raw === "prod" ? raw : "local"
 
 export const SETTINGS_STORE = "ellamaka.settings"
 export const DEFAULT_SERVER_URL_KEY = "defaultServerUrl"
