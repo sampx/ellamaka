@@ -1,8 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createMemo, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { removeLegacySessionStorage } from "./services/session-store-legacy"
-import { limitSessions } from "./services/session-store-service"
 
 export type SessionType = "tui" | "chat"
 export type DirectoryHealth = "healthy" | "missing" | "unavailable"
@@ -26,6 +24,15 @@ export type SessionProjectionPatch = Partial<
 
 type SessionProjectionState = {
   spaces: Record<string, Session[]>
+}
+
+const MAX_SESSIONS = 50
+
+function limitSessions(sessions: Session[]): Session[] {
+  if (sessions.length <= MAX_SESSIONS) return sessions
+  return [...sessions]
+    .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    .slice(0, MAX_SESSIONS)
 }
 
 export function createSessionProjection() {
@@ -125,7 +132,6 @@ export function createSessionProjection() {
 const SessionProjectionContext = createSimpleContext({
   name: "SessionProjection",
   init: () => {
-    removeLegacySessionStorage(typeof window !== "undefined" ? window.localStorage : undefined)
     return createSessionProjection()
   },
 })

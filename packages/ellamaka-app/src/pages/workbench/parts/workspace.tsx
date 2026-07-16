@@ -7,7 +7,7 @@ import { For, Show, createEffect, createMemo, batch, Suspense, ErrorBoundary } f
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { Panel } from "./panel"
-import { useWorkbenchActions } from "../workbench-actions-context"
+import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
 

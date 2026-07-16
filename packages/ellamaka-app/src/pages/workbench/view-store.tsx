@@ -9,6 +9,9 @@ import {
   type PersistedWorkbench,
   type WorkbenchSessionBinding,
 } from "./workbench-store"
+import { scopeFromTab, scopePath, type SpaceScope } from "./workbench-scope"
+import { selectActiveWorkbenchContext } from "./active-workbench-context"
+import type { BoundWorkbenchPanel } from "./workbench-actions"
 
 export {
   DISPLAY_DEFAULTS,
@@ -140,6 +143,25 @@ const WorkbenchStateContext = createSimpleContext({
     const bindSessionToPanel = (path: string, panelID: string, session: WorkbenchSessionBinding) =>
       workbench.bindSessionToPanel(path, panelID, session)
 
+    // Task 1 (O4): StorePort methods — wb directly satisfies WorkbenchActionStorePort
+    // so createWorkbenchActions can receive the store without an adapter layer.
+    const boundPanels = (sessionID: string): BoundWorkbenchPanel[] =>
+      workbench.tabs.flatMap((tab) => {
+        const scope = scopeFromTab(tab)
+        return (workbench.spaceState(tab.path)?.panels ?? [])
+          .filter((panel) => panel.slotState === "bound" && panel.boundSessionId === sessionID)
+          .map((panel) => ({ scope, panelID: panel.id, panel }))
+      })
+
+    const active = () => {
+      const ctx = selectActiveWorkbenchContext({
+        spaces: workbench.spaces,
+        tabs: workbench.tabs,
+        activeSpaceName: workbench.activeSpaceName,
+      })
+      return ctx ? { scope: ctx.scope, panelID: ctx.panel.id } : undefined
+    }
+
     return {
       ready: hydrated,
       display: () => workbench.display,
@@ -165,6 +187,8 @@ const WorkbenchStateContext = createSimpleContext({
       setPanelViewMode: workbench.setPanelViewMode,
       isSessionBound: workbench.isSessionBound,
       boundPanelIdForSession: workbench.boundPanelIdForSession,
+      boundPanels,
+      active,
       get tabs() { return workbench.tabs },
       activeTab: workbench.activeTab,
       get activeDirectory() { return workbench.activeDirectory },

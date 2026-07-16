@@ -1,19 +1,18 @@
 import { scopeKey, type SpaceScope } from "./workbench-scope"
+import type { WorkbenchPanel } from "./workbench-store"
 
 export type WorkbenchActionPtyKind = "tui" | "term" | "split"
 
-export type WorkbenchActionPanel = {
-  id: string
-  slotState: "empty" | "bound"
-  boundSessionId?: string
-  directory: string
-  viewMode?: string
-  splitTerminal?: boolean
-  tuiPtyId?: string
-  termPtyId?: string
-  splitPtyId?: string
-}
+// Task 2 (O5): WorkbenchActionPanel is now a type alias for the canonical
+// WorkbenchPanel. The previous standalone type was a field subset duplicate.
+export type WorkbenchActionPanel = WorkbenchPanel
 
+// Task 2 (O5): WorkbenchActionSession is the server API session DTO shape.
+// It is intentionally distinct from the local Session projection type
+// (session-store.tsx) because the server response carries `directory` and
+// `parentID` while the local projection stores `spaceName`/`projectPath`.
+// The two types overlap on id/title/type/directoryHealth/timestamps but
+// serve different layers — a simple alias would force false equivalence.
 export type WorkbenchActionSession = {
   id: string
   parentID?: string
@@ -459,4 +458,32 @@ export function createWorkbenchActions(input: {
       return { status: "committed", panelID: options.panelID }
     },
   }
+}
+
+// ── Task 1 (O4) useWorkbenchActions hook ────────────────────────────────
+// Inline-constructs createWorkbenchActions without a Context wrapper.
+// The first call caches the result so that the generations map and
+// panelActions map are shared across all components.
+
+import { useWorkbenchState } from "./view-store"
+import { useSessionStore, useSessionProjectionWriter } from "./session-store"
+import { useServerSDK } from "@/context/server-sdk"
+import { buildStorePort, buildPtyPort, buildSessionPort } from "./workbench-actions-ports"
+
+let _actionsCache: ReturnType<typeof createWorkbenchActions> | undefined
+
+export function useWorkbenchActions() {
+  if (_actionsCache) return _actionsCache
+
+  const wb = useWorkbenchState()
+  const sessions = useSessionStore()
+  const projection = useSessionProjectionWriter()
+  const serverSDK = useServerSDK()
+
+  const store = buildStorePort(wb)
+  const pty = buildPtyPort(serverSDK, store)
+  const session = buildSessionPort(serverSDK, sessions, projection)
+
+  _actionsCache = createWorkbenchActions({ store, pty, session })
+  return _actionsCache
 }

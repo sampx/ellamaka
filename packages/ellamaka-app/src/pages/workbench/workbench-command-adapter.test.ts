@@ -13,11 +13,13 @@ const spaceA = spaceScope("Space A", "/fixtures/workspaces/space-a")
 function createHarness() {
   let active: ActiveWorkbenchTarget = { scope: general, panelID: "panel-general" }
   const panels = new Map<string, WorkbenchActionPanel>([
-    [`${scopeKey(general)}\npanel-general`, { id: "panel-general", slotState: "bound" as const, directory: "" }],
+    [`${scopeKey(general)}\npanel-general`, { id: "panel-general", slotState: "bound" as const, directory: "", mode: "", width: 1 }],
     [`${scopeKey(spaceA)}\npanel-space-a`, {
       id: "panel-space-a",
       slotState: "bound" as const,
       directory: "/fixtures/workspaces/space-a",
+      mode: "",
+      width: 1,
     }],
   ])
   const bindings: { scope: SpaceScope; panelID: string; sessionID: string }[] = []
@@ -31,7 +33,7 @@ function createHarness() {
     active: () => active,
     addPanel: (scope) => {
       const panelID = scope.kind === "general" ? "panel-general-fork" : "panel-space-a-fork"
-      panels.set(`${scopeKey(scope)}\n${panelID}`, { id: panelID, slotState: "empty", directory: scope.kind === "general" ? "" : scope.path })
+      panels.set(`${scopeKey(scope)}\n${panelID}`, { id: panelID, slotState: "empty", directory: scope.kind === "general" ? "" : scope.path, mode: "", width: 1 })
       return panelID
     },
     setActivePanel: (scope, panelID) => {

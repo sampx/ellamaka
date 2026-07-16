@@ -18,6 +18,8 @@ function createStorePort(options?: { withPty?: boolean }) {
     slotState: "bound",
     boundSessionId: "session-old",
     directory: "/fixtures/workspaces/space-a",
+    mode: "",
+    width: 1,
     tuiPtyId: options?.withPty === false ? undefined : "pty-existing",
   }
   const commits: string[] = []
@@ -315,8 +317,10 @@ describe("WorkbenchActions", () => {
         slotState: "bound",
         boundSessionId: "session-a",
         directory: scopePath(scope),
+        mode: "",
+        width: 1,
       },
-      { id: "panel-b", slotState: "empty", directory: scopePath(scope) },
+      { id: "panel-b", slotState: "empty", directory: scopePath(scope), mode: "", width: 1 },
     ]
     const events: string[] = []
     const store: WorkbenchActionStorePort = {
@@ -358,8 +362,8 @@ describe("WorkbenchActions", () => {
 
   test("disposes every panel before removing a Space and keeps General immutable", async () => {
     const panels: WorkbenchActionPanel[] = [
-      { id: "panel-a", slotState: "bound", directory: scopePath(scope) },
-      { id: "panel-b", slotState: "bound", directory: scopePath(scope) },
+      { id: "panel-a", slotState: "bound", directory: scopePath(scope), mode: "", width: 1 },
+      { id: "panel-b", slotState: "bound", directory: scopePath(scope), mode: "", width: 1 },
     ]
     const events: string[] = []
     let removed = false

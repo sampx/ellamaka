@@ -1,6 +1,6 @@
 import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useWorkbenchActions } from "@/pages/workbench/workbench-actions-context"
+import { useWorkbenchActions } from "@/pages/workbench/workbench-actions"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"

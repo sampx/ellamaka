@@ -27,7 +27,7 @@ import { EmbeddedSessionSurfaceProvider } from "@/pages/session/session-surface-
 import type { WorkbenchPanel } from "../view-store"
 import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
-import { useWorkbenchActions } from "../workbench-actions-context"
+import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
 import { panelChatRoute } from "./panel-chat-route"
 

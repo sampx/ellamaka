@@ -1,6 +1,6 @@
 import { createSignal, Show, createEffect } from "solid-js"
 import type { WorkbenchPanel } from "../view-store"
-import { useWorkbenchActions } from "../workbench-actions-context"
+import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 
 export function PanelLoader(props: {
