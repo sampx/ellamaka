@@ -65,13 +65,13 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   │   ├── index.tsx                  主布局与事件总线连接
   │   ├── view-store.tsx              工作台视图与面板布局状态管理
   │   ├── space-store.tsx             Space 工作空间与 Tab 状态管理
-  │   ├── session-store.tsx           会话实例及绑定投影状态管理
+  │   ├── session-store.tsx           会话实例及绑定投影状态管理（含 limitSessions 工具函数）
   │   ├── pty-manager.tsx             PTY 运行时管理器（非持久化，统一管理 PTY 生命周期）
   │   ├── space-workspace.tsx         Space Keep-Alive 容器（所有打开的 Space Tab 保持挂载）
-  │   ├── view-registry.tsx           视图注册表（解耦 TUI/Chat/Terminal/Context 渲染）
+  │   ├── view-registry.tsx           视图注册表（createViewRegistry 工厂 + ViewId 枚举，Shell 初始化时注册）
+  │   ├── workbench-actions.ts        跨所有者事务入口（createWorkbenchActions 纯逻辑 + useWorkbenchActions hook）
+  │   ├── workbench-actions-ports.ts  Store/Pty/Session port 构造器（buildStorePort/buildPtyPort/buildSessionPort）
   │   ├── surface-route.ts            路由与界面切换辅助逻辑
-  │   ├── hooks/
-  │   │   └── use-panel-chat-state.ts  面板级 Chat 独立状态钩子
   │   └── parts/
   │       ├── top-bar.tsx              顶栏（品牌/活动空间/返回 Official App）
   │       ├── sidebar.tsx              侧边活动栏与空间栏外壳
@@ -86,6 +86,8 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   ├── (其他目录完全继承 app/)
   └── AGENTS.md                    ← 包级开发规则
 ```
+
+> 2026-07-16 更新：删除 `workbench-actions-context.ts`（过渡适配器）与 `services/` 层（死代码），新增 `workbench-actions-ports.ts`。
 
 ### 3.3 与上游同步策略
 
@@ -214,7 +216,7 @@ Workbench 不再把布局、服务端会话和运行时资源塞进一个控制�
 
 - **WorkbenchStore** (`workbench-store.ts`)：唯一持久化布局所有者，保存 Display、Space Tab、Panel 布局、活动 Panel、`boundSessionId`、Split Terminal 设置和 PTY 重连提示；它只做同步纯状态变更。
 - **View Store adapter** (`view-store.tsx`)：负责水合、`localStorage` 写入和短暂 UI 消息；它不是第二个领域 Store，不能拥有 SDK、PTY、router、Dialog 或 Toast 副作用。
-- **WorkbenchActions** (`workbench-actions.ts` / `workbench-actions-context.ts`)：唯一跨所有者事务入口。创建、装载、替换、fork、解绑、关闭 Panel/Space、PTY 创建、PTY 断连恢复都先由 Action 分配 generation，再执行资源副作用，最后一次性提交布局或 Projection。
+- **WorkbenchActions** (`workbench-actions.ts` / `workbench-actions-ports.ts`)：唯一跨所有者事务入口。创建、装载、替换、fork、解绑、关闭 Panel/Space、PTY 创建、PTY 断连恢复都先由 Action 分配 generation，再执行资源副作用，最后一次性提交布局或 Projection。`createWorkbenchActions` 是纯逻辑函数，接收 `{store, pty, session}` 三个 port；`useWorkbenchActions()` hook 在调用点内联构造 port 并调用 `createWorkbenchActions`，无 Context 层。port 构造逻辑（`buildStorePort`/`buildPtyPort`/`buildSessionPort`）提取到 `workbench-actions-ports.ts`，store port 由 `view-store.tsx` 暴露的 `wb` 直接实现。
 - **Session Projection** (`session-store.tsx`)：只在内存中保存服务端会话的只读投影。Action 的服务端响应和 Shell/SessionTree 的 SSE 对账是唯一 writer；组件、Dialog、命令和持久化层只能读取。
 - **Directory SDK/sync**：插件、MCP、LSP 和配置按规范化 directory 缓存，不持久化。Panel 使用该 Panel 的 directory；TopBar 与 StatusPopover 通过活动 `SpaceScope` 和活动 Panel selector 获得同一 directory。
 - **Space Store** (`space-store.tsx`)：读取可打开 Space 的目录列表，用于校验和展示；已打开 Tab 及其布局归 WorkbenchStore 所有。
