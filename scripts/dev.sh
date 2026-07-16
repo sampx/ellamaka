@@ -185,6 +185,8 @@ start_backend() {
       WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
       WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
+  else
+    srv_args+=(--log-level INFO)
   fi
   srv_args+=("${passthrough[@]}")
 
