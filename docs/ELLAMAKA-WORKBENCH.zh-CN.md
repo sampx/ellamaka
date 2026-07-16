@@ -87,8 +87,6 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   └── AGENTS.md                    ← 包级开发规则
 ```
 
-> 2026-07-16 更新：删除 `workbench-actions-context.ts`（过渡适配器）与 `services/` 层（死代码），新增 `workbench-actions-ports.ts`。
-
 ### 3.3 与上游同步策略
 
 - **目录级 merge=ours**：在 `.gitattributes` 中将 `packages/app/` 标记为 `merge=ours`，上游合并时仅用上游代码作为合并对照，保护本地基线；`packages/ellamaka-app/` 不受保护，合并上游变更。
