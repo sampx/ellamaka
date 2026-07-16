@@ -1,7 +1,7 @@
 # Ellamaka — Distribution
 
 > **状态**: Active
-> **更新时间**: 2026-06-01
+> **更新时间**: 2026-07-16
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **项目设计**: `./DESIGN.md`
 
@@ -9,6 +9,7 @@
 
 | Date | Type | Summary |
 |---|---|---|
+| 2026-07-16 | Updated | 新增 §9 Desktop Distribution：明确桌面端为独立发布单元，定义 artifact contract、CI matrix、R2 独立路径、electron-updater feed 与签名公证分阶段方案；原 §9/§10 顺延为 §10/§11。 |
 | 2026-06-08 | Updated | 切换为 R2 CDN 主分发；GitHub/Gitee Release 只保留 markdown 索引；macOS 归档格式对齐为 `.tar.gz`。 |
 | 2026-06-01 | Updated | §4.2 补充本地构建入口；§5 标注 channel 值来源；§9 添加 BRANDING.md 引用。 |
 | 2026-06-01 | Updated | 新增 §3 Publish Procedure：版本模型、CI 自动发布步骤、手动发布步骤、验证清单、与上游 opencode 的差异对比。 |
@@ -25,7 +26,7 @@
 
 ellamaka 的发布是自包含的，但 P1 的自动消费入口是 `wopal ellamaka install`。wopal-cli 的 `setup` 通过该入口完成 engine 安装引导。
 
-项目职责、配置链路与 runtime loading 见 `DESIGN.md`。
+项目职责、配置链路与 runtime loading 见 `DESIGN.md`。桌面端的分发方案见 §9，其架构与运行时行为见 `DESKTOP.md`。
 
 ---
 
@@ -291,25 +292,52 @@ Cloudflare R2 是 ellamaka P1 的唯一 binary 分发源。R2 bucket `wopal-rele
 s3://wopal-release/
 ├── wopal-cli/                 ← wopal-cli（已实施）
 │   └── ...
-└── ellamaka/
-    ├── v0.1.0/                ← 版本化、不可变
-    │   ├── ellamaka-darwin-arm64.tar.gz
-    │   ├── ellamaka-darwin-x64.tar.gz
-    │   ├── ellamaka-linux-x64.tar.gz
-    │   ├── ellamaka-windows-x64.zip
-    │   ├── manifest.json
+├── ellamaka/                 ← CLI 二进制（已实施）
+│   ├── v0.1.0/
+│   │   ├── ellamaka-darwin-arm64.tar.gz
+│   │   ├── ellamaka-darwin-x64.tar.gz
+│   │   ├── ellamaka-linux-x64.tar.gz
+│   │   ├── ellamaka-windows-x64.zip
+│   │   ├── manifest.json
+│   │   ├── checksums.txt
+│   │   └── release-notes.md
+│   ├── v0.2.0/
+│   │   └── ...
+│   └── latest/
+│       └── manifest.json
+└── ellamaka-desktop/         ← 桌面安装包（见 §9）
+    ├── v0.1.0/
+    │   ├── ellamaka-desktop-darwin-arm64.dmg
+    │   ├── ellamaka-desktop-darwin-arm64.zip
+    │   ├── ellamaka-desktop-win32-x64.exe
+    │   ├── ellamaka-desktop-linux-x64.AppImage
+    │   ├── ellamaka-desktop-linux-x64.deb
+    │   ├── ellamaka-desktop-linux-x64.rpm
+    │   ├── latest-mac.yml
+    │   ├── latest.yml
+    │   ├── latest-linux.yml
     │   ├── checksums.txt
     │   └── release-notes.md
     ├── v0.2.0/
     │   └── ...
-    └── latest/                ← 仅 manifest.json，5 分钟 TTL
+    └── latest/               ← updater feed（latest-*.yml）+ manifest.json
+        ├── latest-mac.yml
+        ├── latest.yml
+        ├── latest-linux.yml
         └── manifest.json
 ```
 
 ### URL 结构
 
+CLI：
+
 - 版本化：`https://download.coursedao.com/ellamaka/v$VERSION/<file>`
 - Latest 别名：`https://download.coursedao.com/ellamaka/latest/manifest.json`
+
+Desktop：
+
+- 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
+- Latest 别名（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
 
 ### 缓存策略
 
@@ -318,13 +346,123 @@ s3://wopal-release/
 | `v$VERSION/*` | `public, max-age=604800` | 1 周、覆盖后最多 1 周生效 |
 | `latest/*` | `public, max-age=300` | 5 分钟、新版本发布后最多 5 分钟生效 |
 
+缓存策略对 CLI 与 Desktop 一致。Desktop 的 `latest/*` 同时承载 `manifest.json` 与 `latest-*.yml` 自动更新 feed，TTL 同为 5 分钟。
+
+### Desktop 独立路径
+
+`ellamaka-desktop/` 与 `ellamaka/` 并列，共享同一 bucket、同一自定义域名与缓存策略，但为独立发布单元：版本化目录、latest 别名和去重原则均独立。差异在于顶层产品目录与产物形态（安装包 + updater feed，而非 CLI 二进制归档）。详见 §9。
+
 ### 与 wopal-cli 的一致性
 
 ellamaka 与 wopal-cli 共享同一套 R2 bucket `wopal-release`、同一个自定义域名 `download.coursedao.com`，以及相同的缓存策略、latest 别名设计和去重原则。差异仅在于产品级顶层目录（`ellamaka/` vs `wopal-cli/`）和 tag 命名格式（`v0.1.0` vs `cli-v0.3.0`）。
 
 ---
 
-## 9. Out of Scope for P1
+## 9. Desktop Distribution
+
+> **状态**: Draft（架构见 `DESKTOP.md`，打包配置见 `packages/ellamaka-desktop/electron-builder.config.ts`）
+
+桌面端（`ellamaka-desktop`，Electron 应用）与 CLI 共享同一 OpenCode 版本基线与 `v$VERSION` tag，但作为**独立发布单元**：R2 子路径独立、CI 构建独立、manifest / updater feed 机制独立。CLI 走 `wopal ellamaka install`，桌面端走独立安装包 + `electron-updater` 自动更新。
+
+### 9.1 与 CLI 的关系
+
+| 维度 | CLI | Desktop |
+|------|-----|---------|
+| 版本号 | 同 `v$VERSION` tag | 同 `v$VERSION` tag |
+| R2 顶层目录 | `ellamaka/` | `ellamaka-desktop/` |
+| CI workflow | `publish-ellamaka.yml` | `publish-ellamaka-desktop.yml`（新增） |
+| 消费入口 | `wopal ellamaka install` | 安装包 + `electron-updater` |
+| 产物形态 | 二进制归档 `.tar.gz`/`.zip` | 安装包 + `latest-*.yml` feed |
+
+### 9.2 Artifact Contract
+
+产物由 `electron-builder` 按 `packages/ellamaka-desktop/electron-builder.config.ts` 生成，`artifactName` 模板为 `ellamaka-desktop-${os}-${arch}.${ext}`。
+
+| OS | Arch | 产物 | 说明 |
+|----|------|------|------|
+| macOS | arm64 | `ellamaka-desktop-darwin-arm64.dmg` + `.zip` | 无签名时 Gatekeeper 拦截，需右键打开 |
+| macOS | x64 | `ellamaka-desktop-darwin-x64.dmg` + `.zip` | 同上（可选，阶段 1 后可补） |
+| Windows | x64 | `ellamaka-desktop-win32-x64.exe`（nsis） | 未签名触发 SmartScreen |
+| Linux | x64 | `ellamaka-desktop-linux-x64.AppImage` + `.deb` + `.rpm` | 不强制签名 |
+
+Contract：
+
+1. 三档 channel（`main` / `beta` / `prod`）对应不同 `appId` 与 `productName`，与 `build.sh desktop --channel` 一致。
+2. `prod` channel 的 `appId` 为 `ai.ellamaka.desktop`，deep link scheme 为 `ellamaka://`。
+3. 版本化目录与 latest 别名均独立，不与 CLI 混用。
+4. 自动更新 feed（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）与安装包同传 R2。
+
+### 9.3 CI 构建（matrix）
+
+新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（git tag `v*` / `workflow_dispatch`），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。
+
+原生安装包无法在单一 runner 跨平台生成，必须用 matrix：
+
+| Runner | 产物 |
+|--------|------|
+| `macos-latest` | dmg + zip |
+| `windows-latest` | nsis（`.exe`） |
+| `ubuntu-latest` | AppImage + deb + rpm |
+
+各 runner 步骤：`bun install` → `bun packages/ellamaka/build.ts`（sidecar）→ `cd packages/ellamaka-desktop` → `bun run build` → `bun run package:<os>`。产物经 sha256 校验后上传 R2 `ellamaka-desktop/v$VERSION/`，并生成 `latest-*.yml` feed 上传至 `ellamaka-desktop/latest/`。
+
+R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT 防多部件损坏 + 回比 manifest hash + 主动 purge）。
+
+### 9.4 R2 存储与 URL
+
+见 §8 存储结构：`s3://wopal-release/ellamaka-desktop/v$VERSION/` 与 `.../latest/`。
+
+- 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
+- Latest feed：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+
+缓存策略与 CLI 一致（`v$` 1 周、`latest` 5 分钟）。
+
+### 9.5 自动更新（electron-updater）
+
+`electron-builder` 的 `publish` 配置使用 generic provider，feedURL 指向 R2 `ellamaka-desktop/latest/`，**不走 GitHub Release**（与 CLI canonical source 一致）。
+
+- macOS：`latest-mac.yml`
+- Windows：`latest.yml`
+- Linux：`latest-linux.yml`
+
+应用内更新检查配合 `BRANDING.md` 描述的 `ellamaka.autoupdate` 设置项（patch 版本且未设为 `notify` 时自动下载安装）。
+
+### 9.6 代码签名与公证
+
+正式发布的前置条件，阶段 1（无签名）可跳过，但会损害首批用户体验（mac 右键打开、win SmartScreen 警告）。
+
+| 平台 | 要求 | electron-builder 配置 |
+|------|------|----------------------|
+| macOS | Apple Developer ID Application 证书 + `notarytool` 公证 + `xcrun stapler` | 启用 `hardenedRuntime` / `notarize` |
+| Windows | 代码签名证书（OV 或 EV） | 启用 `verifyUpdateCodeSignature`；`CSC_LINK` / `CSC_KEY_PASSWORD` 通过 CI secrets 注入 |
+| Linux | 可选 GPG 签名 | 不强制 |
+
+签名证书与密钥仅通过 CI secrets 注入，不入库。
+
+### 9.7 分阶段实施
+
+| 阶段 | 范围 | 退出标准 |
+|------|------|----------|
+| 阶段 1（最小可用） | CI matrix + R2 + `latest-*.yml` feed + GH/Gitee 索引；**无签名** | 三平台安装包可从 R2 下载并手动安装 |
+| 阶段 2（签名公证） | mac/win 签名 + 公证；启用 `hardenedRuntime` / `notarize` | 无 Gatekeeper / SmartScreen 拦截 |
+| 阶段 3（自动更新） | `electron-updater` feedURL + 应用内检查 | 应用内检测到新版本并安装 |
+
+若已具备 Apple Developer 账号与 Win 代码签名证书，建议阶段 1 + 2 合并一步到位。
+
+### 9.8 验证清单
+
+| 检查项 | 方法 |
+|--------|------|
+| 三平台产物存在 | R2 `ellamaka-desktop/v$VERSION/` 下 dmg/zip/exe/AppImage/deb/rpm 齐全 |
+| feed 生成 | `latest-mac.yml` / `latest.yml` / `latest-linux.yml` 上传至 `latest/` |
+| sha256 一致 | `checksums.txt` 与各产物比对 |
+| 签名（阶段 2） | mac `spctl -a -vv` 通过；win 右键属性显示数字签名 |
+| 自动更新（阶段 3） | 旧版本启动后检测到新版本并提示 |
+| GH/Gitee 索引 | Release 页面含桌面下载表，无 binary 附件（或仅元数据） |
+
+---
+
+## 10. Out of Scope for P1
 
 1. 自定义安装目录
 2. npm / brew / winget / choco 等多渠道适配
@@ -336,11 +474,12 @@ ellamaka 与 wopal-cli 共享同一套 R2 bucket `wopal-release`、同一个自�
 
 ---
 
-## 10. Related Documents
+## 11. Related Documents
 
 | 文档 | 说明 |
 |---|---|
-| `./BRANDING.md` | ellamaka 品牌注入点清单与合并注意事项 |
+| `./DESKTOP.md` | ellamaka-desktop 架构、状态所有权、PTY 生命周期与验证契约 |
+| `./BRANDING.md` | ellamaka 品牌注入点清单与桌面分发身份（§17） |
 | `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | 产品级 setup integration flow 与系统分层 |
 | `../../wopal-cli/docs/DESIGN.md` | CLI 的 setup / engine / space orchestration 边界 |
 | `../../wopal-cli/docs/DISTRIBUTION.md` | CLI 对 ellamaka release 的消费契约 |
