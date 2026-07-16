@@ -12,6 +12,7 @@ import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { reportWorkbenchError } from "../workbench-error"
 
 type ContextMenu = {
   x: number
@@ -76,7 +77,8 @@ export function SessionTree(props: {
       if (!raw) return []
       const parsed = JSON.parse(raw)
       return parsed.spaces ?? []
-    } catch {
+    } catch (e) {
+      reportWorkbenchError("load expanded", e)
       return []
     }
   }
@@ -86,7 +88,8 @@ export function SessionTree(props: {
       const raw = localStorage.getItem(PINNED_STORAGE_KEY)
       if (!raw) return []
       return JSON.parse(raw) ?? []
-    } catch {
+    } catch (e) {
+      reportWorkbenchError("load pinned", e)
       return []
     }
   }
@@ -292,14 +295,18 @@ export function SessionTree(props: {
     const spaces = [...expandedSpaces()]
     try {
       localStorage.setItem(EXPAND_STORAGE_KEY, JSON.stringify({ spaces, projects: [], dirs: [] }))
-    } catch {}
+    } catch (e) {
+      reportWorkbenchError("persist expanded", e)
+    }
   })
 
   createEffect(() => {
     const pinned = [...pinnedSessions()]
     try {
       localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinned))
-    } catch {}
+    } catch (e) {
+      reportWorkbenchError("persist pinned", e)
+    }
   })
 
   function toggleSpace(spaceName: string) {
@@ -359,7 +366,7 @@ export function SessionTree(props: {
       }))
       setAllGroups(groups)
     } catch (e) {
-      console.error("loadSessionGroups error:", e)
+      reportWorkbenchError("load session groups", e)
       setAllGroups([])
     } finally {
       setLoading(false)
@@ -401,7 +408,7 @@ export function SessionTree(props: {
                                 sessionID: session.id,
                                 directory: sessionData.directory,
                                 title: trimmed,
-                              }).catch((error) => console.error("Failed to rename Workbench session:", error))
+                              }).catch((error) => reportWorkbenchError("rename session", error))
                             }
                           }
                           dialog.close()
@@ -427,7 +434,7 @@ export function SessionTree(props: {
                               sessionID: session.id,
                               directory: sessionData.directory,
                               title: trimmed,
-                            }).catch((error) => console.error("Failed to rename Workbench session:", error))
+                            }).catch((error) => reportWorkbenchError("rename session", error))
                           }
                         }
                         dialog.close()
@@ -488,7 +495,7 @@ export function SessionTree(props: {
                             directory: sessionData.directory,
                           })
                         } catch (err) {
-                          console.error("Failed to delete session:", err)
+                          reportWorkbenchError("delete session", err)
                         }
                         dialog.close()
                       }}
@@ -533,7 +540,7 @@ export function SessionTree(props: {
               }
               if (targetPanel) await actions.createSession({ scope, panelID: targetPanel.id })
             } catch (err) {
-              console.error("Failed to create session:", err)
+              reportWorkbenchError("create session", err)
             }
           },
         },
@@ -668,7 +675,7 @@ export function SessionTree(props: {
               onConfirm={() => {
                 void loadSessionIntoPanel(activePanel)
                   .then(() => dialog.close())
-                  .catch((error) => console.error("Failed to replace Workbench session:", error))
+                  .catch((error) => reportWorkbenchError("replace session", error))
               }}
             />
           ))
@@ -679,15 +686,13 @@ export function SessionTree(props: {
               onConfirm={() => {
                 void loadSessionIntoPanel(space.panels[0])
                   .then(() => dialog.close())
-                  .catch((error) => console.error("Failed to replace Workbench session:", error))
+                  .catch((error) => reportWorkbenchError("replace session", error))
               }}
             />
           ))
         }
       } else {
-        void loadSessionIntoPanel(targetPanel).catch((error) => {
-          console.error("Failed to load Workbench session:", error)
-        })
+        void loadSessionIntoPanel(targetPanel).catch((error) => reportWorkbenchError("load session into panel", error))
       }
     }
 

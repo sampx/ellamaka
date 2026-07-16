@@ -30,6 +30,7 @@ import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
 import { panelChatRoute } from "./panel-chat-route"
+import { reportWorkbenchError } from "../workbench-error"
 
 const emptyUserMessages: UserMessage[] = []
 
@@ -72,9 +73,7 @@ function PanelChatInner(props: {
         scope: scope(),
         sourcePanelID: props.panel.id,
         sessionID: newSessionID,
-      }).catch((error) => {
-        console.error("Failed to bind forked Session", error)
-      })
+      }).catch((error) => reportWorkbenchError("bind forked session", error))
     },
   })
 
@@ -232,7 +231,7 @@ function PanelChatInner(props: {
 
   const busy = (sessionID: string) => sync.data.session_working(sessionID)
   const halt = (sessionID: string) =>
-    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch((e) => reportWorkbenchError("abort", e, { silent: true })) : Promise.resolve()
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {

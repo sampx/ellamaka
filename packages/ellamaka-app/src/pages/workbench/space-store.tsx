@@ -2,6 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createEffect, createMemo, createResource } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
 import { useWorkbenchState } from "./view-store"
+import { reportWorkbenchError } from "./workbench-error"
 
 export type WopalSpace = {
   name: string
@@ -15,7 +16,8 @@ export async function fetchSpaces(
   try {
     const res = await sdk.client.wopalSpace.spaces()
     return res.data?.spaces ?? []
-  } catch {
+  } catch (e) {
+    reportWorkbenchError("fetch spaces", e)
     return [] as WopalSpace[]
   }
 }

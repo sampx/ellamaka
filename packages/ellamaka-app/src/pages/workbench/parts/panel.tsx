@@ -19,6 +19,7 @@ import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
 import { shouldRestoreBoundSession } from "./panel-session-lifecycle"
 import { sanitizeDirectory } from "../directory-utils"
+import { reportWorkbenchError } from "../workbench-error"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function Panel(props: {
@@ -107,9 +108,7 @@ export function Panel(props: {
           wb.setStatusMessage(t("workbench.status.restoredSessionChild"))
         }
       })
-      .catch((error) => {
-        console.error("Failed to restore bound session:", error)
-      })
+      .catch((error) => reportWorkbenchError("restore bound session", error))
       .finally(() => {
         restoringSessionIDs.delete(sessionID)
       })
@@ -143,9 +142,7 @@ export function Panel(props: {
         },
       }).then((result) => {
         if (result.status === "stale" || !props.panel.splitTerminal) return
-      }).catch((err) => {
-        console.error("Failed to create split pty:", err)
-      })
+      }).catch((err) => reportWorkbenchError("create split pty", err))
     }
   })
   const handleToggleSplit = () => {
@@ -161,15 +158,15 @@ export function Panel(props: {
   const handleCloseSplit = () => {
     void actions.closeSplitTerminal({ scope: panelScope(), panelID: props.panel.id })
       .then(() => setTerminalTitle(undefined))
-      .catch((error) => console.error("Failed to close split terminal:", error))
+      .catch((error) => reportWorkbenchError("close split terminal", error))
   }
 
   const handleClose = () => {
     const spacePath = props.spacePath
     if (spacePath === undefined || spacePath === null) return
-    void actions.closePanel({ scope: panelScope(), panelID: props.panel.id }).catch((error) => {
-      console.error("Failed to close Workbench panel:", error)
-    })
+    void actions.closePanel({ scope: panelScope(), panelID: props.panel.id }).catch((error) =>
+      reportWorkbenchError("close panel", error),
+    )
   }
 
   function DialogOverwritePanel(props: {
@@ -295,12 +292,12 @@ export function Panel(props: {
           onConfirm={() => {
             void loadSessionIntoPanel()
               .then(() => dialog.close())
-              .catch((error) => console.error("Failed to replace Workbench session:", error))
+              .catch((error) => reportWorkbenchError("replace session", error))
           }}
         />
       ))
     } else {
-      void loadSessionIntoPanel().catch((error) => console.error("Failed to load Workbench session:", error))
+      void loadSessionIntoPanel().catch((error) => reportWorkbenchError("load session into panel", error))
     }
   }
 
@@ -311,7 +308,7 @@ export function Panel(props: {
     const handleConfirm = () => {
       void actions.closePanel({ scope: panelScope(), panelID: dialogProps.panel.id })
         .then(() => dialog.close())
-        .catch((error) => console.error("Failed to close Workbench panel:", error))
+        .catch((error) => reportWorkbenchError("close panel", error))
     }
 
     return (
@@ -631,7 +628,7 @@ export function Panel(props: {
                       ptyID: ptyId,
                     }).then((result) => {
                       if (result.status === "committed") setTerminalTitle(undefined)
-                    }).catch(console.error)
+                    }).catch((e) => reportWorkbenchError("recover split pty", e))
                   }}
                   onTitleChange={(title) => setTerminalTitle(title)}
                   onClose={() => {
@@ -642,7 +639,7 @@ export function Panel(props: {
                       ptyID: ptyId,
                     }).then((result) => {
                       if (result.status === "committed") setTerminalTitle(undefined)
-                    }).catch(console.error)
+                    }).catch((e) => reportWorkbenchError("recover split pty", e))
                   }}
                 />
               </div>

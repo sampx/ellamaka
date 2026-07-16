@@ -9,6 +9,7 @@ import { type WorkbenchPanel } from "./view-store"
 import type { Session } from "./session-store"
 import { useWorkbenchActions } from "./workbench-actions"
 import { scopeFromTab } from "./workbench-scope"
+import { reportWorkbenchError } from "./workbench-error"
 
 // Task 3 (O18): ViewId enum constants replace string literals "tui"/"chat"/"context".
 export const ViewId = {
@@ -89,6 +90,7 @@ export function registerDefaultViews(registry: ViewRegistry) {
     render: (ctx) => {
       const actions = useWorkbenchActions()
       const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
+      const [ptyError, setPtyError] = createSignal<string | undefined>(undefined)
       let disposed = false
       onCleanup(() => {
         disposed = true
@@ -120,7 +122,10 @@ export function registerDefaultViews(registry: ViewRegistry) {
         }).then((result) => {
           if (disposed) return
           if (result.ptyID) setPtyId(result.ptyID)
-        }).catch(console.error)
+        }).catch((e) => {
+          reportWorkbenchError("ensure tui pty", e)
+          setPtyError("Failed to start TUI terminal")
+        })
       })
 
       return (
@@ -128,10 +133,21 @@ export function registerDefaultViews(registry: ViewRegistry) {
           when={ptyId()}
           keyed
           fallback={
-            <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-              <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-              <span class="text-11-regular">Starting TUI...</span>
-            </div>
+            <Show
+              when={ptyError()}
+              fallback={
+                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
+                  <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+                  <span class="text-11-regular">Starting TUI...</span>
+                </div>
+              }
+            >
+              {(error) => (
+                <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
+                  <span class="text-11-regular text-red-500">{error()}</span>
+                </div>
+              )}
+            </Show>
           }
         >
           {(id) => (
@@ -148,7 +164,10 @@ export function registerDefaultViews(registry: ViewRegistry) {
                   ptyID: id,
                 }).then((result) => {
                   if (result.status === "committed") setPtyId(undefined)
-                }).catch(console.error)
+                }).catch((e) => {
+                  reportWorkbenchError("recover tui pty", e)
+                  setPtyError("TUI terminal connection lost")
+                })
               }}
               onClose={() => {
                 void actions.recoverPanelPty({
@@ -158,7 +177,10 @@ export function registerDefaultViews(registry: ViewRegistry) {
                   ptyID: id,
                 }).then((result) => {
                   if (result.status === "committed") setPtyId(undefined)
-                }).catch(console.error)
+                }).catch((e) => {
+                  reportWorkbenchError("recover tui pty", e)
+                  setPtyError("TUI terminal closed unexpectedly")
+                })
               }}
             />
           )}

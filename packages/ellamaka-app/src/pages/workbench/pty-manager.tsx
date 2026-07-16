@@ -1,3 +1,5 @@
+import { reportWorkbenchError } from "./workbench-error"
+
 export type PtyKind = "tui" | "term" | "split"
 
 type PtySDK = {
@@ -256,7 +258,7 @@ export class PtyManager {
         })
         this.ptyDirectories.delete(ptyId)
       } catch (err) {
-        console.error(`Failed to dispose PTY ${ptyId}`, err)
+        reportWorkbenchError("dispose pty", err, { silent: true })
       }
     }))
   }

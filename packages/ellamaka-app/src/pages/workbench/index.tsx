@@ -14,6 +14,7 @@ import { useWorkbenchCommands } from "./use-workbench-commands"
 import { useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
+import { reportWorkbenchError } from "./workbench-error"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
@@ -54,9 +55,7 @@ function WorkbenchShell() {
                 { title },
               ))
             })
-            .catch((error) => {
-              console.error("Failed to release externally removed Workbench session:", error)
-            })
+            .catch((error) => reportWorkbenchError("release externally removed session", error))
         }
         return
       }
