@@ -124,6 +124,13 @@ export function SessionTree(props: {
   const [loading, setLoading] = createSignal(false)
   let fetchVersion = -1
 
+  // O22: Row ref map for single scroll effect
+  const rowRefs = new Map<string, HTMLButtonElement>()
+  function registerRowRef(sessionId: string, el: HTMLButtonElement | null) {
+    if (el) rowRefs.set(sessionId, el)
+    else rowRefs.delete(sessionId)
+  }
+
   const activeSessionId = createMemo(() => {
     const tab = wb.activeTab()
     if (!tab) return undefined
@@ -144,6 +151,42 @@ export function SessionTree(props: {
       const next = new Set(prev)
       next.add(session.spaceName)
       return next
+    })
+  })
+
+  // O22: Single scroll effect replacing per-row createEffect
+  createEffect(() => {
+    const id = activeSessionId()
+    if (!id) return
+    const el = rowRefs.get(id)
+    if (!el) return
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    }, 150)
+  })
+
+  // O8: Refresh coordinator — debounces multiple refresh sources into a single load
+  const [refreshTick, setRefreshTick] = createSignal(0)
+  let refreshForce = false
+  function triggerRefresh(force = false) {
+    if (force) refreshForce = true
+    setRefreshTick((t) => t + 1)
+  }
+
+  let refreshDebounce: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    void sessionStore.refreshKey()
+    refreshTick()
+    wb.refreshVersion
+
+    if (refreshDebounce) clearTimeout(refreshDebounce)
+    refreshDebounce = setTimeout(() => {
+      void loadSessionGroups(refreshForce)
+      refreshForce = false
+    }, 300)
+
+    onCleanup(() => {
+      if (refreshDebounce) clearTimeout(refreshDebounce)
     })
   })
 
@@ -235,14 +278,14 @@ export function SessionTree(props: {
     const VISIBLE_REFRESH_MS = 30_000
     const treeInterval = setInterval(() => {
       if (document.visibilityState === "visible") {
-        void loadSessionGroups()
+        triggerRefresh()
       }
     }, VISIBLE_REFRESH_MS)
 
     // Refresh tree when page becomes visible again (D-04)
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        void loadSessionGroups(true)
+        triggerRefresh(true)
       }
     }
     document.addEventListener("visibilitychange", handleVisibility)
@@ -427,7 +470,6 @@ export function SessionTree(props: {
             isPending={props.pendingSpacePath !== undefined && props.pendingSpacePath === space.path}
             expandedSpaces={expandedSpaces}
             loading={loading}
-            allGroups={allGroups}
             spaces={props.spaces}
             activeSessionId={activeSessionId}
             pinnedSessions={pinnedSessions}
@@ -440,9 +482,7 @@ export function SessionTree(props: {
             getSessionsForSpace={getSessionsForSpace}
             mergeSessions={mergeSessions}
             syncGroupTitles={syncGroupTitles}
-            loadSessionGroups={loadSessionGroups}
-            sessionStoreRefreshKey={() => sessionStore.refreshKey()}
-            refreshVersion={wb.refreshVersion}
+            registerRowRef={registerRowRef}
             t={t}
           />
         )}

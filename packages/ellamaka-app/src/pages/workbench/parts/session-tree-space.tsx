@@ -1,6 +1,6 @@
-import { For, Show, createMemo, createEffect, untrack } from "solid-js"
+import { For, Show, createMemo } from "solid-js"
 import type { WopalSpace } from "../space-store"
-import type { GroupSession, SessionGroup } from "./session-tree-services"
+import type { GroupSession } from "./session-tree-services"
 import { SessionTreeRow } from "./session-tree-row"
 
 type MergedSession = {
@@ -15,7 +15,6 @@ export function SessionTreeSpace(props: {
   isPending: boolean
   expandedSpaces: () => Set<string>
   loading: () => boolean
-  allGroups: SessionGroup[]
   spaces: WopalSpace[]
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
@@ -28,33 +27,10 @@ export function SessionTreeSpace(props: {
   getSessionsForSpace: (spaceName: string) => GroupSession[]
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
   syncGroupTitles: (spaceName: string, sessions: GroupSession[]) => void
-  loadSessionGroups: (force?: boolean) => void
-  sessionStoreRefreshKey: () => number
-  refreshVersion: number
+  registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
   t: (key: string, params?: Record<string, string | number | boolean>) => string
 }) {
   const isExpanded = createMemo(() => props.expandedSpaces().has(props.space.name))
-
-  createEffect(() => {
-    if (isExpanded() && props.allGroups.length === 0) {
-      void untrack(() => props.loadSessionGroups())
-    }
-  })
-
-  createEffect(() => {
-    const key = props.sessionStoreRefreshKey()
-    void key
-    if (untrack(isExpanded)) {
-      void untrack(() => props.loadSessionGroups())
-    }
-  })
-
-  createEffect(() => {
-    const ver = props.refreshVersion
-    if (ver > 0 && untrack(isExpanded)) {
-      void untrack(() => props.loadSessionGroups(true))
-    }
-  })
 
   const sessions = createMemo(() => props.getSessionsForSpace(props.space.name))
   const mergedSessions = createMemo(() => {
@@ -130,6 +106,7 @@ export function SessionTreeSpace(props: {
                     props.onSessionContextMenu(e, session, props.space.name, sessionData)
                   }}
                   setSelectedSessionId={props.setSelectedSessionId}
+                  registerRowRef={props.registerRowRef}
                 />
               )}
             </For>

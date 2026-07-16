@@ -1,4 +1,4 @@
-import { Show, createEffect } from "solid-js"
+import { Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useWorkbenchActions } from "../workbench-actions"
@@ -25,6 +25,7 @@ export function SessionTreeRow(props: {
   onSessionClick: (sessionId: string) => void
   onContextMenu: (e: MouseEvent) => void
   setSelectedSessionId: (id: string) => void
+  registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
 }) {
   const language = useLanguage()
   const t = (k: string, params?: Record<string, string | number | boolean>) =>
@@ -101,16 +102,6 @@ export function SessionTreeRow(props: {
     })
   }
 
-  let sessionEl: HTMLButtonElement | undefined
-
-  createEffect(() => {
-    if (props.session.id === props.activeSessionId() && sessionEl) {
-      setTimeout(() => {
-        sessionEl?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-      }, 150)
-    }
-  })
-
   function statusDotClass(status: string) {
     if (status === "bound") return "bg-green-400"
     if (status === "archived") return "bg-v2-text-text-faint"
@@ -119,7 +110,9 @@ export function SessionTreeRow(props: {
 
   return (
     <button
-      ref={sessionEl}
+      ref={(el) => {
+        props.registerRowRef?.(props.session.id, el)
+      }}
       type="button"
       class="group flex w-full items-center gap-2 px-2 py-0.5 text-left text-11-regular transition-all"
       classList={{
