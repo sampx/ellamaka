@@ -310,6 +310,39 @@ describe("WorkbenchActions", () => {
     })
   })
 
+  test("finishes closing when an intentional TUI disposal reports onClose", async () => {
+    const state = createStorePort()
+    const disposed = deferred<void>()
+    let recovery: Promise<unknown> | undefined
+    let actions: ReturnType<typeof createWorkbenchActions>
+    actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: () => {
+          recovery = actions.recoverPanelPty({
+            scope,
+            panelID: state.panel().id,
+            kind: "tui",
+            ptyID: "pty-existing",
+          })
+          return disposed.promise
+        },
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+        isAlive: async () => false,
+        forgetPty: () => {},
+      },
+      session: unusedSessionPort,
+    })
+
+    const closing = actions.closePanel({ scope, panelID: state.panel().id })
+    await recovery
+    disposed.resolve()
+
+    expect(await closing).toEqual({ status: "committed", panelID: "panel-space-a" })
+    expect(state.panel().slotState).toBe("empty")
+  })
+
   test("disposes a removable panel before deleting its layout entry", async () => {
     const panels: WorkbenchActionPanel[] = [
       {
