@@ -40,7 +40,7 @@ export function handlePanelDrop(
   const dragSpaceName = e.dataTransfer?.getData("text/spaceName") ?? ""
   if (!sessionId || !dragSpaceName) return
 
-  if (/[\/\\]/.test(sessionId) || sessionId === ".." || sessionId === ".") {
+  if (/[/\\]/.test(sessionId) || sessionId === ".." || sessionId === ".") {
     console.error("Rejected drag payload with path-like sessionId:", sessionId)
     return
   }

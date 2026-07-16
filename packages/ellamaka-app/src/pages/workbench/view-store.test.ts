@@ -1,18 +1,38 @@
 import { describe, expect, test } from "bun:test"
+import { createSignal } from "solid-js"
+import { render } from "solid-js/web"
 import {
   clonePersistedWorkbench,
   createWorkbenchStore,
   PERSISTED_DEFAULTS,
 } from "./workbench-store"
+import { watchWorkbenchPersistence } from "./view-store"
 
 describe("view-store reactive guard", () => {
-  test("clonePersistedWorkbench creates a deep clone isolated from mutations (guards against structuredClone)", () => {
-    // The createEffect in view-store.tsx reads workbench.snapshot() to
-    // establish reactive subscriptions on all persisted fields. If
-    // clonePersistedWorkbench were replaced with structuredClone, the
-    // proxy reads would not trigger SolidJS dependency tracking and
-    // persistence would silently break. This test verifies the current
-    // spread-based deep cloning preserves the expected behavior.
+  test("queues persistence when a persisted store field changes", async () => {
+    const store = createWorkbenchStore()
+    const [hydrated, setHydrated] = createSignal(false)
+    let saves = 0
+    const host = document.createElement("div")
+    const dispose = render(() => {
+      watchWorkbenchPersistence(store, hydrated, () => {
+        saves += 1
+      })
+      return null
+    }, host)
+
+    setHydrated(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    saves = 0
+
+    store.setDisplay("showTitlebar", false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(saves).toBe(1)
+    dispose()
+  })
+
+  test("clonePersistedWorkbench creates a deep clone isolated from mutations", () => {
 
     const original = clonePersistedWorkbench(PERSISTED_DEFAULTS)
     const clone1 = clonePersistedWorkbench(original)

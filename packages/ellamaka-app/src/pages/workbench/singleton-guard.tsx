@@ -11,16 +11,20 @@ export type LockRequestResult = {
   release?: () => void
 }
 
+type WorkbenchLocks = {
+  request: (
+    name: string,
+    options: { ifAvailable?: boolean },
+    callback: (lock: { name: string } | null) => Promise<void>,
+  ) => Promise<void>
+}
+
+function isWorkbenchLocks(value: unknown): value is WorkbenchLocks {
+  return !!value && typeof value === "object" && "request" in value && typeof value.request === "function"
+}
+
 export async function requestWorkbenchLock(
-  locks:
-    | {
-        request: (
-          name: string,
-          options: { ifAvailable?: boolean },
-          callback: (lock: { name: string } | null) => Promise<void>,
-        ) => Promise<void>
-      }
-    | undefined,
+  locks: WorkbenchLocks | undefined,
 ): Promise<LockRequestResult> {
   if (!locks) return { state: "locked" }
 
@@ -45,8 +49,8 @@ export function WorkbenchSingletonGuard(props: { children: JSX.Element }) {
   let releaseLock: (() => void) | undefined
 
   onMount(() => {
-    const locks = "locks" in navigator ? navigator.locks as { request: (name: string, options: { ifAvailable?: boolean }, callback: (lock: { name: string } | null) => Promise<void>) => Promise<void> } : undefined
-    void requestWorkbenchLock(locks).then((result) => {
+    const locks = Reflect.get(navigator, "locks")
+    void requestWorkbenchLock(isWorkbenchLocks(locks) ? locks : undefined).then((result) => {
       setState(result.state)
       if (result.release) releaseLock = result.release
     })

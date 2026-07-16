@@ -1,11 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import {
   fetchSessionGroups,
+  createSessionGroupsLoader,
   resolveTargetPanel,
   getPanelBadge,
   type SessionGroupsSDK,
+  type SessionGroup,
   type OpenSessionWB,
 } from "./session-tree-services"
+import { mergeSessionTreeSessions } from "./session-tree-merge"
+import type { Session } from "../session-store"
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -113,8 +125,8 @@ describe("fetchSessionGroups", () => {
             title: "Session 2",
             directory: "/a/b",
             directoryHealth: "missing",
-            timeCreated: "3000" as unknown as number,
-            timeUpdated: "4000" as unknown as number,
+            timeCreated: "3000",
+            timeUpdated: "4000",
           },
         ],
       },
@@ -202,7 +214,7 @@ describe("fetchSessionGroups", () => {
                   title: "G1",
                   type: "general",
                   sessionCount: 0,
-                  sessions: undefined as unknown as [],
+                  sessions: undefined,
                 },
               ],
             },
@@ -212,6 +224,58 @@ describe("fetchSessionGroups", () => {
     }
     const result = await fetchSessionGroups(sdk)
     expect(result[0].sessions).toEqual([])
+  })
+})
+
+describe("createSessionGroupsLoader", () => {
+  test("keeps the newest response when overlapping requests resolve out of order", async () => {
+    const first = deferred<SessionGroup[]>()
+    const second = deferred<SessionGroup[]>()
+    const commits: string[] = []
+    let request = 0
+
+    const loader = createSessionGroupsLoader({
+      fetch: () => {
+        request += 1
+        if (request === 1) return first.promise
+        return second.promise
+      },
+      commit: (groups) => commits.push(groups[0]?.title ?? "empty"),
+      setLoading: () => {},
+      onError: () => {},
+    })
+
+    const initial = loader()
+    const refresh = loader()
+    second.resolve([{ id: "second", title: "Latest", type: "general", sessionCount: 0, sessions: [] }])
+    await refresh
+    first.resolve([{ id: "first", title: "Stale", type: "general", sessionCount: 0, sessions: [] }])
+    await initial
+
+    expect(commits).toEqual(["Latest"])
+  })
+})
+
+describe("mergeSessionTreeSessions", () => {
+  test("uses the current session projection title before a group refetch completes", () => {
+    const local: Session = {
+      id: "session-1",
+      spaceName: "Space A",
+      projectPath: "/space-a",
+      type: "chat",
+      title: "After",
+      directoryHealth: "healthy",
+      createdAt: 1,
+      lastActiveAt: 1,
+    }
+
+    const merged = mergeSessionTreeSessions(
+      [{ id: "session-1", title: "Before" }],
+      () => false,
+      [local],
+    )
+
+    expect(merged).toEqual([{ id: "session-1", title: "After", status: "idle" }])
   })
 })
 

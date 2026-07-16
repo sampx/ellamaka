@@ -1,25 +1,14 @@
 import { showToast } from "@opencode-ai/ui/toast"
 
-type ErrorLike = {
-  message?: string
-  statusCode?: number
-}
-
 function extractMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === "string") return error
-  if (error && typeof error === "object" && "message" in error) {
-    const msg = (error as ErrorLike).message
-    if (typeof msg === "string") return msg
-  }
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message
   return String(error)
 }
 
 function extractStatusCode(error: unknown): number | undefined {
-  if (error && typeof error === "object" && "statusCode" in error) {
-    const code = (error as ErrorLike).statusCode
-    if (typeof code === "number") return code
-  }
+  if (error && typeof error === "object" && "statusCode" in error && typeof error.statusCode === "number") return error.statusCode
   return undefined
 }
 

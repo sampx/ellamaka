@@ -11,7 +11,7 @@ import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogRenameSession, DialogDeleteSession } from "./session-tree-dialogs"
-import { fetchSessionGroups, getPanelBadge, type GroupSession, type SessionGroup } from "./session-tree-services"
+import { createSessionGroupsLoader, fetchSessionGroups, getPanelBadge, type GroupSession, type SessionGroup } from "./session-tree-services"
 import { SessionTreeSpace } from "./session-tree-space"
 
 type ContextMenu = {
@@ -41,7 +41,7 @@ export function SessionTree(props: {
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
+  const t: typeof language.t = (key, params) => language.t(key, params)
   const sessionStore = useSessionStore()
   const projection = useSessionProjectionWriter()
   const wb = useWorkbenchState()
@@ -160,9 +160,11 @@ export function SessionTree(props: {
     if (!id) return
     const el = rowRefs.get(id)
     if (!el) return
-    setTimeout(() => {
+    const scrollTimer = setTimeout(() => {
+      if (activeSessionId() !== id) return
       el.scrollIntoView({ behavior: "smooth", block: "nearest" })
     }, 150)
+    onCleanup(() => clearTimeout(scrollTimer))
   })
 
   // O8: Refresh coordinator — debounces multiple refresh sources into a single load
@@ -174,6 +176,15 @@ export function SessionTree(props: {
   }
 
   let refreshDebounce: ReturnType<typeof setTimeout> | undefined
+  const loadGroups = createSessionGroupsLoader({
+    fetch: () => fetchSessionGroups(sdk),
+    commit: (groups) => setAllGroups(groups),
+    setLoading,
+    onError: (error) => {
+      reportWorkbenchError("load session groups", error)
+      setAllGroups([])
+    },
+  })
   createEffect(() => {
     void sessionStore.refreshKey()
     refreshTick()
@@ -216,9 +227,9 @@ export function SessionTree(props: {
   function mergeSessions(serverSessions: GroupSession[]): MergedSession[] {
     const simplified = serverSessions.map((s) => ({
       id: s.id,
-      title: s.title,
+      title: sessionStore.getSession(s.id)?.title ?? s.title,
     }))
-    const merged = mergeSessionTreeSessions(simplified, isSessionBound)
+    const merged = mergeSessionTreeSessions(simplified, isSessionBound, Object.values(sessionStore.sessions()).flat())
     const pinned = pinnedSessions()
     const pinnedList: MergedSession[] = []
     const unpinnedList: MergedSession[] = []
@@ -248,6 +259,12 @@ export function SessionTree(props: {
       }
     })
   }
+
+  createEffect(() => {
+    for (const space of props.spaces) {
+      syncGroupTitles(space.name, getSessionsForSpace(space.name))
+    }
+  })
 
   let treeContainerRef: HTMLDivElement | undefined
   let scrollTimeout: ReturnType<typeof setTimeout> | undefined
@@ -344,17 +361,7 @@ export function SessionTree(props: {
     const currentKey = sessionStore.refreshKey()
     if (!force && allGroups.length > 0 && currentKey === fetchVersion) return
     fetchVersion = currentKey
-    setLoading(true)
-
-    try {
-      const groups = await fetchSessionGroups(sdk)
-      setAllGroups(groups)
-    } catch (e) {
-      reportWorkbenchError("load session groups", e)
-      setAllGroups([])
-    } finally {
-      setLoading(false)
-    }
+    await loadGroups()
   }
 
   function showSessionMenu(e: MouseEvent, session: MergedSession, spaceName: string, sessionData: GroupSession) {
@@ -481,7 +488,6 @@ export function SessionTree(props: {
             setSelectedSessionId={setSelectedSessionId}
             getSessionsForSpace={getSessionsForSpace}
             mergeSessions={mergeSessions}
-            syncGroupTitles={syncGroupTitles}
             registerRowRef={registerRowRef}
             t={t}
           />

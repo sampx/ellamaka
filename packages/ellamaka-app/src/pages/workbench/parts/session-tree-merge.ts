@@ -20,7 +20,9 @@ type ServerTitlePatch = {
 export function mergeSessionTreeSessions(
   serverSessions: ServerSession[],
   isSessionBound: (sessionId: string) => boolean,
+  localSessions: Session[] = [],
 ): SessionTreeMergedSession[] {
+  const localTitles = new Map(localSessions.map((session) => [session.id, session.title]))
   const seenIds = new Set<string>()
 
   return serverSessions.flatMap((serverSession) => {
@@ -29,7 +31,7 @@ export function mergeSessionTreeSessions(
 
     return [{
       id: serverSession.id,
-      title: serverSession.title || serverSession.id,
+      title: localTitles.get(serverSession.id) ?? (serverSession.title || serverSession.id),
       status: isSessionBound(serverSession.id)
         ? "bound"
         : serverSession.timeArchived

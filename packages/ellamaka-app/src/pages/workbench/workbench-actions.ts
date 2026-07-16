@@ -73,6 +73,7 @@ export type WorkbenchActionPtyPort = {
   }) => Promise<void>
   isAlive?: (input: { directory: string; ptyID: string }) => Promise<boolean>
   forgetPty?: (input: { scope: SpaceScope; panelID: string; kind: WorkbenchActionPtyKind }) => void
+  clearMemory?: () => void
 }
 
 export type WorkbenchActionSessionPort = {
@@ -179,6 +180,9 @@ export function createWorkbenchActions(input: {
     },
     cancelPanel(scope: SpaceScope, panelID: string) {
       nextGeneration(scope, panelID)
+    },
+    clearPtyMemory() {
+      input.pty.clearMemory?.()
     },
     async createSession(options: {
       scope: SpaceScope

@@ -26,7 +26,6 @@ export function SessionTreeSpace(props: {
   setSelectedSessionId: (id: string) => void
   getSessionsForSpace: (spaceName: string) => GroupSession[]
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
-  syncGroupTitles: (spaceName: string, sessions: GroupSession[]) => void
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
   t: (key: string, params?: Record<string, string | number | boolean>) => string
 }) {
@@ -35,7 +34,6 @@ export function SessionTreeSpace(props: {
   const sessions = createMemo(() => props.getSessionsForSpace(props.space.name))
   const mergedSessions = createMemo(() => {
     const raw = sessions()
-    props.syncGroupTitles(props.space.name, raw)
     return props.mergeSessions(raw)
   })
 

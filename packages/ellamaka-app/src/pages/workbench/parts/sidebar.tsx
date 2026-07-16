@@ -288,7 +288,7 @@ export function SpaceRail() {
               <input
                 type="checkbox"
                 checked={dontRemindStore.suppress}
-                onChange={(e) => setDontRemindStore("suppress", (e.target as HTMLInputElement).checked)}
+                onChange={(e) => setDontRemindStore("suppress", e.currentTarget.checked)}
                 class="size-3.5 rounded border-v2-border-border-base"
               />
               {t("workbench.tabSwitch.dontRemind")}

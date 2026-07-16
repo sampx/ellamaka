@@ -28,8 +28,7 @@ export function SessionTreeRow(props: {
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t: typeof language.t = (key, params) => language.t(key, params)
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
   const dialog = useDialog()

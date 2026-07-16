@@ -169,6 +169,27 @@ describe("WorkbenchActions", () => {
     expect(state.commits).toEqual([])
   })
 
+  test("clears PTY memory through the action boundary", () => {
+    const state = createStorePort()
+    let clears = 0
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async () => {},
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+        clearMemory: () => {
+          clears += 1
+        },
+      },
+      session: unusedSessionPort,
+    })
+
+    actions.clearPtyMemory()
+
+    expect(clears).toBe(1)
+  })
+
   test("does not project a Session response that arrives after its Panel is cancelled", async () => {
     const state = createStorePort()
     const fetched = deferred<typeof nextSession>()
@@ -628,7 +649,7 @@ describe("WorkbenchActions store port delegation", () => {
   }
 
   const noopSession = {
-    create: async ({ scope: s, panel: p }: { scope: { kind: string }; panel: WorkbenchActionPanel }) => ({
+    create: async ({ panel: p }: { scope: { kind: string }; panel: WorkbenchActionPanel }) => ({
       id: "s-new", title: "New", directory: p.directory, type: "chat" as const,
     }),
     get: async () => ({ id: "s-1", title: "S1", directory: "/d", type: "chat" as const }),
@@ -825,18 +846,6 @@ describe("WorkbenchActions General vs Space scope", () => {
 
   test("General panel directory is empty string, Space panel directory is the space path", () => {
     const { store } = createScopeStore()
-    const actions = createWorkbenchActions({
-      store,
-      pty: { disposePanel: async () => {}, ensure: async ({ create }) => create(), disposePty: async () => {} },
-      session: {
-        create: async () => ({ id: "s", title: "S", directory: "", type: "chat" }),
-        get: async () => ({ id: "s", title: "S", directory: "", type: "chat" }),
-        project: () => {},
-        rename: async () => {},
-        remove: async () => {},
-      },
-    })
-    const gPanel = actions.activeTarget()
     // active() returns spaceA scope in this store, so we test panel lookup directly
     expect(store.panel(general, "panel-g")?.directory).toBe("")
     expect(store.panel(spaceA, "panel-s")?.directory).toBe("/fixtures/workspaces/space-a")

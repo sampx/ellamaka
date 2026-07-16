@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createWorkbenchStore, type PersistedWorkbench } from "./workbench-store"
+import { createWorkbenchStore, type HydratableWorkbench, type PersistedWorkbench } from "./workbench-store"
 
 const fixture = (): PersistedWorkbench => ({
   display: {
@@ -86,12 +86,11 @@ describe("WorkbenchStore", () => {
     })
 
     expect(store.unbindSessionFromPanel("/fixtures/space-a", "panel-a")).toBe(true)
-    expect(store.spaceState("/fixtures/space-a")?.panels[0]).toMatchObject({
-      slotState: "empty",
-      tuiPtyId: undefined,
-      termPtyId: undefined,
-      splitPtyId: undefined,
-    })
+    const restoredPanel = store.spaceState("/fixtures/space-a")?.panels[0]
+    expect(restoredPanel?.slotState).toBe("empty")
+    expect(restoredPanel?.tuiPtyId).toBeUndefined()
+    expect(restoredPanel?.termPtyId).toBeUndefined()
+    expect(restoredPanel?.splitPtyId).toBeUndefined()
   })
 
   test("removes a space and its tab while selecting a deterministic fallback", () => {
@@ -120,7 +119,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
       },
       tabs: [{ name: "General", path: "", type: "general" }],
       activeSpaceName: "General",
-    } as unknown as PersistedWorkbench
+    } satisfies HydratableWorkbench
 
     const store = createWorkbenchStore()
     store.hydrate(legacy)

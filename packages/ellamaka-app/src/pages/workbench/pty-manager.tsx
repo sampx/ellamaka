@@ -66,7 +66,9 @@ function setKindEntry<T>(spaceMap: SpaceMap<T>, spacePath: string, panelId: stri
       entry[kind] = value
     }
   } else if (value !== undefined) {
-    panelMap.set(panelId, { [kind]: value } as Partial<Record<PtyKind, T>>)
+    const next: Partial<Record<PtyKind, T>> = {}
+    next[kind] = value
+    panelMap.set(panelId, next)
   }
 }
 
@@ -227,6 +229,7 @@ export class PtyManager {
   clearMemoryOnly() {
     this.activePtys.clear()
     this.pendingEnsures.clear()
+    this.ptyDirectories.clear()
   }
 
   private async disposeKey(

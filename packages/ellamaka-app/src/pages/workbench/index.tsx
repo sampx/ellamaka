@@ -15,7 +15,6 @@ import { useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 import { reportWorkbenchError } from "./workbench-error"
-import { ptyManager } from "./pty-manager"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
@@ -27,7 +26,7 @@ function WorkbenchShell() {
   const display = () => wb.display()
   const sdk = useServerSDK()
   const language = useLanguage()
-  const t = <K extends Parameters<typeof language.t>[0]>(key: K, params?: Parameters<typeof language.t>[1]) => language.t(key, params)
+  const t: typeof language.t = (key, params) => language.t(key, params)
 
   // Task 3 (O18): Register default views during Shell init instead of at
   // module level. This eliminates import-order sensitivity from the
@@ -80,7 +79,7 @@ function WorkbenchShell() {
   })
 
   onCleanup(() => {
-    ptyManager.clearMemoryOnly()
+    actions.clearPtyMemory()
   })
 
   return (
@@ -114,7 +113,7 @@ function WorkbenchShell() {
 
 function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
   const language = useLanguage()
-  const t = (key: string) => language.t(key as Parameters<typeof language.t>[0])
+  const t: typeof language.t = (key, params) => language.t(key, params)
   return (
     <div class="flex h-dvh flex-col items-center justify-center gap-4 bg-v2-background-bg-deep text-v2-text-text-base p-8">
       <div class="text-center max-w-md">

@@ -41,7 +41,7 @@ describe("fetchSpaces", () => {
     const sdk = {
       client: {
         wopalSpace: {
-          spaces: async () => ({ data: null } as unknown as { data?: { spaces?: WopalSpace[] } }),
+          spaces: async () => ({ data: null }),
         },
       },
     }

@@ -4,13 +4,16 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
 
+function createTranslator(language: ReturnType<typeof useLanguage>): typeof language.t {
+  return (key, params) => language.t(key, params)
+}
+
 export function DialogOverwritePanel(props: {
   panelIndex: number
   onConfirm: () => void
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t = createTranslator(language)
   const dialog = useDialog()
 
   return (
@@ -44,8 +47,7 @@ export function DialogCrossSpaceWarning(props: {
   targetSpace: string
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t = createTranslator(language)
   const dialog = useDialog()
 
   return (
@@ -77,8 +79,7 @@ export function DialogRenameSession(props: {
   onRename: (title: string) => Promise<void>
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t = createTranslator(language)
   const dialog = useDialog()
   const [val, setVal] = createSignal(props.currentTitle)
   let inputEl: HTMLInputElement | undefined
@@ -131,8 +132,7 @@ export function DialogDeleteSession(props: {
   onDelete: () => Promise<void>
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t = createTranslator(language)
   const dialog = useDialog()
 
   return (
@@ -172,8 +172,7 @@ export function DialogClosePanel(props: {
   onClose: () => Promise<void>
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t = createTranslator(language)
   const dialog = useDialog()
 
   return (

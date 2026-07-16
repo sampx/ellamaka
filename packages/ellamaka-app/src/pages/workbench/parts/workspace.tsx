@@ -211,7 +211,7 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.sessions") : tab.name}</span>
+              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.spaces") : tab.name}</span>
               <Show when={tab.path !== ""}>
                 <span
                   class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
@@ -303,7 +303,7 @@ function PanelErrorFallback(props: { error: Error; reset: () => void }) {
   // bring down the whole workbench — siblings keep running and the user
   // gets an inline retry affordance.
   const language = useLanguage()
-  const t = (k: string) => language.t(k as Parameters<typeof language.t>[0])
+  const t: typeof language.t = (key, params) => language.t(key, params)
   return (
     <div class="flex h-full flex-col items-center justify-center gap-3 bg-v2-background-bg-deep text-v2-text-text-base p-6">
       <div class="text-center max-w-sm">

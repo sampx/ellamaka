@@ -30,7 +30,7 @@ export function Panel(props: {
   onModeChange: (mode: PanelMode) => void
 }) {
   const language = useLanguage()
-  const t = <K extends Parameters<typeof language.t>[0]>(key: K, params?: Parameters<typeof language.t>[1]) => language.t(key, params)
+  const t: typeof language.t = (key, params) => language.t(key, params)
   const sdk = useSDK()
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
@@ -143,14 +143,6 @@ export function Panel(props: {
     void actions.closeSplitTerminal({ scope: panelScope(), panelID: props.panel.id })
       .then(() => setTerminalTitle(undefined))
       .catch((error) => reportWorkbenchError("close split terminal", error))
-  }
-
-  const handleClose = () => {
-    const spacePath = props.spacePath
-    if (spacePath === undefined || spacePath === null) return
-    void actions.closePanel({ scope: panelScope(), panelID: props.panel.id }).catch((error) =>
-      reportWorkbenchError("close panel", error),
-    )
   }
 
   const handleDrop = (e: DragEvent) => {

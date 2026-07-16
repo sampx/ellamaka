@@ -53,7 +53,7 @@ export type SessionGroupsSDK = {
             title: string
             type: "space" | "general"
             sessionCount: number | string
-            sessions: Array<{
+            sessions?: Array<{
               id: string
               title: string
               directory: string
@@ -95,6 +95,30 @@ export async function fetchSessionGroups(sdk: SessionGroupsSDK): Promise<Session
       timeUpdated: normalizeTimestamp(s.timeUpdated),
     })),
   }))
+}
+
+export function createSessionGroupsLoader(input: {
+  fetch: () => Promise<SessionGroup[]>
+  commit: (groups: SessionGroup[]) => void
+  setLoading: (loading: boolean) => void
+  onError: (error: unknown) => void
+}) {
+  let latestRequest = 0
+
+  return async () => {
+    const request = latestRequest + 1
+    latestRequest = request
+    input.setLoading(true)
+    try {
+      const groups = await input.fetch()
+      if (request !== latestRequest) return
+      input.commit(groups)
+    } catch (error) {
+      if (request === latestRequest) input.onError(error)
+    } finally {
+      if (request === latestRequest) input.setLoading(false)
+    }
+  }
 }
 
 // ── resolveTargetPanel (pure sync — panel selection decision) ───────────────

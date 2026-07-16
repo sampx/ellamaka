@@ -22,8 +22,7 @@ export function PanelHeader(props: {
   onToggleSplit: () => void
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) =>
-    language.t(k as Parameters<typeof language.t>[0], params)
+  const t: typeof language.t = (key, params) => language.t(key, params)
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
   const sessionStore = useSessionStore()
@@ -37,10 +36,10 @@ export function PanelHeader(props: {
   const title = () => {
     if (props.panel.slotState === "bound") {
       const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
-      return session?.title ?? "Session"
+      return session?.title ?? t("workbench.panel.untitledSession")
     }
     const parts = props.panel.id.split("-")
-    return `Panel #${parts[parts.length - 1] ?? props.panel.id}`
+    return t("workbench.panel.number", { number: parts[parts.length - 1] ?? props.panel.id })
   }
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState, props.panel.tuiPtyId)
   const hasOpenSplitPty = createMemo(() => !!props.panel.splitPtyId)
@@ -136,7 +135,7 @@ export function PanelHeader(props: {
           variant="ghost-muted"
           size="small"
           icon={<IconV2 name="xmark-small" />}
-          aria-label="关闭"
+          aria-label={t("workbench.panel.close")}
           onClick={(e: MouseEvent) => {
             e.stopPropagation()
             e.preventDefault()

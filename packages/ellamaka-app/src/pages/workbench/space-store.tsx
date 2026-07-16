@@ -11,14 +11,14 @@ export type WopalSpace = {
 }
 
 export async function fetchSpaces(
-  sdk: { client: { wopalSpace: { spaces: () => Promise<{ data?: { spaces?: WopalSpace[] } }> } } },
+  sdk: { client: { wopalSpace: { spaces: () => Promise<{ data?: { spaces?: WopalSpace[] } | null }> } } },
 ): Promise<WopalSpace[]> {
   try {
     const res = await sdk.client.wopalSpace.spaces()
     return res.data?.spaces ?? []
   } catch (e) {
     reportWorkbenchError("fetch spaces", e)
-    return [] as WopalSpace[]
+    return []
   }
 }
 
