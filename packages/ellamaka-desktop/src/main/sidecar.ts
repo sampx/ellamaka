@@ -1,6 +1,33 @@
 import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
+import { register } from "node:module"
+
+if (typeof register === "function") {
+  const loaderCode = `
+import { existsSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.endsWith(".js") && (specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("file://"))) {
+    const parentURL = context.parentURL;
+    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/"))) {
+      let candidateURL = specifier.startsWith("file://") ? specifier : new URL(specifier, parentURL).href;
+      const candidatePath = fileURLToPath(candidateURL);
+      if (!existsSync(candidatePath)) {
+        const tsPath = candidatePath.slice(0, -3) + ".ts";
+        if (existsSync(tsPath)) {
+          // Pass the .ts URL to nextResolve so Node.js native --experimental-strip-types applies correctly!
+          return nextResolve(pathToFileURL(tsPath).href, context);
+        }
+      }
+    }
+  }
+  return nextResolve(specifier, context);
+}
+`;
+  register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString("base64")}`, import.meta.url)
+}
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
