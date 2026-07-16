@@ -15,6 +15,7 @@ import { useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 import { reportWorkbenchError } from "./workbench-error"
+import { ptyManager } from "./pty-manager"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
@@ -26,7 +27,7 @@ function WorkbenchShell() {
   const display = () => wb.display()
   const sdk = useServerSDK()
   const language = useLanguage()
-  const t = (key: string, params?: Record<string, string | number | boolean>) => language.t(key as Parameters<typeof language.t>[0], params)
+  const t = <K extends Parameters<typeof language.t>[0]>(key: K, params?: Parameters<typeof language.t>[1]) => language.t(key, params)
 
   // Task 3 (O18): Register default views during Shell init instead of at
   // module level. This eliminates import-order sensitivity from the
@@ -78,6 +79,10 @@ function WorkbenchShell() {
     })
   })
 
+  onCleanup(() => {
+    ptyManager.clearMemoryOnly()
+  })
+
   return (
     <div class="flex h-dvh flex-col bg-v2-background-bg-deep text-v2-text-text-base overflow-hidden">
       <Show
@@ -108,21 +113,23 @@ function WorkbenchShell() {
 }
 
 function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
+  const language = useLanguage()
+  const t = (key: string) => language.t(key as Parameters<typeof language.t>[0])
   return (
     <div class="flex h-dvh flex-col items-center justify-center gap-4 bg-v2-background-bg-deep text-v2-text-text-base p-8">
       <div class="text-center max-w-md">
         <h2 class="text-18-semibold text-v2-text-text-strong mb-2">
-          {("工作台加载失败")}
+          {t("workbench.error.shellLoadFailed")}
         </h2>
         <p class="text-14-regular text-v2-text-text-muted mb-4 break-words">
-          {props.error.message || "发生未知错误，请重试。"}
+          {props.error.message || t("workbench.error.unknownError")}
         </p>
         <button
           type="button"
           class="rounded-md bg-v2-icon-icon-brand px-4 py-2 text-12-bold text-white hover:opacity-90 transition-opacity"
           onClick={() => props.reset()}
         >
-          {("重试")}
+          {t("workbench.error.retry")}
         </button>
       </div>
     </div>

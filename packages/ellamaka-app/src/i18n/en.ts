@@ -1066,4 +1066,8 @@ export const dict = {
   "workbench.panelClose.consequenceSession": "• The session will be unbound (you can restore it from the left list)",
   "workbench.panelClose.consequenceTerminal": "• Spawned PTY processes (TUI/Terminal) will be terminated",
   "workbench.panelClose.confirmButton": "Close & Unbind",
+  "workbench.error.shellLoadFailed": "Workbench failed to load",
+  "workbench.error.panelLoadFailed": "Panel failed to load",
+  "workbench.error.unknownError": "An unknown error occurred. Please try again.",
+  "workbench.error.retry": "Retry",
 }

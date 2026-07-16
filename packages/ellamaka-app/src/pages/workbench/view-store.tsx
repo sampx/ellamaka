@@ -1,4 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { reportWorkbenchError } from "./workbench-error"
 import { makePersisted } from "@solid-primitives/storage"
 import { batch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -39,7 +40,7 @@ const WorkbenchStateContext = createSimpleContext({
         try {
           window.localStorage.removeItem(key)
         } catch (error) {
-          console.error("Failed to remove legacy storage key", key, error)
+          reportWorkbenchError(`remove legacy storage key ${key}`, error)
         }
       }
     }

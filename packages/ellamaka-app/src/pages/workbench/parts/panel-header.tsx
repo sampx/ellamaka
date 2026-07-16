@@ -10,6 +10,7 @@ import { scopeFromTab } from "../workbench-scope"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { listViews } from "../view-registry"
 import { DialogClosePanel } from "./session-tree-dialogs"
+import { reportWorkbenchError } from "../workbench-error"
 import type { WorkbenchPanel } from "../view-store"
 
 export function PanelHeader(props: {
@@ -48,7 +49,7 @@ export function PanelHeader(props: {
     const spacePath = props.spacePath
     if (spacePath === undefined || spacePath === null) return
     void actions.closePanel({ scope: panelScope(), panelID: props.panel.id }).catch((error) =>
-      console.error("close panel", error),
+      reportWorkbenchError("close panel", error),
     )
   }
 

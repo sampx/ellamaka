@@ -1011,4 +1011,8 @@ export const dict = {
   "workbench.panelClose.consequenceSession": "• 会话将自动解绑，您随时可从左侧列表中重新加载",
   "workbench.panelClose.consequenceTerminal": "• 随此面板启动的 TUI 或终端进程将被杀止",
   "workbench.panelClose.confirmButton": "关闭并解绑",
+  "workbench.error.shellLoadFailed": "工作台加载失败",
+  "workbench.error.panelLoadFailed": "面板加载失败",
+  "workbench.error.unknownError": "发生未知错误，请重试。",
+  "workbench.error.retry": "重试",
 } satisfies Partial<Record<Keys, string>>
