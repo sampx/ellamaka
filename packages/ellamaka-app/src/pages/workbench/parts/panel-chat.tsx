@@ -1,6 +1,7 @@
 import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
 import type { JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
@@ -30,6 +31,7 @@ import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
+import { panelChatRoute } from "./panel-chat-route"
 
 import { reportWorkbenchError } from "../workbench-error"
 
@@ -402,14 +404,31 @@ export function PanelChat(props: {
   spacePath: string
   spaceName: string
 }) {
+  const route = createMemo(() => panelChatRoute(props.directory, props.session.id))
+
   return (
-    <PanelChatRoute
-      panel={props.panel}
-      session={props.session}
-      directory={props.directory}
-      spacePath={props.spacePath}
-      spaceName={props.spaceName}
-    />
+    <Show when={route()} keyed>
+      {(current) => {
+        const history = createMemoryHistory()
+        history.set({ value: current.path, replace: true })
+        return (
+          <MemoryRouter history={history}>
+            <Route
+              path="/:dir/session/:id"
+              component={() => (
+                <PanelChatRoute
+                  panel={props.panel}
+                  session={props.session}
+                  directory={props.directory}
+                  spacePath={props.spacePath}
+                  spaceName={props.spaceName}
+                />
+              )}
+            />
+          </MemoryRouter>
+        )
+      }}
+    </Show>
   )
 }
 
