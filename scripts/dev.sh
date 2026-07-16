@@ -169,13 +169,14 @@ start_backend() {
 }
 
 start_frontend() {
-  local app_port="$1" pidfile="$2"
+  local app_port="$1" pidfile="$2" backend_port="$3"
   if [ ! -d "$ellamaka_app_dir" ]; then
     echo "missing Ellamaka Workbench: $ellamaka_app_dir"
     return 1
   fi
   (
     cd "$ellamaka_app_dir" || exit 1
+    export VITE_OPENCODE_SERVER_PORT="$backend_port"
     exec nohup bun run dev -- --host 127.0.0.1 --port "$app_port" --strictPort
   ) > "$LOGDIR/ellamaka-dev-$app_port-frontend.log" 2>&1 &
   echo "$!" >> "$pidfile"
@@ -295,7 +296,7 @@ cmd_serve() {
   fi
 
   warmup_config "$PORT"
-  start_frontend "$APP_PORT" "$pidfile" || { cmd_stop "$PORT" "$APP_PORT"; exit 1; }
+  start_frontend "$APP_PORT" "$pidfile" "$PORT" || { cmd_stop "$PORT" "$APP_PORT"; exit 1; }
 
   if ! curl -sf "http://127.0.0.1:$APP_PORT/workbench" >/dev/null 2>&1; then
     for i in $(seq 1 30); do
