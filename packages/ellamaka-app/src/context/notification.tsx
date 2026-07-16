@@ -265,11 +265,14 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       time: number,
     ) => {
       const sessionID = event.properties.sessionID
-      console.warn("[Session Error Event Received]:", {
-        directory,
-        sessionID,
-        error: event.properties.error,
-      })
+      const errDetail = event.properties.error
+      const errMsg =
+        errDetail && typeof errDetail === "object" && "message" in errDetail
+          ? (errDetail as any).message
+          : JSON.stringify(errDetail)
+      console.warn(
+        `[Session Error Event Received] directory=${directory} sessionID=${sessionID} error=${errMsg}`,
+      )
       void lookup(directory, sessionID).then((session) => {
         if (meta.disposed) return
         if (session?.parentID) return
