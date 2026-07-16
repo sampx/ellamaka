@@ -1,4 +1,5 @@
 import { Show, createSignal, onMount, onCleanup } from "solid-js"
+import type { JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
 
 const LOCK_NAME = "ellamaka-workbench-instance"
@@ -37,7 +38,7 @@ export async function requestWorkbenchLock(
   })
 }
 
-export function WorkbenchSingletonGuard(props: { children: any }) {
+export function WorkbenchSingletonGuard(props: { children: JSX.Element }) {
   const language = useLanguage()
   const t = (k: string) => language.t(k)
   const [state, setState] = createSignal<GuardState>("acquiring")

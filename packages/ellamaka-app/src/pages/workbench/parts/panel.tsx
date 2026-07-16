@@ -30,7 +30,7 @@ export function Panel(props: {
   onModeChange: (mode: PanelMode) => void
 }) {
   const language = useLanguage()
-  const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k as Parameters<typeof language.t>[0], params)
+  const t = <K extends Parameters<typeof language.t>[0]>(key: K, params?: Parameters<typeof language.t>[1]) => language.t(key, params)
   const sdk = useSDK()
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()

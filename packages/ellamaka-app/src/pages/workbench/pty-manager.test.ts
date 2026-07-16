@@ -13,6 +13,7 @@ function createSDK() {
           },
           remove: async ({ ptyID }: { ptyID: string }) => {
             removed.push(ptyID)
+            return { data: true }
           },
         },
       },
@@ -72,6 +73,7 @@ describe("PtyManager", () => {
           },
           remove: async (input: { ptyID: string; directory?: string }) => {
             removals.push(input)
+            return { data: true }
           },
         },
       },

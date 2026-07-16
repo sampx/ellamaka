@@ -20,11 +20,20 @@ export const ViewId = {
 
 export type ViewId = (typeof ViewId)[keyof typeof ViewId]
 
+interface WorkbenchViewSdk {
+  url: string
+  client: {
+    pty: {
+      create(params: { command?: string; args?: string[]; cwd?: string; title?: string }): Promise<{ data?: { id: string } }>
+    }
+  }
+}
+
 export type PanelViewCtx = {
   panel: WorkbenchPanel
   session?: Session
   directory: string
-  sdk: any
+  sdk: WorkbenchViewSdk
   spaceName: string
   spacePath: string
 }

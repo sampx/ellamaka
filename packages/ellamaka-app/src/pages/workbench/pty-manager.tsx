@@ -1,3 +1,4 @@
+import type { Pty } from "@opencode-ai/sdk/v2/client"
 import { reportWorkbenchError } from "./workbench-error"
 
 export type PtyKind = "tui" | "term" | "split"
@@ -5,8 +6,8 @@ export type PtyKind = "tui" | "term" | "split"
 type PtySDK = {
   client: {
     pty: {
-      get: (input: { ptyID: string }) => Promise<unknown>
-      remove: (input: { ptyID: string; directory?: string }) => Promise<unknown>
+      get: (input: { ptyID: string }) => Promise<{ data?: Pty }>
+      remove: (input: { ptyID: string; directory?: string }) => Promise<{ data?: boolean }>
     }
   }
 }

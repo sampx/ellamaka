@@ -1,4 +1,5 @@
 import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
+import type { JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -412,7 +413,7 @@ export function PanelChat(props: {
   )
 }
 
-function PanelChatDataProvider(props: { session: Session; directory: string; children: any }) {
+function PanelChatDataProvider(props: { session: Session; directory: string; children: JSX.Element }) {
   const sync = useSync()
 
   // createResource only fires its fetcher when the returned signal is read.
