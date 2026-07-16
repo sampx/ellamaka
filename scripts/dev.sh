@@ -60,6 +60,13 @@ EOF
 
 is_running() { lsof -ti :"$1" >/dev/null 2>&1; }
 
+# Echo the first free port starting from $1 (inclusive).
+next_free_port() {
+  local p="$1"
+  while is_running "$p"; do p=$((p + 1)); done
+  echo "$p"
+}
+
 wait_backend() {
   local port="${1:-4096}"
   for i in $(seq 1 30); do
@@ -77,9 +84,35 @@ warmup_config() {
 # ── stop ───────────────────────────────────────────────────
 
 cmd_stop() {
-  local port="${1:-4096}"
-  local app_port="${2:-3000}"
-  local pidfile="$LOGDIR/ellamaka-dev-$port-$app_port.pid"
+  local port="${1:-}"
+  local app_port="${2:-}"
+
+  # No port args: stop all ellamaka dev instances via pidfiles.
+  if [ -z "$port" ]; then
+    echo "stopping all ellamaka dev instances..."
+    local any=0
+    for pf in "$LOGDIR"/ellamaka-dev-*.pid; do
+      [ -f "$pf" ] || continue
+      any=1
+      # pidfile name format: ellamaka-dev-<backend>-<app>.pid
+      local base; base="$(basename "$pf" .pid)"
+      local bp; bp="${base#ellamaka-dev-}"       # <backend>-<app>
+      local ap; ap="${bp##*-}"; bp="${bp%-*}"
+      [ "$bp" = "$ap" ] && { bp=""; ap=""; }
+      echo "  found instance backend :$bp workbench :$ap ($pf)"
+      _stop_one "$bp" "$ap" "$pf"
+      rm -f "$pf"
+    done
+    [ "$any" -eq 0 ] && echo "  no dev instances found"
+    return 0
+  fi
+
+  [ -z "$app_port" ] && app_port="3000"
+  _stop_one "$port" "$app_port" "$LOGDIR/ellamaka-dev-$port-$app_port.pid"
+}
+
+_stop_one() {
+  local port="$1" app_port="$2" pidfile="$3"
   local log_files=(
     "$LOGDIR/ellamaka-dev-$port-server.log"
     "$LOGDIR/ellamaka-dev-$app_port-frontend.log"
@@ -252,7 +285,7 @@ cmd_tui() {
 # ── serve ──────────────────────────────────────────────────
 
 cmd_serve() {
-  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=()
+  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=() port_auto=false
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -273,14 +306,26 @@ cmd_serve() {
 
   local pidfile="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
 
-  if [ -f "$pidfile" ] || is_running "$PORT" || is_running "$APP_PORT"; then
-    echo "already running."
-    read -p "stop and restart? [Y/n] " yn
-    case "${yn:-Y}" in
-      [Yy]*) cmd_stop "$PORT" "$APP_PORT"; echo "" ;;
-      *) exit 0 ;;
-    esac
+  # Our own dev server already running -> stop and restart, no interactive prompt.
+  if [ -f "$pidfile" ]; then
+    cmd_stop "$PORT" "$APP_PORT"
   fi
+
+  # Port held by another process (not ours) -> auto-bump to next free port.
+  if is_running "$PORT" && [ ! -f "$pidfile" ]; then
+    local new_port
+    new_port=$(next_free_port "$((PORT + 1))")
+    echo "backend port :$PORT busy, using :$new_port"
+    PORT="$new_port"
+  fi
+  if is_running "$APP_PORT"; then
+    local new_app_port
+    new_app_port=$(next_free_port "$((APP_PORT + 1))")
+    echo "workbench port :$APP_PORT busy, using :$new_app_port"
+    APP_PORT="$new_app_port"
+  fi
+
+  pidfile="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
 
   mkdir -p "$LOGDIR"
   $debug && echo "debug: modules=$debug_modules"
