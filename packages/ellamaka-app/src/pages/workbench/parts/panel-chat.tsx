@@ -1,6 +1,6 @@
 import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
 import { createStore } from "solid-js/store"
-import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
+
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
@@ -19,7 +19,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
-import { createSessionHistoryLoader } from "./panel-chat-helpers"
+import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
@@ -29,7 +29,7 @@ import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
-import { panelChatRoute } from "./panel-chat-route"
+
 import { reportWorkbenchError } from "../workbench-error"
 
 const emptyUserMessages: UserMessage[] = []
@@ -176,13 +176,13 @@ function PanelChatInner(props: {
   const historyMore = () => sync.session.history.more(props.session.id)
   const historyLoading = () => sync.session.history.loading(props.session.id)
 
-  const historyLoader = createSessionHistoryLoader({
+  const historyLoader = useSessionHistoryLoader({
     sessionID: () => props.session.id,
     loaded: () => messages().length,
     visibleUserMessages: visibleUserMessages,
     historyMore,
     historyLoading,
-    loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
+    loadMore: (sessionID: string) => sync.session.history.loadMore(sessionID),
     userScrolled: autoScroll.userScrolled,
     scroller: () => scroller,
   })
@@ -401,31 +401,14 @@ export function PanelChat(props: {
   spacePath: string
   spaceName: string
 }) {
-  const route = createMemo(() => panelChatRoute(props.directory, props.session.id))
-
   return (
-    <Show when={route()} keyed>
-      {(current) => {
-        const history = createMemoryHistory()
-        history.set({ value: current.path, replace: true })
-        return (
-          <MemoryRouter history={history}>
-            <Route
-              path="/:dir/session/:id"
-              component={() => (
-                <PanelChatRoute
-                  panel={props.panel}
-                  session={props.session}
-                  directory={props.directory}
-                  spacePath={props.spacePath}
-                  spaceName={props.spaceName}
-                />
-              )}
-            />
-          </MemoryRouter>
-        )
-      }}
-    </Show>
+    <PanelChatRoute
+      panel={props.panel}
+      session={props.session}
+      directory={props.directory}
+      spacePath={props.spacePath}
+      spaceName={props.spaceName}
+    />
   )
 }
 

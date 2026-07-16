@@ -67,6 +67,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
+import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 
 const emptyUserMessages: UserMessage[] = []
 type FollowupItem = FollowupDraft & { id: string }
@@ -75,110 +76,6 @@ const emptyFollowups: FollowupItem[] = []
 
 type ChangeMode = "git" | "branch" | "turn"
 type VcsMode = "git" | "branch"
-
-type SessionHistoryWindowInput = {
-  sessionID: () => string | undefined
-  loaded: () => number
-  visibleUserMessages: () => UserMessage[]
-  historyMore: () => boolean
-  historyLoading: () => boolean
-  loadMore: (sessionID: string) => Promise<void>
-  userScrolled: () => boolean
-  scroller: () => HTMLDivElement | undefined
-}
-
-function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
-  const historyScrollThreshold = 200
-  let shiftFrame: number | undefined
-
-  const [state, setState] = createStore({
-    shift: false,
-  })
-
-  const userMessages = createMemo(() => input.visibleUserMessages(), emptyUserMessages, {
-    equals: same,
-  })
-
-  const cancelShiftReset = () => {
-    if (shiftFrame === undefined) return
-    cancelAnimationFrame(shiftFrame)
-    shiftFrame = undefined
-  }
-
-  const scheduleShiftReset = () => {
-    cancelShiftReset()
-    shiftFrame = requestAnimationFrame(() => {
-      shiftFrame = undefined
-      setState("shift", false)
-    })
-  }
-
-  const fetchOlderMessages = async () => {
-    const id = input.sessionID()
-    if (!id) return
-    if (!input.historyMore() || input.historyLoading()) return
-
-    // TODO(session-timeline): switch this to core cursor-based part pagination when that API lands.
-    const beforeVisible = input.visibleUserMessages().length
-    let loaded = input.loaded()
-    let growth = 0
-
-    cancelShiftReset()
-    setState("shift", true)
-
-    while (true) {
-      await input.loadMore(id)
-      if (input.sessionID() !== id) return
-
-      const nextLoaded = input.loaded()
-      const raw = nextLoaded - loaded
-      loaded = nextLoaded
-      growth = input.visibleUserMessages().length - beforeVisible
-
-      if (growth > 0) break
-      if (raw <= 0) break
-      if (!input.historyMore()) break
-    }
-
-    if (growth > 0) {
-      scheduleShiftReset()
-      return
-    }
-
-    setState("shift", false)
-  }
-
-  const loadAndReveal = () => fetchOlderMessages()
-
-  const onScrollerScroll = () => {
-    if (!input.userScrolled()) return
-    const el = input.scroller()
-    if (!el) return
-    if (el.scrollTop >= historyScrollThreshold) return
-
-    void fetchOlderMessages()
-  }
-
-  createEffect(
-    on(
-      input.sessionID,
-      () => {
-        cancelShiftReset()
-        setState({ shift: false })
-      },
-      { defer: true },
-    ),
-  )
-
-  onCleanup(cancelShiftReset)
-
-  return {
-    userMessages,
-    shift: () => state.shift,
-    loadAndReveal,
-    onScrollerScroll,
-  }
-}
 
 export default function Page() {
   const serverSync = useServerSync()
@@ -1270,7 +1167,7 @@ export default function Page() {
     },
   )
 
-  const historyLoader = createSessionHistoryLoader({
+  const historyLoader = useSessionHistoryLoader({
     sessionID: () => params.id,
     loaded: () => messages().length,
     visibleUserMessages,

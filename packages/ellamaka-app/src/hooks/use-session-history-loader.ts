@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store"
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { same } from "@/utils/same"
 
-type SessionHistoryWindowInput = {
+export type SessionHistoryWindowInput = {
   sessionID: () => string | undefined
   loaded: () => number
   visibleUserMessages: () => UserMessage[]
@@ -15,13 +15,13 @@ type SessionHistoryWindowInput = {
 }
 
 /**
- * History pagination loader for PanelChat, lifted verbatim from the official
- * session page (packages/app/src/pages/session.tsx: createSessionHistoryLoader).
+ * History pagination loader, lifted verbatim from the official session page
+ * (packages/app/src/pages/session.tsx: createSessionHistoryLoader).
  *
  * Loads older messages when the user scrolls near the top, keeping the scroll
  * position stable during the prepend (historyShift).
  */
-export function createSessionHistoryLoader(input: SessionHistoryWindowInput) {
+export function useSessionHistoryLoader(input: SessionHistoryWindowInput) {
   const historyScrollThreshold = 200
   let shiftFrame: number | undefined
 
