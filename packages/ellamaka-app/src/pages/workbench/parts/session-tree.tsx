@@ -163,30 +163,15 @@ export function SessionTree(props: {
   })
 
   function isSessionBound(sessionId: string): boolean {
-    for (const spacePath of Object.keys(wb.spaces)) {
-      const space = wb.spaces[spacePath]
-      if (space?.panels?.some((p) => p.boundSessionId === sessionId && p.slotState === "bound")) {
-        return true
-      }
-    }
-    return false
+    return wb.findSessionBinding(sessionId) !== undefined
   }
 
   function getPanelBadge(sessionId: string): string | undefined {
-    const activePath = wb.activeTab()?.path
-    if (activePath !== undefined) {
-      const space = wb.spaces[activePath]
-      const idx = space?.panels?.findIndex((p) => p.boundSessionId === sessionId && p.slotState === "bound") ?? -1
-      if (idx !== -1) return `P${idx + 1}`
-    }
-
-    for (const spPath of Object.keys(wb.spaces)) {
-      if (spPath === activePath) continue
-      const otherSpace = wb.spaces[spPath]
-      const otherIdx = otherSpace?.panels?.findIndex((p) => p.boundSessionId === sessionId && p.slotState === "bound") ?? -1
-      if (otherIdx !== -1) return `P${otherIdx + 1}`
-    }
-    return undefined
+    const binding = wb.findSessionBinding(sessionId)
+    if (!binding) return undefined
+    const space = wb.spaces[binding.spacePath]
+    const idx = space?.panels?.findIndex((p) => p.id === binding.panelID) ?? -1
+    return idx !== -1 ? `P${idx + 1}` : undefined
   }
 
   function getSessionsForSpace(spaceName: string): GroupSession[] {
@@ -555,25 +540,13 @@ export function SessionTree(props: {
       setSelectedSessionId(session.id)
       const badge = getPanelBadge(session.id)
       if (badge) {
-        let boundSpacePath: string | undefined
-        let boundPanelId: string | undefined
-
-        for (const spPath of Object.keys(wb.spaces)) {
-          const spaceState = wb.spaces[spPath]
-          const p = spaceState?.panels?.find((panel) => panel.boundSessionId === session.id && panel.slotState === "bound")
-          if (p) {
-            boundSpacePath = spPath
-            boundPanelId = p.id
-            break
-          }
-        }
-
-        if (boundSpacePath && boundPanelId) {
-          const targetSpace = props.spaces.find((s) => s.path === boundSpacePath)
+        const binding = wb.findSessionBinding(session.id)
+        if (binding) {
+          const targetSpace = props.spaces.find((s) => s.path === binding.spacePath)
           if (targetSpace) {
             wb.openTab(targetSpace)
           }
-          wb.setActivePanel(boundSpacePath, boundPanelId)
+          wb.setActivePanel(binding.spacePath, binding.panelID)
         }
       } else {
         const targetSpace = props.spaces.find((s) => s.name === spaceName)

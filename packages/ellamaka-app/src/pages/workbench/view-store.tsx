@@ -145,13 +145,21 @@ const WorkbenchStateContext = createSimpleContext({
 
     // Task 1 (O4): StorePort methods — wb directly satisfies WorkbenchActionStorePort
     // so createWorkbenchActions can receive the store without an adapter layer.
-    const boundPanels = (sessionID: string): BoundWorkbenchPanel[] =>
-      workbench.tabs.flatMap((tab) => {
-        const scope = scopeFromTab(tab)
-        return (workbench.spaceState(tab.path)?.panels ?? [])
-          .filter((panel) => panel.slotState === "bound" && panel.boundSessionId === sessionID)
-          .map((panel) => ({ scope, panelID: panel.id, panel }))
-      })
+    // boundPanels reuses the canonical findSessionBinding selector so the deep
+    // link and Session Tree share one binding lookup (D-03).
+    const boundPanels = (sessionID: string): BoundWorkbenchPanel[] => {
+      const binding = workbench.findSessionBinding(sessionID)
+      if (!binding) return []
+      const tab = workbench.tabs.find((candidate) => candidate.path === binding.spacePath)
+      const scope: SpaceScope = tab
+        ? scopeFromTab(tab)
+        : binding.spacePath
+          ? { kind: "space", name: binding.spacePath, path: binding.spacePath }
+          : { kind: "general" }
+      const panel = workbench.spaceState(binding.spacePath)?.panels.find((p) => p.id === binding.panelID)
+      if (!panel) return []
+      return [{ scope, panelID: binding.panelID, panel }]
+    }
 
     const active = () => {
       const ctx = selectActiveWorkbenchContext({
@@ -187,6 +195,7 @@ const WorkbenchStateContext = createSimpleContext({
       setPanelViewMode: workbench.setPanelViewMode,
       isSessionBound: workbench.isSessionBound,
       boundPanelIdForSession: workbench.boundPanelIdForSession,
+      findSessionBinding: workbench.findSessionBinding,
       boundPanels,
       active,
       get tabs() { return workbench.tabs },

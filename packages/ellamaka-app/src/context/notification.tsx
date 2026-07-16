@@ -10,6 +10,8 @@ import { useSettings } from "@/context/settings"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
+import { workbenchSessionHref } from "@/utils/workbench-session-link"
+import { getRelativeTime } from "@/utils/time"
 import { EventSessionError } from "@opencode-ai/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
@@ -245,9 +247,14 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           session: sessionID,
         })
 
-        const href = `/${base64Encode(directory)}/session/${sessionID}`
+        const href = workbenchSessionHref(session.id)
         if (settings.notifications.agent()) {
-          void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
+          const relativeTime = getRelativeTime(new Date(time).toISOString(), language.t)
+          void platform.notify(
+            language.t("notification.session.responseReady.title", { session: session.title ?? sessionID }),
+            language.t("notification.session.responseReady.description", { agent: session.agent ?? "agent", time: relativeTime }),
+            href,
+          )
         }
       })
     }

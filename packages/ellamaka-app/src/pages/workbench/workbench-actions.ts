@@ -1,4 +1,4 @@
-import { scopeKey, type SpaceScope } from "./workbench-scope"
+import { scopeKey, scopeName, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
 export type WorkbenchActionPtyKind = "tui" | "term" | "split"
@@ -47,6 +47,8 @@ export type WorkbenchActionStorePort = {
   active: () => ActiveWorkbenchTarget | undefined
   addPanel: (scope: SpaceScope) => string | undefined
   setActivePanel: (scope: SpaceScope, panelID: string) => void
+  setActive: (spaceName: string) => void
+  activePanelID: (scope: SpaceScope) => string | undefined
   removePanel: (scope: SpaceScope, panelID: string) => boolean
   removeSpace: (scope: SpaceScope) => boolean
   commitSessionBinding: (scope: SpaceScope, panelID: string, session: WorkbenchActionSession) => void
@@ -91,6 +93,31 @@ export type WorkbenchActionResult = {
 }
 
 export type WorkbenchActionStatus = Pick<WorkbenchActionResult, "status">
+
+// Deep-link reveal result. The single transaction outcome returned by
+// revealSession — it is the only entry point that mutates Tab/Panel/
+// Projection/PTY state for a notification deep link.
+export type RevealSessionStatus =
+  | "activated" // already bound; target Tab opened and Panel activated
+  | "loaded" // unbound; loaded into an empty or newly added Panel
+  | "replacement_required" // all Panels bound; caller must confirm overwrite
+  | "unavailable" // archived / child session — not loadable
+  | "stale" // superseded by a newer request
+
+export type RevealSessionResult = {
+  status: RevealSessionStatus
+  panelID?: string
+  scopePath?: string
+  reason?: "archived" | "child"
+}
+
+export type RevealSessionInput = {
+  scope: SpaceScope
+  sessionID: string
+  directory: string
+  displayMode?: "chat" | "tui"
+  forceReplace?: boolean
+}
 
 const ptyID = (panel: WorkbenchActionPanel, kind: WorkbenchActionPtyKind) => {
   if (kind === "tui") return panel.tuiPtyId
@@ -333,6 +360,64 @@ export function createWorkbenchActions(input: {
       input.store.commitSessionBinding(options.scope, options.panelID, session)
       input.store.setActivePanel(options.scope, options.panelID)
       return { status: "committed", panelID: options.panelID }
+    },
+    async revealSession(options: RevealSessionInput): Promise<RevealSessionResult> {
+      const scopePathValue = scopePath(options.scope)
+
+      // 1. Already bound → open the owning Tab and activate the Panel.
+      //    No Session API call or PTY dispose — the existing binding is reused.
+      const bindings = input.store.boundPanels(options.sessionID)
+      const binding = bindings[0]
+      if (binding) {
+        input.store.setActive(scopeName(binding.scope))
+        input.store.setActivePanel(binding.scope, binding.panelID)
+        return { status: "activated", panelID: binding.panelID, scopePath: scopePath(binding.scope) }
+      }
+
+      // 2. Unbound → locate an empty Panel, otherwise add one (max 3).
+      const panels = input.store.panels(options.scope)
+      const emptyPanel = panels.find((panel) => panel.slotState === "empty")
+      const targetPanelID =
+        emptyPanel?.id ?? (panels.length < 3 ? input.store.addPanel(options.scope) : undefined)
+
+      if (!targetPanelID) {
+        // All Panels are bound. Without confirmation we must not silently
+        // overwrite the user's work — signal the caller to ask first.
+        if (options.forceReplace) {
+          const activeID = input.store.activePanelID(options.scope)
+          if (!activeID) return { status: "replacement_required", panelID: "", scopePath: scopePathValue }
+          const result = await this.loadSessionIntoPanel({
+            scope: options.scope,
+            panelID: activeID,
+            sessionID: options.sessionID,
+            directory: options.directory,
+          })
+          if (result.status === "stale") return { status: "stale" }
+          if (result.unavailableReason) {
+            return { status: "unavailable", reason: result.unavailableReason, panelID: activeID, scopePath: scopePathValue }
+          }
+          return { status: "loaded", panelID: activeID, scopePath: scopePathValue }
+        }
+        return {
+          status: "replacement_required",
+          panelID: input.store.activePanelID(options.scope) ?? "",
+          scopePath: scopePathValue,
+        }
+      }
+
+      // 3. Load into the chosen Panel (reuses server read + PTY release +
+      //    Projection update + single binding commit from loadSessionIntoPanel).
+      const result = await this.loadSessionIntoPanel({
+        scope: options.scope,
+        panelID: targetPanelID,
+        sessionID: options.sessionID,
+        directory: options.directory,
+      })
+      if (result.status === "stale") return { status: "stale" }
+      if (result.unavailableReason) {
+        return { status: "unavailable", reason: result.unavailableReason, panelID: targetPanelID, scopePath: scopePathValue }
+      }
+      return { status: "loaded", panelID: targetPanelID, scopePath: scopePathValue }
     },
     renameSession(options: {
       scope: SpaceScope

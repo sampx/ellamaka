@@ -492,7 +492,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} u {{projectName}} ima pitanje",
   "notification.action.goToSession": "Idi na sesiju",
 
-  "notification.session.responseReady.title": "Odgovor je spreman",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Greška sesije",
   "notification.session.error.fallbackDescription": "Došlo je do greške",
 

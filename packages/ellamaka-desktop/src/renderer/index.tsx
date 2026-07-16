@@ -195,16 +195,7 @@ const createPlatform = (): Platform => {
       const focused = await window.api.getWindowFocused().catch(() => document.hasFocus())
       if (focused) return
 
-      const notification = new Notification(title, {
-        body: description ?? "",
-        icon: "",
-      })
-      notification.onclick = () => {
-        void window.api.showWindow()
-        void window.api.setWindowFocus()
-        handleNotificationClick(href)
-        notification.close()
-      }
+      window.api.showNotification(title, description ?? "", href)
     },
 
     fetch: (input, init) => {
@@ -333,8 +324,12 @@ listenForDeepLinks()
 
   onMount(() => {
     document.addEventListener("click", handleClick)
+    const unsubNotification = window.api.onNotificationClick((href) => {
+      handleNotificationClick(href)
+    })
     onCleanup(() => {
       document.removeEventListener("click", handleClick)
+      unsubNotification()
     })
   })
 

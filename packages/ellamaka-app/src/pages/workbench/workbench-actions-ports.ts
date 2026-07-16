@@ -19,6 +19,8 @@ export function buildStorePort(wb: WorkbenchState): WorkbenchActionStorePort {
     active: wb.active,
     addPanel: (scope) => wb.addPanel(scopePath(scope)),
     setActivePanel: (scope, panelID) => wb.setActivePanel(scopePath(scope), panelID),
+    setActive: (spaceName) => wb.setActive(spaceName),
+    activePanelID: (scope) => wb.spaceState(scopePath(scope))?.activePanelID,
     removePanel: (scope, panelID) => wb.removePanel(scopePath(scope), panelID),
     removeSpace: (scope) => wb.removeSpace(scopePath(scope)),
     commitSessionBinding: (scope, panelID, session) => wb.bindSessionToPanel(scopePath(scope), panelID, session),

@@ -493,7 +493,8 @@ export const dict = {
   "notification.question.description": "У {{sessionTitle}} в {{projectName}} есть вопрос",
   "notification.action.goToSession": "Перейти к сессии",
 
-  "notification.session.responseReady.title": "Ответ готов",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Ошибка сессии",
   "notification.session.error.fallbackDescription": "Произошла ошибка",
 

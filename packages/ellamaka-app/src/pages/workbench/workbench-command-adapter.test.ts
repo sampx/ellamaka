@@ -40,6 +40,8 @@ function createHarness() {
       active = { scope, panelID }
       activations.push(active)
     },
+    setActive: () => {},
+    activePanelID: () => active?.panelID,
     removePanel: () => false,
     removeSpace: () => false,
     commitSessionBinding: (scope, panelID, session) => {

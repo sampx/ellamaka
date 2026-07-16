@@ -103,4 +103,23 @@ describe("WorkbenchStore", () => {
     expect(store.activeSpaceName).toBe("General")
     expect(store.removeSpace("/fixtures/space-a")).toBe(false)
   })
+
+  test("findSessionBinding returns the owning Space path and Panel ID", () => {
+    const store = createWorkbenchStore(fixture())
+    expect(store.findSessionBinding("session-a")).toEqual({ spacePath: "/fixtures/space-a", panelID: "panel-a" })
+    expect(store.findSessionBinding("session-b")).toBeUndefined()
+    expect(store.findSessionBinding("missing")).toBeUndefined()
+  })
+
+  test("findSessionBinding tracks a session after it is bound to another Panel", () => {
+    const store = createWorkbenchStore(fixture())
+    store.bindSessionToPanel("/fixtures/space-a", "panel-b", {
+      id: "session-b",
+      directory: "/fixtures/space-a/project-b",
+      type: "chat",
+    })
+    expect(store.findSessionBinding("session-b")).toEqual({ spacePath: "/fixtures/space-a", panelID: "panel-b" })
+    store.unbindSessionFromPanel("/fixtures/space-a", "panel-b")
+    expect(store.findSessionBinding("session-b")).toBeUndefined()
+  })
 })

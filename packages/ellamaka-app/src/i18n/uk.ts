@@ -521,7 +521,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} у {{projectName}} має запитання",
   "notification.action.goToSession": "Перейти до сесії",
 
-  "notification.session.responseReady.title": "Відповідь готова",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Помилка сесії",
   "notification.session.error.fallbackDescription": "Сталася помилка",
 

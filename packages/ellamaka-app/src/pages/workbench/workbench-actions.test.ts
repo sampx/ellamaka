@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createWorkbenchActions, type WorkbenchActionPanel, type WorkbenchActionStorePort } from "./workbench-actions"
+import { createWorkbenchActions, type WorkbenchActionPanel, type WorkbenchActionSession, type WorkbenchActionStorePort } from "./workbench-actions"
 import { scopePath, spaceScope } from "./workbench-scope"
 
 function deferred<T>() {
@@ -31,6 +31,8 @@ function createStorePort(options?: { withPty?: boolean }) {
     active: () => ({ scope, panelID: panel.id }),
     addPanel: () => undefined,
     setActivePanel: () => {},
+    setActive: () => {},
+    activePanelID: () => undefined,
     removePanel: () => false,
     removeSpace: () => false,
     commitSessionBinding: (_scope, panelID, session) => {
@@ -330,6 +332,8 @@ describe("WorkbenchActions", () => {
       active: () => ({ scope, panelID: "panel-a" }),
       addPanel: () => undefined,
       setActivePanel: () => {},
+      setActive: () => {},
+      activePanelID: () => undefined,
       removePanel: (_scope, panelID) => {
         events.push(`remove:${panelID}`)
         const index = panels.findIndex((panel) => panel.id === panelID)
@@ -374,6 +378,8 @@ describe("WorkbenchActions", () => {
       active: () => ({ scope, panelID: "panel-a" }),
       addPanel: () => undefined,
       setActivePanel: () => {},
+      setActive: () => {},
+      activePanelID: () => undefined,
       removePanel: () => false,
       removeSpace: () => {
         events.push("remove-space")
@@ -577,6 +583,8 @@ describe("WorkbenchActions store port delegation", () => {
       active: () => { calls.push("active"); return { scope, panelID: panel.id } },
       addPanel: (s) => { calls.push(`addPanel:${s.kind}`); return "panel-new" },
       setActivePanel: (_s, id) => { calls.push(`setActivePanel:${id}`) },
+      setActive: (_name) => { calls.push(`setActive:${_name}`) },
+      activePanelID: () => panel.id,
       removePanel: (_s, id) => { calls.push(`removePanel:${id}`); return true },
       removeSpace: (s) => { calls.push(`removeSpace:${s.kind}`); return true },
       commitSessionBinding: (_s, id, sess) => { calls.push(`commitSessionBinding:${id}:${sess.id}`) },
@@ -707,6 +715,8 @@ describe("WorkbenchActions General vs Space scope", () => {
       active: () => ({ scope: spaceA, panelID: "panel-s" }),
       addPanel: () => undefined,
       setActivePanel: () => {},
+      setActive: () => {},
+      activePanelID: () => undefined,
       removePanel: () => false,
       removeSpace: () => true,
       commitSessionBinding: () => {},
@@ -838,6 +848,8 @@ describe("WorkbenchActions §5.6 additional coverage", () => {
       active: () => ({ scope, panelID: panel.id }),
       addPanel: () => undefined,
       setActivePanel: () => {},
+      setActive: () => {},
+      activePanelID: () => undefined,
       removePanel: () => false,
       removeSpace: () => false,
       commitSessionBinding: (_s, panelID, session) => {
@@ -1209,5 +1221,170 @@ describe("WorkbenchActions §5.6 additional coverage", () => {
     })
     expect(disposed).toEqual(["panel-space-a"])
     expect(state.panel().slotState).toBe("empty")
+  })
+})
+
+// ── Task 2 (O5): revealSession ───────────────────────────────────────
+// The single deep-link transaction entry. It activates an already-bound
+// session, loads an unbound one into an empty/new Panel, or reports that
+// replacement must be confirmed when every Panel is bound.
+
+describe("WorkbenchActions revealSession", () => {
+  const scope = spaceScope("Space A", "/fixtures/workspaces/space-a")
+  const path = scopePath(scope)
+
+  function makeStore(initial: WorkbenchActionPanel[], options?: { addPanelReturns?: string | undefined }) {
+    const panels = initial.map((p) => ({ ...p }))
+    let activePanelID = panels[0]?.id ?? ""
+    const calls: string[] = []
+    const store: WorkbenchActionStorePort = {
+      panel: (_s, id) => panels.find((p) => p.id === id),
+      panels: () => panels,
+      boundPanels: (sid) =>
+        panels
+          .filter((p) => p.slotState === "bound" && p.boundSessionId === sid)
+          .map((p) => ({ scope, panelID: p.id, panel: p })),
+      active: () => ({ scope, panelID: activePanelID }),
+      addPanel: () => {
+        calls.push("addPanel")
+        if (options?.addPanelReturns === undefined) return undefined
+        const id = options.addPanelReturns
+        panels.push({ id, slotState: "empty", directory: path, mode: "", width: 1 })
+        return id
+      },
+      setActivePanel: (_s, id) => {
+        activePanelID = id
+        calls.push(`setActivePanel:${id}`)
+      },
+      setActive: (name) => {
+        calls.push(`setActive:${name}`)
+      },
+      activePanelID: () => activePanelID,
+      removePanel: () => false,
+      removeSpace: () => false,
+      commitSessionBinding: (_s, id, session) => {
+        calls.push(`bind:${id}:${session.id}`)
+        const panel = panels.find((p) => p.id === id)
+        if (panel) {
+          panel.slotState = "bound"
+          panel.boundSessionId = session.id
+          panel.directory = session.directory
+        }
+      },
+      commitSessionUnbinding: () => false,
+      commitPanelPty: () => {},
+    }
+    return { store, panels: () => panels, calls, getActive: () => activePanelID }
+  }
+
+  const noopPty = { disposePanel: async () => {}, ensure: async ({ create }: { create: () => Promise<string> }) => create(), disposePty: async () => {} }
+  const loadedSession = { id: "session-new", title: "New", directory: "/fixtures/workspaces/space-a/project-new", type: "chat" as const }
+  const getSession = (over: Partial<WorkbenchActionSession> = {}) => ({
+    create: async () => ({ ...loadedSession, ...over }),
+    get: async () => ({ ...loadedSession, ...over }),
+    project: () => {},
+    rename: async () => {},
+    remove: async () => {},
+  })
+
+  test("activates an already-bound session without loading it", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "bound", boundSessionId: "session-bound", directory: path, mode: "chat", width: 1 },
+      { id: "p2", slotState: "empty", directory: path, mode: "", width: 1 },
+    ])
+    const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
+    const result = await actions.revealSession({ scope, sessionID: "session-bound", directory: path })
+    expect(result).toEqual({ status: "activated", panelID: "p1", scopePath: path })
+    expect(state.calls).toContain("setActive:Space A")
+    expect(state.calls).toContain("setActivePanel:p1")
+    // never fetched or bound
+    expect(state.calls.some((c) => c.startsWith("bind:"))).toBe(false)
+  })
+
+  test("loads an unbound session into an empty panel", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "bound", boundSessionId: "session-a", directory: path, mode: "chat", width: 1 },
+      { id: "p2", slotState: "empty", directory: path, mode: "", width: 1 },
+      { id: "p3", slotState: "empty", directory: path, mode: "", width: 1 },
+    ])
+    const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
+    const result = await actions.revealSession({ scope, sessionID: "session-new", directory: path })
+    expect(result).toEqual({ status: "loaded", panelID: "p2", scopePath: path })
+    expect(state.calls).toContain("bind:p2:session-new")
+    expect(state.calls).toContain("setActivePanel:p2")
+  })
+
+  test("adds a panel when no empty panel exists and the limit allows it", async () => {
+    const state = makeStore(
+      [
+        { id: "p1", slotState: "bound", boundSessionId: "session-a", directory: path, mode: "chat", width: 1 },
+        { id: "p2", slotState: "bound", boundSessionId: "session-b", directory: path, mode: "chat", width: 1 },
+      ],
+      { addPanelReturns: "p3" },
+    )
+    const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
+    const result = await actions.revealSession({ scope, sessionID: "session-new", directory: path })
+    expect(result).toEqual({ status: "loaded", panelID: "p3", scopePath: path })
+    expect(state.calls).toContain("addPanel")
+    expect(state.calls).toContain("bind:p3:session-new")
+  })
+
+  test("requests replacement when every Panel is bound and none can be added", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "bound", boundSessionId: "session-a", directory: path, mode: "chat", width: 1 },
+      { id: "p2", slotState: "bound", boundSessionId: "session-b", directory: path, mode: "chat", width: 1 },
+      { id: "p3", slotState: "bound", boundSessionId: "session-c", directory: path, mode: "chat", width: 1 },
+    ])
+    // addPanel returns undefined → cannot add
+    const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
+    const result = await actions.revealSession({ scope, sessionID: "session-new", directory: path })
+    expect(result).toEqual({ status: "replacement_required", panelID: "p1", scopePath: path })
+    // no binding change happened
+    expect(state.calls.some((c) => c.startsWith("bind:"))).toBe(false)
+    expect(state.calls.some((c) => c.startsWith("setActivePanel:"))).toBe(false)
+  })
+
+  test("replaces the active Panel when forceReplace is set on a full Space", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "bound", boundSessionId: "session-a", directory: path, mode: "chat", width: 1 },
+      { id: "p2", slotState: "bound", boundSessionId: "session-b", directory: path, mode: "chat", width: 1 },
+      { id: "p3", slotState: "bound", boundSessionId: "session-c", directory: path, mode: "chat", width: 1 },
+    ])
+    const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
+    const result = await actions.revealSession({ scope, sessionID: "session-new", directory: path, forceReplace: true })
+    expect(result).toEqual({ status: "loaded", panelID: "p1", scopePath: path })
+    expect(state.calls).toContain("bind:p1:session-new")
+  })
+
+  test("returns unavailable for an archived session", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "empty", directory: path, mode: "", width: 1 },
+      { id: "p2", slotState: "empty", directory: path, mode: "", width: 1 },
+    ])
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: noopPty,
+      session: getSession({ id: "session-archived", timeArchived: 1 }),
+    })
+    const result = await actions.revealSession({ scope, sessionID: "session-archived", directory: path })
+    expect(result.status).toBe("unavailable")
+    expect(result.reason).toBe("archived")
+  })
+
+  test("returns stale when the load generation is cancelled", async () => {
+    const state = makeStore([
+      { id: "p1", slotState: "empty", directory: path, mode: "", width: 1 },
+      { id: "p2", slotState: "empty", directory: path, mode: "", width: 1 },
+    ])
+    const fetched = deferred<typeof loadedSession>()
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: noopPty,
+      session: { ...getSession(), get: () => fetched.promise },
+    })
+    const pending = actions.revealSession({ scope, sessionID: "session-new", directory: path })
+    actions.cancelPanel(scope, "p1")
+    fetched.resolve(loadedSession)
+    expect(await pending).toEqual({ status: "stale" })
   })
 })

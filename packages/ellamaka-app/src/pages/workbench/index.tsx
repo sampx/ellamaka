@@ -13,6 +13,7 @@ import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
+import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 
 function WorkbenchShell() {
@@ -103,6 +104,7 @@ function WorkbenchShell() {
         <Show when={display().showStatusbar}>
           <StatusBar />
         </Show>
+        <WorkbenchSessionDeepLink />
       </Show>
     </div>
   )

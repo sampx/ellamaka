@@ -20,8 +20,32 @@ describe("notification click", () => {
     expect(calls).toEqual([])
   })
 
-  test("falls back to location.assign without registered navigate", () => {
-    handleNotificationClick("/abc/session/123")
-    // falls back to window.location.assign — no error thrown
+  test("falls back to pushState and popstate event without registered navigate", () => {
+    const originalPushState = window.history.pushState
+    const originalDispatchEvent = window.dispatchEvent
+
+    let pushStateCalled = false
+    let popstateFired = false
+
+    window.history.pushState = (state, title, url) => {
+      pushStateCalled = true
+      expect(url).toBe("/abc/session/123")
+    }
+
+    window.dispatchEvent = (event) => {
+      if (event instanceof PopStateEvent && event.type === "popstate") {
+        popstateFired = true
+      }
+      return true
+    }
+
+    try {
+      handleNotificationClick("/abc/session/123")
+      expect(pushStateCalled).toBe(true)
+      expect(popstateFired).toBe(true)
+    } finally {
+      window.history.pushState = originalPushState
+      window.dispatchEvent = originalDispatchEvent
+    }
   })
 })

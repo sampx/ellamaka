@@ -158,8 +158,19 @@ export function registerIpcHandlers(deps: Deps) {
     return { buffer, width: size.width, height: size.height }
   })
 
-  ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
-    new Notification({ title, body }).show()
+  ipcMain.on("show-notification", (event: IpcMainEvent, title: string, body?: string, href?: string) => {
+    const notification = new Notification({ title, body })
+    notification.on("click", () => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (win) {
+        win.show()
+        win.focus()
+      }
+      if (href) {
+        event.sender.send("notification-click", href)
+      }
+    })
+    notification.show()
   })
 
   ipcMain.handle("get-window-count", () => BrowserWindow.getAllWindows().length)

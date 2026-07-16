@@ -319,11 +319,18 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function boundPanelIdForSession(sessionID: string): string | undefined {
-    for (const space of Object.values(store.spaces)) {
-      const panel = space.panels.find((candidate) =>
-        candidate.boundSessionId === sessionID && candidate.slotState === "bound",
+    return findSessionBinding(sessionID)?.panelID
+  }
+
+  // Canonical, structured binding lookup shared by the deep-link coordinator
+  // and the Session Tree. Returns the owning Space path and Panel ID so callers
+  // never re-scan `spaces` and lose which Space a binding belongs to.
+  function findSessionBinding(sessionID: string): { spacePath: string; panelID: string } | undefined {
+    for (const [spacePath, space] of Object.entries(store.spaces)) {
+      const panel = space.panels.find(
+        (candidate) => candidate.boundSessionId === sessionID && candidate.slotState === "bound",
       )
-      if (panel) return panel.id
+      if (panel) return { spacePath, panelID: panel.id }
     }
     return undefined
   }
@@ -386,6 +393,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     setPanelViewMode,
     isSessionBound,
     boundPanelIdForSession,
+    findSessionBinding,
     get tabs() { return store.tabs },
     activeTab,
     get activeDirectory() {

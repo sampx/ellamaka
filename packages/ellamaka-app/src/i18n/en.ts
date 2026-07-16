@@ -521,7 +521,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} in {{projectName}} has a question",
   "notification.action.goToSession": "Go to session",
 
-  "notification.session.responseReady.title": "Response ready",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Session error",
   "notification.session.error.fallbackDescription": "An error occurred",
 
@@ -1043,6 +1044,9 @@ export const dict = {
   "workbench.status.restoredSessionChild": "A child session cannot be restored independently and has been released from its panel",
   "workbench.status.dirHealthWarning": "Warning: The working directory for this session is unavailable. Right-click to rename, archive, or delete",
   "workbench.status.sessionReadyHint": "Tip: Double-click this session or drag it into a panel to load and open",
+  "workbench.status.sessionNotFound": "The notified session is no longer available and cannot be opened",
+  "workbench.status.spaceNotRegistered": "The space for the notified session is no longer registered",
+  "workbench.status.sessionUnavailable": "The notified session cannot be opened ({{reason}})",
   "workbench.tree.rename": "Rename",
   "workbench.tree.archive": "Archive",
   "workbench.tree.unarchive": "Unarchive",

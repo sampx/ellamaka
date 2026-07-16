@@ -497,7 +497,8 @@ export const dict = {
   "notification.question.description": "{{projectName}} içindeki {{sessionTitle}} bir soru soruyor",
   "notification.action.goToSession": "Oturuma git",
 
-  "notification.session.responseReady.title": "Yanıt hazır",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Oturum hatası",
   "notification.session.error.fallbackDescription": "Bir hata oluştu",
 

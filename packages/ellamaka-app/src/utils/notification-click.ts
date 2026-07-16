@@ -7,7 +7,16 @@ export const setNavigate = (fn: (href: string) => void) => {
 export const handleNotificationClick = (href?: string) => {
   window.focus()
   if (!href) return
-  if (nav) return nav(href)
-  console.warn("notification-click: navigate function not set, falling back to window.location.assign")
-  window.location.assign(href)
+  if (nav) {
+    nav(href)
+    return
+  }
+  console.warn("notification-click: navigate function not set, using pushState fallback")
+  try {
+    window.history.pushState(null, "", href)
+    window.dispatchEvent(new PopStateEvent("popstate"))
+  } catch (error) {
+    console.error("notification-click: pushState fallback failed, falling back to location.assign", error)
+    window.location.assign(href)
+  }
 }

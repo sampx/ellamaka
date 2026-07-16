@@ -493,7 +493,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} en {{projectName}} tiene una pregunta",
   "notification.action.goToSession": "Ir a sesión",
 
-  "notification.session.responseReady.title": "Respuesta lista",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Error de sesión",
   "notification.session.error.fallbackDescription": "Ocurrió un error",
 

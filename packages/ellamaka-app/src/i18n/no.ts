@@ -493,7 +493,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} i {{projectName}} har et spørsmål",
   "notification.action.goToSession": "Gå til sesjon",
 
-  "notification.session.responseReady.title": "Svar klart",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "Sesjonsfeil",
   "notification.session.error.fallbackDescription": "Det oppstod en feil",
 

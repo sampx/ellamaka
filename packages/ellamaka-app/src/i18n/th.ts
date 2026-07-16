@@ -488,7 +488,8 @@ export const dict = {
   "notification.question.description": "{{sessionTitle}} ใน {{projectName}} มีคำถาม",
   "notification.action.goToSession": "ไปที่เซสชัน",
 
-  "notification.session.responseReady.title": "การตอบสนองพร้อม",
+  "notification.session.responseReady.title": "ELLAMAKA · {{session}}",
+  "notification.session.responseReady.description": "{{agent}} replied · {{time}}",
   "notification.session.error.title": "ข้อผิดพลาดเซสชัน",
   "notification.session.error.fallbackDescription": "เกิดข้อผิดพลาด",
 
