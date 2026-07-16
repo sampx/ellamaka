@@ -104,3 +104,110 @@ describe("WorkbenchStore", () => {
     expect(store.removeSpace("/fixtures/space-a")).toBe(false)
   })
 })
+
+describe("WorkbenchStore hydrate/migrate", () => {
+  test("migrates legacy panels without slotState to have default slotState", () => {
+    const legacy = {
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {
+        "/fixtures/space-a": {
+          activePanelID: "panel-a",
+          panels: [
+            { id: "panel-a", mode: "", directory: "/fixtures/space-a", width: 1 },
+            { id: "panel-b", mode: "tui", directory: "/fixtures/space-a", width: 1, tuiPtyId: "pty-1" },
+          ],
+        },
+      },
+      tabs: [{ name: "General", path: "", type: "general" }],
+      activeSpaceName: "General",
+    } as unknown as PersistedWorkbench
+
+    const store = createWorkbenchStore()
+    store.hydrate(legacy)
+
+    const space = store.spaceState("/fixtures/space-a")
+    expect(space?.panels[0].slotState).toBe("empty")
+    expect(space?.panels[0].viewMode).toBeUndefined()
+    expect(space?.panels[1].slotState).toBe("bound")
+    expect(space?.panels[1].viewMode).toBe("tui")
+  })
+
+  test("hydrate prepends General tab when tabs lack a General entry", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [{ name: "Space A", path: "/fixtures/space-a", type: "space" }],
+      activeSpaceName: "Space A",
+    })
+
+    expect(store.tabs).toEqual([
+      { name: "General", path: "", type: "general" },
+      { name: "Space A", path: "/fixtures/space-a", type: "space" },
+    ])
+  })
+
+  test("hydrate does not duplicate General tab when already present", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+      ],
+      activeSpaceName: "Space A",
+    })
+
+    expect(store.tabs).toHaveLength(2)
+  })
+
+  test("hydrate falls back to General when activeSpaceName is falsy", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [{ name: "General", path: "", type: "general" }],
+    })
+
+    expect(store.activeSpaceName).toBe("General")
+  })
+
+  test("validateTabs removes invalid tabs and falls back to General when activeSpaceName is not in validNames", () => {
+    const store = createWorkbenchStore({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+        { name: "Space B", path: "/fixtures/space-b", type: "space" },
+      ],
+      activeSpaceName: "Space A",
+    })
+
+    store.validateTabs(new Set(["Space B"]))
+
+    expect(store.tabs).toEqual([
+      { name: "General", path: "", type: "general" },
+      { name: "Space B", path: "/fixtures/space-b", type: "space" },
+    ])
+    expect(store.activeSpaceName).toBe("General")
+  })
+
+  test("validateTabs keeps activeSpaceName when it is still valid", () => {
+    const store = createWorkbenchStore({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+      ],
+      activeSpaceName: "Space A",
+    })
+
+    store.validateTabs(new Set(["Space A"]))
+
+    expect(store.tabs).toHaveLength(2)
+    expect(store.activeSpaceName).toBe("Space A")
+  })
+})

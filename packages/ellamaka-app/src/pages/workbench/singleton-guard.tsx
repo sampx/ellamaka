@@ -5,6 +5,38 @@ const LOCK_NAME = "ellamaka-workbench-instance"
 
 type GuardState = "acquiring" | "locked" | "blocked"
 
+export type LockRequestResult = {
+  state: "locked" | "blocked"
+  release?: () => void
+}
+
+export async function requestWorkbenchLock(
+  locks:
+    | {
+        request: (
+          name: string,
+          options: { ifAvailable?: boolean },
+          callback: (lock: { name: string } | null) => Promise<void>,
+        ) => Promise<void>
+      }
+    | undefined,
+): Promise<LockRequestResult> {
+  if (!locks) return { state: "locked" }
+
+  return new Promise<LockRequestResult>((resolve) => {
+    void locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
+      if (!lock) {
+        resolve({ state: "blocked" })
+        return
+      }
+      let release: () => void
+      const hold = new Promise<void>((res) => { release = res })
+      resolve({ state: "locked", release: release! })
+      await hold
+    })
+  })
+}
+
 export function WorkbenchSingletonGuard(props: { children: any }) {
   const language = useLanguage()
   const t = (k: string) => language.t(k)
@@ -12,19 +44,10 @@ export function WorkbenchSingletonGuard(props: { children: any }) {
   let releaseLock: (() => void) | undefined
 
   onMount(() => {
-    if (!("locks" in navigator)) {
-      setState("locked")
-      return
-    }
-    void navigator.locks.request(LOCK_NAME, { ifAvailable: true }, async (lock) => {
-      if (!lock) {
-        setState("blocked")
-        return
-      }
-      setState("locked")
-      await new Promise<void>((resolve) => {
-        releaseLock = resolve
-      })
+    const locks = "locks" in navigator ? navigator.locks as { request: (name: string, options: { ifAvailable?: boolean }, callback: (lock: { name: string } | null) => Promise<void>) => Promise<void> } : undefined
+    void requestWorkbenchLock(locks).then((result) => {
+      setState(result.state)
+      if (result.release) releaseLock = result.release
     })
   })
 
