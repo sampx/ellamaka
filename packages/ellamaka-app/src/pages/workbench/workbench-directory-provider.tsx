@@ -3,6 +3,7 @@ import { Show, createMemo, type JSX } from "solid-js"
 import { selectActiveWorkbenchContext, type ActiveWorkbenchSnapshot } from "./active-workbench-context"
 import { useWorkbenchState } from "./view-store"
 import { scopeFromTab, scopeKey, type SpaceScope } from "./workbench-scope"
+import { sanitizeDirectory } from "./directory-utils"
 
 export type WorkbenchDirectoryTarget = {
   key: string
@@ -63,11 +64,22 @@ export function WorkbenchActiveDirectoryProvider(props: {
 
   return (
     <Show when={target()} keyed>
-      {(current) => (
-        <SDKProvider directory={current.directory}>
-          {props.children(current)}
-        </SDKProvider>
-      )}
+      {(current) => {
+        // Sanitize before handing the directory to SDKProvider: a malicious
+        // or corrupted path must not become the x-opencode-directory header.
+        // Empty string (General space) is allowed; unsafe values fall back
+        // to empty so downstream SDK calls simply omit the header.
+        const sanitized = sanitizeDirectory(current.directory)
+        if (sanitized === undefined) {
+          console.error("Rejected unsafe workbench directory, falling back to empty:", current.directory)
+        }
+        const safeDirectory = sanitized ?? ""
+        return (
+          <SDKProvider directory={safeDirectory}>
+            {props.children({ ...current, directory: safeDirectory })}
+          </SDKProvider>
+        )
+      }}
     </Show>
   )
 }
@@ -84,11 +96,18 @@ export function WorkbenchPanelDirectoryProvider(props: {
 
   return (
     <Show when={target()} keyed>
-      {(current) => (
-        <SDKProvider directory={current.directory}>
-          {props.children(current)}
-        </SDKProvider>
-      )}
+      {(current) => {
+        const sanitized = sanitizeDirectory(current.directory)
+        if (sanitized === undefined) {
+          console.error("Rejected unsafe panel directory, falling back to empty:", current.directory)
+        }
+        const safeDirectory = sanitized ?? ""
+        return (
+          <SDKProvider directory={safeDirectory}>
+            {props.children({ ...current, directory: safeDirectory })}
+          </SDKProvider>
+        )
+      }}
     </Show>
   )
 }

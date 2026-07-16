@@ -1,7 +1,7 @@
 import { createSignal, Show, createEffect } from "solid-js"
 import type { WorkbenchPanel } from "../view-store"
 import { useWorkbenchActions } from "../workbench-actions-context"
-import { scopeFromTab } from "../workbench-scope"
+import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 
 export function PanelLoader(props: {
   panel: WorkbenchPanel
@@ -44,7 +44,7 @@ export function PanelLoader(props: {
           未装载会话
         </div>
         <div class="text-12-regular text-v2-text-text-muted leading-relaxed">
-          当前空间: <span class="text-v2-text-text-base [font-weight:530]">{props.spaceName === "General" ? "Sessions" : props.spaceName}</span>
+          当前空间: <span class="text-v2-text-text-base [font-weight:530]">{props.spaceName === GENERAL_SCOPE_NAME ? "Sessions" : props.spaceName}</span>
           <br />
           <Show when={!isGeneral()} fallback="你可以从左侧的会话树中双击或拖拽历史会话进行恢复，也可以点击下方按钮新建独立会话。">
             你可以从左侧的会话树中双击或拖拽历史会话进行恢复，也可以点击下方按钮在当前空间创建新会话。

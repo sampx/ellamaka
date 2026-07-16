@@ -1,4 +1,7 @@
-export const GENERAL_SCOPE_NAME = "General"
+// Single source of truth for the General space name across the workbench.
+// Re-exported as GENERAL_TAB_NAME (workbench-store) for backward compatibility.
+export const GENERAL_SPACE_NAME = "General"
+export const GENERAL_SCOPE_NAME = GENERAL_SPACE_NAME
 export const GENERAL_SCOPE_PATH = ""
 
 export type SpaceScope =

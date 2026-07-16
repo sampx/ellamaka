@@ -3,12 +3,12 @@ import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { For, Show, createEffect, createMemo, batch, Suspense } from "solid-js"
+import { For, Show, createEffect, createMemo, batch, Suspense, ErrorBoundary } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { Panel } from "./panel"
 import { useWorkbenchActions } from "../workbench-actions-context"
-import { scopeFromTab } from "../workbench-scope"
+import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
 
 import type { WorkbenchPanel } from "../view-store"
@@ -149,15 +149,21 @@ export function Workspace() {
                       <Suspense>
                         <WorkbenchPanelDirectoryProvider panelID={panel.id} directory={panel.directory}>
                           {() => (
-                            <Panel
-                              panel={panel}
-                              spaceName={tab.name}
-                              spacePath={tab.path}
-                              isActive={panel.id === tabActivePanelID()}
-                              panelCount={tabPanels().length}
-                              onActivate={() => wb.setActivePanel(tab.path, panel.id)}
-                              onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
-                            />
+                            <ErrorBoundary
+                              fallback={(error, reset) => (
+                                <PanelErrorFallback error={error} reset={reset} />
+                              )}
+                            >
+                              <Panel
+                                panel={panel}
+                                spaceName={tab.name}
+                                spacePath={tab.path}
+                                isActive={panel.id === tabActivePanelID()}
+                                panelCount={tabPanels().length}
+                                onActivate={() => wb.setActivePanel(tab.path, panel.id)}
+                                onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
+                              />
+                            </ErrorBoundary>
                           )}
                         </WorkbenchPanelDirectoryProvider>
                       </Suspense>
@@ -205,7 +211,7 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name === "General" ? t("workbench.sidebar.sessions") : tab.name}</span>
+              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.sessions") : tab.name}</span>
               <Show when={tab.path !== ""}>
                 <span
                   class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
@@ -289,5 +295,28 @@ function DialogCloseTab(props: { name: string; path: string }) {
         </div>
       </div>
     </Dialog>
+  )
+}
+
+function PanelErrorFallback(props: { error: Error; reset: () => void }) {
+  // Per-panel error boundary fallback. A single panel throwing must not
+  // bring down the whole workbench — siblings keep running and the user
+  // gets an inline retry affordance.
+  return (
+    <div class="flex h-full flex-col items-center justify-center gap-3 bg-v2-background-bg-deep text-v2-text-text-base p-6">
+      <div class="text-center max-w-sm">
+        <div class="text-14-medium text-v2-text-text-strong mb-2">{("面板加载失败")}</div>
+        <div class="text-12-regular text-v2-text-text-muted mb-4 break-words">
+          {props.error.message || ("发生未知错误，请重试。")}
+        </div>
+        <button
+          type="button"
+          class="rounded-md bg-v2-icon-icon-brand px-3 py-1.5 text-12-bold text-white hover:opacity-90 transition-opacity"
+          onClick={() => props.reset()}
+        >
+          {("重试")}
+        </button>
+      </div>
+    </div>
   )
 }

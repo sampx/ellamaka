@@ -1,5 +1,6 @@
 import { batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
+import { GENERAL_SPACE_NAME } from "./workbench-scope"
 
 export type PanelMode = "" | "tui" | "chat"
 export type PanelSlotState = "empty" | "bound"
@@ -50,7 +51,7 @@ export type WorkbenchSessionBinding = {
   type: PanelMode
 }
 
-export const GENERAL_TAB_NAME = "General"
+export const GENERAL_TAB_NAME = GENERAL_SPACE_NAME
 export const GENERAL_TAB_PATH = ""
 
 export const DISPLAY_DEFAULTS: WorkbenchDisplayState = {

@@ -32,10 +32,32 @@ export function createSessionProjection() {
   const [store, setStore] = createStore<SessionProjectionState>({ spaces: {} })
   const [refreshKey, setRefreshKey] = createSignal(0)
 
+  // id -> spaceName index. Lets getSession/upsert/patch/remove skip the
+  // previous full O(N·M) scan over every space's session list. Stale entries
+  // (e.g. a session dropped by limitSessions or removed elsewhere) are
+  // reconciled lazily inside `find`.
+  const idToSpace = new Map<string, string>()
+
   const find = (id: string) => {
+    // Fast path: indexed.
+    const indexedSpace = idToSpace.get(id)
+    if (indexedSpace) {
+      const sessions = store.spaces[indexedSpace]
+      if (sessions) {
+        const index = sessions.findIndex((session) => session.id === id)
+        if (index !== -1) return { spaceName: indexedSpace, index, session: sessions[index] }
+      }
+      // Stale index entry — clean it up and fall through to full scan.
+      idToSpace.delete(id)
+    }
+    // Fallback: full scan (covers sessions inserted before indexing, or any
+    // external mutation that bypassed the index).
     for (const [spaceName, sessions] of Object.entries(store.spaces)) {
       const index = sessions.findIndex((session) => session.id === id)
-      if (index !== -1) return { spaceName, index, session: sessions[index] }
+      if (index !== -1) {
+        idToSpace.set(id, spaceName)
+        return { spaceName, index, session: sessions[index] }
+      }
     }
     return undefined
   }
@@ -50,9 +72,16 @@ export function createSessionProjection() {
     }
     if (existing) {
       setStore("spaces", existing.spaceName, (sessions) => sessions.filter((session) => session.id !== input.id))
+      idToSpace.delete(input.id)
     }
     if (!store.spaces[input.spaceName]) setStore("spaces", input.spaceName, [])
     setStore("spaces", input.spaceName, (sessions) => limitSessions([...sessions, { ...input }]))
+    // limitSessions may have dropped the new entry; only index if it actually landed.
+    if (store.spaces[input.spaceName].some((session) => session.id === input.id)) {
+      idToSpace.set(input.id, input.spaceName)
+    } else {
+      idToSpace.delete(input.id)
+    }
   }
 
   const patch = (id: string, updates: SessionProjectionPatch) => {
@@ -73,6 +102,7 @@ export function createSessionProjection() {
     const existing = find(id)
     if (!existing) return false
     setStore("spaces", existing.spaceName, (sessions) => sessions.filter((session) => session.id !== id))
+    idToSpace.delete(id)
     return true
   }
 

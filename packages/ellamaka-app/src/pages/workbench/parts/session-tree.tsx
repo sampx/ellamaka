@@ -8,7 +8,7 @@ import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
 import { useWorkbenchActions } from "../workbench-actions-context"
-import { scopeFromTab } from "../workbench-scope"
+import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -117,7 +117,7 @@ export function SessionTree(props: {
     for (const space of props.spaces) {
       const sData = getSessionsForSpace(space.name).find((s) => s.id === activeId)
       if (sData) {
-        dirHealth = space.name === "General" ? "healthy" : (sData.directoryHealth ?? "healthy")
+        dirHealth = space.name === GENERAL_SCOPE_NAME ? "healthy" : (sData.directoryHealth ?? "healthy")
         break
       }
     }
@@ -190,7 +190,7 @@ export function SessionTree(props: {
   }
 
   function getSessionsForSpace(spaceName: string): GroupSession[] {
-    if (spaceName === "General") {
+    if (spaceName === GENERAL_SCOPE_NAME) {
       return allGroups
         .filter((g) => g.type === "general")
         .flatMap((g) => g.sessions)
@@ -549,7 +549,7 @@ export function SessionTree(props: {
 
   function renderSessionRow(session: MergedSession, spaceName: string, sessions: GroupSession[]) {
     const sessionData = sessions.find((s) => s.id === session.id)
-    const dirHealth = spaceName === "General" ? "healthy" : (sessionData?.directoryHealth ?? "healthy")
+    const dirHealth = spaceName === GENERAL_SCOPE_NAME ? "healthy" : (sessionData?.directoryHealth ?? "healthy")
 
     const handleSessionClick = () => {
       setSelectedSessionId(session.id)

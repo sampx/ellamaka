@@ -18,6 +18,7 @@ import { getPanelHeaderViews } from "./panel-header-views"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
 import { shouldRestoreBoundSession } from "./panel-session-lifecycle"
+import { sanitizeDirectory } from "../directory-utils"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function Panel(props: {
@@ -126,8 +127,15 @@ export function Panel(props: {
         panelID: props.panel.id,
         kind: "split",
         create: async () => {
+          // Defense-in-depth: reject path-traversal / relative cwd before
+          // asking the backend to spawn a PTY in it. The directory normally
+          // comes from server projections or drag payloads, neither of which
+          // should ever contain ".." or be relative — if they do, refuse
+          // rather than forward the unsafe value.
+          const cwd = sanitizeDirectory(directory)
+          if (cwd === undefined) throw new Error(`Refusing to create PTY with unsafe directory: ${directory}`)
           const res = await sdk.client.pty.create({
-            cwd: directory,
+            cwd,
             title: t("terminal.title"),
           })
           if (!res.data?.id) throw new Error("No PTY ID returned")
@@ -218,9 +226,18 @@ export function Panel(props: {
   const handleDrop = (e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const sessionId = e.dataTransfer?.getData("text/sessionId")
-    const dragSpaceName = e.dataTransfer?.getData("text/spaceName")
+    const sessionId = e.dataTransfer?.getData("text/sessionId") ?? ""
+    const dragSpaceName = e.dataTransfer?.getData("text/spaceName") ?? ""
     if (!sessionId || !dragSpaceName) return
+
+    // Defense-in-depth (O12): session ids are opaque identifiers. Reject any
+    // that look like paths (contain separators or are traversal segments) to
+    // prevent a malicious drag payload from injecting path-like values into
+    // the subsequent SDK calls (loadSessionIntoPanel → session.get).
+    if (/[\/\\]/.test(sessionId) || sessionId === ".." || sessionId === ".") {
+      console.error("Rejected drag payload with path-like sessionId:", sessionId)
+      return
+    }
 
     const spacePath = props.spacePath
 
@@ -239,7 +256,15 @@ export function Panel(props: {
       return
     }
 
-    const projectPath = e.dataTransfer?.getData("text/projectPath") || props.panel.directory
+    // Sanitize the projectPath before it reaches loadSessionIntoPanel → SDK.
+    // Empty string (General space) is allowed; traversal/relative paths are
+    // rejected so they cannot become the x-opencode-directory header or PTY cwd.
+    const rawProjectPath = e.dataTransfer?.getData("text/projectPath") || props.panel.directory
+    const projectPath = sanitizeDirectory(rawProjectPath)
+    if (projectPath === undefined) {
+      console.error("Rejected drag payload with unsafe projectPath:", rawProjectPath)
+      return
+    }
 
     const sessionBoundPanelId = wb.boundPanelIdForSession(sessionId)
     const boundPanel = sessionBoundPanelId && sessionBoundPanelId !== props.panel.id
@@ -330,6 +355,14 @@ export function Panel(props: {
     const container = panelContainerRef
     if (!container) return
 
+    // Locate the split-terminal element directly so we can write to its DOM
+    // style during the drag without going through the SolidJS store. This
+    // mirrors the horizontal panel resize pattern in workspace.tsx and avoids
+    // per-frame store writes (which previously triggered full-tree re-renders
+    // + the JSON.stringify dirty check on every mousemove).
+    const splitTerminalEl = container.querySelector<HTMLElement>("[data-split-terminal]")
+    if (!splitTerminalEl) return
+
     const startY = e.clientY
     const startHeight = splitHeight()
     const totalHeight = container.getBoundingClientRect().height
@@ -350,15 +383,22 @@ export function Panel(props: {
         newHeight = maxHeight
       }
 
-      const spacePath = props.spacePath
-      if (spacePath) {
-        wb.setPanelSplitHeight(spacePath, props.panel.id, newHeight)
-      }
+      // Bypass SolidJS reactivity and localStorage writes during high-frequency
+      // dragging — the store is committed once on mouseup.
+      splitTerminalEl.style.height = `${newHeight}px`
     }
 
     const onMouseUp = () => {
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
+
+      const finalHeight = parseFloat(splitTerminalEl.style.height)
+      if (!isNaN(finalHeight)) {
+        const spacePath = props.spacePath
+        if (spacePath) {
+          wb.setPanelSplitHeight(spacePath, props.panel.id, finalHeight)
+        }
+      }
     }
 
     document.addEventListener("mousemove", onMouseMove)
@@ -567,6 +607,7 @@ export function Panel(props: {
               class="min-w-0 flex flex-col relative overflow-hidden bg-v2-background-bg-deep flex-shrink-0"
               classList={{ "hidden": !props.panel.splitTerminal }}
               style={{ height: `${splitHeight()}px` }}
+              data-split-terminal
             >
               <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
                 <span class="tracking-wider">{splitTitle()}</span>

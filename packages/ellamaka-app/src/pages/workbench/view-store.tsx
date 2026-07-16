@@ -78,7 +78,14 @@ const WorkbenchStateContext = createSimpleContext({
     }
 
     createEffect(() => {
-      JSON.stringify(workbench.snapshot())
+      // Reading snapshot() walks every persisted field through
+      // clonePersistedWorkbench, establishing fine-grained reactive
+      // subscriptions on the entire store subtree. Replaces the previous
+      // JSON.stringify(snapshot()) deep-serialization dirty check — we only
+      // need the dependency tracking, not the serialized string, which
+      // avoids both the per-tick serialization cost and the "structure
+      // changed but JSON didn't" false negatives.
+      void workbench.snapshot()
       if (hydrated()) queueSave()
     })
 

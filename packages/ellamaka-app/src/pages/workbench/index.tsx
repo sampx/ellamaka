@@ -1,4 +1,4 @@
-import { Show, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -101,6 +101,28 @@ function WorkbenchShell() {
   )
 }
 
+function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
+  return (
+    <div class="flex h-dvh flex-col items-center justify-center gap-4 bg-v2-background-bg-deep text-v2-text-text-base p-8">
+      <div class="text-center max-w-md">
+        <h2 class="text-18-semibold text-v2-text-text-strong mb-2">
+          {("工作台加载失败")}
+        </h2>
+        <p class="text-14-regular text-v2-text-text-muted mb-4 break-words">
+          {props.error.message || "发生未知错误，请重试。"}
+        </p>
+        <button
+          type="button"
+          class="rounded-md bg-v2-icon-icon-brand px-4 py-2 text-12-bold text-white hover:opacity-90 transition-opacity"
+          onClick={() => props.reset()}
+        >
+          {("重试")}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Workbench() {
   return (
     <WorkbenchSingletonGuard>
@@ -108,7 +130,11 @@ export default function Workbench() {
         <WorkbenchStateProvider>
           <WorkbenchActionsProvider>
             <SpaceStoreProvider>
-              <WorkbenchShell />
+              <ErrorBoundary
+                fallback={(error, reset) => <WorkbenchErrorFallback error={error} reset={reset} />}
+              >
+                <WorkbenchShell />
+              </ErrorBoundary>
             </SpaceStoreProvider>
           </WorkbenchActionsProvider>
         </WorkbenchStateProvider>

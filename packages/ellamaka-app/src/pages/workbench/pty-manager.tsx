@@ -1,7 +1,5 @@
 export type PtyKind = "tui" | "term" | "split"
 
-type PtyKey = string // `spacePath::panelId::kind`
-
 type PtySDK = {
   client: {
     pty: {
@@ -30,23 +28,77 @@ export function ptyReferences(panel: PtyPanel): PtyReferences {
   }
 }
 
+// Structured nested Map: spacePath -> panelId -> kind -> value.
+// Replaces the previous `${spacePath}::${panelId}::${kind}` string key + `startsWith`
+// reverse lookup, which was fragile when spacePath itself could contain `::`.
+type PanelMap<T> = Map<string, Partial<Record<PtyKind, T>>>
+type SpaceMap<T> = Map<string, PanelMap<T>>
+
+function ensurePanelMap<T>(spaceMap: SpaceMap<T>, spacePath: string): PanelMap<T> {
+  let panelMap = spaceMap.get(spacePath)
+  if (!panelMap) {
+    panelMap = new Map()
+    spaceMap.set(spacePath, panelMap)
+  }
+  return panelMap
+}
+
+function getPanelMap<T>(spaceMap: SpaceMap<T>, spacePath: string): PanelMap<T> | undefined {
+  return spaceMap.get(spacePath)
+}
+
+function getKindEntry<T>(panelMap: PanelMap<T> | undefined, panelId: string, kind: PtyKind): T | undefined {
+  return panelMap?.get(panelId)?.[kind]
+}
+
+function setKindEntry<T>(spaceMap: SpaceMap<T>, spacePath: string, panelId: string, kind: PtyKind, value: T | undefined) {
+  const panelMap = ensurePanelMap(spaceMap, spacePath)
+  const entry = panelMap.get(panelId)
+  if (entry) {
+    if (value === undefined) {
+      delete entry[kind]
+      // Cleanup empty panel entries to avoid unbounded growth
+      if (kinds.every((k) => entry[k] === undefined)) panelMap.delete(panelId)
+    } else {
+      entry[kind] = value
+    }
+  } else if (value !== undefined) {
+    panelMap.set(panelId, { [kind]: value } as Partial<Record<PtyKind, T>>)
+  }
+}
+
+function deleteKindEntry<T>(spaceMap: SpaceMap<T>, spacePath: string, panelId: string, kind: PtyKind) {
+  setKindEntry(spaceMap, spacePath, panelId, kind, undefined)
+}
+
+function deletePanelEntry<T>(spaceMap: SpaceMap<T>, spacePath: string, panelId: string) {
+  getPanelMap(spaceMap, spacePath)?.delete(panelId)
+}
+
+function listPanelKeys<T>(spaceMap: SpaceMap<T>, spacePath: string): Array<{ panelId: string; kind: PtyKind }> {
+  const panelMap = getPanelMap(spaceMap, spacePath)
+  if (!panelMap) return []
+  const out: Array<{ panelId: string; kind: PtyKind }> = []
+  for (const [panelId, entry] of panelMap) {
+    for (const kind of kinds) {
+      if (entry[kind] !== undefined) out.push({ panelId, kind })
+    }
+  }
+  return out
+}
+
 export class PtyManager {
-  private activePtys = new Map<PtyKey, string>()
-  private pendingEnsures = new Map<PtyKey, Promise<string>>()
+  private activePtys: SpaceMap<string> = new Map()
+  private pendingEnsures: SpaceMap<Promise<string>> = new Map()
   // Maps each PTY id to the directory the backend created it in. This is the
   // directory that must be sent in the `x-opencode-directory` header for any
   // DELETE/GET against that PTY — NOT the workbench spacePath, which can be
   // an empty string (the General space) and does not match the PTY cwd.
   private ptyDirectories = new Map<string, string>()
 
-  private makeKey(spacePath: string, panelId: string, kind: PtyKind): PtyKey {
-    return `${spacePath}::${panelId}::${kind}`
-  }
-
   delete(spacePath: string, panelId: string, kind: PtyKind) {
-    const key = this.makeKey(spacePath, panelId, kind)
-    this.activePtys.delete(key)
-    this.pendingEnsures.delete(key)
+    deleteKindEntry(this.activePtys, spacePath, panelId, kind)
+    deleteKindEntry(this.pendingEnsures, spacePath, panelId, kind)
   }
 
   async ensure(opts: {
@@ -58,20 +110,18 @@ export class PtyManager {
     directory: string
     createFn: () => Promise<string>
   }): Promise<string> {
-    const key = this.makeKey(opts.spacePath, opts.panelId, opts.kind)
-
     if (!opts.existingPtyId) {
-      this.activePtys.delete(key)
+      deleteKindEntry(this.activePtys, opts.spacePath, opts.panelId, opts.kind)
     }
 
     // 1. If we already have a PTY active in memory for this key
-    const active = this.activePtys.get(key)
+    const active = getKindEntry(getPanelMap(this.activePtys, opts.spacePath), opts.panelId, opts.kind)
     if (active) {
       return active
     }
 
     // 2. If there is already a pending create/probe for this key
-    const pending = this.pendingEnsures.get(key)
+    const pending = getKindEntry(getPanelMap(this.pendingEnsures, opts.spacePath), opts.panelId, opts.kind)
     if (pending) {
       return pending
     }
@@ -82,7 +132,7 @@ export class PtyManager {
       if (opts.existingPtyId) {
         try {
           await opts.sdk.client.pty.get({ ptyID: opts.existingPtyId })
-          this.activePtys.set(key, opts.existingPtyId)
+          setKindEntry(this.activePtys, opts.spacePath, opts.panelId, opts.kind, opts.existingPtyId)
           this.ptyDirectories.set(opts.existingPtyId, opts.directory)
           return opts.existingPtyId
         } catch {
@@ -92,17 +142,18 @@ export class PtyManager {
 
       // 3.2. Create new PTY
       const newPtyId = await opts.createFn()
-      this.activePtys.set(key, newPtyId)
+      setKindEntry(this.activePtys, opts.spacePath, opts.panelId, opts.kind, newPtyId)
       this.ptyDirectories.set(newPtyId, opts.directory)
       return newPtyId
     })()
 
-    this.pendingEnsures.set(key, promise)
+    setKindEntry(this.pendingEnsures, opts.spacePath, opts.panelId, opts.kind, promise)
     try {
       return await promise
     } finally {
-      if (this.pendingEnsures.get(key) === promise) {
-        this.pendingEnsures.delete(key)
+      const current = getKindEntry(getPanelMap(this.pendingEnsures, opts.spacePath), opts.panelId, opts.kind)
+      if (current === promise) {
+        deleteKindEntry(this.pendingEnsures, opts.spacePath, opts.panelId, opts.kind)
       }
     }
   }
@@ -114,7 +165,7 @@ export class PtyManager {
     sdk: PtySDK
     knownPtyId?: string
   }): Promise<void> {
-    await this.disposeKey(this.makeKey(opts.spacePath, opts.panelId, opts.kind), opts.sdk, opts.knownPtyId)
+    await this.disposeKey(opts.spacePath, opts.panelId, opts.kind, opts.sdk, opts.knownPtyId)
   }
 
   async disposePanel(spacePath: string, panelId: string, sdk: PtySDK, known: PtyReferences = {}): Promise<void> {
@@ -125,25 +176,49 @@ export class PtyManager {
       sdk,
       knownPtyId: known[kind],
     })))
+    // Panel entry is now empty; remove it from both maps to avoid stale residue.
+    deletePanelEntry(this.activePtys, spacePath, panelId)
+    deletePanelEntry(this.pendingEnsures, spacePath, panelId)
   }
 
   async disposeSpace(spacePath: string, sdk: PtySDK, panels: PtyPanel[] = []): Promise<void> {
-    const known = new Map<PtyKey, string>()
+    // Known PTY ids from the caller's persisted panel state.
+    const known = new Map<string, Partial<Record<PtyKind, string>>>()
     for (const panel of panels) {
       const refs = ptyReferences(panel)
+      const entry: Partial<Record<PtyKind, string>> = {}
       for (const kind of kinds) {
         const ptyId = refs[kind]
-        if (ptyId) known.set(this.makeKey(spacePath, panel.id, kind), ptyId)
+        if (ptyId) entry[kind] = ptyId
+      }
+      if (Object.keys(entry).length > 0) known.set(panel.id, entry)
+    }
+
+    // Collect every (panelId, kind) we know about for this space, from active
+    // registry, pending ensures, and caller-provided known ids — deduped.
+    const seen = new Set<string>()
+    const targets: Array<{ panelId: string; kind: PtyKind }> = []
+    const collect = (panelId: string, kind: PtyKind) => {
+      const k = `${panelId}\n${kind}`
+      if (seen.has(k)) return
+      seen.add(k)
+      targets.push({ panelId, kind })
+    }
+    for (const { panelId, kind } of listPanelKeys(this.activePtys, spacePath)) collect(panelId, kind)
+    for (const { panelId, kind } of listPanelKeys(this.pendingEnsures, spacePath)) collect(panelId, kind)
+    for (const [panelId, entry] of known) {
+      for (const kind of kinds) {
+        if (entry[kind] !== undefined) collect(panelId, kind)
       }
     }
 
-    const prefix = `${spacePath}::`
-    const keys = new Set([
-      ...Array.from(this.activePtys.keys()).filter((key) => key.startsWith(prefix)),
-      ...Array.from(this.pendingEnsures.keys()).filter((key) => key.startsWith(prefix)),
-      ...known.keys(),
-    ])
-    await Promise.all(Array.from(keys, (key) => this.disposeKey(key, sdk, known.get(key))))
+    await Promise.all(targets.map(({ panelId, kind }) =>
+      this.disposeKey(spacePath, panelId, kind, sdk, known.get(panelId)?.[kind]),
+    ))
+
+    // Space is being torn down; drop the empty space entry.
+    this.activePtys.delete(spacePath)
+    this.pendingEnsures.delete(spacePath)
   }
 
   clearMemoryOnly() {
@@ -151,20 +226,26 @@ export class PtyManager {
     this.pendingEnsures.clear()
   }
 
-  private async disposeKey(key: PtyKey, sdk: PtySDK, knownPtyId?: string): Promise<void> {
+  private async disposeKey(
+    spacePath: string,
+    panelId: string,
+    kind: PtyKind,
+    sdk: PtySDK,
+    knownPtyId?: string,
+  ): Promise<void> {
     const ptyIds = new Set<string>()
     if (knownPtyId) ptyIds.add(knownPtyId)
 
-    const activePtyId = this.activePtys.get(key)
+    const activePtyId = getKindEntry(getPanelMap(this.activePtys, spacePath), panelId, kind)
     if (activePtyId) ptyIds.add(activePtyId)
-    this.activePtys.delete(key)
+    deleteKindEntry(this.activePtys, spacePath, panelId, kind)
 
-    const pending = this.pendingEnsures.get(key)
-    this.pendingEnsures.delete(key)
+    const pending = getKindEntry(getPanelMap(this.pendingEnsures, spacePath), panelId, kind)
+    deleteKindEntry(this.pendingEnsures, spacePath, panelId, kind)
     if (pending) {
       const pendingPtyId = await pending.catch(() => undefined)
       if (pendingPtyId) ptyIds.add(pendingPtyId)
-      this.activePtys.delete(key)
+      deleteKindEntry(this.activePtys, spacePath, panelId, kind)
     }
 
     await Promise.all(Array.from(ptyIds, async (ptyId) => {

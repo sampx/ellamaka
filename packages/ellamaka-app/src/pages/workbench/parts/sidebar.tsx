@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
+import { GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { WorkbenchSettingsMenu } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
 import { Persist, persisted } from "@/utils/persist"
@@ -38,21 +39,28 @@ export function SpaceRail() {
 
   const sidebarWidth = () => (expanded() ? widthStore.width : COLLAPSED_WIDTH)
 
+  let asideRef: HTMLElement | undefined
+  let resizeHandleRef: HTMLElement | undefined
   let resizing = false
   function startResize(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
+    if (!asideRef || !resizeHandleRef) return
     resizing = true
     const startX = e.clientX
     const startWidth = widthStore.width
 
     const onMouseMove = (moveEvent: MouseEvent) => {
-      if (!resizing) return
+      if (!resizing || !asideRef || !resizeHandleRef) return
       const delta = moveEvent.clientX - startX
       let newWidth = startWidth + delta
       if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH
       if (newWidth > MAX_WIDTH) newWidth = MAX_WIDTH
-      setWidthStore("width", newWidth)
+      // Bypass SolidJS reactivity and the persisted-store (localStorage) write
+      // during high-frequency dragging — the store is committed once on mouseup,
+      // mirroring the panel resize pattern in workspace.tsx.
+      asideRef.style.width = `${newWidth}px`
+      resizeHandleRef.style.left = `${newWidth}px`
     }
 
     const onMouseUp = () => {
@@ -61,6 +69,12 @@ export function SpaceRail() {
       document.removeEventListener("mouseup", onMouseUp)
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
+
+      if (!asideRef) return
+      const finalWidth = parseFloat(asideRef.style.width)
+      if (!isNaN(finalWidth)) {
+        setWidthStore("width", finalWidth)
+      }
     }
 
     document.body.style.cursor = "col-resize"
@@ -157,6 +171,7 @@ export function SpaceRail() {
   return (
     <>
       <aside
+        ref={(el) => { asideRef = el }}
         classList={{
           "flex shrink-0 flex-col border-r border-v2-border-border-base bg-v2-background-bg-deep": true,
           "items-center": !expanded(),
@@ -229,7 +244,7 @@ export function SpaceRail() {
         >
           <SessionTree
             spaces={[
-              { name: "General", path: "", type: "general" },
+              { name: GENERAL_SCOPE_NAME, path: "", type: "general" },
               ...store.spaces(),
             ]}
             activeSpaceName={wb.activeSpaceName}
@@ -300,6 +315,7 @@ export function SpaceRail() {
     </aside>
     <Show when={expanded()}>
       <div
+        ref={(el) => { resizeHandleRef = el }}
         class="absolute top-0 bottom-0 w-2 cursor-col-resize bg-transparent hover:bg-v2-icon-icon-brand/30 z-30"
         style={{ left: `${sidebarWidth()}px` }}
         onMouseDown={startResize}
