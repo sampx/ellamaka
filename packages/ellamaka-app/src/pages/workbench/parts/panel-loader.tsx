@@ -2,6 +2,7 @@ import { createSignal, Show, createEffect } from "solid-js"
 import type { WorkbenchPanel } from "../view-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab, GENERAL_SCOPE_NAME } from "../workbench-scope"
+import { reportWorkbenchError } from "../workbench-error"
 
 export function PanelLoader(props: {
   panel: WorkbenchPanel
@@ -30,7 +31,7 @@ export function PanelLoader(props: {
         panelID: props.panel.id,
       })
     } catch (err) {
-      console.error("Failed to create session", err)
+      reportWorkbenchError("create session", err)
       setError("创建会话失败，请重试")
     } finally {
       setCreating(false)

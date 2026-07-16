@@ -13,6 +13,7 @@ function createSDK() {
           },
           remove: async ({ ptyID }: { ptyID: string }) => {
             removed.push(ptyID)
+            return { data: true }
           },
         },
       },
@@ -72,6 +73,7 @@ describe("PtyManager", () => {
           },
           remove: async (input: { ptyID: string; directory?: string }) => {
             removals.push(input)
+            return { data: true }
           },
         },
       },
@@ -129,5 +131,38 @@ describe("PtyManager", () => {
     const manager = new PtyManager()
     expect("disposeEverythingOnUnload" in manager).toBeFalse()
     expect("disposeAllSyncOnUnload" in manager).toBeFalse()
+  })
+
+  test("clears remembered PTY directories with the rest of its session memory", async () => {
+    const manager = new PtyManager()
+    const removals: Array<{ ptyID: string; directory?: string }> = []
+    const sdk = {
+      client: {
+        pty: {
+          get: async () => {
+            throw new Error("not found")
+          },
+          remove: async (input: { ptyID: string; directory?: string }) => {
+            removals.push(input)
+            return { data: true }
+          },
+        },
+      },
+    }
+
+    await manager.ensure({
+      spacePath: "/space",
+      panelId: "panel-1",
+      kind: "tui",
+      existingPtyId: undefined,
+      sdk,
+      directory: "/first-workbench-session",
+      createFn: async () => "pty-remembered",
+    })
+    manager.clearMemoryOnly()
+
+    await manager.disposePanel("/space", "panel-1", sdk, { tui: "pty-remembered" })
+
+    expect(removals).toEqual([{ ptyID: "pty-remembered", directory: undefined }])
   })
 })

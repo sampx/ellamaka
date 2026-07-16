@@ -11,4 +11,12 @@ describe("panelChatRoute", () => {
     expect(nextSession.key).not.toBe(nextDirectory.key)
     expect(nextDirectory.path).toContain("/session/session-b")
   })
+
+  test("keeps the routed PanelChat boundary required by bound sessions", async () => {
+    const source = await Bun.file(new URL("./panel-chat.tsx", import.meta.url)).text()
+
+    expect(source).toContain('import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"')
+    expect(source).toContain('path="/:dir/session/:id"')
+    expect(source).toContain("panelChatRoute(props.directory, props.session.id)")
+  })
 })

@@ -1,10 +1,13 @@
+import type { Pty } from "@opencode-ai/sdk/v2/client"
+import { reportWorkbenchError } from "./workbench-error"
+
 export type PtyKind = "tui" | "term" | "split"
 
 type PtySDK = {
   client: {
     pty: {
-      get: (input: { ptyID: string }) => Promise<unknown>
-      remove: (input: { ptyID: string; directory?: string }) => Promise<unknown>
+      get: (input: { ptyID: string }) => Promise<{ data?: Pty }>
+      remove: (input: { ptyID: string; directory?: string }) => Promise<{ data?: boolean }>
     }
   }
 }
@@ -63,7 +66,9 @@ function setKindEntry<T>(spaceMap: SpaceMap<T>, spacePath: string, panelId: stri
       entry[kind] = value
     }
   } else if (value !== undefined) {
-    panelMap.set(panelId, { [kind]: value } as Partial<Record<PtyKind, T>>)
+    const next: Partial<Record<PtyKind, T>> = {}
+    next[kind] = value
+    panelMap.set(panelId, next)
   }
 }
 
@@ -224,6 +229,7 @@ export class PtyManager {
   clearMemoryOnly() {
     this.activePtys.clear()
     this.pendingEnsures.clear()
+    this.ptyDirectories.clear()
   }
 
   private async disposeKey(
@@ -256,7 +262,7 @@ export class PtyManager {
         })
         this.ptyDirectories.delete(ptyId)
       } catch (err) {
-        console.error(`Failed to dispose PTY ${ptyId}`, err)
+        reportWorkbenchError("dispose pty", err, { silent: true })
       }
     }))
   }

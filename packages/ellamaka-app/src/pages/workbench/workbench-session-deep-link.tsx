@@ -111,7 +111,7 @@ export function WorkbenchSessionDeepLink() {
             (activePanelID
               ? wb.spaceState(activeTab!.path)?.panels.findIndex((panel) => panel.id === activePanelID)
               : -1) ?? 0
-          dialog.show(() => (
+          void dialog.show(() => (
             <OverwriteConfirmDialog
               index={index + 1}
               onConfirm={() => {

@@ -4,7 +4,7 @@ import { useWorkbenchActions } from "@/pages/workbench/workbench-actions"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
-import { createEffect } from "solid-js"
+import { createEffect, createMemo, on } from "solid-js"
 
 const withCategory = (category: string) => {
   return (option: Omit<CommandOption, "category">): CommandOption => ({
@@ -239,19 +239,21 @@ export const useWorkbenchCommands = () => {
     }),
   ]
 
-  createEffect(() => {
-    command.register("workbench.session", () => [
-      ...sessionCmds(),
-      ...shareCmds(),
-      ...fileCmds(),
-      ...contextCmds(),
-      ...viewCmds(),
-      ...terminalCmds(),
-      ...messageCmds(),
-      ...modelCmds(),
-      ...mcpCmds(),
-      ...agentCmds(),
-      ...permissionsCmds(),
-    ])
-  })
+  const commands = createMemo(() => [
+    ...sessionCmds(),
+    ...shareCmds(),
+    ...fileCmds(),
+    ...contextCmds(),
+    ...viewCmds(),
+    ...terminalCmds(),
+    ...messageCmds(),
+    ...modelCmds(),
+    ...mcpCmds(),
+    ...agentCmds(),
+    ...permissionsCmds(),
+  ])
+
+  createEffect(on(commands, (cmds) => {
+    command.register("workbench.session", () => cmds)
+  }))
 }

@@ -7,14 +7,6 @@ import {
 import type { RevealSessionInput, RevealSessionResult } from "./workbench-actions"
 import type { WopalSpace } from "./space-store"
 
-function deferred<T>() {
-  let resolveValue: (value: T) => void = () => {}
-  const promise = new Promise<T>((resolve) => {
-    resolveValue = resolve
-  })
-  return { promise, resolve: resolveValue }
-}
-
 const generalGroup = (sessions: WorkbenchSessionGroupSummary["sessions"]): WorkbenchSessionGroupSummary => ({
   id: "General",
   title: "General",
@@ -140,7 +132,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     expect(typeof onConfirm).toBe("function")
     expect(consumed).toEqual([]) // not consumed until the user decides
 
-    await onConfirm!()
+    onConfirm!()
+    await Promise.resolve()
     expect(reveal.calls.length).toBe(2)
     expect(reveal.calls[1].forceReplace).toBe(true)
     expect(consumed).toEqual(["c"])

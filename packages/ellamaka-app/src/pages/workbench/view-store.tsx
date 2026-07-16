@@ -9,7 +9,7 @@ import {
   type PersistedWorkbench,
   type WorkbenchSessionBinding,
 } from "./workbench-store"
-import { scopeFromTab, scopePath, type SpaceScope } from "./workbench-scope"
+import { scopeFromTab, type SpaceScope } from "./workbench-scope"
 import { selectActiveWorkbenchContext } from "./active-workbench-context"
 import type { BoundWorkbenchPanel } from "./workbench-actions"
 
@@ -27,6 +27,17 @@ export {
 } from "./workbench-store"
 
 const STATUS_MESSAGE_DURATION = 5_000
+
+export function watchWorkbenchPersistence(
+  workbench: ReturnType<typeof createWorkbenchStore>,
+  hydrated: () => boolean,
+  queueSave: () => void,
+) {
+  createEffect(() => {
+    workbench.trackPersisted()
+    if (hydrated()) queueSave()
+  })
+}
 
 const WorkbenchStateContext = createSimpleContext({
   name: "WorkbenchState",
@@ -80,17 +91,7 @@ const WorkbenchStateContext = createSimpleContext({
       saveTimer = setTimeout(syncToPersisted, 150)
     }
 
-    createEffect(() => {
-      // Reading snapshot() walks every persisted field through
-      // clonePersistedWorkbench, establishing fine-grained reactive
-      // subscriptions on the entire store subtree. Replaces the previous
-      // JSON.stringify(snapshot()) deep-serialization dirty check — we only
-      // need the dependency tracking, not the serialized string, which
-      // avoids both the per-tick serialization cost and the "structure
-      // changed but JSON didn't" false negatives.
-      void workbench.snapshot()
-      if (hydrated()) queueSave()
-    })
+    watchWorkbenchPersistence(workbench, hydrated, queueSave)
 
     onMount(() => {
       const handleVisibility = () => {

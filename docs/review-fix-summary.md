@@ -39,7 +39,7 @@
 
 **架构收口验证**：typecheck exit 0；482 pass / 0 fail（+34）；agent-browser 5 路径端到端全绿（首屏渲染、创建会话、会话恢复、三视图切换、Space Tab 切换切回状态保持）。
 
-## 已知缺陷（本轮未修，待 Plan 2 处理）
+## Plan 2 基线缺陷
 
 | 编号 | 位置 | 问题 | 建议批次 |
 |------|------|------|---------|
@@ -47,9 +47,9 @@
 | W-02 | `view-store.tsx:88` → `workbench-store.ts:135-137` | O6 的响应式依赖间接依赖 `clonePersistedWorkbench` 遍历 store 代理这一实现细节；未来若改用 `structuredClone` 依赖会静默失效，且 view-store 0 测试守护 | Plan 2 |
 | I-02 | `directory-utils.ts` | `sanitizeDirectory` 是 O3/O12 安全防线核心却无单测 | Plan 2 |
 
-## 未解决项清单（15 项，Plan 2 推进）
+## Plan 2 清偿范围（14 个 O 项 + 3 项补充项，共 17 项）
 
-### P1（本迭代内推进，6 项未做）
+### P1（Plan 创建时的本迭代范围，5 项）
 
 - O8 会话树多拉取源收敛为单一协调器 + debounce
 - O9 补 session-tree.tsx 主组件测试
@@ -57,7 +57,7 @@
 - O13 收敛"静默吞错"模式（15+ 处 `catch(console.error)`）
 - O14 上帝组件拆分 + 去重（DialogOverwritePanel 两份重复、open-session 编排三处重复）
 
-### P2（后续整洁度 / 稳健性，9 项未做）
+### P2（Plan 创建时的整洁度 / 稳健性范围，9 项）
 
 - O16 createSessionHistoryLoader 跨模块逐字复制
 - O19 panel-chat 局部 MemoryRouter 死 hook
@@ -69,6 +69,6 @@
 - O28 测试文件名与所测模块不符
 - O29 补 space-store / historyLoader / singleton-guard 测试
 
-## 后续优化规划
+## Plan 2 收口说明
 
-架构收口（O4/O5/O17/O18）已先于其他项落地，消除了过渡适配器与平行类型，为后续在干净架构上推进测试补全、错误处理收敛、去重拆分奠定基础。剩余 15 项 + W-01/W-02/I-02 统一纳入 Plan 2 推进，按"先低风险测试补全、再错误处理收敛、再去重拆分、最后性能与类型安全"的顺序分批执行。每个批次独立可提交、独立可验证（测试 + typecheck + 端到端全绿）。
+架构收口（O4/O5/O17/O18）先于本清单落地，消除了过渡适配器与平行类型。Plan 2 以 14 个 O 项和 W-01/W-02/I-02 为完整范围完成清偿。O19 的路由删除判断在回归中被证伪，PanelChat 保留其所需的路由边界。

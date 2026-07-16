@@ -1,5 +1,5 @@
 import { ptyManager, ptyReferences } from "./pty-manager"
-import { scopePath, scopeName, type SpaceScope } from "./workbench-scope"
+import { scopePath, scopeName } from "./workbench-scope"
 import type {
   WorkbenchActionPtyPort,
   WorkbenchActionSessionPort,
@@ -10,6 +10,36 @@ type ServerSDK = ReturnType<typeof import("@/context/server-sdk").useServerSDK>
 type SessionStore = ReturnType<typeof import("./session-store").useSessionStore>
 type SessionProjectionWriter = ReturnType<typeof import("./session-store").useSessionProjectionWriter>
 type WorkbenchState = ReturnType<typeof import("./view-store").useWorkbenchState>
+
+export type SessionServerSDK = {
+  createClient: (input: { directory: string; throwOnError: boolean }) => {
+    workbench: {
+      createSession: (input: { target: { type: "general" } | { type: "space"; space: string } }) => Promise<{
+        data?: {
+          id?: string
+          title?: string
+          directory: string
+          directoryHealth?: "healthy" | "missing" | "unavailable"
+          timeCreated?: number | string
+          timeUpdated?: number | string
+        }
+      }>
+    }
+    session: {
+      get: (input: { sessionID: string }) => Promise<{
+        data?: {
+          id?: string
+          parentID?: string
+          title?: string
+          directory: string
+          time: { created: number; updated?: number; archived?: number }
+        }
+      }>
+      update: (input: { sessionID: string; title: string }) => Promise<unknown>
+      delete: (input: { sessionID: string }) => Promise<unknown>
+    }
+  }
+}
 
 export function buildStorePort(wb: WorkbenchState): WorkbenchActionStorePort {
   return {
@@ -70,11 +100,12 @@ export function buildPtyPort(
       }
     },
     forgetPty: ({ scope, panelID, kind }) => ptyManager.delete(scopePath(scope), panelID, kind),
+    clearMemory: () => ptyManager.clearMemoryOnly(),
   }
 }
 
 export function buildSessionPort(
-  serverSDK: ServerSDK,
+  serverSDK: SessionServerSDK,
   sessions: SessionStore,
   projection: SessionProjectionWriter,
 ): WorkbenchActionSessionPort {
@@ -130,6 +161,7 @@ export function buildSessionPort(
       const client = serverSDK.createClient({ directory, throwOnError: true })
       await client.session.update({ sessionID, title })
       projection.patch(sessionID, { title })
+      projection.invalidate()
     },
     remove: async ({ session: serverSession }) => {
       const client = serverSDK.createClient({ directory: serverSession.directory, throwOnError: true })

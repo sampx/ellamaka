@@ -40,11 +40,11 @@ const SDK_PROVIDER_OWNERS = new Set([
 ])
 const PTY_RUNTIME_OWNERS = new Set([
   `${WORKBENCH_ROOT}pty-manager.tsx`,
-  `${WORKBENCH_ROOT}workbench-actions-context.ts`,
+  `${WORKBENCH_ROOT}workbench-actions-ports.ts`,
 ])
 const SESSION_PROJECTION_WRITERS = new Set([
   `${WORKBENCH_ROOT}index.tsx`,
-  `${WORKBENCH_ROOT}workbench-actions-context.ts`,
+  `${WORKBENCH_ROOT}workbench-actions.ts`,
   `${WORKBENCH_ROOT}parts/session-tree.tsx`,
 ])
 const STORE_FILES = new Set([`${WORKBENCH_ROOT}view-store.tsx`, `${WORKBENCH_ROOT}workbench-store.ts`])

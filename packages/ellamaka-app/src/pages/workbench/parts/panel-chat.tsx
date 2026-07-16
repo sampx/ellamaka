@@ -1,6 +1,8 @@
 import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
+import type { JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
+
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
@@ -19,7 +21,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
 import { MessageTimeline } from "@/pages/session/message-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
-import { createSessionHistoryLoader } from "./panel-chat-helpers"
+import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
@@ -30,6 +32,8 @@ import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
 import { panelChatRoute } from "./panel-chat-route"
+
+import { reportWorkbenchError } from "../workbench-error"
 
 const emptyUserMessages: UserMessage[] = []
 
@@ -72,9 +76,7 @@ function PanelChatInner(props: {
         scope: scope(),
         sourcePanelID: props.panel.id,
         sessionID: newSessionID,
-      }).catch((error) => {
-        console.error("Failed to bind forked Session", error)
-      })
+      }).catch((error) => reportWorkbenchError("bind forked session", error))
     },
   })
 
@@ -177,13 +179,13 @@ function PanelChatInner(props: {
   const historyMore = () => sync.session.history.more(props.session.id)
   const historyLoading = () => sync.session.history.loading(props.session.id)
 
-  const historyLoader = createSessionHistoryLoader({
+  const historyLoader = useSessionHistoryLoader({
     sessionID: () => props.session.id,
     loaded: () => messages().length,
     visibleUserMessages: visibleUserMessages,
     historyMore,
     historyLoading,
-    loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
+    loadMore: (sessionID: string) => sync.session.history.loadMore(sessionID),
     userScrolled: autoScroll.userScrolled,
     scroller: () => scroller,
   })
@@ -232,7 +234,7 @@ function PanelChatInner(props: {
 
   const busy = (sessionID: string) => sync.data.session_working(sessionID)
   const halt = (sessionID: string) =>
-    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
+    busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch((e) => reportWorkbenchError("abort", e, { silent: true })) : Promise.resolve()
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
@@ -430,7 +432,7 @@ export function PanelChat(props: {
   )
 }
 
-function PanelChatDataProvider(props: { session: Session; directory: string; children: any }) {
+function PanelChatDataProvider(props: { session: Session; directory: string; children: JSX.Element }) {
   const sync = useSync()
 
   // createResource only fires its fetcher when the returned signal is read.

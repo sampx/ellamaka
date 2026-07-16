@@ -45,6 +45,16 @@ export type PersistedWorkbench = {
   activeSpaceName?: string
 }
 
+export type HydratableWorkbench = Omit<PersistedWorkbench, "spaces"> & {
+  spaces: Record<string, {
+    panels: Array<Omit<WorkbenchPanel, "slotState" | "viewMode"> & {
+      slotState?: PanelSlotState
+      viewMode?: PanelViewMode
+    }>
+    activePanelID: string
+  }>
+}
+
 export type WorkbenchSessionBinding = {
   id: string
   directory: string
@@ -82,7 +92,9 @@ function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
   }
 }
 
-export function clonePersistedWorkbench(value: PersistedWorkbench): PersistedWorkbench {
+export function clonePersistedWorkbench(value: PersistedWorkbench): PersistedWorkbench
+export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableWorkbench
+export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableWorkbench {
   return {
     display: { ...DISPLAY_DEFAULTS, ...value.display },
     spaces: Object.fromEntries(
@@ -118,22 +130,64 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     )
   }
 
-  function hydrate(value: PersistedWorkbench) {
+  function hydrate(value: HydratableWorkbench) {
     const snapshot = clonePersistedWorkbench(value)
     const tabs = snapshot.tabs.some((tab) => tab.path === GENERAL_TAB_PATH)
       ? snapshot.tabs
       : [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...snapshot.tabs]
+    const spaces = Object.fromEntries(
+      Object.entries(snapshot.spaces).map(([path, space]) => [
+        path,
+        {
+          ...space,
+          panels: space.panels.map((panel) => ({
+            ...panel,
+            slotState: panel.slotState ?? (panel.tuiPtyId ? "bound" : "empty"),
+            viewMode: panel.viewMode ?? (panel.tuiPtyId ? "tui" : undefined),
+          })),
+        },
+      ]),
+    )
     batch(() => {
       setStore("display", snapshot.display)
-      setStore("spaces", snapshot.spaces)
+      setStore("spaces", spaces)
       setStore("tabs", tabs)
       setStore("activeSpaceName", snapshot.activeSpaceName || GENERAL_TAB_NAME)
     })
-    for (const path of Object.keys(snapshot.spaces)) migrateLegacyPanels(path)
   }
 
   function snapshot() {
     return clonePersistedWorkbench(store)
+  }
+
+  function trackPersisted() {
+    store.activeSpaceName
+    store.display.showTitlebar
+    store.display.showStatusbar
+    store.display.showSpaceRail
+    for (const tab of store.tabs) {
+      tab.name
+      tab.path
+      tab.type
+    }
+    for (const [path, space] of Object.entries(store.spaces)) {
+      path
+      space.activePanelID
+      for (const panel of space.panels) {
+        panel.id
+        panel.slotState
+        panel.boundSessionId
+        panel.viewMode
+        panel.mode
+        panel.directory
+        panel.width
+        panel.splitTerminal
+        panel.tuiPtyId
+        panel.termPtyId
+        panel.splitPtyId
+        panel.splitHeight
+      }
+    }
   }
 
   function spaceState(path: string): SpaceWorkbenchState | undefined {
@@ -370,6 +424,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   return {
     hydrate,
     snapshot,
+    trackPersisted,
     get display() { return store.display },
     get spaces() { return store.spaces },
     spaceState,

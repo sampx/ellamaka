@@ -75,6 +75,7 @@ export type WorkbenchActionPtyPort = {
   }) => Promise<void>
   isAlive?: (input: { directory: string; ptyID: string }) => Promise<boolean>
   forgetPty?: (input: { scope: SpaceScope; panelID: string; kind: WorkbenchActionPtyKind }) => void
+  clearMemory?: () => void
 }
 
 export type WorkbenchActionSessionPort = {
@@ -132,6 +133,7 @@ export function createWorkbenchActions(input: {
 }) {
   const generations = new Map<string, number>()
   const panelActions = new Map<string, Map<string, WorkbenchPanelAction>>()
+  const disposingPanels = new Map<string, number>()
   const panelKey = (scope: SpaceScope, panelID: string) => `${scopeKey(scope)}\n${panelID}`
   const nextGeneration = (scope: SpaceScope, panelID: string) => {
     const key = panelKey(scope, panelID)
@@ -141,6 +143,18 @@ export function createWorkbenchActions(input: {
   }
   const isCurrent = (scope: SpaceScope, panelID: string, generation: number) =>
     generations.get(panelKey(scope, panelID)) === generation
+
+  const disposePanel = async (scope: SpaceScope, panel: WorkbenchActionPanel) => {
+    const key = panelKey(scope, panel.id)
+    disposingPanels.set(key, (disposingPanels.get(key) ?? 0) + 1)
+    try {
+      await input.pty.disposePanel({ scope, panel })
+    } finally {
+      const remaining = (disposingPanels.get(key) ?? 1) - 1
+      if (remaining === 0) disposingPanels.delete(key)
+      else disposingPanels.set(key, remaining)
+    }
+  }
 
   const panelOrThrow = (scope: SpaceScope, panelID: string) => {
     const panel = input.store.panel(scope, panelID)
@@ -154,7 +168,7 @@ export function createWorkbenchActions(input: {
       return { status: "unchanged", panelID }
     }
     const generation = nextGeneration(scope, panelID)
-    await input.pty.disposePanel({ scope, panel })
+    await disposePanel(scope, panel)
     if (!isCurrent(scope, panelID, generation)) return { status: "stale", panelID }
     input.store.commitSessionUnbinding(scope, panelID)
     return { status: "committed", panelID }
@@ -194,6 +208,9 @@ export function createWorkbenchActions(input: {
     cancelPanel(scope: SpaceScope, panelID: string) {
       nextGeneration(scope, panelID)
     },
+    clearPtyMemory() {
+      input.pty.clearMemory?.()
+    },
     async createSession(options: {
       scope: SpaceScope
       panelID: string
@@ -225,7 +242,7 @@ export function createWorkbenchActions(input: {
         return unbindPanel(options.scope, options.panelID)
       }
       const generation = nextGeneration(options.scope, options.panelID)
-      await input.pty.disposePanel({ scope: options.scope, panel })
+      await disposePanel(options.scope, panel)
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
@@ -255,7 +272,7 @@ export function createWorkbenchActions(input: {
         panel,
         generation: nextGeneration(scope, panel.id),
       }))
-      await Promise.all(pending.map(({ panel }) => input.pty.disposePanel({ scope, panel })))
+      await Promise.all(pending.map(({ panel }) => disposePanel(scope, panel)))
       if (pending.some(({ panel, generation }) => !isCurrent(scope, panel.id, generation))) {
         return { status: "stale" }
       }
@@ -286,7 +303,7 @@ export function createWorkbenchActions(input: {
         return { status: "committed", panelID: targetPanelID }
       }
       const replaceGeneration = nextGeneration(options.scope, options.sourcePanelID)
-      await input.pty.disposePanel({ scope: options.scope, panel: sourcePanel })
+      await disposePanel(options.scope, sourcePanel)
       if (!isCurrent(options.scope, options.sourcePanelID, replaceGeneration)) {
         return { status: "stale", panelID: options.sourcePanelID }
       }
@@ -352,7 +369,7 @@ export function createWorkbenchActions(input: {
         input.session.project({ scope: options.scope, session })
         return { status: "unchanged", panelID: options.panelID }
       }
-      await input.pty.disposePanel({ scope: options.scope, panel })
+      await disposePanel(options.scope, panel)
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
@@ -455,7 +472,7 @@ export function createWorkbenchActions(input: {
       }
 
       const generation = nextGeneration(options.scope, options.panelID)
-      await input.pty.disposePanel({ scope: options.scope, panel })
+      await disposePanel(options.scope, panel)
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
@@ -525,6 +542,9 @@ export function createWorkbenchActions(input: {
       kind: WorkbenchActionPtyKind
       ptyID: string
     }): Promise<WorkbenchActionResult> {
+      if (disposingPanels.has(panelKey(options.scope, options.panelID))) {
+        return { status: "stale", panelID: options.panelID }
+      }
       const panel = input.store.panel(options.scope, options.panelID)
       if (!panel || ptyID(panel, options.kind) !== options.ptyID) {
         return { status: "stale", panelID: options.panelID }

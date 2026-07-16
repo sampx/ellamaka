@@ -211,7 +211,7 @@ function StageHeader(props: {
               }`}
               onClick={() => wb.setActive(tab.name)}
             >
-              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.sessions") : tab.name}</span>
+              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.spaces") : tab.name}</span>
               <Show when={tab.path !== ""}>
                 <span
                   class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
@@ -302,19 +302,21 @@ function PanelErrorFallback(props: { error: Error; reset: () => void }) {
   // Per-panel error boundary fallback. A single panel throwing must not
   // bring down the whole workbench — siblings keep running and the user
   // gets an inline retry affordance.
+  const language = useLanguage()
+  const t: typeof language.t = (key, params) => language.t(key, params)
   return (
     <div class="flex h-full flex-col items-center justify-center gap-3 bg-v2-background-bg-deep text-v2-text-text-base p-6">
       <div class="text-center max-w-sm">
-        <div class="text-14-medium text-v2-text-text-strong mb-2">{("面板加载失败")}</div>
+        <div class="text-14-medium text-v2-text-text-strong mb-2">{t("workbench.error.panelLoadFailed")}</div>
         <div class="text-12-regular text-v2-text-text-muted mb-4 break-words">
-          {props.error.message || ("发生未知错误，请重试。")}
+          {props.error.message || t("workbench.error.unknownError")}
         </div>
         <button
           type="button"
           class="rounded-md bg-v2-icon-icon-brand px-3 py-1.5 text-12-bold text-white hover:opacity-90 transition-opacity"
           onClick={() => props.reset()}
         >
-          {("重试")}
+          {t("workbench.error.retry")}
         </button>
       </div>
     </div>

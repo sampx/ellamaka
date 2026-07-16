@@ -2,11 +2,24 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createEffect, createMemo, createResource } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
 import { useWorkbenchState } from "./view-store"
+import { reportWorkbenchError } from "./workbench-error"
 
 export type WopalSpace = {
   name: string
   path: string
   type?: string
+}
+
+export async function fetchSpaces(
+  sdk: { client: { wopalSpace: { spaces: () => Promise<{ data?: { spaces?: WopalSpace[] } | null }> } } },
+): Promise<WopalSpace[]> {
+  try {
+    const res = await sdk.client.wopalSpace.spaces()
+    return res.data?.spaces ?? []
+  } catch (e) {
+    reportWorkbenchError("fetch spaces", e)
+    return []
+  }
 }
 
 const SpaceStoreContext = createSimpleContext({
@@ -15,14 +28,7 @@ const SpaceStoreContext = createSimpleContext({
     const sdk = useServerSDK()
     const wb = useWorkbenchState()
 
-    const [spacesResource, spacesActions] = createResource(async () => {
-      try {
-        const res = await sdk.client.wopalSpace.spaces()
-        return res.data?.spaces ?? []
-      } catch {
-        return [] as WopalSpace[]
-      }
-    })
+    const [spacesResource, spacesActions] = createResource(() => fetchSpaces(sdk))
 
     const spaces = createMemo(() => spacesResource() ?? [])
 
