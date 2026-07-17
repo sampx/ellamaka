@@ -55,7 +55,7 @@ const WorkbenchTreeSession = Schema.Struct({
 })
 const WorkbenchTreeLocation = Schema.Struct({
   key: Schema.String,
-  kind: Schema.Literals(["general-directory", "space-root", "project"]),
+  kind: Schema.Literals(["general-directory", "general-date", "space-root", "project"]),
   name: Schema.String,
   path: Schema.String,
   sessionCount: Schema.Number,

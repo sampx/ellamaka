@@ -162,7 +162,15 @@ const make = Effect.gen(function* () {
 
   const provisionGeneral = (input: ProvisionGeneralInput) => {
     const requestID = input.requestID ?? crypto.randomUUID()
-    const directory = path.join(WOPAL_HOME, "general_tasks", `${Date.now()}-${requestID.slice(0, 8)}`)
+    // Group all General sessions created on the same local-calendar day into
+    // one shared date directory. The directory is reused if it already exists
+    // (mkdir recursive is idempotent); the grouping shown in the tree is
+    // derived from timeCreated anyway, so this only affects the on-disk layout.
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, "0")
+    const d = String(now.getDate()).padStart(2, "0")
+    const directory = path.join(WOPAL_HOME, "general_tasks", `${y}-${m}-${d}`)
     const payload = JSON.stringify({ target: { type: "general" }, title: input.title, agent: input.agent })
     return request({
       requestID,

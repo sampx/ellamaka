@@ -10,7 +10,7 @@ import { useWorkbenchRuntime } from "../workbench-runtime"
 import { scopeFromTab } from "../workbench-scope"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { reportWorkbenchError } from "../workbench-error"
-import { DialogDeleteSession, DialogRenameSession } from "./session-tree-dialogs"
+import { DialogDeleteSession, DialogRenameSession, DialogSessionDetails } from "./session-tree-dialogs"
 import {
   createSessionGroupsLoader,
   fetchSessionTree,
@@ -213,7 +213,7 @@ export function SessionTree(props: {
     props.onSpaceClick(space)
   }
 
-  const showSessionMenu = (event: MouseEvent, session: MergedSession, spacePath: string, data: GroupSession) => {
+  const showSessionMenu = (event: MouseEvent, session: MergedSession, spacePath: string, data: GroupSession, locationKind: SessionTreeLocation["kind"]) => {
     event.preventDefault()
     event.stopPropagation()
     const space = props.spaces.find((candidate) => candidate.path === spacePath)
@@ -223,6 +223,15 @@ export function SessionTree(props: {
       x: event.clientX,
       y: event.clientY,
       items: [
+        {
+          label: t("workbench.tree.details"),
+          action: () => void dialog.show(() => (
+            <DialogSessionDetails
+              session={data}
+              locationKind={locationKind}
+            />
+          )),
+        },
         {
           label: t("workbench.tree.rename"),
           action: () => void dialog.show(() => (

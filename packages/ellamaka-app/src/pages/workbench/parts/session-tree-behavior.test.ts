@@ -256,16 +256,17 @@ describe("fetchSessionTree", () => {
                   sessionCount: 1,
                   truncated: false,
                   locations: [{
-                    key: "general:/tmp",
-                    kind: "general-directory" as const,
-                    name: "/tmp",
-                    path: "/tmp",
+                    key: "general-date:2026-07-16",
+                    kind: "general-date" as const,
+                    name: "2026-07-16",
+                    path: "",
                     sessionCount: 1,
                     sessions: [{
                       id: "general-session",
                       title: "General",
-                      directory: "/tmp",
+                      directory: "/home/.wopal/general_tasks/2026-07-16",
                       directoryHealth: "healthy" as const,
+                      marker: "",
                       timeCreated: 1,
                       timeUpdated: 2,
                     }],
@@ -289,6 +290,7 @@ describe("fetchSessionTree", () => {
                       title: "Space",
                       directory: "/fixtures/two",
                       directoryHealth: "healthy" as const,
+                      marker: "",
                       timeCreated: 3,
                       timeUpdated: 4,
                     }],
@@ -303,6 +305,46 @@ describe("fetchSessionTree", () => {
 
     expect(tree.scopes.map((scope) => scope.path)).toEqual(["", "/fixtures/two"])
     expect(tree.scopes[1]?.locations[0]).toMatchObject({ kind: "space-root", label: "Root" })
+  })
+
+  test("preserves marker, relativePath, and branch fields for project and worktree sessions", async () => {
+    const tree = await fetchSessionTree({
+      client: {
+        workbench: {
+          sessionTree: async () => ({
+            data: {
+              scopes: [{
+                key: "space:/proj",
+                kind: "space" as const,
+                name: "P",
+                path: "/proj",
+                sessionCount: 3,
+                truncated: false,
+                locations: [{
+                  key: "project:/proj/repo",
+                  kind: "project" as const,
+                  name: "repo",
+                  path: "/proj/repo",
+                  sessionCount: 3,
+                  sessions: [
+                    { id: "root", title: "R", directory: "/proj/repo", directoryHealth: "healthy" as const, marker: "", timeCreated: 1, timeUpdated: 1 },
+                    { id: "wt", title: "W", directory: "/outside/wt", directoryHealth: "healthy" as const, marker: "worktree", relativePath: undefined, branch: "feature/x", timeCreated: 2, timeUpdated: 2 },
+                    { id: "sub", title: "S", directory: "/proj/repo/pkg", directoryHealth: "healthy" as const, marker: "directory", relativePath: "pkg", timeCreated: 3, timeUpdated: 3 },
+                  ],
+                }],
+              }],
+            },
+          }),
+        },
+      },
+    })
+
+    const sessions = tree.scopes[0]!.locations[0]!.sessions
+    expect(sessions.map((s) => [s.id, s.marker, s.relativePath, s.branch])).toEqual([
+      ["root", "", undefined, undefined],
+      ["wt", "worktree", undefined, "feature/x"],
+      ["sub", "directory", "pkg", undefined],
+    ])
   })
 })
 

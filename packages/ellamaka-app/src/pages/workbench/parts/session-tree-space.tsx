@@ -21,7 +21,7 @@ export function SessionTreeSpace(props: {
   onSessionClick: (sessionId: string) => void
   onToggleSpace: (spacePath: string) => void
   onSpaceContextMenu: (e: MouseEvent, space: WopalSpace) => void
-  onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession) => void
+  onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
   setSelectedSessionId: (id: string) => void
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
@@ -77,7 +77,7 @@ export function SessionTreeSpace(props: {
                 const merged = createMemo(() => props.mergeSessions(location.sessions))
                 return (
                   <div class="py-0.5">
-                    <Show when={location.kind !== "general-directory"}>
+                    <Show when={location.kind !== "space-root"}>
                       <div class="px-2 pt-1 text-10-regular text-v2-text-text-faint truncate">{location.label}</div>
                     </Show>
                     <For each={merged()}>
@@ -92,7 +92,7 @@ export function SessionTreeSpace(props: {
                           onSessionClick={props.onSessionClick}
                           onContextMenu={(event) => {
                             const sessionData = location.sessions.find((candidate) => candidate.id === session.id)
-                            if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData)
+                            if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, location.kind)
                           }}
                           setSelectedSessionId={props.setSelectedSessionId}
                           registerRowRef={props.registerRowRef}

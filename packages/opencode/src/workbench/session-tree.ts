@@ -33,7 +33,7 @@ export type WorkbenchSessionTree = {
     truncated: boolean
     locations: Array<{
       key: string
-      kind: "general-directory" | "space-root" | "project"
+      kind: "general-directory" | "general-date" | "space-root" | "project"
       name: string
       path: string
       sessionCount: number
@@ -64,14 +64,14 @@ type ClassifiedSession = {
   scope: Scope
   location: {
     key: string
-    kind: "general-directory" | "space-root" | "project"
-    name: string
-    path: string
+      kind: "general-directory" | "general-date" | "space-root" | "project"
+      name: string
+      path: string
+    }
+    marker: WorkbenchSessionMarker
+    relativePath?: string
+    branch?: string
   }
-  marker: WorkbenchSessionMarker
-  relativePath?: string
-  branch?: string
-}
 
 export function normalizeWorkbenchPath(value: string) {
   const normalized = value.replaceAll("\\", "/")
@@ -242,13 +242,28 @@ function classifySession(input: {
   return {
     session: input.session,
     scope: input.general,
-    location: {
-      key: `general-directory:${input.session.directory}`,
-      kind: "general-directory",
-      name: path.basename(input.session.directory) || input.session.directory,
-      path: input.session.directory,
-    },
+    location: generalDateLocation(input.session.timeCreated),
     marker: "",
+  }
+}
+
+// General sessions group by the local-calendar date derived from timeCreated,
+// regardless of which physical directory the session actually lives in.
+// `directory` stays as the user's (or provisioner's) chosen path; only the
+// tree grouping key comes from the date. This lets sessions in custom
+// directories and sessions in the provisioner's date directory render under
+// the same date bucket without rewriting directory ownership.
+function generalDateLocation(timeCreated: number) {
+  const date = new Date(timeCreated)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  const label = `${y}-${m}-${d}`
+  return {
+    key: `general-date:${label}`,
+    kind: "general-date" as const,
+    name: label,
+    path: "",
   }
 }
 
@@ -278,8 +293,13 @@ function compareLocation(
   a: ClassifiedSession["location"],
   b: ClassifiedSession["location"],
 ) {
-  const rank = { "general-directory": 0, "space-root": 0, project: 1 }
-  return rank[a.kind] - rank[b.kind] || a.name.localeCompare(b.name) || a.path.localeCompare(b.path)
+  // `general-date` sorts newest-first by its `YYYY-MM-DD` name, which sorts
+  // lexicographically the same as chronologically.
+  if (a.kind === "general-date" && b.kind === "general-date") {
+    return b.name.localeCompare(a.name)
+  }
+  const rank = { "general-date": 0, "general-directory": 0, "space-root": 0, project: 1 }
+  return rank[a.kind] - rank[b.kind] || a.name.localeCompare(a.name) || a.path.localeCompare(b.path)
 }
 
 function compareClassifiedSession(a: ClassifiedSession, b: ClassifiedSession) {

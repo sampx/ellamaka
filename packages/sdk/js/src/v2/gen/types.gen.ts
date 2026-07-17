@@ -8488,7 +8488,7 @@ export type WorkbenchSessionTreeResponses = {
       truncated: boolean
       locations: Array<{
         key: string
-        kind: "general-directory" | "space-root" | "project"
+        kind: "general-directory" | "general-date" | "space-root" | "project"
         name: string
         path: string
         sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"

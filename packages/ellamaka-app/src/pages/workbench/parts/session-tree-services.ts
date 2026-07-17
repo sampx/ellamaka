@@ -10,6 +10,9 @@ export type GroupSession = {
   directory: string
   directoryHealth: "healthy" | "missing" | "unavailable"
   agent?: string
+  marker?: "" | "directory" | "worktree"
+  relativePath?: string
+  branch?: string
   timeCreated: number
   timeUpdated: number
 }
@@ -25,7 +28,7 @@ export type SessionGroup = {
 export type SessionTreeLocation = {
   key: string
   label: string
-  kind: "general-directory" | "space-root" | "project"
+  kind: "general-directory" | "general-date" | "space-root" | "project"
   relativePath?: string
   sessions: GroupSession[]
 }
@@ -142,6 +145,9 @@ export type SessionTreeSDK = {
                 directory: string
                 directoryHealth: "healthy" | "missing" | "unavailable"
                 agent?: string
+                marker?: "" | "directory" | "worktree"
+                relativePath?: string
+                branch?: string
                 timeCreated: number | string
                 timeUpdated: number | string
               }>
@@ -172,6 +178,9 @@ export async function fetchSessionTree(sdk: SessionTreeSDK): Promise<WorkbenchSe
           directory: session.directory,
           directoryHealth: session.directoryHealth,
           agent: session.agent,
+          marker: session.marker,
+          relativePath: session.relativePath,
+          branch: session.branch,
           timeCreated: normalizeTimestamp(session.timeCreated),
           timeUpdated: normalizeTimestamp(session.timeUpdated),
         })),
@@ -200,6 +209,9 @@ function sessionEqual(a: GroupSession, b: GroupSession): boolean {
     && a.directory === b.directory
     && a.directoryHealth === b.directoryHealth
     && a.agent === b.agent
+    && a.marker === b.marker
+    && a.relativePath === b.relativePath
+    && a.branch === b.branch
     && a.timeCreated === b.timeCreated
     && a.timeUpdated === b.timeUpdated
 }
