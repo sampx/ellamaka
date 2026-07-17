@@ -3,6 +3,7 @@
 # dev.sh tui      — 启动 TUI（-a 连接已有后端）
 # dev.sh serve    — 启动后端 + Workbench
 # dev.sh desktop  — 构建并启动 Electron 桌面应用
+# dev.sh status   — 查看运行状态
 # dev.sh stop     — 停止后端和 Workbench
 
 set -e
@@ -34,16 +35,18 @@ Usage: $self <command> [options]
 Commands:
   tui        Start TUI (default: in-process backend)
   serve      Start HTTP backend + Workbench
+  status     Show backend/workbench status
   desktop    Build and start Electron desktop app
   stop       Stop backend and Workbench
   help       Show this help
 
 $self tui [options]
-  -a, --attach     Start HTTP backend and attach TUI client
-  --port <port>    Backend port for attach mode (default: 4096)
-  --debug [mods]   Debug mode (modules: task,rules; default: all)
-  -ns              Disable WopalSpace mode
-  -- <args>        Forward args to ellamaka
+  -a, --attach      Start backend + workbench, then attach TUI client
+  --port <port>     Backend port (default: 4096)
+  --app-port <port> Workbench port (default: 3000, attach mode only)
+  --debug [mods]    Debug mode (modules: task,rules; default: all)
+  -ns               Disable WopalSpace mode
+  -- <args>         Forward args to ellamaka
 
 $self serve [options]
   --port <port>     Backend port (default: 4096)
@@ -57,8 +60,15 @@ EOF
 }
 
 # ── Shared helpers ─────────────────────────────────────────
+# These are reused by stop / status / serve / tui-attach so that pidfile
+# naming, PID extraction, and process-group kill stay consistent everywhere.
 
 is_running() { lsof -ti :"$1" >/dev/null 2>&1; }
+
+# Quick health check (1s timeout, non-blocking)
+backend_healthy() {
+  curl -sf --max-time 1 "http://127.0.0.1:$1/global/health" >/dev/null 2>&1
+}
 
 # Echo the first free port starting from $1 (inclusive).
 next_free_port() {
@@ -81,94 +91,119 @@ warmup_config() {
   curl -sf "http://127.0.0.1:$port/global/config" >/dev/null 2>&1 || true
 }
 
+# pidfile path for a backend/app port pair
+pidfile_for()    { echo "$LOGDIR/ellamaka-dev-$1-$2.pid"; }
+# server (backend) log path
+server_log_for() { echo "$LOGDIR/ellamaka-dev-$1-server.log"; }
+# frontend (workbench) log path
+frontend_log_for() { echo "$LOGDIR/ellamaka-dev-$1-frontend.log"; }
+
+# Parse a pidfile basename into globals BP (backend port) and AP (app port).
+# AP is "" when the pidfile has no app suffix (attach-only backend).
+# Usage: parse_pidfile_base "ellamaka-dev-4097-3000"
+parse_pidfile_base() {
+  local base="${1#ellamaka-dev-}"
+  if [[ "$base" == *-* ]]; then
+    AP="${base##*-}"; BP="${base%-*}"
+  else
+    AP=""; BP="$base"
+  fi
+}
+
+# Read PIDs from a pidfile into the global PIDS array.
+# Returns 0 if at least one PID was read, 1 otherwise (no file / empty).
+read_pids() {
+  local pidfile="$1"
+  PIDS=()
+  [ -f "$pidfile" ] || return 1
+  local pid
+  while IFS= read -r pid; do
+    [ -n "$pid" ] && PIDS+=("$pid")
+  done < "$pidfile"
+  [ ${#PIDS[@]} -gt 0 ]
+}
+
+# True (return 0) when both backend port and app port are free.
+ports_free() {
+  local port="$1" app_port="$2"
+  is_running "$port" && return 1
+  [ -n "$app_port" ] && is_running "$app_port" && return 1
+  return 0
+}
+
+# Kill a list of PIDs (and their process groups) and poll until the given
+# ports are confirmed free by lsof.
+#
+# Sequence: TERM (grace) → short wait → KILL (force) → poll until free.
+# The post-KILL poll is what makes `serve` able to reuse the same port on
+# restart instead of bumping upward every time.
+#
+# Args: port app_port pid [pid ...]
+kill_group_and_wait() {
+  local port="$1" app_port="$2"; shift 2
+  local pids=("$@")
+  local i pid
+
+  for pid in "${pids[@]}"; do
+    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  done
+
+  for i in $(seq 1 20); do
+    ports_free "$port" "$app_port" && return 0
+    sleep 0.1
+  done
+
+  for pid in "${pids[@]}"; do
+    kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  done
+
+  for i in $(seq 1 50); do
+    ports_free "$port" "$app_port" && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
 # ── stop ───────────────────────────────────────────────────
 
 cmd_stop() {
-  local port="${1:-}"
-  local app_port="${2:-}"
+  local port="${1:-}" app_port="${2:-}"
 
-  # No port args: stop all ellamaka dev instances via pidfiles.
   if [ -z "$port" ]; then
-    echo "stopping all ellamaka dev instances..."
     local any=0
     for pf in "$LOGDIR"/ellamaka-dev-*.pid; do
       [ -f "$pf" ] || continue
       any=1
-      # pidfile name format: ellamaka-dev-<backend>-<app>.pid
-      local base; base="$(basename "$pf" .pid)"
-      local bp; bp="${base#ellamaka-dev-}"       # <backend>-<app>
-      local ap; ap="${bp##*-}"; bp="${bp%-*}"
-      [ "$bp" = "$ap" ] && { bp=""; ap=""; }
-      echo "  found instance backend :$bp workbench :$ap ($pf)"
-      _stop_one "$bp" "$ap" "$pf"
-      rm -f "$pf"
+      parse_pidfile_base "$(basename "$pf" .pid)"
+      _stop_one "$BP" "$AP" "$pf"
     done
-    [ "$any" -eq 0 ] && echo "  no dev instances found"
+    [ "$any" -eq 0 ] && echo "no dev instances running"
     return 0
   fi
 
   [ -z "$app_port" ] && app_port="3000"
-  _stop_one "$port" "$app_port" "$LOGDIR/ellamaka-dev-$port-$app_port.pid"
+  _stop_one "$port" "$app_port" "$(pidfile_for "$port" "$app_port")"
 }
 
 _stop_one() {
   local port="$1" app_port="$2" pidfile="$3"
-  local log_files=(
-    "$LOGDIR/ellamaka-dev-$port-server.log"
-    "$LOGDIR/ellamaka-dev-$app_port-frontend.log"
-    "$LOGDIR/wopal-plugins-debug.log"
-  )
 
-  echo "checking backend (port $port) and Workbench (port $app_port)..."
+  read_pids "$pidfile" || { echo "stop: not running (no pidfile)"; return 0; }
+  rm -f "$pidfile"
 
-  local pids=()
-  if [ -f "$pidfile" ]; then
-    while IFS= read -r pid; do
-      pids+=("$pid")
-    done < "$pidfile"
-    echo "  pidfile: $pidfile ($(printf '%s ' "${pids[@]}"))"
-    rm -f "$pidfile"
-  fi
+  kill_group_and_wait "$port" "$app_port" "${PIDS[@]}"
 
-  local removed=0
-  local f
-  for f in "${log_files[@]}"; do
-    if [ -f "$f" ]; then
-      rm -f "$f" && echo "  log removed: $(basename "$f")" && ((removed++))
-    fi
-  done
-  [ "$removed" -eq 0 ] && echo "  no log files to clean"
+  rm -f "$(server_log_for "$port")"
+  [ -n "$app_port" ] && rm -f "$(frontend_log_for "$app_port")"
+  rm -f "$LOGDIR/wopal-plugins-debug.log"
 
-  local pp
-  pp="$(lsof -ti :"$port" 2>/dev/null)" && pids+=($pp)
-  pp="$(lsof -ti :"$app_port" 2>/dev/null)" && pids+=($pp)
-
-  if [ ${#pids[@]} -eq 0 ]; then
-    echo "  not running"
-    return 0
-  fi
-
-  local unique_pids=($(printf '%s\n' "${pids[@]}" | sort -u))
-  echo "  stopping PIDs: ${unique_pids[*]}"
-
-  for pid in "${unique_pids[@]}"; do
-    kill "$pid" 2>/dev/null
-  done
-
-  for i in $(seq 1 50); do
-    if ! is_running "$port" && ! is_running "$app_port"; then
-      echo "  stopped"
-      return 0
-    fi
-    sleep 0.1
-  done
-
-  echo "  graceful kill timed out, sending SIGKILL..."
-  for pid in "${unique_pids[@]}"; do
-    kill -9 "$pid" 2>/dev/null
-  done
-  sleep 0.5
-  echo "  stopped (force killed)"
+  local label
+  [ -n "$app_port" ] && label="backend :$port + workbench :$app_port" || label="backend :$port"
+  echo "stopped $label"
+  echo "  logs cleaned:"
+  echo "    $(server_log_for "$port")"
+  [ -n "$app_port" ] && echo "    $(frontend_log_for "$app_port")"
+  echo "    $LOGDIR/wopal-plugins-debug.log"
 }
 
 # ── helpers for serve/attach ───────────────────────────────
@@ -197,8 +232,9 @@ start_backend() {
 
   (
     cd "$opencode_dir" || exit 1
-    exec env "${srv_env[@]}" nohup bun --preload "$preload" "$opencode_entry" "${srv_args[@]}"
-  ) > "$LOGDIR/ellamaka-dev-$port-server.log" 2>&1 &
+    exec perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' \
+      env "${srv_env[@]}" nohup bun --preload "$preload" "$opencode_entry" "${srv_args[@]}"
+  ) > "$(server_log_for "$port")" 2>&1 &
   local pid=$!
   echo "$pid" >> "$pidfile"
 }
@@ -212,21 +248,23 @@ start_frontend() {
   (
     cd "$ellamaka_app_dir" || exit 1
     export VITE_OPENCODE_SERVER_PORT="$backend_port"
-    exec nohup bun run dev -- --host 127.0.0.1 --port "$app_port" --strictPort
-  ) > "$LOGDIR/ellamaka-dev-$app_port-frontend.log" 2>&1 &
+    exec perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' \
+      nohup bun run dev -- --host 127.0.0.1 --port "$app_port" --strictPort
+  ) > "$(frontend_log_for "$app_port")" 2>&1 &
   echo "$!" >> "$pidfile"
 }
 
 # ── tui ────────────────────────────────────────────────────
 
 cmd_tui() {
-  local attach=false PORT=4096 debug=false debug_modules="all" ns=false passthrough=()
+  local attach=false PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --) shift; passthrough+=("$@"); break ;;
       -a|--attach) attach=true; shift ;;
       --port) PORT="$2"; shift 2 ;;
+      --app-port) APP_PORT="$2"; shift 2 ;;
       --debug)
         debug=true
         [[ $# -gt 1 && ! "$2" =~ ^- ]] && { debug_modules="$2"; shift 2; } || { debug_modules="all"; shift; }
@@ -237,33 +275,97 @@ cmd_tui() {
     esac
   done
 
-  $ns && passthrough+=(--disable-wopalspace)
+  # `--disable-wopalspace` is a TUI-client flag (consumed in index.ts middleware
+  # before WopalSpace detection on the client's cwd). It is NOT a server flag:
+  # `serve`/`web` are in SERVER_COMMANDS and skip WopalSpace detection anyway.
+  # So the ns flag must reach the attach/exec call, and must NOT be forwarded
+  # into start_backend's `serve` argv.
+  local ns_arg=()
+  $ns && ns_arg=(--disable-wopalspace)
 
-  # ── attach mode: start backend + connect TUI client ──
   if $attach; then
     mkdir -p "$LOGDIR"
-    local pidfile="$LOGDIR/ellamaka-dev-$PORT.pid"
+    local caller_pwd="$(pwd)"
 
-    if ! is_running "$PORT"; then
-      $debug && echo "logs: $LOGDIR/ellamaka-dev-$PORT-server.log"
-      start_backend "$PORT" "$pidfile" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}"
-      echo -n "starting server (pid $(cat "$pidfile"))"
-      wait_backend "$PORT" && echo " ready" || echo " (health check timeout)"
-    else
-      echo "attaching to running server"
-      wait_backend "$PORT" || { echo "backend not healthy, run '$self stop' first"; exit 1; }
+    local attach_env=() attach_args=()
+    if $debug; then
+      attach_args+=(--log-level DEBUG)
+      attach_env+=(
+        WOPAL_PLUGIN_DEBUG="$debug_modules"
+        WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+        WOPAL_DEBUG_LOG_DIR="$LOGDIR"
+      )
+    fi
+
+    # Scan existing pidfiles for a healthy running backend to attach to.
+    for pf in "$LOGDIR"/ellamaka-dev-*.pid; do
+      [ -f "$pf" ] || continue
+      parse_pidfile_base "$(basename "$pf" .pid)"
+
+      read_pids "$pf" || { rm -f "$pf"; continue; }
+      local recorded_pid="${PIDS[0]}"
+
+      # PID dead → stale pidfile, clean up and skip.
+      if ! kill -0 "$recorded_pid" 2>/dev/null; then
+        rm -f "$pf"
+        continue
+      fi
+
+      # PID alive + port listening + healthy → attach.
+      if is_running "$BP" && backend_healthy "$BP"; then
+        echo "attaching to running server :$BP"
+        echo "  pidfile $pf"
+        warmup_config "$BP"
+        cd "$opencode_dir"
+        exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" \
+          "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$BP" --dir "$caller_pwd"
+      fi
+    done
+
+    # No existing backend → start backend + workbench, same as serve.
+    local pidfile="$(pidfile_for "$PORT" "$APP_PORT")"
+    [ -f "$pidfile" ] && cmd_stop "$PORT" "$APP_PORT"
+
+    if is_running "$PORT"; then
+      local new_port; new_port=$(next_free_port "$((PORT + 1))")
+      echo "port :$PORT in use, auto-bumped backend → :$new_port"
+      PORT="$new_port"
+    fi
+    if is_running "$APP_PORT"; then
+      local new_app_port; new_app_port=$(next_free_port "$((APP_PORT + 1))")
+      echo "port :$APP_PORT in use, auto-bumped workbench → :$new_app_port"
+      APP_PORT="$new_app_port"
+    fi
+
+    pidfile="$(pidfile_for "$PORT" "$APP_PORT")"
+    $debug && echo "debug: modules=$debug_modules"
+
+    rm -f "$pidfile"
+    start_backend "$PORT" "$pidfile" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
+
+    if ! wait_backend "$PORT"; then
+      echo "backend failed to start; see $(server_log_for "$PORT")"
+      cmd_stop "$PORT" "$APP_PORT"
+      exit 1
     fi
 
     warmup_config "$PORT"
+    start_frontend "$APP_PORT" "$pidfile" "$PORT" || { cmd_stop "$PORT" "$APP_PORT"; exit 1; }
+
+    echo "  backend :$PORT, workbench :$APP_PORT"
+    echo "  pidfile $pidfile"
+    echo "  logs    $(server_log_for "$PORT")"
+    echo "  → http://127.0.0.1:$APP_PORT/workbench"
+
     cd "$opencode_dir"
-    exec bun --preload "$opencode_preload" "$opencode_entry" attach "http://localhost:$PORT" --dir "$space"
+    exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" \
+      "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$PORT" --dir "$caller_pwd"
   fi
 
   # ── default: in-process backend ──
   mkdir -p "$LOGDIR"
   local caller_pwd="$(pwd)"
-  local tui_env=()
-  local tui_args=()
+  local tui_env=() tui_args=()
 
   if $debug; then
     tui_args+=(--log-level DEBUG)
@@ -281,13 +383,14 @@ cmd_tui() {
   cd "$caller_pwd"
   exec env "${tui_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" \
     "${tui_args[@]}" \
+    "${ns_arg[@]}" \
     "${passthrough[@]}"
 }
 
 # ── serve ──────────────────────────────────────────────────
 
 cmd_serve() {
-  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=() port_auto=false
+  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" ns=false passthrough=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -304,40 +407,36 @@ cmd_serve() {
     esac
   done
 
-  $ns && passthrough+=(--disable-wopalspace)
+  # `serve` is a server command (SERVER_COMMANDS in index.ts): WopalSpace
+  # detection is skipped for it regardless, so -ns is a no-op here. We accept
+  # the flag for a consistent CLI surface but do NOT forward --disable-wopalspace
+  # into the serve argv (it would be meaningless to the server).
+  $ns && echo "note: -ns has no effect on serve (server-side); use 'tui -ns' instead"
 
-  local pidfile="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
+  # Stop ALL existing ellamaka dev instances first so we never stack.
+  cmd_stop
 
-  # Our own dev server already running -> stop and restart, no interactive prompt.
-  if [ -f "$pidfile" ]; then
-    cmd_stop "$PORT" "$APP_PORT"
-  fi
-
-  # Port held by another process (not ours) -> auto-bump to next free port.
-  if is_running "$PORT" && [ ! -f "$pidfile" ]; then
-    local new_port
-    new_port=$(next_free_port "$((PORT + 1))")
-    echo "backend port :$PORT busy, using :$new_port"
+  # Auto-bump only if a port is still held by something we don't own.
+  if is_running "$PORT"; then
+    local new_port; new_port=$(next_free_port "$((PORT + 1))")
+    echo "port :$PORT in use, auto-bumped backend → :$new_port"
     PORT="$new_port"
   fi
   if is_running "$APP_PORT"; then
-    local new_app_port
-    new_app_port=$(next_free_port "$((APP_PORT + 1))")
-    echo "workbench port :$APP_PORT busy, using :$new_app_port"
+    local new_app_port; new_app_port=$(next_free_port "$((APP_PORT + 1))")
+    echo "port :$APP_PORT in use, auto-bumped workbench → :$new_app_port"
     APP_PORT="$new_app_port"
   fi
 
-  pidfile="$LOGDIR/ellamaka-dev-$PORT-$APP_PORT.pid"
-
+  local pidfile="$(pidfile_for "$PORT" "$APP_PORT")"
   mkdir -p "$LOGDIR"
   $debug && echo "debug: modules=$debug_modules"
-  echo "logs: $LOGDIR/"
 
   rm -f "$pidfile"
   start_backend "$PORT" "$pidfile" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
 
   if ! wait_backend "$PORT"; then
-    echo "backend failed to start; see $LOGDIR/ellamaka-dev-$PORT-server.log"
+    echo "backend failed to start; see $(server_log_for "$PORT")"
     cmd_stop "$PORT" "$APP_PORT"
     exit 1
   fi
@@ -352,9 +451,10 @@ cmd_serve() {
     done
   fi
 
-  echo "started (backend :$PORT, Workbench :$APP_PORT)"
-  echo "open http://127.0.0.1:$APP_PORT/workbench"
-  echo "run '$self stop' to stop"
+  echo "  backend :$PORT, workbench :$APP_PORT"
+  echo "  pidfile $(pidfile_for "$PORT" "$APP_PORT")"
+  echo "  logs    $(server_log_for "$PORT")"
+  echo "  → http://127.0.0.1:$APP_PORT/workbench"
 }
 
 # ── desktop ────────────────────────────────────────────────
@@ -393,15 +493,57 @@ cmd_desktop() {
   exec bun run dev
 }
 
-# ── Dispatch ───────────────────────────────────────────────
+# ── status ─────────────────────────────────────────────────
 
-cmd="${1:-help}"
-shift 2>/dev/null || true
+cmd_status() {
+  local any=0
+  for pf in "$LOGDIR"/ellamaka-dev-*.pid; do
+    [ -f "$pf" ] || continue
+    any=1
+    parse_pidfile_base "$(basename "$pf" .pid)"
 
-case "$cmd" in
-  tui)      cmd_tui "$@" ;;
-  serve)    cmd_serve "$@" ;;
-  desktop)  cmd_desktop "$@" ;;
-  stop)     cmd_stop ;;
-  help|*)   usage ;;
-esac
+    read_pids "$pf" || { rm -f "$pf"; continue; }
+    # PIDS[0] = backend PID (start_backend), PIDS[1] = workbench PID (start_frontend)
+    local bpid="${PIDS[0]}" fpid="${PIDS[1]:-}"
+    local b_alive=false f_alive=false
+    kill -0 "$bpid" 2>/dev/null && backend_healthy "$BP" && b_alive=true
+    if [ -n "$fpid" ] && [ -n "$AP" ]; then
+      kill -0 "$fpid" 2>/dev/null && is_running "$AP" && f_alive=true
+    fi
+
+    if $b_alive; then
+      echo "  ✓  backend   :$BP  (pid $bpid)"
+      if [ -n "$AP" ]; then
+        if $f_alive; then
+          echo "     workbench :$AP  (pid $fpid)"
+        else
+          echo "     workbench :$AP  (pid $fpid, not responding)"
+        fi
+        echo "     → http://127.0.0.1:$AP/workbench"
+      fi
+      echo "     pidfile    $pf"
+      echo "     backend    $(server_log_for "$BP")"
+      [ -n "$AP" ] && echo "     workbench  $(frontend_log_for "$AP")"
+    else
+      echo "  ✗  backend :$BP  (stale, pidfile removed)"
+      rm -f "$pf"
+    fi
+  done
+  [ "$any" -eq 0 ] && echo "no dev instances running"
+}
+
+# ── Dispatch (only when executed, not when sourced for tests) ──
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  cmd="${1:-help}"
+  shift 2>/dev/null || true
+
+  case "$cmd" in
+    tui)      cmd_tui "$@" ;;
+    serve)    cmd_serve "$@" ;;
+    status)   cmd_status ;;
+    desktop)  cmd_desktop "$@" ;;
+    stop)     cmd_stop ;;
+    help|*)   usage ;;
+  esac
+fi
