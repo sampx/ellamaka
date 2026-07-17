@@ -8,6 +8,7 @@
 
 | 日期 | 类型 | 摘要 |
 |---|---|---|
+| 2026-07-17 | Updated | Wopal CLI adapter 消费 `space.projects.list` v2（含 worktrees）和 `space.search` v1（替代 `space.directories.search`）。后端 Session Projection 不再自行调用 `git worktree list`，worktree 数据完全由 CLI 提供。 |
 | 2026-07-17 | Updated | Workbench 新增 Instance 级 session-tree、locations 与 requestID 幂等创建；保留 session-groups 作为兼容读模型。 |
 | 2026-07-15 | Updated | 明确 `GET /workbench/session-groups` 只返回未归档根会话，不暴露归档会话或带 `parentID` 的子会话。 |
 | 2026-07-11 | Added | 定义 Effect HttpApi、OpenAPI、生成 SDK 和 Wopal CLI adapter 的统一 Runtime API 契约。 |
@@ -95,6 +96,16 @@ Effect Schema + HttpApiGroup
 Ellamaka 的 Wopal CLI adapter 是 Runtime API 的领域服务。它以绝对可执行路径和参数数组调用已登记的 `wopal ... --json --api-version` capability，验证结构化结果，映射稳定 CLI 错误码，并维护非权威查询快照。
 
 Runtime API 面向 Workbench 暴露 Ellamaka 领域资源与投影，而不是透传 CLI 命令、CLI JSON envelope 或底层 filesystem 参数。CLI 管理的 settings、Git 和 ontology 状态保持事实来源。Session、PTY、消息和 General Session 工作目录由 ellamaka 直接拥有。
+
+Ellamaka 当前消费的 CLI capability：
+
+| Capability | 版本 | 消费方 | 用途 |
+|---|---|---|---|
+| `space.list` | v1 | SpaceRegistry | 枚举已注册 Space |
+| `space.projects.list` | v2 | SessionProjection / SpaceRegistry | 获取 Space 内 `projects/` 下的注册项目及其 linked worktree；worktree 数据完全由 CLI 提供，后端不再自行调用 `git worktree list` |
+| `space.search` | v1 | SessionProjection / SpaceRegistry | Space 内目录、repo 和文件搜索；替代已删除的 `space.directories.search` |
+
+`space.projects.list` v2 返回的 `worktrees[]` 已经过滤主工作树并限定在 `<spaceRoot>/.worktrees/` 下，Session Projection 直接消费用于 session marker 分类（`worktree` / `directory` / 普通），无需在后端重复执行 git 命令。
 
 ## 7. 端点设计门禁
 
