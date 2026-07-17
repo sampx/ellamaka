@@ -35,10 +35,12 @@ export interface SpaceRegistry {
   readonly getSpaces: () => Effect.Effect<SpaceSnapshot>
   readonly refreshProjects: (
     executablePath: string,
+    spaceName?: string,
   ) => Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError>
   readonly searchDirectories: (
     executablePath: string,
     query: string,
+    spaceName?: string,
   ) => Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError>
 }
 
@@ -107,11 +109,18 @@ const make = Effect.gen(function* () {
   const getSpaces = (): Effect.Effect<SpaceSnapshot> =>
     Effect.sync(() => cachedSpaces ?? { spaces: [], refreshedAt: 0 })
 
-  const refreshProjects = (executablePath: string): Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError> =>
+  const refreshProjects = (executablePath: string, spaceName?: string): Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
+      // `wopal space projects list` returns paths relative to the targeted
+      // space root. Without `--space` it uses the "effective" space (detected
+      // from CWD), which is wrong for a multi-space server. Always pass the
+      // space name so paths are relative to a known, stable root.
+      const args = spaceName
+        ? ["--space", spaceName, "space", "projects", "list", "--json", "--api-version", "1"]
+        : ["space", "projects", "list", "--json", "--api-version", "1"]
       const result = yield* adapter.execute(
         executablePath,
-        ["space", "projects", "list", "--json", "--api-version", "1"],
+        args,
         "space.projects.list",
         projectListSchema,
       )
@@ -122,11 +131,14 @@ const make = Effect.gen(function* () {
       }
     }) as Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError>
 
-  const searchDirectories = (executablePath: string, query: string): Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError> =>
+  const searchDirectories = (executablePath: string, query: string, spaceName?: string): Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
+      const args = spaceName
+        ? ["--space", spaceName, "space", "directories", "search", query, "--json", "--api-version", "1"]
+        : ["space", "directories", "search", query, "--json", "--api-version", "1"]
       const result = yield* adapter.execute(
         executablePath,
-        ["space", "directories", "search", query, "--json", "--api-version", "1"],
+        args,
         "space.directories.search",
         directorySearchSchema,
       )

@@ -7,7 +7,7 @@ import { Database } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceRegistry } from "@/wopal/space-registry"
-import type { ProjectEntry, SpaceEntry } from "@/wopal/cli-schema"
+import type { SpaceEntry } from "@/wopal/cli-schema"
 import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
 import { and, isNull } from "drizzle-orm"
 import {
@@ -79,6 +79,25 @@ interface RawSessionRow {
 const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
 const WORKTREE_CACHE_TTL_MS = 5_000
 const MAX_LIMIT_PER_SCOPE = 500
+
+/**
+ * Resolve a CLI-returned path against a space root.
+ *
+ * `wopal space projects list` / `wopal space directories search` (when invoked
+ * with `--space <name>`) return paths relative to that space's root
+ * (e.g. `projects/ellamaka`), not absolute. Session directories are always
+ * absolute, so without resolution `isPathWithin(relative, absolute)` never
+ * matches and every Space session collapses into the `space-root` location —
+ * the `project` location never appears.
+ *
+ * Absolute paths pass through unchanged. An empty root leaves relative paths
+ * as-is.
+ */
+export function resolveSpaceRootPath(root: string, value: string): string {
+  if (!root) return value
+  if (path.isAbsolute(value)) return value
+  return path.join(root, value)
+}
 
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
@@ -158,13 +177,27 @@ const make = Effect.gen(function* () {
 
   const getSessionTree = (input?: { limitPerScope?: number }) =>
     Effect.gen(function* () {
-      const [rows, registeredSpaces, projects] = yield* Effect.all([
-        activeRows(),
-        spaces(),
-        registry.refreshProjects(WOPAL_CLI),
-      ], { concurrency: 3 })
+      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spaces()], { concurrency: 2 })
       const resolvedSpaces = yield* canonicalSpaces(registeredSpaces)
-      const resolvedProjects = yield* canonicalProjects(projects.items)
+      // Fetch projects per space. `wopal space projects list --space <name>`
+      // returns paths relative to that space's root; resolve them to absolute
+      // against the owning space's root before passing to the tree builder.
+      // A single global fetch would only cover whichever space the serve CWD
+      // happens to sit in, missing every other (dynamically created) space.
+      const projectsPerSpace = yield* Effect.all(
+        resolvedSpaces.map((space) =>
+          registry.refreshProjects(WOPAL_CLI, space.name).pipe(
+            Effect.map((snapshot) =>
+              snapshot.items.map((project) => ({
+                name: project.name,
+                path: resolveSpaceRootPath(space.path, project.path),
+              })),
+            ),
+          ),
+        ),
+        { concurrency: 4 },
+      )
+      const resolvedProjects = yield* canonicalProjects(projectsPerSpace.flat())
       const worktrees = yield* Effect.all(
         resolvedProjects.map((project) =>
           listProjectWorktrees(project.path, worktreeCache).pipe(
@@ -210,9 +243,9 @@ const make = Effect.gen(function* () {
         })
       }
       const [projects, rows, searched] = yield* Effect.all([
-        registry.refreshProjects(WOPAL_CLI),
+        registry.refreshProjects(WOPAL_CLI, space.name),
         activeRows(),
-        input.query?.trim() ? registry.searchDirectories(WOPAL_CLI, input.query.trim()) : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+        input.query?.trim() ? registry.searchDirectories(WOPAL_CLI, input.query.trim(), space.name) : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
       ], { concurrency: 3 })
       const candidates: Array<{ kind: WorkbenchLocation["kind"]; name: string; path: string; lastUsedAt?: number }> = [
         { kind: "space-root" as const, name: space.name, path: space.path },
@@ -280,7 +313,7 @@ function canonicalSpaces(spaces: SpaceEntry[]) {
   )
 }
 
-function canonicalProjects(projects: ProjectEntry[]) {
+function canonicalProjects(projects: Array<{ name: string; path: string }>) {
   return Effect.all(
     projects.map((project) => canonicalPath(project.path).pipe(Effect.map((resolved) => ({ name: project.name, path: resolved })))),
     { concurrency: 16 },
@@ -295,7 +328,12 @@ function canonicalPath(value: string) {
 }
 
 function canonicalLocation(root: string, value: string) {
-  return canonicalPath(value).pipe(Effect.map((candidate) => isPathWithin(root, candidate) ? candidate : undefined))
+  // `value` may be relative to the requesting space's root (project / search
+  // candidates from `--space`-scoped CLI calls). Resolve it against `root`
+  // before realpath + containment check.
+  return canonicalPath(resolveSpaceRootPath(root, value)).pipe(
+    Effect.map((candidate) => (isPathWithin(root, candidate) ? candidate : undefined)),
+  )
 }
 
 function relativeDirectory(root: string, target: string) {

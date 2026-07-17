@@ -1,8 +1,8 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
-import { SessionProjection } from "../../src/workbench/session-projection"
+import { SessionProjection, resolveSpaceRootPath } from "../../src/workbench/session-projection"
 import { SessionDirectoryHealth } from "../../src/workbench/session-directory-health"
 import { SpaceRegistry } from "../../src/wopal/space-registry"
 import { Database } from "../../src/storage/db"
@@ -222,4 +222,22 @@ describe("session-projection-group-resolution", () => {
       expect(spaceGroup!.sessions[0].directory).toBe(dir)
     }),
   )
+})
+
+describe("resolveSpaceRootPath", () => {
+  test("joins relative path onto WopalSpace root", () => {
+    expect(resolveSpaceRootPath("/Volumes/.../wopal-workspace", "projects/ellamaka")).toBe(
+      "/Volumes/.../wopal-workspace/projects/ellamaka",
+    )
+  })
+
+  test("passes absolute path through unchanged", () => {
+    expect(resolveSpaceRootPath("/Volumes/.../wopal-workspace", "/Users/sam/tests/WopalSpace")).toBe(
+      "/Users/sam/tests/WopalSpace",
+    )
+  })
+
+  test("handles empty string as no-op when root missing", () => {
+    expect(resolveSpaceRootPath("", "projects/ellamaka")).toBe("projects/ellamaka")
+  })
 })
