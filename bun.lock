@@ -26,6 +26,14 @@
         "sst": "catalog:",
         "turbo": "2.8.13",
       },
+      "optionalDependencies": {
+        "turbo-darwin-64": "2.8.13",
+        "turbo-darwin-arm64": "2.8.13",
+        "turbo-linux-64": "2.8.13",
+        "turbo-linux-arm64": "2.8.13",
+        "turbo-windows-64": "2.8.13",
+        "turbo-windows-arm64": "2.8.13",
+      },
     },
     "packages/app": {
       "name": "@opencode-ai/app",

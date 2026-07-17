@@ -10,7 +10,7 @@
     "dev:web": "bun --cwd packages/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
-    "typecheck": "bun turbo typecheck",
+    "typecheck": "turbo typecheck",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
     "postinstall": "bun run --cwd packages/opencode fix-node-pty",
     "prepare": "husky",
@@ -97,6 +97,14 @@
     "semver": "^7.6.0",
     "sst": "catalog:",
     "turbo": "2.8.13"
+  },
+  "optionalDependencies": {
+    "turbo-darwin-64": "2.8.13",
+    "turbo-darwin-arm64": "2.8.13",
+    "turbo-linux-64": "2.8.13",
+    "turbo-linux-arm64": "2.8.13",
+    "turbo-windows-64": "2.8.13",
+    "turbo-windows-arm64": "2.8.13"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.933.0",
