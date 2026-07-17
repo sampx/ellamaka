@@ -171,7 +171,6 @@ export function buildSessionPort(
       const client = serverSDK.createClient({ directory, throwOnError: true })
       await client.session.update({ sessionID, title })
       projection.patch(sessionID, { title })
-      projection.invalidate()
     },
     remove: async ({ session: serverSession }) => {
       const client = serverSDK.createClient({ directory: serverSession.directory, throwOnError: true })

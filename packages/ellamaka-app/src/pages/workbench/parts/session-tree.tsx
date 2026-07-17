@@ -15,6 +15,7 @@ import {
   createSessionGroupsLoader,
   fetchSessionTree,
   getPanelBadge,
+  mergeTree,
   type GroupSession,
   type SessionTreeLocation,
   type WorkbenchSessionTree,
@@ -64,7 +65,15 @@ export function SessionTree(props: {
   const [loading, setLoading] = createSignal(false)
   const [contextMenu, setContextMenu] = createSignal<ContextMenu>()
   const rowRefs = new Map<string, HTMLButtonElement>()
-  let fetchVersion = -1
+  // Tracks the combined version snapshot of (refreshKey, refreshVersion,
+  // recoveryVersion) from the last successful load. Any one of these signals
+  // bumping must invalidate the guard so the effect's `load()` call actually
+  // refetches — otherwise manual `triggerRefresh()` (which only bumps
+  // refreshVersion) silently no-ops because `refreshKey === fetchVersion`
+  // still holds.
+  let lastRefreshKey = -1
+  let lastRefreshVersion = -1
+  let lastRecoveryVersion = -1
 
   const activeSessionID = createMemo(() => {
     const tab = wb.activeTab()
@@ -107,10 +116,11 @@ export function SessionTree(props: {
   const loadTree = createSessionGroupsLoader({
     fetch: () => fetchSessionTree(sdk),
     commit: (value) => {
-      setTree(value)
+      setTree(mergeTree(tree(), value))
       syncTree()
     },
     setLoading,
+    hasData: () => tree().scopes.length > 0,
     onError: (error) => {
       // Keep the last successful tree visible while the connection is unavailable.
       reportWorkbenchError("load session tree", error)
@@ -119,8 +129,18 @@ export function SessionTree(props: {
 
   const load = async (force = false) => {
     const key = sessions.refreshKey()
-    if (!force && tree().scopes.length > 0 && key === fetchVersion) return
-    fetchVersion = key
+    const refreshVersion = wb.refreshVersion
+    const recoveryVersion = runtime.recoveryVersion
+    if (
+      !force &&
+      tree().scopes.length > 0 &&
+      key === lastRefreshKey &&
+      refreshVersion === lastRefreshVersion &&
+      recoveryVersion === lastRecoveryVersion
+    ) return
+    lastRefreshKey = key
+    lastRefreshVersion = refreshVersion
+    lastRecoveryVersion = recoveryVersion
     await loadTree()
   }
 
@@ -170,16 +190,9 @@ export function SessionTree(props: {
 
   onMount(() => {
     const closeMenu = () => setContextMenu(undefined)
-    const refreshVisible = () => {
-      if (document.visibilityState === "visible") void load(true)
-    }
-    const interval = setInterval(refreshVisible, 30_000)
     document.addEventListener("click", closeMenu)
-    document.addEventListener("visibilitychange", refreshVisible)
     onCleanup(() => {
-      clearInterval(interval)
       document.removeEventListener("click", closeMenu)
-      document.removeEventListener("visibilitychange", refreshVisible)
     })
   })
 

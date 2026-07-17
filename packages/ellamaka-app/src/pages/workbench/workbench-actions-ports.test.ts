@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { buildSessionPort, type SessionServerSDK } from "./workbench-actions-ports"
 import { createSessionProjection } from "./session-store"
 
-test("renaming a session invalidates the tree projection after the server accepts it", async () => {
+test("renaming a session patches the projection without invalidating the tree", async () => {
   const projection = createSessionProjection()
   projection.writer.upsert({
     id: "session-1",
@@ -44,7 +44,7 @@ test("renaming a session invalidates the tree projection after the server accept
 
   expect(updates).toEqual([{ sessionID: "session-1", title: "After" }])
   expect(projection.reader.getSession("session-1")?.title).toBe("After")
-  expect(projection.reader.refreshKey()).toBe(1)
+  expect(projection.reader.refreshKey()).toBe(0)
 })
 
 test("creates a Space session with a request ID and canonical relative directory", async () => {

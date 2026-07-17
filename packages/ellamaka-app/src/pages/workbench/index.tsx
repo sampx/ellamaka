@@ -66,7 +66,6 @@ function WorkbenchShell() {
       }
       if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: spaceStore.getSession(session.sessionId ?? "")?.title })) {
         projection.patch(session.sessionId!, { title: session.title! })
-        projection.invalidate()
       }
     })
 

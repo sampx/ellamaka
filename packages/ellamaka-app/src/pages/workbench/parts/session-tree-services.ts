@@ -180,18 +180,117 @@ export async function fetchSessionTree(sdk: SessionTreeSDK): Promise<WorkbenchSe
   }
 }
 
+// ── mergeTree: preserve referential identity for unchanged nodes ─────────────
+//
+// `setTree(value)` always hands SolidJS fresh object references, which makes
+// `<For>` treat every row as new and remount the whole list — visible as a
+// tree re-animation on every background refresh. `mergeTree(prev, next)`
+// walks both trees in parallel and, for each scope / location / session whose
+// shallow fields are unchanged, returns the *previous* reference so `<For>`'s
+// referential diff keeps the existing DOM. Only genuinely changed subtrees get
+// new references, so re-renders stay localized to the row that actually moved.
+//
+// Scopes are keyed by `path`, locations by `key`, sessions by `id`. Order is
+// not special-cased: the merged output follows `next`'s order, but stable
+// nodes reuse `prev` references wherever they land.
+
+function sessionEqual(a: GroupSession, b: GroupSession): boolean {
+  return a.id === b.id
+    && a.title === b.title
+    && a.directory === b.directory
+    && a.directoryHealth === b.directoryHealth
+    && a.agent === b.agent
+    && a.timeCreated === b.timeCreated
+    && a.timeUpdated === b.timeUpdated
+}
+
+function mergeSessions(prev: GroupSession[], next: GroupSession[]): GroupSession[] {
+  if (prev.length !== next.length) return next
+  const prevById = new Map(prev.map((s) => [s.id, s]))
+  let anyChanged = false
+  const merged = next.map((nextSession) => {
+    const prevSession = prevById.get(nextSession.id)
+    if (!prevSession || !sessionEqual(prevSession, nextSession)) {
+      anyChanged = true
+      return nextSession
+    }
+    return prevSession
+  })
+  return anyChanged ? merged : prev
+}
+
+function mergeLocation(prev: SessionTreeLocation, next: SessionTreeLocation): SessionTreeLocation {
+  const topEqual = prev.label === next.label
+    && prev.kind === next.kind
+    && prev.relativePath === next.relativePath
+  const mergedSessions = mergeSessions(prev.sessions, next.sessions)
+  if (topEqual && mergedSessions === prev.sessions) return prev
+  return { ...next, sessions: mergedSessions }
+}
+
+function mergeLocations(prev: SessionTreeLocation[], next: SessionTreeLocation[]): SessionTreeLocation[] {
+  if (prev.length !== next.length) return next
+  const prevByKey = new Map(prev.map((l) => [l.key, l]))
+  let anyChanged = false
+  const merged = next.map((nextLoc) => {
+    const prevLoc = prevByKey.get(nextLoc.key)
+    if (!prevLoc) {
+      anyChanged = true
+      return nextLoc
+    }
+    const mergedLoc = mergeLocation(prevLoc, nextLoc)
+    if (mergedLoc !== prevLoc) anyChanged = true
+    return mergedLoc
+  })
+  return anyChanged ? merged : prev
+}
+
+function mergeScope(prev: SessionTreeScope, next: SessionTreeScope): SessionTreeScope {
+  const topEqual = prev.name === next.name
+    && prev.kind === next.kind
+    && prev.sessionCount === next.sessionCount
+    && prev.truncated === next.truncated
+  const mergedLocs = mergeLocations(prev.locations, next.locations)
+  if (topEqual && mergedLocs === prev.locations) return prev
+  return { ...next, locations: mergedLocs }
+}
+
+export function mergeTree(prev: WorkbenchSessionTree, next: WorkbenchSessionTree): WorkbenchSessionTree {
+  if (prev.scopes.length === 0) return next
+  if (prev.scopes.length !== next.scopes.length) return next
+  const prevByPath = new Map(prev.scopes.map((s) => [s.path, s]))
+  let anyChanged = false
+  const merged = next.scopes.map((nextScope) => {
+    const prevScope = prevByPath.get(nextScope.path)
+    if (!prevScope) {
+      anyChanged = true
+      return nextScope
+    }
+    const mergedScope = mergeScope(prevScope, nextScope)
+    if (mergedScope !== prevScope) anyChanged = true
+    return mergedScope
+  })
+  return anyChanged ? { scopes: merged } : prev
+}
+
 export function createSessionGroupsLoader<T>(input: {
   fetch: () => Promise<T>
   commit: (groups: T) => void
   setLoading: (loading: boolean) => void
   onError: (error: unknown) => void
+  // When `hasData` returns true, the loader skips `setLoading(true)` and
+  // keeps the previously committed data visible during the refetch. This
+  // prevents the tree from flashing a "loading" placeholder on every
+  // background refresh; only the first load (no data yet) shows loading.
+  hasData?: () => boolean
 }) {
   let latestRequest = 0
 
   return async () => {
     const request = latestRequest + 1
     latestRequest = request
-    input.setLoading(true)
+    const showLoading = !input.hasData?.()
+    if (showLoading) input.setLoading(true)
     try {
       const groups = await input.fetch()
       if (request !== latestRequest) return
@@ -199,7 +298,7 @@ export function createSessionGroupsLoader<T>(input: {
     } catch (error) {
       if (request === latestRequest) input.onError(error)
     } finally {
-      if (request === latestRequest) input.setLoading(false)
+      if (request === latestRequest && showLoading) input.setLoading(false)
     }
   }
 }
