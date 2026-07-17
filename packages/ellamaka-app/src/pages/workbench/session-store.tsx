@@ -8,6 +8,8 @@ export type DirectoryHealth = "healthy" | "missing" | "unavailable"
 export type Session = {
   id: string
   spaceName: string
+  /** Canonical scope identity. Legacy projections may only have `spaceName`. */
+  spacePath?: string
   projectPath: string
   type: SessionType
   title: string
@@ -19,7 +21,7 @@ export type Session = {
 
 export type SessionProjectionInput = Session
 export type SessionProjectionPatch = Partial<
-  Pick<Session, "title" | "type" | "projectPath" | "directoryHealth" | "timeArchived" | "lastActiveAt">
+  Pick<Session, "title" | "type" | "spacePath" | "projectPath" | "directoryHealth" | "timeArchived" | "lastActiveAt">
 >
 
 type SessionProjectionState = {
@@ -73,19 +75,20 @@ export function createSessionProjection() {
 
   const upsert = (input: SessionProjectionInput) => {
     const existing = find(input.id)
-    if (existing?.spaceName === input.spaceName) {
-      setStore("spaces", input.spaceName, existing.index, { ...input })
+    const spaceKey = input.spacePath ?? input.spaceName
+    if (existing?.spaceName === spaceKey) {
+      setStore("spaces", spaceKey, existing.index, { ...input })
       return
     }
     if (existing) {
       setStore("spaces", existing.spaceName, (sessions) => sessions.filter((session) => session.id !== input.id))
       idToSpace.delete(input.id)
     }
-    if (!store.spaces[input.spaceName]) setStore("spaces", input.spaceName, [])
-    setStore("spaces", input.spaceName, (sessions) => limitSessions([...sessions, { ...input }]))
+    if (!store.spaces[spaceKey]) setStore("spaces", spaceKey, [])
+    setStore("spaces", spaceKey, (sessions) => limitSessions([...sessions, { ...input }]))
     // limitSessions may have dropped the new entry; only index if it actually landed.
-    if (store.spaces[input.spaceName].some((session) => session.id === input.id)) {
-      idToSpace.set(input.id, input.spaceName)
+    if (store.spaces[spaceKey].some((session) => session.id === input.id)) {
+      idToSpace.set(input.id, spaceKey)
     } else {
       idToSpace.delete(input.id)
     }
@@ -97,6 +100,7 @@ export function createSessionProjection() {
     setStore("spaces", existing.spaceName, existing.index, produce((session) => {
       if (updates.title !== undefined) session.title = updates.title
       if (updates.type !== undefined) session.type = updates.type
+      if (updates.spacePath !== undefined) session.spacePath = updates.spacePath
       if (updates.projectPath !== undefined) session.projectPath = updates.projectPath
       if (updates.directoryHealth !== undefined) session.directoryHealth = updates.directoryHealth
       if (Object.hasOwn(updates, "timeArchived")) session.timeArchived = updates.timeArchived

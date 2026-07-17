@@ -3,6 +3,7 @@ import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
+import type { GroupSession, SessionTreeLocation } from "./session-tree-services"
 
 function createTranslator(language: ReturnType<typeof useLanguage>): typeof language.t {
   return (key, params) => language.t(key, params)
@@ -207,6 +208,68 @@ export function DialogClosePanel(props: {
             }}
           >
             {t("workbench.panelClose.confirmButton")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+// Maps (location kind, session marker) to the i18n key describing the session
+// type shown in the details dialog. The combination is what the user perceives:
+// a worktree session lives under a project location; a directory session under
+// a space-root location is a Space-subdir session (not a project session).
+function sessionTypeKey(locationKind: SessionTreeLocation["kind"], marker: GroupSession["marker"]): string {
+  if (marker === "worktree") return "workbench.tree.detailsTypeWorktree"
+  if (marker === "directory") return "workbench.tree.detailsTypeDirectory"
+  if (locationKind === "project") return "workbench.tree.detailsTypeProject"
+  if (locationKind === "space-root") return "workbench.tree.detailsTypeSpaceRoot"
+  if (locationKind === "general-date" || locationKind === "general-directory") return "workbench.tree.detailsTypeGeneral"
+  return "workbench.tree.detailsTypeGeneral"
+}
+
+function formatTimestamp(value: number): string {
+  if (!value) return "—"
+  try {
+    return new Date(value).toLocaleString()
+  } catch {
+    return String(value)
+  }
+}
+
+export function DialogSessionDetails(props: {
+  session: GroupSession
+  locationKind: SessionTreeLocation["kind"]
+}) {
+  const language = useLanguage()
+  const t = createTranslator(language)
+  const dialog = useDialog()
+  const session = props.session
+  const typeKey = sessionTypeKey(props.locationKind, session.marker)
+
+  const Row = (label: string, value: string) => (
+    <div class="flex flex-col gap-0.5">
+      <span class="text-10-medium text-v2-text-text-faint uppercase tracking-wide">{label}</span>
+      <span class="text-12-regular text-v2-text-text-base break-all">{value}</span>
+    </div>
+  )
+
+  return (
+    <Dialog title={t("workbench.tree.details")} fit>
+      <div class="flex flex-col gap-3 pl-6 pr-2.5 pb-3 min-w-[360px] max-w-[480px]">
+        <div class="text-14-medium text-v2-text-text-strong pb-1 border-b border-v2-border-border-base">
+          {session.title}
+        </div>
+        {Row(t("workbench.tree.detailsType"), t(typeKey))}
+        {Row(t("workbench.tree.detailsDirectory"), session.directory || "—")}
+        {session.branch && Row(t("workbench.tree.detailsBranch"), session.branch)}
+        {session.relativePath && Row(t("workbench.tree.detailsRelativePath"), session.relativePath)}
+        {Row(t("workbench.tree.detailsCreated"), formatTimestamp(session.timeCreated))}
+        {Row(t("workbench.tree.detailsUpdated"), formatTimestamp(session.timeUpdated))}
+        {Row(t("workbench.tree.detailsSessionId"), session.id)}
+        <div class="flex justify-end gap-2 pt-1">
+          <Button variant="primary" size="large" onClick={() => dialog.close()}>
+            {t("workbench.tree.close")}
           </Button>
         </div>
       </div>

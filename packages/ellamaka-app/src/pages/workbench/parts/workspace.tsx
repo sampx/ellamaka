@@ -205,11 +205,11 @@ function StageHeader(props: {
             <button
               type="button"
               class={`group flex items-center gap-1.5 rounded-t-md px-2.5 py-1 text-12-regular transition-colors ${
-                wb.activeSpaceName === tab.name
+                wb.activeTabPath === tab.path
                   ? "bg-v2-background-bg-deep text-v2-text-text-strong border-x border-t border-v2-border-border-base -mb-px"
                   : "text-v2-text-text-muted hover:text-v2-text-text-base"
               }`}
-              onClick={() => wb.setActive(tab.name)}
+              onClick={() => wb.setActive(tab.path)}
             >
               <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.spaces") : tab.name}</span>
               <Show when={tab.path !== ""}>

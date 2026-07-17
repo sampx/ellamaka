@@ -42,7 +42,9 @@ export function selectWorkbenchDirectoryTarget(input: ActiveWorkbenchSnapshot): 
       directory: active.directory,
     }
   }
-  const tab = input.tabs.find((candidate) => candidate.name === input.activeSpaceName)
+  const tab = input.activeTabPath !== undefined
+    ? input.tabs.find((candidate) => candidate.path === input.activeTabPath)
+    : input.tabs.find((candidate) => candidate.name === input.activeSpaceName)
   if (!tab) return undefined
   const scope = scopeFromTab(tab)
   return {
@@ -59,7 +61,7 @@ export function WorkbenchActiveDirectoryProvider(props: {
   const target = createMemo(() => selectWorkbenchDirectoryTarget({
     spaces: wb.spaces,
     tabs: wb.tabs,
-    activeSpaceName: wb.activeSpaceName,
+    activeTabPath: wb.activeTabPath,
   }))
 
   return (

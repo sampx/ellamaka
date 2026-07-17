@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import {
   fetchSessionGroups,
+  fetchSessionTree,
   createSessionGroupsLoader,
   resolveTargetPanel,
   getPanelBadge,
+  mergeTree,
   type SessionGroupsSDK,
   type SessionGroup,
+  type SessionTreeScope,
+  type WorkbenchSessionTree,
   type OpenSessionWB,
 } from "./session-tree-services"
 import { mergeSessionTreeSessions } from "./session-tree-merge"
@@ -236,6 +240,114 @@ describe("fetchSessionGroups", () => {
   })
 })
 
+describe("fetchSessionTree", () => {
+  test("preserves General and same-name Spaces by their path identity and locations", async () => {
+    const tree = await fetchSessionTree({
+      client: {
+        workbench: {
+          sessionTree: async () => ({
+            data: {
+              scopes: [
+                {
+                  key: "general",
+                  kind: "general" as const,
+                  name: "General",
+                  path: "",
+                  sessionCount: 1,
+                  truncated: false,
+                  locations: [{
+                    key: "general-date:2026-07-16",
+                    kind: "general-date" as const,
+                    name: "2026-07-16",
+                    path: "",
+                    sessionCount: 1,
+                    sessions: [{
+                      id: "general-session",
+                      title: "General",
+                      directory: "/home/.wopal/general_tasks/2026-07-16",
+                      directoryHealth: "healthy" as const,
+                      marker: "",
+                      timeCreated: 1,
+                      timeUpdated: 2,
+                    }],
+                  }],
+                },
+                {
+                  key: "space:/fixtures/two",
+                  kind: "space" as const,
+                  name: "Shared",
+                  path: "/fixtures/two",
+                  sessionCount: 1,
+                  truncated: false,
+                  locations: [{
+                    key: "space:/fixtures/two:root",
+                    kind: "space-root" as const,
+                    name: "Root",
+                    path: "/fixtures/two",
+                    sessionCount: 1,
+                    sessions: [{
+                      id: "space-session",
+                      title: "Space",
+                      directory: "/fixtures/two",
+                      directoryHealth: "healthy" as const,
+                      marker: "",
+                      timeCreated: 3,
+                      timeUpdated: 4,
+                    }],
+                  }],
+                },
+              ],
+            },
+          }),
+        },
+      },
+    })
+
+    expect(tree.scopes.map((scope) => scope.path)).toEqual(["", "/fixtures/two"])
+    expect(tree.scopes[1]?.locations[0]).toMatchObject({ kind: "space-root", label: "Root" })
+  })
+
+  test("preserves marker, relativePath, and branch fields for project and worktree sessions", async () => {
+    const tree = await fetchSessionTree({
+      client: {
+        workbench: {
+          sessionTree: async () => ({
+            data: {
+              scopes: [{
+                key: "space:/proj",
+                kind: "space" as const,
+                name: "P",
+                path: "/proj",
+                sessionCount: 3,
+                truncated: false,
+                locations: [{
+                  key: "project:/proj/repo",
+                  kind: "project" as const,
+                  name: "repo",
+                  path: "/proj/repo",
+                  sessionCount: 3,
+                  sessions: [
+                    { id: "root", title: "R", directory: "/proj/repo", directoryHealth: "healthy" as const, marker: "", timeCreated: 1, timeUpdated: 1 },
+                    { id: "wt", title: "W", directory: "/outside/wt", directoryHealth: "healthy" as const, marker: "worktree", relativePath: undefined, branch: "feature/x", timeCreated: 2, timeUpdated: 2 },
+                    { id: "sub", title: "S", directory: "/proj/repo/pkg", directoryHealth: "healthy" as const, marker: "directory", relativePath: "pkg", timeCreated: 3, timeUpdated: 3 },
+                  ],
+                }],
+              }],
+            },
+          }),
+        },
+      },
+    })
+
+    const sessions = tree.scopes[0]!.locations[0]!.sessions
+    expect(sessions.map((s) => [s.id, s.marker, s.relativePath, s.branch])).toEqual([
+      ["root", "", undefined, undefined],
+      ["wt", "worktree", undefined, "feature/x"],
+      ["sub", "directory", "pkg", undefined],
+    ])
+  })
+})
+
 describe("createSessionGroupsLoader", () => {
   test("keeps the newest response when overlapping requests resolve out of order", async () => {
     const first = deferred<SessionGroup[]>()
@@ -262,6 +374,160 @@ describe("createSessionGroupsLoader", () => {
     await initial
 
     expect(commits).toEqual(["Latest"])
+  })
+
+  test("skips setLoading(true) when hasData reports existing data (silent refresh)", async () => {
+    const loadingEvents: boolean[] = []
+    const first = deferred<SessionGroup[]>()
+    const second = deferred<SessionGroup[]>()
+    let request = 0
+    let hasData = false
+
+    const loader = createSessionGroupsLoader({
+      fetch: () => {
+        request += 1
+        return request === 1 ? first.promise : second.promise
+      },
+      commit: () => { hasData = true },
+      setLoading: (v) => { loadingEvents.push(v) },
+      onError: () => {},
+      hasData: () => hasData,
+    })
+
+    const initial = loader()
+    first.resolve([])
+    await initial
+    loadingEvents.length = 0
+
+    const refresh = loader()
+    second.resolve([])
+    await refresh
+
+    // Silent refresh: no loading toggle at all when data already exists
+    expect(loadingEvents).toEqual([])
+  })
+
+  test("sets loading on first load when no data exists yet", async () => {
+    const loadingEvents: boolean[] = []
+    const first = deferred<SessionGroup[]>()
+
+    const loader = createSessionGroupsLoader({
+      fetch: () => first.promise,
+      commit: () => {},
+      setLoading: (v) => { loadingEvents.push(v) },
+      onError: () => {},
+      hasData: () => false,
+    })
+
+    const task = loader()
+    first.resolve([])
+    await task
+
+    expect(loadingEvents).toEqual([true, false])
+  })
+})
+
+function makeScope(overrides: Partial<SessionTreeScope> = {}): SessionTreeScope {
+  return {
+    path: "/space",
+    name: "Space",
+    kind: "space",
+    sessionCount: 1,
+    truncated: false,
+    locations: [{
+      key: "space:/space:root",
+      label: "Root",
+      kind: "space-root",
+      sessions: [{
+        id: "s1",
+        title: "Session 1",
+        directory: "/space",
+        directoryHealth: "healthy",
+        timeCreated: 1,
+        timeUpdated: 2,
+      }],
+    }],
+    ...overrides,
+  }
+}
+
+describe("mergeTree", () => {
+  test("returns next unchanged when prev is empty (initial load)", () => {
+    const next: WorkbenchSessionTree = { scopes: [makeScope()] }
+    const merged = mergeTree({ scopes: [] }, next)
+    expect(merged).toBe(next)
+  })
+
+  test("returns prev unchanged when scope/loc/session fields all match", () => {
+    const prev: WorkbenchSessionTree = { scopes: [makeScope()] }
+    // Reconstruct a structurally equal but reference-distinct tree
+    const next: WorkbenchSessionTree = {
+      scopes: [{
+        path: "/space",
+        name: "Space",
+        kind: "space",
+        sessionCount: 1,
+        truncated: false,
+        locations: [{
+          key: "space:/space:root",
+          label: "Root",
+          kind: "space-root",
+          sessions: [{
+            id: "s1",
+            title: "Session 1",
+            directory: "/space",
+            directoryHealth: "healthy",
+            timeCreated: 1,
+            timeUpdated: 2,
+          }],
+        }],
+      }],
+    }
+    const merged = mergeTree(prev, next)
+    // Identity preserved at every level
+    expect(merged).toBe(prev)
+    expect(merged.scopes[0]).toBe(prev.scopes[0])
+    expect(merged.scopes[0].locations[0]).toBe(prev.scopes[0].locations[0])
+    expect(merged.scopes[0].locations[0].sessions[0]).toBe(prev.scopes[0].locations[0].sessions[0])
+  })
+
+  test("reuses unchanged session refs and only swaps the one whose title changed", () => {
+    const prev: WorkbenchSessionTree = { scopes: [makeScope()] }
+    const next: WorkbenchSessionTree = {
+      scopes: [{
+        path: "/space",
+        name: "Space",
+        kind: "space",
+        sessionCount: 2,
+        truncated: false,
+        locations: [{
+          key: "space:/space:root",
+          label: "Root",
+          kind: "space-root",
+          sessions: [
+            { id: "s1", title: "Session 1 RENAMED", directory: "/space", directoryHealth: "healthy", timeCreated: 1, timeUpdated: 3 },
+            { id: "s2", title: "Session 2", directory: "/space", directoryHealth: "healthy", timeCreated: 4, timeUpdated: 5 },
+          ],
+        }],
+      }],
+    }
+    const merged = mergeTree(prev, next)
+    expect(merged).not.toBe(prev)             // sessionCount changed → new scope
+    expect(merged.scopes[0]).not.toBe(prev.scopes[0])
+    expect(merged.scopes[0].locations[0]).not.toBe(prev.scopes[0].locations[0])
+    // s1 changed title → new ref
+    const mergedS1 = merged.scopes[0].locations[0].sessions.find((s) => s.id === "s1")
+    const prevS1 = prev.scopes[0].locations[0].sessions.find((s) => s.id === "s1")
+    expect(mergedS1).not.toBe(prevS1)
+    expect(mergedS1?.title).toBe("Session 1 RENAMED")
+    // s2 is new, never in prev
+    expect(merged.scopes[0].locations[0].sessions.find((s) => s.id === "s2")?.title).toBe("Session 2")
+  })
+
+  test("returns next when scope count differs (structural change)", () => {
+    const prev: WorkbenchSessionTree = { scopes: [makeScope()] }
+    const next: WorkbenchSessionTree = { scopes: [makeScope(), makeScope({ path: "/other" })] }
+    expect(mergeTree(prev, next)).toBe(next)
   })
 })
 

@@ -142,6 +142,34 @@ describe("WorkbenchActions", () => {
     expect(state.commits).toEqual(["session-general"])
   })
 
+  test("blocks session creation while the Workbench runtime is offline", async () => {
+    const state = createStorePort()
+    let creates = 0
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async () => {},
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+      },
+      session: {
+        ...unusedSessionPort,
+        create: async () => {
+          creates += 1
+          return nextSession
+        },
+      },
+      runtime: { canWrite: () => false },
+    })
+
+    expect(await actions.createSession({ scope, panelID: state.panel().id })).toEqual({
+      status: "offline",
+      panelID: state.panel().id,
+    })
+    expect(creates).toBe(0)
+    expect(state.commits).toEqual([])
+  })
+
   test("removes a newly-created Session when its generation becomes stale", async () => {
     const state = createStorePort()
     const created = deferred<typeof nextSession>()
@@ -1336,7 +1364,7 @@ describe("WorkbenchActions revealSession", () => {
     const actions = createWorkbenchActions({ store: state.store, pty: noopPty, session: getSession() })
     const result = await actions.revealSession({ scope, sessionID: "session-bound", directory: path })
     expect(result).toEqual({ status: "activated", panelID: "p1", scopePath: path })
-    expect(state.calls).toContain("setActive:Space A")
+    expect(state.calls).toContain(`setActive:${path}`)
     expect(state.calls).toContain("setActivePanel:p1")
     // never fetched or bound
     expect(state.calls.some((c) => c.startsWith("bind:"))).toBe(false)

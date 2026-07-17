@@ -37,8 +37,9 @@ export function handlePanelDrop(
   e.preventDefault()
   e.stopPropagation()
   const sessionId = e.dataTransfer?.getData("text/sessionId") ?? ""
+  const dragSpacePath = e.dataTransfer?.getData("text/spacePath") ?? ""
   const dragSpaceName = e.dataTransfer?.getData("text/spaceName") ?? ""
-  if (!sessionId || !dragSpaceName) return
+  if (!sessionId || (!dragSpacePath && !dragSpaceName)) return
 
   if (/[/\\]/.test(sessionId) || sessionId === ".." || sessionId === ".") {
     console.error("Rejected drag payload with path-like sessionId:", sessionId)
@@ -47,8 +48,9 @@ export function handlePanelDrop(
 
   const spacePath = ctx.spacePath
 
-  if (dragSpaceName !== ctx.spaceName) {
-    showCrossSpaceWarning(dragSpaceName, ctx.spaceName)
+  const sameSpace = dragSpacePath ? dragSpacePath === ctx.spacePath : dragSpaceName === ctx.spaceName
+  if (!sameSpace) {
+    showCrossSpaceWarning(dragSpaceName || dragSpacePath, ctx.spaceName)
     return
   }
 

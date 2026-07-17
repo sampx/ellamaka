@@ -45,16 +45,6 @@ const WorkbenchStateContext = createSimpleContext({
     const workbench = createWorkbenchStore()
     const [hydrated, setHydrated] = createSignal(false)
 
-    if (typeof window !== "undefined" && window.localStorage) {
-      for (const key of ["workbench.v2", "workbench.v1", "workbench.spacetabs", "workbench.activespace"]) {
-        try {
-          window.localStorage.removeItem(key)
-        } catch (error) {
-          console.error("Failed to remove legacy storage key", key, error)
-        }
-      }
-    }
-
     const [persisted, setPersisted] = makePersisted(
       createStore<PersistedWorkbench>(clonePersistedWorkbench(PERSISTED_DEFAULTS)),
       {
@@ -81,7 +71,8 @@ const WorkbenchStateContext = createSimpleContext({
         setPersisted("display", snapshot.display)
         setPersisted("spaces", snapshot.spaces)
         setPersisted("tabs", snapshot.tabs)
-        setPersisted("activeSpaceName", snapshot.activeSpaceName)
+        setPersisted("schemaVersion", 2)
+        setPersisted("activeTabPath", snapshot.activeTabPath)
       })
     }
 
@@ -166,7 +157,7 @@ const WorkbenchStateContext = createSimpleContext({
       const ctx = selectActiveWorkbenchContext({
         spaces: workbench.spaces,
         tabs: workbench.tabs,
-        activeSpaceName: workbench.activeSpaceName,
+        activeTabPath: workbench.activeTabPath,
       })
       return ctx ? { scope: ctx.scope, panelID: ctx.panel.id } : undefined
     }
@@ -202,6 +193,7 @@ const WorkbenchStateContext = createSimpleContext({
       get tabs() { return workbench.tabs },
       activeTab: workbench.activeTab,
       get activeDirectory() { return workbench.activeDirectory },
+      get activeTabPath() { return workbench.activeTabPath },
       get activeSpaceName() { return workbench.activeSpaceName },
       openTab: workbench.openTab,
       closeTab: workbench.closeTab,

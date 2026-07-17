@@ -28,13 +28,9 @@ describe("fetchSpaces", () => {
     expect(result).toHaveLength(2)
   })
 
-  test("returns empty array when SDK throws (does not silently swallow)", async () => {
+  test("propagates an SDK failure so the store can preserve the last successful list", async () => {
     const sdk = mockSdk(new Error("Network failure"))
-
-    const result = await fetchSpaces(sdk)
-
-    expect(result).toEqual([])
-    expect(Array.isArray(result)).toBe(true)
+    await expect(fetchSpaces(sdk)).rejects.toThrow("Network failure")
   })
 
   test("returns empty array when SDK returns null data", async () => {

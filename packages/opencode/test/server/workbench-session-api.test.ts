@@ -7,6 +7,7 @@ import { SessionDirectoryHealth } from "../../src/workbench/session-directory-he
 import { SpaceRegistry } from "../../src/wopal/space-registry"
 import { CliAdapter } from "../../src/wopal/cli-adapter"
 import { SessionShare } from "../../src/share/session"
+import { Session } from "../../src/session/session"
 import { InstanceStore } from "../../src/project/instance-store"
 
 const sessionShareLayer = Layer.mock(SessionShare.Service, {
@@ -17,12 +18,12 @@ const instanceStoreLayer = Layer.mock(InstanceStore.Service, {
   provide: (_input, effect) => effect,
 })
 
-let createInput: { title?: string; agent?: string } | undefined
-let createCalled = false
+let createInput: { title?: string; agent?: string; metadata?: Record<string, unknown> } | undefined
+let createCount = 0
 
 function resetCreateCapture() {
   createInput = undefined
-  createCalled = false
+  createCount = 0
 }
 
 const provisionerIt = testEffect(
@@ -36,11 +37,15 @@ const provisionerIt = testEffect(
       }),
       Layer.mock(SessionShare.Service, {
         create: (input) =>
-          Effect.sync(() => {
-            createCalled = true
+          Effect.gen(function* () {
+            createCount += 1
             createInput = input
+            yield* Effect.sleep("10 millis")
             return { id: "ses_1", directory: "/tmp", title: "New session - 2026-07-12T00:00:00.000Z" } as never
           }),
+      }),
+      Layer.mock(Session.Service, {
+        list: () => Effect.succeed([]),
       }),
       instanceStoreLayer,
     ]),
@@ -54,7 +59,11 @@ const it = testEffect(
     SessionDirectoryHealth.defaultLayer,
     CliAdapter.defaultLayer,
     SpaceRegistry.defaultLayer,
-  ).pipe(Layer.provide([sessionShareLayer, instanceStoreLayer])),
+  ).pipe(Layer.provide([
+    sessionShareLayer,
+    instanceStoreLayer,
+    Layer.mock(Session.Service, { list: () => Effect.succeed([]) }),
+  ])),
 )
 
 describe("workbench-session-api", () => {
@@ -64,13 +73,55 @@ describe("workbench-session-api", () => {
       const provisioner = yield* SessionProvisioner.Service
       const result = yield* provisioner.provisionSpace({ spaceName: "main" })
 
-      expect(createCalled).toBe(true)
-      expect(createInput).toEqual({ title: undefined, agent: undefined })
-      expect(result).toEqual({
+      expect(createCount).toBe(1)
+      expect(createInput).toMatchObject({ title: undefined, agent: undefined })
+      expect(createInput?.metadata?.workbench).toMatchObject({
+        payload: expect.any(String),
+        requestID: expect.any(String),
+      })
+      expect(result).toMatchObject({
         id: "ses_1",
         directory: "/tmp",
         title: "New session - 2026-07-12T00:00:00.000Z",
       })
+    }),
+  )
+
+  provisionerIt.live("provisioner records a request ID and canonical payload metadata for idempotent creation", () =>
+    Effect.gen(function* () {
+      resetCreateCapture()
+      const provisioner = yield* SessionProvisioner.Service
+      yield* provisioner.provisionSpace({ spacePath: "/tmp", requestID: "request-1" })
+
+      expect(createInput).toEqual({
+        title: undefined,
+        agent: undefined,
+        metadata: {
+          workbench: {
+            requestID: "request-1",
+            payload: JSON.stringify({
+              target: { type: "space", spacePath: "/private/tmp", directory: undefined },
+              title: undefined,
+              agent: undefined,
+            }),
+          },
+        },
+      })
+    }),
+  )
+
+  provisionerIt.live("coalesces concurrent retries with the same request ID", () =>
+    Effect.gen(function* () {
+      resetCreateCapture()
+      const provisioner = yield* SessionProvisioner.Service
+      const [first, second] = yield* Effect.all([
+        provisioner.provisionSpace({ spacePath: "/tmp", requestID: "request-coalesced" }),
+        provisioner.provisionSpace({ spacePath: "/tmp", requestID: "request-coalesced" }),
+      ], { concurrency: 2 })
+
+      expect(first.id).toBe("ses_1")
+      expect(second.id).toBe("ses_1")
+      expect(createCount).toBe(1)
     }),
   )
 

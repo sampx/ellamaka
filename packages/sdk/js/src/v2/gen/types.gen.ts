@@ -1325,6 +1325,19 @@ export type Config = {
   }
 }
 
+export type SpaceControlUnavailable = {
+  _tag: "SpaceControlUnavailable"
+  message: string
+  reason?: string
+}
+
+export type CapabilityContractError = {
+  _tag: "CapabilityContractError"
+  message: string
+  capability?: string
+  detail?: string
+}
+
 export type Model = {
   id: string
   providerID: string
@@ -1982,6 +1995,30 @@ export type WorkspaceWarpError = {
   data: {
     message: string
   }
+}
+
+export type WorkbenchSpaceNotFound = {
+  _tag: "WorkbenchSpaceNotFound"
+  message: string
+  spacePath: string
+}
+
+export type InvalidSpaceTarget = {
+  _tag: "InvalidSpaceTarget"
+  message: string
+  detail?: string
+}
+
+export type SessionDirectoryUnavailable = {
+  _tag: "SessionDirectoryUnavailable"
+  message: string
+  directory: string
+}
+
+export type WorkbenchRequestConflict = {
+  _tag: "WorkbenchRequestConflict"
+  message: string
+  requestID: string
 }
 
 export type EffectHttpApiErrorForbidden = {
@@ -4156,51 +4193,6 @@ export type WopalSpaceSpacesResponses = {
 
 export type WopalSpaceSpacesResponse = WopalSpaceSpacesResponses[keyof WopalSpaceSpacesResponses]
 
-export type WorkbenchCreateSessionData = {
-  body?: {
-    target:
-      | {
-          type: "general"
-        }
-      | {
-          type: "space"
-          space: string
-          directory?: string
-        }
-    title?: string
-    agent?: string
-  }
-  path?: never
-  query?: never
-  url: "/workbench/sessions"
-}
-
-export type WorkbenchCreateSessionErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type WorkbenchCreateSessionError = WorkbenchCreateSessionErrors[keyof WorkbenchCreateSessionErrors]
-
-export type WorkbenchCreateSessionResponses = {
-  /**
-   * Created session with directory health
-   */
-  200: {
-    id: string
-    title: string
-    directory: string
-    directoryHealth: "healthy" | "missing" | "unavailable"
-    agent?: string
-    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
-}
-
-export type WorkbenchCreateSessionResponse = WorkbenchCreateSessionResponses[keyof WorkbenchCreateSessionResponses]
-
 export type WorkbenchSessionGroupsData = {
   body?: never
   path?: never
@@ -4213,13 +4205,21 @@ export type WorkbenchSessionGroupsErrors = {
    * Bad request
    */
   400: BadRequestError
+  /**
+   * CapabilityContractError
+   */
+  502: CapabilityContractError
+  /**
+   * SpaceControlUnavailable
+   */
+  503: SpaceControlUnavailable
 }
 
 export type WorkbenchSessionGroupsError = WorkbenchSessionGroupsErrors[keyof WorkbenchSessionGroupsErrors]
 
 export type WorkbenchSessionGroupsResponses = {
   /**
-   * Session groups with directory health
+   * Legacy Workbench session groups
    */
   200: {
     groups: Array<{
@@ -8380,6 +8380,185 @@ export type WopalSpaceModeResponses = {
 }
 
 export type WopalSpaceModeResponse = WopalSpaceModeResponses[keyof WopalSpaceModeResponses]
+
+export type WorkbenchCreateSessionData = {
+  body?: {
+    requestID: string
+    target:
+      | {
+          type: "general"
+        }
+      | {
+          type: "space"
+          spacePath: string
+          directory?: string
+        }
+      | {
+          type: "space"
+          space: string
+          directory?: string
+        }
+    title?: string
+    agent?: string
+  }
+  path?: never
+  query?: never
+  url: "/workbench/sessions"
+}
+
+export type WorkbenchCreateSessionErrors = {
+  /**
+   * InvalidSpaceTarget | InvalidRequestError
+   */
+  400: InvalidSpaceTarget | InvalidRequestError
+  /**
+   * WorkbenchSpaceNotFound
+   */
+  404: WorkbenchSpaceNotFound
+  /**
+   * SessionDirectoryUnavailable | WorkbenchRequestConflict
+   */
+  409: SessionDirectoryUnavailable | WorkbenchRequestConflict
+  /**
+   * CapabilityContractError
+   */
+  502: CapabilityContractError
+  /**
+   * SpaceControlUnavailable
+   */
+  503: SpaceControlUnavailable
+}
+
+export type WorkbenchCreateSessionError = WorkbenchCreateSessionErrors[keyof WorkbenchCreateSessionErrors]
+
+export type WorkbenchCreateSessionResponses = {
+  /**
+   * Created Workbench session
+   */
+  200: {
+    id: string
+    title: string
+    directory: string
+    directoryHealth: "healthy" | "missing" | "unavailable"
+    agent?: string
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type WorkbenchCreateSessionResponse = WorkbenchCreateSessionResponses[keyof WorkbenchCreateSessionResponses]
+
+export type WorkbenchSessionTreeData = {
+  body?: never
+  path?: never
+  query?: {
+    limitPerScope?: string
+  }
+  url: "/workbench/session-tree"
+}
+
+export type WorkbenchSessionTreeErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * CapabilityContractError
+   */
+  502: CapabilityContractError
+  /**
+   * SpaceControlUnavailable
+   */
+  503: SpaceControlUnavailable
+}
+
+export type WorkbenchSessionTreeError = WorkbenchSessionTreeErrors[keyof WorkbenchSessionTreeErrors]
+
+export type WorkbenchSessionTreeResponses = {
+  /**
+   * Workbench session tree
+   */
+  200: {
+    scopes: Array<{
+      key: string
+      kind: "general" | "space"
+      name: string
+      path: string
+      sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      truncated: boolean
+      locations: Array<{
+        key: string
+        kind: "general-directory" | "general-date" | "space-root" | "project"
+        name: string
+        path: string
+        sessionCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        sessions: Array<{
+          id: string
+          title: string
+          directory: string
+          relativePath?: string
+          marker: "" | "directory" | "worktree"
+          branch?: string
+          directoryHealth: "healthy" | "missing" | "unavailable"
+          timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }>
+      }>
+    }>
+  }
+}
+
+export type WorkbenchSessionTreeResponse = WorkbenchSessionTreeResponses[keyof WorkbenchSessionTreeResponses]
+
+export type WorkbenchLocationsData = {
+  body?: never
+  path?: never
+  query: {
+    spacePath: string
+    query?: string
+  }
+  url: "/workbench/locations"
+}
+
+export type WorkbenchLocationsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * WorkbenchSpaceNotFound
+   */
+  404: WorkbenchSpaceNotFound
+  /**
+   * CapabilityContractError
+   */
+  502: CapabilityContractError
+  /**
+   * SpaceControlUnavailable
+   */
+  503: SpaceControlUnavailable
+}
+
+export type WorkbenchLocationsError = WorkbenchLocationsErrors[keyof WorkbenchLocationsErrors]
+
+export type WorkbenchLocationsResponses = {
+  /**
+   * Controlled Workbench creation locations
+   */
+  200: {
+    scopePath: string
+    items: Array<{
+      key: string
+      kind: "space-root" | "project" | "recent" | "search"
+      name: string
+      path: string
+      relativeDirectory: string
+      lastUsedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+  }
+}
+
+export type WorkbenchLocationsResponse = WorkbenchLocationsResponses[keyof WorkbenchLocationsResponses]
 
 export type PtyConnectData = {
   body?: never

@@ -11,7 +11,8 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
-import { useWorkbenchActions } from "./workbench-actions"
+import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
+import { WorkbenchRuntimeProvider } from "./workbench-runtime"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
@@ -65,7 +66,6 @@ function WorkbenchShell() {
       }
       if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: spaceStore.getSession(session.sessionId ?? "")?.title })) {
         projection.patch(session.sessionId!, { title: session.title! })
-        projection.invalidate()
       }
     })
 
@@ -139,25 +139,23 @@ function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
 
 export default function Workbench() {
   return (
-    // Provider nesting order (Task 3 O17): SessionStore > WorkbenchState
-    // > SpaceStore > ViewRegistry. Actions (useWorkbenchActions) is a
-    // module-level hook that depends on WorkbenchState + SessionStore, so
-    // it must be called inside a component that is a descendant of both
-    // providers. SpaceStore depends on Actions for session operations and
-    // must be after Actions initialization. ViewRegistry wraps the Shell
-    // so that registerDefaultViews can inject views during Shell init.
+    // Actions and runtime status are local to this Workbench provider tree.
     <WorkbenchSingletonGuard>
       <SessionStoreProvider>
         <WorkbenchStateProvider>
-          <SpaceStoreProvider>
-            <ViewRegistryProvider>
-              <ErrorBoundary
-                fallback={(error, reset) => <WorkbenchErrorFallback error={error} reset={reset} />}
-              >
-                <WorkbenchShell />
-              </ErrorBoundary>
-            </ViewRegistryProvider>
-          </SpaceStoreProvider>
+          <WorkbenchRuntimeProvider>
+            <WorkbenchActionsProvider>
+              <SpaceStoreProvider>
+                <ViewRegistryProvider>
+                  <ErrorBoundary
+                    fallback={(error, reset) => <WorkbenchErrorFallback error={error} reset={reset} />}
+                  >
+                    <WorkbenchShell />
+                  </ErrorBoundary>
+                </ViewRegistryProvider>
+              </SpaceStoreProvider>
+            </WorkbenchActionsProvider>
+          </WorkbenchRuntimeProvider>
         </WorkbenchStateProvider>
       </SessionStoreProvider>
     </WorkbenchSingletonGuard>

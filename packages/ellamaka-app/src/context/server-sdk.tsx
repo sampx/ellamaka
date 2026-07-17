@@ -2,7 +2,7 @@ import type { Event } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { batch, onCleanup, onMount, createResource } from "solid-js"
+import { batch, onCleanup, onMount, createResource, createSignal } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -35,6 +35,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
   const emitter = createGlobalEmitter<{
     [key: string]: Event
   }>()
+  const [eventStatus, setEventStatus] = createSignal<"stopped" | "connecting" | "connected" | "reconnecting">("stopped")
 
   type Queued = { directory: string; payload: Event }
   const FLUSH_FRAME_MS = 16
@@ -119,6 +120,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
   const start = () => {
     if (started) return run
     started = true
+    setEventStatus("connecting")
     run = (async () => {
       // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
       while (!abort.signal.aborted && started) {
@@ -142,6 +144,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
               })
             },
           })
+          setEventStatus("connected")
           let yielded = Date.now()
           resetHeartbeat()
           for await (const event of events.stream) {
@@ -190,6 +193,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
         }
 
         if (abort.signal.aborted || !started) return
+        setEventStatus("reconnecting")
         await wait(RECONNECT_DELAY_MS)
       }
     })().finally(() => {
@@ -201,6 +205,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
 
   const stop = () => {
     started = false
+    setEventStatus("stopped")
     attempt?.abort()
     clearHeartbeat()
   }
@@ -233,6 +238,9 @@ function createServerSdkContext(server: ServerConnection.Any) {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),
       start,
+    },
+    get eventStatus() {
+      return eventStatus()
     },
     createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
       return createSdkForServer({

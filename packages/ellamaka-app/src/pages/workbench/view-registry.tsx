@@ -134,6 +134,10 @@ export function registerDefaultViews(registry: ViewRegistry) {
         }).catch((e) => {
           reportWorkbenchError("ensure tui pty", e)
           setPtyError("Failed to start TUI terminal")
+          actions.fallbackToChat({
+            scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
+            panelID: ctx.panel.id,
+          })
         })
       })
 

@@ -86,7 +86,7 @@ import { tuiHandlers } from "./handlers/tui"
 import { v2Handlers } from "./handlers/v2"
 import { workspaceHandlers } from "./handlers/workspace"
 import { wopalSpaceHandlers, wopalSpaceInstanceHandlers } from "./handlers/wopal-space"
-import { workbenchHandlers } from "./handlers/workbench"
+import { workbenchHandlers, workbenchInstanceHandlers } from "./handlers/workbench"
 import { SpaceRegistry } from "@/wopal/space-registry"
 import { SessionProvisioner } from "@/workbench/session-provisioner"
 import { SessionProjection } from "@/workbench/session-projection"
@@ -158,7 +158,11 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     tuiHandlers,
     workspaceHandlers,
     wopalSpaceInstanceHandlers,
+    workbenchInstanceHandlers,
   ]),
+  Layer.provide(SessionProvisioner.defaultLayer),
+  Layer.provide(SessionProjection.defaultLayer),
+  Layer.provide(SessionDirectoryHealth.defaultLayer),
 )
 
 const instanceRoutes = instanceApiRoutes.pipe(
