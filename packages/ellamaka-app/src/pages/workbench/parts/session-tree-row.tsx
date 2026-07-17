@@ -18,8 +18,8 @@ type MergedSession = {
 export function SessionTreeRow(props: {
   session: MergedSession
   spaceName: string
+  spacePath: string
   sessions: GroupSession[]
-  spaces: WopalSpace[]
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
   onSessionClick: (sessionId: string) => void
@@ -35,7 +35,7 @@ export function SessionTreeRow(props: {
 
   const sessionData = () => props.sessions.find((s) => s.id === props.session.id)
   const dirHealth = () =>
-    props.spaceName === "General" ? "healthy" : (sessionData()?.directoryHealth ?? "healthy")
+    props.spacePath === "" ? "healthy" : (sessionData()?.directoryHealth ?? "healthy")
 
   const handleSessionClick = () => {
     props.setSelectedSessionId(props.session.id)
@@ -43,12 +43,12 @@ export function SessionTreeRow(props: {
     if (badge) {
       const binding = wb.findSessionBinding(props.session.id)
       if (binding) {
-        const targetSpace = props.spaces.find((s) => s.path === binding.spacePath)
+        const targetSpace = wb.tabs.find((tab) => tab.path === binding.spacePath)
         if (targetSpace) wb.openTab(targetSpace)
         wb.setActivePanel(binding.spacePath, binding.panelID)
       }
     } else {
-      const targetSpace = props.spaces.find((s) => s.name === props.spaceName)
+      const targetSpace = wb.tabs.find((tab) => tab.path === props.spacePath)
       if (targetSpace) {
         wb.openTab(targetSpace)
         wb.ensureSpace(targetSpace.path)
@@ -67,8 +67,7 @@ export function SessionTreeRow(props: {
     void openSessionInPanel({
       session: { id: props.session.id, title: props.session.title },
       sessionDirectory: sessionData()?.directory ?? "",
-      spaceName: props.spaceName,
-      spaces: props.spaces,
+      targetSpace: { name: props.spaceName, path: props.spacePath } satisfies WopalSpace,
       wb,
       actions,
       t,
@@ -111,7 +110,7 @@ export function SessionTreeRow(props: {
         const dataTransfer = e.dataTransfer
         if (!dataTransfer) return
         dataTransfer.setData("text/sessionId", props.session.id)
-        dataTransfer.setData("text/spaceName", props.spaceName)
+        dataTransfer.setData("text/spacePath", props.spacePath)
         dataTransfer.setData("text/projectPath", sessionData()?.directory ?? "")
         dataTransfer.setData("text/sessionTitle", props.session.title)
         setInvisibleSessionDragPreview(dataTransfer)

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   fetchSessionGroups,
+  fetchSessionTree,
   createSessionGroupsLoader,
   resolveTargetPanel,
   getPanelBadge,
@@ -233,6 +234,72 @@ describe("fetchSessionGroups", () => {
     }
     const result = await fetchSessionGroups(sdk)
     expect(result[0].sessions).toEqual([])
+  })
+})
+
+describe("fetchSessionTree", () => {
+  test("preserves General and same-name Spaces by their path identity and locations", async () => {
+    const tree = await fetchSessionTree({
+      client: {
+        workbench: {
+          sessionTree: async () => ({
+            data: {
+              scopes: [
+                {
+                  key: "general",
+                  kind: "general" as const,
+                  name: "General",
+                  path: "",
+                  sessionCount: 1,
+                  truncated: false,
+                  locations: [{
+                    key: "general:/tmp",
+                    kind: "general-directory" as const,
+                    name: "/tmp",
+                    path: "/tmp",
+                    sessionCount: 1,
+                    sessions: [{
+                      id: "general-session",
+                      title: "General",
+                      directory: "/tmp",
+                      directoryHealth: "healthy" as const,
+                      timeCreated: 1,
+                      timeUpdated: 2,
+                    }],
+                  }],
+                },
+                {
+                  key: "space:/fixtures/two",
+                  kind: "space" as const,
+                  name: "Shared",
+                  path: "/fixtures/two",
+                  sessionCount: 1,
+                  truncated: false,
+                  locations: [{
+                    key: "space:/fixtures/two:root",
+                    kind: "space-root" as const,
+                    name: "Root",
+                    path: "/fixtures/two",
+                    sessionCount: 1,
+                    sessions: [{
+                      id: "space-session",
+                      title: "Space",
+                      directory: "/fixtures/two",
+                      directoryHealth: "healthy" as const,
+                      timeCreated: 3,
+                      timeUpdated: 4,
+                    }],
+                  }],
+                },
+              ],
+            },
+          }),
+        },
+      },
+    })
+
+    expect(tree.scopes.map((scope) => scope.path)).toEqual(["", "/fixtures/two"])
+    expect(tree.scopes[1]?.locations[0]).toMatchObject({ kind: "space-root", label: "Root" })
   })
 })
 

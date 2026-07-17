@@ -69,8 +69,9 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   │   ├── pty-manager.tsx             PTY 运行时管理器（非持久化，统一管理 PTY 生命周期）
   │   ├── space-workspace.tsx         Space Keep-Alive 容器（所有打开的 Space Tab 保持挂载）
   │   ├── view-registry.tsx           视图注册表（createViewRegistry 工厂 + ViewId 枚举，Shell 初始化时注册）
-  │   ├── workbench-actions.ts        跨所有者事务入口（createWorkbenchActions 纯逻辑 + useWorkbenchActions hook）
+  │   ├── workbench-actions.ts        跨所有者事务入口与 provider-scoped Actions
   │   ├── workbench-actions-ports.ts  Store/Pty/Session port 构造器（buildStorePort/buildPtyPort/buildSessionPort）
+  │   ├── workbench-runtime.tsx       HTTP health / SSE 状态与恢复代次
   │   ├── surface-route.ts            路由与界面切换辅助逻辑
   │   └── parts/
   │       ├── top-bar.tsx              顶栏（品牌/活动空间/返回 Official App）
@@ -78,7 +79,7 @@ packages/ellamaka-app/           ← ellamaka 定制 web UI
   │       ├── session-tree.tsx         三级 Session 浏览器核心实现
   │       ├── workspace.tsx            工作区（管理 Space Keep-Alive 容器）
   │       ├── panel.tsx                通用面板骨架组件
-  │       ├── panel-loader.tsx        空面板装载器（提供会话选择与快速终端）
+  │       ├── panel-loader.tsx        空面板装载器（受控目录、Chat/TUI 初始视图）
   │       ├── panel-chat.tsx           面板级 Chat 视图容器（桥接官方 timeline/composer）
   │       ├── panel-chat-composer.tsx  面板上下文适配的输入区
   │       ├── status-bar.tsx           底栏状态与路径提示
@@ -214,7 +215,8 @@ Workbench 不再把布局、服务端会话和运行时资源塞进一个控制�
 
 - **WorkbenchStore** (`workbench-store.ts`)：唯一持久化布局所有者，保存 Display、Space Tab、Panel 布局、活动 Panel、`boundSessionId`、Split Terminal 设置和 PTY 重连提示；它只做同步纯状态变更。
 - **View Store adapter** (`view-store.tsx`)：负责水合、`localStorage` 写入和短暂 UI 消息；它不是第二个领域 Store，不能拥有 SDK、PTY、router、Dialog 或 Toast 副作用。
-- **WorkbenchActions** (`workbench-actions.ts` / `workbench-actions-ports.ts`)：唯一跨所有者事务入口。创建、装载、替换、fork、解绑、关闭 Panel/Space、PTY 创建、PTY 断连恢复都先由 Action 分配 generation，再执行资源副作用，最后一次性提交布局或 Projection。`createWorkbenchActions` 是纯逻辑函数，接收 `{store, pty, session}` 三个 port；`useWorkbenchActions()` hook 在调用点内联构造 port 并调用 `createWorkbenchActions`，无 Context 层。port 构造逻辑（`buildStorePort`/`buildPtyPort`/`buildSessionPort`）提取到 `workbench-actions-ports.ts`，store port 由 `view-store.tsx` 暴露的 `wb` 直接实现。
+- **Workbench Runtime** (`workbench-runtime.tsx`)：在首次连接完成后组合 HTTP health 与 SSE 连接状态，表达 `online | degraded | recovering | offline`。`degraded` 表示 HTTP 仍可用但事件流正在重连，保留可写能力并显示状态；断线不清空已加载数据；从非 online 回到 online 时递增恢复代次，Space Store 与 Session Tree 各刷新一次。
+- **WorkbenchActions** (`workbench-actions.ts` / `workbench-actions-ports.ts`)：唯一跨所有者事务入口。创建、装载、替换、fork、解绑、关闭 Panel/Space、PTY 创建、PTY 断连恢复都先由 Action 分配 generation，再执行资源副作用，最后一次性提交布局或 Projection。`createWorkbenchActions` 是纯逻辑函数；`WorkbenchActionsProvider` 为每个 Workbench provider tree 创建独立实例，禁止模块级缓存跨 server、重挂载或多实例复用。runtime gate 是写操作的唯一保护边界，离线时返回 typed `offline` 结果。port 构造逻辑（`buildStorePort`/`buildPtyPort`/`buildSessionPort`）提取到 `workbench-actions-ports.ts`，store port 由 `view-store.tsx` 暴露的 `wb` 直接实现。
 - **Session Projection** (`session-store.tsx`)：只在内存中保存服务端会话的只读投影。Action 的服务端响应和 Shell/SessionTree 的 SSE 对账是唯一 writer；组件、Dialog、命令和持久化层只能读取。
 - **Directory SDK/sync**：插件、MCP、LSP 和配置按规范化 directory 缓存，不持久化。Panel 使用该 Panel 的 directory；TopBar 与 StatusPopover 通过活动 `SpaceScope` 和活动 Panel selector 获得同一 directory。
 - **Space Store** (`space-store.tsx`)：读取可打开 Space 的目录列表，用于校验和展示；已打开 Tab 及其布局归 WorkbenchStore 所有。
@@ -363,6 +365,8 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 
 - `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化（区别于上游 `sessionStorage`），确保关 tab 重开时布局保持。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局、Session 绑定、Split Terminal 配置和 PTY ID 重连提示。
 
+持久化 schema 当前为 **v2**：`activeTabPath` 是 Tab 身份，`tabs[].path` 与 `spaces[path]` 是唯一关联键；`activeSpaceName` 仅在水合旧数据时映射。名称映射不唯一或失效时回退到 General 的 `""`，不删除旧布局。General 必须以“是否存在 path 为 `""` 的 Tab”判断，禁止使用 path 的 truthy 判断。
+
 存储引擎：`localStorage`（key: `"workbench"`）。
 
 **PTY ID 重连提示**：`tuiPtyId`、`termPtyId` 和 `splitPtyId` 随布局一起写入 `localStorage`。`pagehide` 调用普通 `flushPersisted()`，不剥离 PTY ID，也不修改内存 store。水合后的 ID 必须先经过 `ptyManager.ensure()` 探测；sidecar 已回收的 ID 会被清除并按需替换，因此持久化 ID 不承担进程存活状态的权威职责。
@@ -376,19 +380,21 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
   - 当无任何物理项目空间打开时，工作台默认激活并展示此通用 Tab，提供 1~3 个可弹性伸缩的面板，用于装载和操作非物理项目空间关联的独立全局会话。
 - **内置独立会话的工作目录 ($WOPAL_HOME/general_tasks/)**：
   - 后端 Session 存在关联物理目录的强约束限制（`directory` 为 `notNull()`）。
-  - 通用 Tab 下新建独立会话时，工作台通过调用后端的 `sdk.client.instance.path()` 接口取得 `$WOPAL_HOME` 环境变量路径（前端兜底为 `~/.wopal`），并以时间戳作为隔离，自动后台静默生成 `"${WOPAL_HOME}/general_tasks/YYYY-MM-DD-HH-mm-ss"` 的工作目录创建会话，实现“一键秒开”且杜绝 CWD 迷失和数据库冲突。
-- **三层展开状态持久化**：
-  - 侧栏树组件的展开折叠状态不仅记录空间和项目，还会细化到子文件夹 `directories` 和 `worktrees` 级别。
-  - 折叠展开状态基于唯一复合键 `${spaceName}/${projectPath}/${dirPath}` 自动持久化并在页面刷新时 100% 水合还原。
-- **滚动高度防抖锚定**：
-  - 侧栏的垂直滚动高度 `scrollTop` 将实时记录至 `sessionStorage`，页面刷新后自动在微小延迟的 DOM 水合周期内回写定位，达到现场完美还原的视觉平滑感。
+  - 通用 Tab 下新建会话由 `POST /workbench/sessions` 的服务端 provisioner 创建 `$WOPAL_HOME/general_tasks/` 下隔离目录；前端不推测 WOPAL_HOME、不拼接路径。每次请求携带 `requestID`，未知结果先按同一 ID reconcile。
+- **三层树和直接切换**：
+  - 新 UI 只消费 `GET /workbench/session-tree`，固定为 `Scope → 工作位置 → Session` 三层；worktree 与子目录只是 Session marker，不形成第四层。
+  - Space 的点击直接切换，不显示“即将切换”的确认弹窗，也不读写 `workbench.suppressTabConfirm`。关闭 Space、覆盖 Panel、解绑与删除仍保留各自确认。
+  - 创建 Space Session 前，PanelLoader 只显示 `GET /workbench/locations` 返回并经边界验证的目录候选；General 不显示目录选择。Chat/TUI 是 Panel 初始视图，不改变服务端 Session 领域类型；TUI PTY 创建失败会回退 Chat。
+- **展开状态与树层级一致**：
+  - 折叠状态仅以 Scope 的规范化 `path` 为键；Scope 展开后始终呈现其工作位置和会话，不把目录或 worktree 再拆成第四层。
+  - 该状态只服务当前 Renderer 生命周期；刷新后的树以服务端投影和当前 Space 状态为准，不将滚动位置或已失效目录作为持久化契约。
 - **P1/P2/P3 绑定徽章与置顶 (Pin)**：
   - 会话行左侧显示对应空间下绑定 Panel 序号的气泡徽章（如 `P1`、`P2`、`P3`）。徽章取消 `scale-90` 缩放以保持清晰无锯齿，文字大小放为 `text-[10px]` 并设置 `min-w-[20px] h-4.5`，使比例更协调挺拔。
   - 支持会话“置顶 (Pin/Unpin)”功能。已置顶的会话在行首展现大头针矢量图标，并在数据源合并时重排至分类的最顶端，支持右键快捷 Pin/Unpin 切换。
 - **空间高亮与交互解耦**：
   - 点击左侧 Chevron 图标（包裹于 `size-5 flex items-center justify-center shrink-0` 容器中以防被挤压变形，并支持 duration-200 平滑旋转）只控制其展开/折叠，不切换激活空间；点击空间名称/整行其余区域则切换激活空间，两项职责完全解耦。
   - 区分选中与 hover 背景色：激活的空间背景为最纯粹且低调的 `bg-v2-background-bg-deep rounded-md px-2` 独立深色背景，与 hover 背景色 `hover:bg-v2-overlay-simple-overlay-hover` 明显拉开视觉梯度，取消左侧多余的竖条指示线以维护极简排版。
-  - 引入等待切换确认过渡态：当切换空间处于弹窗等待确认阶段时，被点击空间以虚线淡蓝背景（`bg-blue-50/40 dark:bg-blue-950/20 border-dashed`）作为缓冲反馈。
+  - Space 切换没有确认过渡态；点击名称或行主体立即激活目标 Space。仅关闭、解绑、删除和覆盖仍按各自风险保留确认。
 
 ### 5.11 状态栏分区与多面板元数据智能层级链
 

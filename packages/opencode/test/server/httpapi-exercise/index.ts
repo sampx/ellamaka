@@ -745,6 +745,27 @@ const scenarios: Scenario[] = [
       "status",
     ),
   http.protected
+    .get("/wopal-space/mode", "wopalSpace.mode")
+    .json(200, object, "status"),
+  http.protected
+    .get("/wopal-space/spaces", "wopalSpace.spaces")
+    .json(200, object, "status"),
+  http.protected
+    .get("/workbench/session-groups", "workbench.sessionGroups")
+    .global()
+    .json(200, object, "status"),
+  http.protected
+    .get("/workbench/session-tree", "workbench.sessionTree")
+    .status(503),
+  http.protected
+    .get("/workbench/locations", "workbench.locations.invalid")
+    .at((ctx) => ({ path: "/workbench/locations", headers: ctx.headers() }))
+    .status(400),
+  http.protected
+    .post("/workbench/sessions", "workbench.createSession.invalid")
+    .at((ctx) => ({ path: "/workbench/sessions", headers: ctx.headers(), body: {} }))
+    .status(400),
+  http.protected
     .get("/session/{sessionID}", "session.get")
     .seeded((ctx) => ctx.session({ title: "Get me" }))
     .at((ctx) => ({ path: route("/session/{sessionID}", { sessionID: ctx.state.id }), headers: ctx.headers() }))

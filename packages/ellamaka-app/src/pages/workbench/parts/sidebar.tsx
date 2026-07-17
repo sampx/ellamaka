@@ -24,14 +24,6 @@ export function SpaceRail() {
   const t = (k: string) => language.t(k)
 
   const expanded = createMemo(() => wb.display().showSpaceRail)
-  const [confirmDialog, setConfirmDialog] = createSignal(false)
-  const [pendingSpace, setPendingSpace] = createSignal<{ name: string; path: string; type?: string } | null>(null)
-
-  const [dontRemindStore, setDontRemindStore] = persisted(
-    Persist.global("workbench.suppressTabConfirm", []),
-    createStore({ suppress: false }),
-  )
-
   const [widthStore, setWidthStore] = persisted(
     Persist.global("workbench.sidebarWidth", []),
     createStore({ width: DEFAULT_WIDTH }),
@@ -83,13 +75,6 @@ export function SpaceRail() {
     document.addEventListener("mouseup", onMouseUp)
   }
 
-  const hasBoundPanels = createMemo(() => {
-    const tab = wb.activeTab()
-    if (!tab) return false
-    const state = wb.spaceState(tab.path)
-    return state?.panels.some((p) => p.slotState === "bound") ?? false
-  })
-
   const [showDefaultHint, setShowDefaultHint] = createSignal(true)
 
   onMount(() => {
@@ -106,12 +91,7 @@ export function SpaceRail() {
   })
 
   function handleSpaceClick(space: { name: string; path: string; type?: string }) {
-    if (space.name === wb.activeSpaceName) return
-    if (hasBoundPanels() && !dontRemindStore.suppress) {
-      setPendingSpace(space)
-      setConfirmDialog(true)
-      return
-    }
+    if (space.path === wb.activeTabPath) return
     wb.openTab(space)
   }
 
@@ -128,38 +108,12 @@ export function SpaceRail() {
     }, 600)
   }
 
-  function confirmSwitch() {
-    const space = pendingSpace()
-    setConfirmDialog(false)
-    setPendingSpace(null)
-    if (space) wb.openTab(space)
-  }
-
-  function cancelSwitch() {
-    setConfirmDialog(false)
-    setPendingSpace(null)
-  }
-
-  function handleProjectClick(spaceName: string, projectPath: string) {
-    const tab = wb.tabs.find((t) => t.name === spaceName)
-    if (!tab) return
-    const state = wb.spaceState(tab.path)
-    if (!state) return
-    const emptyPanel = state.panels.find((p) => p.slotState === "empty")
-    if (!emptyPanel) {
-      wb.setStatusMessage(t("workbench.tree.noEmptyPanel"))
-      return
-    }
-    wb.setPanelDirectory(tab.path, emptyPanel.id, projectPath)
-    wb.setActivePanel(tab.path, emptyPanel.id)
-  }
-
   function handleSessionClick(sessionId: string) {
     const session = sessionStore.getSession(sessionId)
     if (!session) return
     const isBound = wb.isSessionBound(sessionId)
     const boundPanelId = wb.boundPanelIdForSession(sessionId)
-    const tab = wb.tabs.find((t) => t.name === session.spaceName)
+    const tab = wb.tabs.find((tab) => tab.path === (session.spacePath ?? session.spaceName))
     if (tab) {
       wb.openTab(tab)
       if (isBound && boundPanelId) {
@@ -247,10 +201,8 @@ export function SpaceRail() {
               { name: GENERAL_SCOPE_NAME, path: "", type: "general" },
               ...store.spaces(),
             ]}
-            activeSpaceName={wb.activeSpaceName}
-            pendingSpacePath={pendingSpace()?.path}
+            activeSpacePath={wb.activeTabPath}
             onSpaceClick={handleSpaceClick}
-            onProjectClick={handleProjectClick}
             onSessionClick={handleSessionClick}
           />
         </Show>
@@ -272,46 +224,6 @@ export function SpaceRail() {
         <WorkbenchSettingsMenu />
       </div>
 
-      <Show when={confirmDialog()}>
-        <div
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
-          onClick={cancelSwitch}
-        >
-          <div
-            class="w-80 rounded-lg border border-v2-border-border-base bg-v2-background-bg-base p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <p class="mb-3 text-12-regular text-v2-text-text-base">
-              {t("workbench.tabSwitch.confirm")}
-            </p>
-            <label class="mb-3 flex cursor-pointer items-center gap-2 text-11-regular text-v2-text-text-muted">
-              <input
-                type="checkbox"
-                checked={dontRemindStore.suppress}
-                onChange={(e) => setDontRemindStore("suppress", e.currentTarget.checked)}
-                class="size-3.5 rounded border-v2-border-border-base"
-              />
-              {t("workbench.tabSwitch.dontRemind")}
-            </label>
-            <div class="flex justify-end gap-2">
-              <button
-                type="button"
-                class="rounded-md px-3 py-1.5 text-12-regular text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover"
-                onClick={cancelSwitch}
-              >
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                class="rounded-md bg-v2-icon-icon-brand px-3 py-1.5 text-12-regular text-white hover:opacity-90"
-                onClick={confirmSwitch}
-              >
-                {t("common.save")}
-              </button>
-            </div>
-          </div>
-        </div>
-      </Show>
     </aside>
     <Show when={expanded()}>
       <div

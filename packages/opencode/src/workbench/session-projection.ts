@@ -1,17 +1,22 @@
 import { Context, Effect, Layer, Schema } from "effect"
+import { execFile } from "child_process"
+import { realpath } from "fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { Database } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceRegistry } from "@/wopal/space-registry"
-import type { SpaceEntry } from "@/wopal/cli-schema"
-import type { DirectoryHealth } from "./session-directory-health"
+import type { ProjectEntry, SpaceEntry } from "@/wopal/cli-schema"
+import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
 import { and, isNull } from "drizzle-orm"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import {
+  buildWorkbenchSessionTree,
+  isPathWithin,
+  normalizeWorkbenchPath,
+  type WorkbenchDirectoryHealth,
+  type WorkbenchSessionTree,
+} from "./session-tree"
 
 export interface SessionGroup {
   id: string
@@ -25,151 +30,238 @@ export interface SessionSummary {
   id: string
   title: string
   directory: string
-  directoryHealth: DirectoryHealth
+  directoryHealth: WorkbenchDirectoryHealth
   agent?: string
   timeCreated: number
   timeUpdated: number
   timeArchived?: number
 }
 
-// ---------------------------------------------------------------------------
-// Service interface
-// ---------------------------------------------------------------------------
+export type WorkbenchLocation = {
+  key: string
+  kind: "space-root" | "project" | "recent" | "search"
+  name: string
+  path: string
+  relativeDirectory: string
+  lastUsedAt?: number
+}
+
+export class WorkbenchSpaceNotFound extends Schema.TaggedErrorClass<WorkbenchSpaceNotFound>()(
+  "WorkbenchSpaceNotFound",
+  { message: Schema.String, spacePath: Schema.String },
+) {}
 
 export interface SessionProjection {
-  readonly getSessionGroups: () => Effect.Effect<SessionGroup[]>
+  readonly getSessionGroups: () => Effect.Effect<SessionGroup[], SpaceControlUnavailable | CapabilityContractError>
+  readonly getSessionTree: (input?: { limitPerScope?: number }) => Effect.Effect<
+    WorkbenchSessionTree,
+    SpaceControlUnavailable | CapabilityContractError
+  >
+  readonly getLocations: (input: { spacePath: string; query?: string }) => Effect.Effect<
+    { scopePath: string; items: WorkbenchLocation[] },
+    WorkbenchSpaceNotFound | SpaceControlUnavailable | CapabilityContractError
+  >
 }
 
 export class Service extends Context.Service<Service, SessionProjection>()("@opencode/SessionProjection") {}
-
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
 
 interface RawSessionRow {
   id: string
   title: string
   directory: string
   agent: string | null
+  parent_id: string | null
   time_created: number | null
   time_updated: number | null
   time_archived: number | null
 }
 
-/** Check if a directory is under a space path. */
-function isDirectoryUnderSpace(directory: string, spacePath: string): boolean {
-  return directory === spacePath || directory.startsWith(spacePath + "/")
-}
-
 const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+const WORKTREE_CACHE_TTL_MS = 5_000
+const MAX_LIMIT_PER_SCOPE = 500
 
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
   const registry = yield* SpaceRegistry.Service
+  const worktreeCache = new Map<string, { expiresAt: number; items: Array<{ path: string; branch?: string }> }>()
 
-  const getSessionGroups = (): Effect.Effect<SessionGroup[]> =>
-    Effect.gen(function* () {
-      const rows = yield* Effect.sync(() =>
-        Database.use((db) =>
-          db
-            .select({
-              id: SessionTable.id,
-              title: SessionTable.title,
-              directory: SessionTable.directory,
-              agent: SessionTable.agent,
-              time_created: SessionTable.time_created,
-              time_updated: SessionTable.time_updated,
-              time_archived: SessionTable.time_archived,
-            })
-            .from(SessionTable)
-            .where(and(isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)))
-            .all(),
-        ),
-      )
-
-      // Resolve spaces from registry — refresh on cold cache
-      let snapshot = yield* registry.getSpaces()
-      if (snapshot.spaces.length === 0) {
-        snapshot = yield* registry.refreshSpaces(WOPAL_CLI).pipe(
-          Effect.catch(() => Effect.succeed({ spaces: [], refreshedAt: 0 })),
-        )
-      }
-      const spaces = snapshot.spaces
-
-      // Classify each session: which space does it belong to?
-      const spaceSessions = new Map<string, RawSessionRow[]>()
-      const generalSessions: RawSessionRow[] = []
-
-      for (const row of rows) {
-        let matched = false
-        for (const space of spaces) {
-          if (isDirectoryUnderSpace(row.directory, space.path)) {
-            const existing = spaceSessions.get(space.name) ?? []
-            existing.push(row)
-            spaceSessions.set(space.name, existing)
-            matched = true
-            break
-          }
-        }
-        if (!matched) {
-          generalSessions.push(row)
-        }
-      }
-
-      const groups: SessionGroup[] = []
-
-      // Build space groups (one per space that has sessions)
-      for (const [spaceName, sessionRows] of spaceSessions) {
-        const sessions = yield* buildSessionSummaries(sessionRows, health)
-        groups.push({
-          id: spaceName,
-          title: spaceName,
-          type: "space",
-          sessionCount: sessions.length,
-          sessions,
-        })
-      }
-
-      // Build general groups (grouped by directory)
-      if (generalSessions.length > 0) {
-        const dirMap = new Map<string, RawSessionRow[]>()
-        for (const row of generalSessions) {
-          const existing = dirMap.get(row.directory) ?? []
-          existing.push(row)
-          dirMap.set(row.directory, existing)
-        }
-
-        for (const [directory, sessionRows] of dirMap) {
-          const sessions = yield* buildSessionSummaries(sessionRows, health)
-          groups.push({
-            id: directory,
-            title: directory.split("/").pop() || directory,
-            type: "general",
-            sessionCount: sessions.length,
-            sessions,
+  const activeRows = () =>
+    Effect.sync(() =>
+      Database.use((db) =>
+        db
+          .select({
+            id: SessionTable.id,
+            title: SessionTable.title,
+            directory: SessionTable.directory,
+            agent: SessionTable.agent,
+            parent_id: SessionTable.parent_id,
+            time_created: SessionTable.time_created,
+            time_updated: SessionTable.time_updated,
+            time_archived: SessionTable.time_archived,
           })
-        }
-      }
+          .from(SessionTable)
+          .where(and(isNull(SessionTable.parent_id), isNull(SessionTable.time_archived)))
+          .all() as RawSessionRow[],
+      ),
+    )
 
-      return groups
+  const spaces = () =>
+    Effect.gen(function* () {
+      const snapshot = yield* registry.getSpaces()
+      if (snapshot.spaces.length > 0) return snapshot.spaces
+      return (yield* registry.refreshSpaces(WOPAL_CLI)).spaces
     })
 
-  return Service.of({ getSessionGroups })
+  const getSessionGroups = (): Effect.Effect<SessionGroup[], SpaceControlUnavailable | CapabilityContractError> =>
+    Effect.gen(function* () {
+      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spaces()])
+      const normalizedSpaces = registeredSpaces
+        .map((space) => ({ ...space, path: normalizeWorkbenchPath(space.path) }))
+        .sort((a, b) => b.path.length - a.path.length || a.path.localeCompare(b.path))
+      const grouped = new Map<string, RawSessionRow[]>()
+      const general = new Map<string, RawSessionRow[]>()
+
+      for (const row of rows) {
+        const match = normalizedSpaces.find((space) => isPathWithin(space.path, row.directory))
+        if (match) {
+          const bucket = grouped.get(match.name) ?? []
+          bucket.push(row)
+          grouped.set(match.name, bucket)
+          continue
+        }
+        const bucket = general.get(row.directory) ?? []
+        bucket.push(row)
+        general.set(row.directory, bucket)
+      }
+
+      const output: SessionGroup[] = []
+      for (const [name, bucket] of grouped) {
+        output.push({
+          id: name,
+          title: name,
+          type: "space",
+          sessionCount: bucket.length,
+          sessions: yield* summaries(bucket, health),
+        })
+      }
+      for (const [directory, bucket] of general) {
+        output.push({
+          id: directory,
+          title: path.basename(directory) || directory,
+          type: "general",
+          sessionCount: bucket.length,
+          sessions: yield* summaries(bucket, health),
+        })
+      }
+      return output
+    })
+
+  const getSessionTree = (input?: { limitPerScope?: number }) =>
+    Effect.gen(function* () {
+      const [rows, registeredSpaces, projects] = yield* Effect.all([
+        activeRows(),
+        spaces(),
+        registry.refreshProjects(WOPAL_CLI),
+      ], { concurrency: 3 })
+      const resolvedSpaces = yield* canonicalSpaces(registeredSpaces)
+      const resolvedProjects = yield* canonicalProjects(projects.items)
+      const worktrees = yield* Effect.all(
+        resolvedProjects.map((project) =>
+          listProjectWorktrees(project.path, worktreeCache).pipe(
+            Effect.map((items) => items.map((item) => ({ projectPath: project.path, ...item }))),
+          ),
+        ),
+        { concurrency: 4 },
+      ).pipe(Effect.map((items) => items.flat()))
+      const enriched = yield* Effect.all(
+        rows.map((row) =>
+          health.check(row.directory).pipe(
+            Effect.map((directoryHealth) => ({
+              id: row.id,
+              title: row.title,
+              directory: row.directory,
+              timeCreated: row.time_created ?? 0,
+              timeUpdated: row.time_updated ?? 0,
+              directoryHealth,
+            })),
+          ),
+        ),
+        { concurrency: 16 },
+      )
+      return buildWorkbenchSessionTree({
+        spaces: resolvedSpaces,
+        projects: resolvedProjects,
+        worktrees,
+        sessions: enriched,
+        limitPerScope: Math.min(Math.max(input?.limitPerScope ?? 200, 1), MAX_LIMIT_PER_SCOPE),
+      })
+    })
+
+  const getLocations = (input: { spacePath: string; query?: string }) =>
+    Effect.gen(function* () {
+      const registeredSpaces = yield* spaces()
+      const canonical = yield* canonicalSpaces(registeredSpaces)
+      const requested = normalizeWorkbenchPath(input.spacePath)
+      const space = canonical.find((item) => item.path === requested)
+      if (!space) {
+        return yield* new WorkbenchSpaceNotFound({
+          message: `Registered Space not found: ${input.spacePath}`,
+          spacePath: input.spacePath,
+        })
+      }
+      const [projects, rows, searched] = yield* Effect.all([
+        registry.refreshProjects(WOPAL_CLI),
+        activeRows(),
+        input.query?.trim() ? registry.searchDirectories(WOPAL_CLI, input.query.trim()) : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+      ], { concurrency: 3 })
+      const candidates: Array<{ kind: WorkbenchLocation["kind"]; name: string; path: string; lastUsedAt?: number }> = [
+        { kind: "space-root" as const, name: space.name, path: space.path },
+        ...projects.items.map((item) => ({ kind: "project" as const, name: item.name, path: item.path })),
+        ...rows.map((row) => ({ kind: "recent" as const, name: path.basename(row.directory) || row.directory, path: row.directory, lastUsedAt: row.time_updated ?? 0 })),
+        ...searched.items.map((item) => ({ kind: "search" as const, name: item.name, path: item.path })),
+      ]
+      const resolved = yield* Effect.all(
+        candidates.map((candidate) =>
+          canonicalLocation(space.path, candidate.path).pipe(
+            Effect.map((resolvedPath) => resolvedPath ? { ...candidate, path: resolvedPath } : undefined),
+          ),
+        ),
+        { concurrency: 16 },
+      )
+      const rank = { "space-root": 0, project: 1, recent: 2, search: 3 }
+      const seen = new Set<string>()
+      const items = resolved
+        .filter((item): item is Exclude<typeof item, undefined> => item !== undefined)
+        .sort((a, b) => rank[a.kind] - rank[b.kind] || (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0) || a.name.localeCompare(b.name) || a.path.localeCompare(b.path))
+        .filter((item) => {
+          if (seen.has(item.path)) return false
+          seen.add(item.path)
+          return true
+        })
+        .map((item) => ({
+          key: `${item.kind}:${item.path}`,
+          kind: item.kind,
+          name: item.name,
+          path: item.path,
+          relativeDirectory: relativeDirectory(space.path, item.path),
+          lastUsedAt: item.lastUsedAt || undefined,
+        }))
+      const recent = items.filter((item) => item.kind === "recent").slice(0, 20)
+      return { scopePath: space.path, items: [...items.filter((item) => item.kind !== "recent"), ...recent] }
+    })
+
+  return Service.of({ getSessionGroups, getSessionTree, getLocations })
 })
 
-/** Build session summaries with per-session directory health checks. */
-function buildSessionSummaries(
-  rows: RawSessionRow[],
-  health: SessionDirectoryHealth,
-): Effect.Effect<SessionSummary[]> {
+function summaries(rows: RawSessionRow[], health: SessionDirectoryHealth) {
   return Effect.all(
     rows.map((row) =>
       health.check(row.directory).pipe(
-        Effect.map((dirHealth) => ({
+        Effect.map((directoryHealth) => ({
           id: row.id,
           title: row.title,
           directory: row.directory,
-          directoryHealth: dirHealth,
+          directoryHealth,
           agent: row.agent ?? undefined,
           timeCreated: row.time_created ?? 0,
           timeUpdated: row.time_updated ?? 0,
@@ -177,7 +269,76 @@ function buildSessionSummaries(
         })),
       ),
     ),
+    { concurrency: 16 },
   )
+}
+
+function canonicalSpaces(spaces: SpaceEntry[]) {
+  return Effect.all(
+    spaces.map((space) => canonicalPath(space.path).pipe(Effect.map((resolved) => ({ name: space.name, path: resolved })))),
+    { concurrency: 16 },
+  )
+}
+
+function canonicalProjects(projects: ProjectEntry[]) {
+  return Effect.all(
+    projects.map((project) => canonicalPath(project.path).pipe(Effect.map((resolved) => ({ name: project.name, path: resolved })))),
+    { concurrency: 16 },
+  )
+}
+
+function canonicalPath(value: string) {
+  return Effect.tryPromise(() => realpath(value)).pipe(
+    Effect.catch(() => Effect.succeed(value)),
+    Effect.map(normalizeWorkbenchPath),
+  )
+}
+
+function canonicalLocation(root: string, value: string) {
+  return canonicalPath(value).pipe(Effect.map((candidate) => isPathWithin(root, candidate) ? candidate : undefined))
+}
+
+function relativeDirectory(root: string, target: string) {
+  const value = path.relative(root, target).replaceAll("\\", "/")
+  return value === "" ? "" : value
+}
+
+function listProjectWorktrees(
+  projectPath: string,
+  cache: Map<string, { expiresAt: number; items: Array<{ path: string; branch?: string }> }>,
+) {
+  const existing = cache.get(projectPath)
+  if (existing && existing.expiresAt > Date.now()) return Effect.succeed(existing.items)
+  return Effect.tryPromise(() => new Promise<string>((resolve, reject) => {
+      execFile("git", ["worktree", "list", "--porcelain"], { cwd: projectPath }, (error, stdout) => {
+        if (error) reject(error)
+        else resolve(stdout)
+      })
+    })).pipe(
+    Effect.catch(() => Effect.succeed("")),
+    Effect.map(parseWorktrees),
+    Effect.tap((items) => Effect.sync(() => {
+      cache.set(projectPath, { expiresAt: Date.now() + WORKTREE_CACHE_TTL_MS, items })
+    })),
+  )
+}
+
+function parseWorktrees(output: string) {
+  const items: Array<{ path: string; branch?: string }> = []
+  let current: { path?: string; branch?: string } = {}
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      if (current.path) items.push({ path: normalizeWorkbenchPath(current.path), branch: current.branch })
+      current = { path: line.slice("worktree ".length) }
+      continue
+    }
+    if (line.startsWith("branch ")) {
+      const branch = line.slice("branch ".length)
+      current.branch = branch.startsWith("refs/heads/") ? branch.slice("refs/heads/".length) : branch
+    }
+  }
+  if (current.path) items.push({ path: normalizeWorkbenchPath(current.path), branch: current.branch })
+  return items
 }
 
 export const layer = Layer.effect(Service, make)

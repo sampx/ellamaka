@@ -1,13 +1,14 @@
 # Ellamaka API 与 SDK 契约
 
 > **状态**：Active
-> **更新时间**：2026-07-15
+> **更新时间**：2026-07-17
 > **上级架构**：`../../../docs/products/wopal-space/DESIGN-wopalspace.md` §1.1
 
 ## 0. 变更记录
 
 | 日期 | 类型 | 摘要 |
 |---|---|---|
+| 2026-07-17 | Updated | Workbench 新增 Instance 级 session-tree、locations 与 requestID 幂等创建；保留 session-groups 作为兼容读模型。 |
 | 2026-07-15 | Updated | 明确 `GET /workbench/session-groups` 只返回未归档根会话，不暴露归档会话或带 `parentID` 的子会话。 |
 | 2026-07-11 | Added | 定义 Effect HttpApi、OpenAPI、生成 SDK 和 Wopal CLI adapter 的统一 Runtime API 契约。 |
 
@@ -45,6 +46,16 @@ HTTP 路径表达领域资源与自然从属关系。集合使用复数名词，
 视图专用投影仍是明确的读模型。它声明所属领域、输入、输出和刷新边界，并使用资源范围表达归属。产品设计决定投影名称和路径，避免以临时 UI 名称扩展公共 API。
 
 `GET /workbench/session-groups` 是 Workbench 左侧会话列表的 Root 级读模型。它按 Space/General 分组，只返回数据库中 `time_archived IS NULL` 且 `parent_id IS NULL` 的 Session；归档会话和子会话不得进入响应、`sessionCount` 或客户端 Session Projection。
+
+当前 Workbench 的主读模型和创建接口属于 Instance API，均通过现有 Authorization、Instance Context 与 Workspace Routing：
+
+| Endpoint | 语义 | 关键约束 |
+|---|---|---|
+| `GET /workbench/session-tree?limitPerScope=` | `Scope → 工作位置 → Session` 的三层只读投影 | General 固定在首位；注册 Space 即使为空也返回；仅返回未归档根会话；每个 Scope 最多 500 项。 |
+| `GET /workbench/locations?spacePath=&query=` | Space 内可创建 Session 的受控候选位置 | `spacePath` 必须 canonical 精确匹配已注册 Space；候选经 realpath 与 Space 边界二次过滤，不能作为任意文件浏览器。 |
+| `POST /workbench/sessions` | 创建 General 或 Space Session | `requestID` 幂等；新客户端使用 `target.spacePath`，旧 `target.space` 仅兼容一个发行周期；`target.directory` 只能是 Space 内安全相对路径。 |
+
+`POST /workbench/sessions` 对相同 `requestID` 和相同 payload 返回已有 Session；同一 ID 配不同 payload 返回 `WorkbenchRequestConflict`（409）。可预期领域错误为 `InvalidSpaceTarget`（400）、`WorkbenchSpaceNotFound`（404）、`SessionDirectoryUnavailable`（409）、`WorkbenchRequestConflict`（409）、`CapabilityContractError`（502）和 `SpaceControlUnavailable`（503）。
 
 ## 4. Schema、错误与版本
 

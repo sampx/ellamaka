@@ -1,4 +1,4 @@
-import { scopeKey, scopeName, scopePath, type SpaceScope } from "./workbench-scope"
+import { scopeKey, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
 export type WorkbenchActionPtyKind = "tui" | "term" | "split"
@@ -47,7 +47,7 @@ export type WorkbenchActionStorePort = {
   active: () => ActiveWorkbenchTarget | undefined
   addPanel: (scope: SpaceScope) => string | undefined
   setActivePanel: (scope: SpaceScope, panelID: string) => void
-  setActive: (spaceName: string) => void
+  setActive: (spacePath: string) => void
   activePanelID: (scope: SpaceScope) => string | undefined
   removePanel: (scope: SpaceScope, panelID: string) => boolean
   removeSpace: (scope: SpaceScope) => boolean
@@ -79,7 +79,7 @@ export type WorkbenchActionPtyPort = {
 }
 
 export type WorkbenchActionSessionPort = {
-  create: (input: { scope: SpaceScope; panel: WorkbenchActionPanel }) => Promise<WorkbenchActionSession>
+  create: (input: { scope: SpaceScope; panel: WorkbenchActionPanel; initialView?: "chat" | "tui" }) => Promise<WorkbenchActionSession>
   get: (input: { scope: SpaceScope; sessionID: string; directory: string }) => Promise<WorkbenchActionSession>
   project: (input: { scope: SpaceScope; session: WorkbenchActionSession }) => void
   rename: (input: { scope: SpaceScope; sessionID: string; directory: string; title: string }) => Promise<void>
@@ -87,13 +87,17 @@ export type WorkbenchActionSessionPort = {
 }
 
 export type WorkbenchActionResult = {
-  status: "committed" | "unchanged" | "stale"
+  status: "committed" | "unchanged" | "stale" | "offline"
   panelID: string
   ptyID?: string
   unavailableReason?: "archived" | "child"
 }
 
 export type WorkbenchActionStatus = Pick<WorkbenchActionResult, "status">
+
+export type WorkbenchRuntimePort = {
+  canWrite: () => boolean
+}
 
 // Deep-link reveal result. The single transaction outcome returned by
 // revealSession — it is the only entry point that mutates Tab/Panel/
@@ -130,7 +134,9 @@ export function createWorkbenchActions(input: {
   store: WorkbenchActionStorePort
   pty: WorkbenchActionPtyPort
   session: WorkbenchActionSessionPort
+  runtime?: WorkbenchRuntimePort
 }) {
+  const runtime = input.runtime ?? { canWrite: () => true }
   const generations = new Map<string, number>()
   const panelActions = new Map<string, Map<string, WorkbenchPanelAction>>()
   const disposingPanels = new Map<string, number>()
@@ -211,13 +217,22 @@ export function createWorkbenchActions(input: {
     clearPtyMemory() {
       input.pty.clearMemory?.()
     },
+    fallbackToChat(options: { scope: SpaceScope; panelID: string }): WorkbenchActionResult {
+      const panel = input.store.panel(options.scope, options.panelID)
+      if (!panel) return { status: "stale", panelID: options.panelID }
+      input.store.commitPanelPty(options.scope, options.panelID, "tui", undefined)
+      input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
+      return { status: "committed", panelID: options.panelID }
+    },
     async createSession(options: {
       scope: SpaceScope
       panelID: string
+      initialView?: "chat" | "tui"
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = panelOrThrow(options.scope, options.panelID)
       const generation = nextGeneration(options.scope, options.panelID)
-      const session = await input.session.create({ scope: options.scope, panel })
+      const session = await input.session.create({ scope: options.scope, panel, initialView: options.initialView })
       if (!isCurrent(options.scope, options.panelID, generation)) {
         await input.session.remove({ scope: options.scope, session })
         return { status: "stale", panelID: options.panelID }
@@ -236,6 +251,7 @@ export function createWorkbenchActions(input: {
       scope: SpaceScope
       panelID: string
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = input.store.panel(options.scope, options.panelID)
       if (!panel) return { status: "unchanged", panelID: options.panelID }
       if (input.store.panels(options.scope).length <= 1) {
@@ -253,9 +269,11 @@ export function createWorkbenchActions(input: {
       scope: SpaceScope
       panelID: string
     }) {
+      if (!runtime.canWrite()) return Promise.resolve({ status: "offline", panelID: options.panelID } satisfies WorkbenchActionResult)
       return unbindPanel(options.scope, options.panelID)
     },
     async unbindSessionEverywhere(sessionID: string): Promise<WorkbenchActionStatus & { affectedPanelCount: number }> {
+      if (!runtime.canWrite()) return { status: "offline", affectedPanelCount: 0 }
       const targets = input.store.boundPanels(sessionID)
       if (targets.length === 0) return { status: "unchanged", affectedPanelCount: 0 }
       const results = await Promise.all(targets.map((target) => unbindPanel(target.scope, target.panelID)))
@@ -266,6 +284,7 @@ export function createWorkbenchActions(input: {
     },
     async closeSpace(scope: SpaceScope): Promise<WorkbenchActionStatus> {
       if (scope.kind === "general") return { status: "unchanged" }
+      if (!runtime.canWrite()) return { status: "offline" }
       const panels = input.store.panels(scope)
       if (panels.length === 0) return { status: "unchanged" }
       const pending = panels.map((panel) => ({
@@ -317,6 +336,7 @@ export function createWorkbenchActions(input: {
       sessionID: string
       directory: string
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const session = await input.session.get({
         scope: options.scope,
         sessionID: options.sessionID,
@@ -343,6 +363,7 @@ export function createWorkbenchActions(input: {
       sessionID: string
       directory: string
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const generation = nextGeneration(options.scope, options.panelID)
       const session = await input.session.get({
         scope: options.scope,
@@ -386,7 +407,7 @@ export function createWorkbenchActions(input: {
       const bindings = input.store.boundPanels(options.sessionID)
       const binding = bindings[0]
       if (binding) {
-        input.store.setActive(scopeName(binding.scope))
+        input.store.setActive(scopePath(binding.scope))
         input.store.setActivePanel(binding.scope, binding.panelID)
         return { status: "activated", panelID: binding.panelID, scopePath: scopePath(binding.scope) }
       }
@@ -442,6 +463,7 @@ export function createWorkbenchActions(input: {
       directory: string
       title: string
     }) {
+      if (!runtime.canWrite()) return Promise.resolve({ status: "offline" } satisfies WorkbenchActionStatus)
       return input.session.rename(options)
     },
     async deleteSession(options: {
@@ -449,6 +471,7 @@ export function createWorkbenchActions(input: {
       sessionID: string
       directory: string
     }): Promise<WorkbenchActionStatus> {
+      if (!runtime.canWrite()) return { status: "offline" }
       const session = await input.session.get(options)
       await input.session.remove({ scope: options.scope, session })
       const targets = input.store.boundPanels(options.sessionID)
@@ -461,6 +484,7 @@ export function createWorkbenchActions(input: {
       panelID: string
       session: WorkbenchActionSession
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = panelOrThrow(options.scope, options.panelID)
       if (
         panel.slotState === "bound" &&
@@ -487,6 +511,7 @@ export function createWorkbenchActions(input: {
       kind: WorkbenchActionPtyKind
       create: () => Promise<string>
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = panelOrThrow(options.scope, options.panelID)
       const existingPtyID = ptyID(panel, options.kind)
       const generation = nextGeneration(options.scope, options.panelID)
@@ -518,6 +543,7 @@ export function createWorkbenchActions(input: {
       scope: SpaceScope
       panelID: string
     }): Promise<WorkbenchActionResult> {
+      if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = panelOrThrow(options.scope, options.panelID)
       const existingPtyID = ptyID(panel, "split")
       const generation = nextGeneration(options.scope, options.panelID)
@@ -565,30 +591,35 @@ export function createWorkbenchActions(input: {
   }
 }
 
-// ── Task 1 (O4) useWorkbenchActions hook ────────────────────────────────
-// Inline-constructs createWorkbenchActions without a Context wrapper.
-// The first call caches the result so that the generations map and
-// panelActions map are shared across all components.
+// ── Workbench-local action ownership ─────────────────────────────────────
+// Actions hold generations and PTY bookkeeping, so their lifetime must match
+// one Workbench provider tree. A module singleton leaks those maps across
+// remounts, server changes, and multiple Workbench instances.
 
+import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useWorkbenchState } from "./view-store"
 import { useSessionStore, useSessionProjectionWriter } from "./session-store"
 import { useServerSDK } from "@/context/server-sdk"
 import { buildStorePort, buildPtyPort, buildSessionPort } from "./workbench-actions-ports"
+import { useWorkbenchRuntime } from "./workbench-runtime"
 
-let _actionsCache: ReturnType<typeof createWorkbenchActions> | undefined
+const WorkbenchActionsContext = createSimpleContext({
+  name: "WorkbenchActions",
+  init: () => {
+    const wb = useWorkbenchState()
+    const sessions = useSessionStore()
+    const projection = useSessionProjectionWriter()
+    const serverSDK = useServerSDK()
+    const runtime = useWorkbenchRuntime()
+    const store = buildStorePort(wb)
+    return createWorkbenchActions({
+      store,
+      pty: buildPtyPort(serverSDK, store),
+      session: buildSessionPort(serverSDK, sessions, projection),
+      runtime,
+    })
+  },
+})
 
-export function useWorkbenchActions() {
-  if (_actionsCache) return _actionsCache
-
-  const wb = useWorkbenchState()
-  const sessions = useSessionStore()
-  const projection = useSessionProjectionWriter()
-  const serverSDK = useServerSDK()
-
-  const store = buildStorePort(wb)
-  const pty = buildPtyPort(serverSDK, store)
-  const session = buildSessionPort(serverSDK, sessions, projection)
-
-  _actionsCache = createWorkbenchActions({ store, pty, session })
-  return _actionsCache
-}
+export const useWorkbenchActions = () => WorkbenchActionsContext.use()
+export const WorkbenchActionsProvider = WorkbenchActionsContext.provider

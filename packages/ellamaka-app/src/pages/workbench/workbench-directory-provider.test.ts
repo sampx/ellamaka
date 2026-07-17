@@ -100,11 +100,11 @@ describe("Workbench directory status", () => {
     const observed: { directory: string; sources: string[] }[] = []
 
     for (const fixture of order) {
-      store.setActive(fixture.name)
+      store.setActive(fixture.path)
       const target = selectWorkbenchDirectoryTarget({
         spaces: store.spaces,
         tabs: store.tabs,
-        activeSpaceName: store.activeSpaceName,
+        activeTabPath: store.activeTabPath,
       })
       if (!target) throw new Error(`Missing active directory target for ${fixture.name}`)
       const response = transport.prepare("capabilities.list", target.directory)
@@ -134,9 +134,9 @@ describe("Workbench directory status", () => {
       projection.set(directory, value)
     }
 
-    store.setActive(WORKBENCH_FIXTURES.spaceA.name)
+    store.setActive(WORKBENCH_FIXTURES.spaceA.path)
     const pendingA = load(WORKBENCH_FIXTURES.spaceA.directory)
-    store.setActive(WORKBENCH_FIXTURES.spaceB.name)
+    store.setActive(WORKBENCH_FIXTURES.spaceB.path)
     const pendingB = load(WORKBENCH_FIXTURES.spaceB.directory)
     spaceB.resolve(WORKBENCH_FIXTURES.spaceB.capabilitySources)
     await pendingB
@@ -146,7 +146,7 @@ describe("Workbench directory status", () => {
     const active = selectWorkbenchDirectoryTarget({
       spaces: store.spaces,
       tabs: store.tabs,
-      activeSpaceName: store.activeSpaceName,
+      activeTabPath: store.activeTabPath,
     })
     if (!active) throw new Error("Missing active Space B directory target")
     expect(projection.get(active.directory)).toEqual(WORKBENCH_FIXTURES.spaceB.capabilitySources)

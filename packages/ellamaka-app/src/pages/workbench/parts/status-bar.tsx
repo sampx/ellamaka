@@ -1,15 +1,19 @@
 import { Show, createMemo, For } from "solid-js"
 import { useServer } from "@/context/server"
+import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { StatusBarStatusPopover } from "@/components/status-popover"
 import { getStatusBarSegments } from "./status-bar-segments"
 import { WorkbenchActiveDirectoryProvider } from "../workbench-directory-provider"
+import { useWorkbenchRuntime } from "../workbench-runtime"
 
 export function StatusBar() {
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
   const server = useServer()
+  const runtime = useWorkbenchRuntime()
+  const language = useLanguage()
 
   const activePath = createMemo(() => wb.activeTab()?.path ?? "")
   const space = createMemo(() => wb.spaceState(activePath()))
@@ -50,6 +54,19 @@ export function StatusBar() {
 
       {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
+        <Show when={runtime.status !== "online"}>
+          <button
+            type="button"
+            class="rounded px-1 text-9-medium text-amber-600 hover:bg-v2-overlay-simple-overlay-hover"
+            onClick={() => void runtime.retry()}
+          >
+            {runtime.status === "offline"
+              ? language.t("workbench.runtime.offline")
+              : runtime.status === "degraded"
+                ? language.t("workbench.runtime.degraded")
+                : language.t("workbench.runtime.recovering")}
+          </button>
+        </Show>
         <WorkbenchActiveDirectoryProvider>
           {() => <StatusBarStatusPopover />}
         </WorkbenchActiveDirectoryProvider>

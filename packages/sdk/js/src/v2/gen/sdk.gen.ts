@@ -280,8 +280,12 @@ import type {
   WopalSpaceSpacesResponses,
   WorkbenchCreateSessionErrors,
   WorkbenchCreateSessionResponses,
+  WorkbenchLocationsErrors,
+  WorkbenchLocationsResponses,
   WorkbenchSessionGroupsErrors,
   WorkbenchSessionGroupsResponses,
+  WorkbenchSessionTreeErrors,
+  WorkbenchSessionTreeResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -652,15 +656,34 @@ export class WopalSpace extends HeyApiClient {
 
 export class Workbench extends HeyApiClient {
   /**
-   * Create a Workbench session
+   * List legacy Workbench session groups
    *
-   * Create a controlled session. For `general` target, the backend provisions a directory under `$WOPAL_HOME/general_tasks/`. For `space` target, the specified space must be registered and the directory must exist within the space.
+   * Compatibility projection for existing consumers. New Workbench clients use session-tree.
+   */
+  public sessionGroups<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      WorkbenchSessionGroupsResponses,
+      WorkbenchSessionGroupsErrors,
+      ThrowOnError
+    >({ url: "/workbench/session-groups", ...options })
+  }
+
+  /**
+   * Create an idempotent Workbench session
+   *
+   * Creates a General or registered-Space session. New clients use target.spacePath; legacy target.space remains supported for one release.
    */
   public createSession<ThrowOnError extends boolean = false>(
     parameters?: {
+      requestID?: string
       target?:
         | {
             type: "general"
+          }
+        | {
+            type: "space"
+            spacePath: string
+            directory?: string
           }
         | {
             type: "space"
@@ -677,6 +700,7 @@ export class Workbench extends HeyApiClient {
       [
         {
           args: [
+            { in: "body", key: "requestID" },
             { in: "body", key: "target" },
             { in: "body", key: "title" },
             { in: "body", key: "agent" },
@@ -701,16 +725,56 @@ export class Workbench extends HeyApiClient {
   }
 
   /**
-   * List Workbench session groups
+   * List sessions as Scope, location, session
    *
-   * Return active root sessions grouped by space or general, with directory health per session. Archived sessions and child sessions are excluded; root sessions from external TUI are included.
+   * Returns General first, registered Spaces even when empty, and only active root sessions.
    */
-  public sessionGroups<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public sessionTree<ThrowOnError extends boolean = false>(
+    parameters?: {
+      limitPerScope?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "limitPerScope" }] }])
     return (options?.client ?? this.client).get<
-      WorkbenchSessionGroupsResponses,
-      WorkbenchSessionGroupsErrors,
+      WorkbenchSessionTreeResponses,
+      WorkbenchSessionTreeErrors,
       ThrowOnError
-    >({ url: "/workbench/session-groups", ...options })
+    >({
+      url: "/workbench/session-tree",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List controlled locations inside a Space
+   *
+   * Candidates are Space root, registered projects, recent session directories, and the directory-search capability; arbitrary filesystem browsing is not exposed.
+   */
+  public locations<ThrowOnError extends boolean = false>(
+    parameters: {
+      spacePath: string
+      query?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "spacePath" },
+            { in: "query", key: "query" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<WorkbenchLocationsResponses, WorkbenchLocationsErrors, ThrowOnError>({
+      url: "/workbench/locations",
+      ...options,
+      ...params,
+    })
   }
 }
 

@@ -22,6 +22,27 @@ export type SessionGroup = {
   sessions: GroupSession[]
 }
 
+export type SessionTreeLocation = {
+  key: string
+  label: string
+  kind: "general-directory" | "space-root" | "project"
+  relativePath?: string
+  sessions: GroupSession[]
+}
+
+export type SessionTreeScope = {
+  path: string
+  name: string
+  kind: "general" | "space"
+  sessionCount: number
+  truncated: boolean
+  locations: SessionTreeLocation[]
+}
+
+export type WorkbenchSessionTree = {
+  scopes: SessionTreeScope[]
+}
+
 // ── Minimal dependency interfaces (subset of full store / actions / dialog) ─
 
 export interface OpenSessionWB {
@@ -98,9 +119,70 @@ export async function fetchSessionGroups(sdk: SessionGroupsSDK): Promise<Session
   }))
 }
 
-export function createSessionGroupsLoader(input: {
-  fetch: () => Promise<SessionGroup[]>
-  commit: (groups: SessionGroup[]) => void
+export type SessionTreeSDK = {
+  client: {
+    workbench: {
+      sessionTree: (input?: { limitPerScope?: string }) => Promise<{
+        data?: {
+          scopes?: Array<{
+            path: string
+            name: string
+            kind: "general" | "space"
+            sessionCount: number | string
+            truncated: boolean
+            locations?: Array<{
+              key: string
+              kind: SessionTreeLocation["kind"]
+              name: string
+              path: string
+              sessionCount: number | string
+              sessions?: Array<{
+                id: string
+                title: string
+                directory: string
+                directoryHealth: "healthy" | "missing" | "unavailable"
+                agent?: string
+                timeCreated: number | string
+                timeUpdated: number | string
+              }>
+            }>
+          }>
+        }
+      }>
+    }
+  }
+}
+
+export async function fetchSessionTree(sdk: SessionTreeSDK): Promise<WorkbenchSessionTree> {
+  const response = await sdk.client.workbench.sessionTree()
+  return {
+    scopes: (response.data?.scopes ?? []).map((scope) => ({
+      path: scope.path,
+      name: scope.name,
+      kind: scope.kind,
+      sessionCount: normalizeCount(scope.sessionCount),
+      truncated: scope.truncated,
+      locations: (scope.locations ?? []).map((location) => ({
+        key: location.key,
+        label: location.name,
+        kind: location.kind,
+        sessions: (location.sessions ?? []).map((session) => ({
+          id: session.id,
+          title: session.title,
+          directory: session.directory,
+          directoryHealth: session.directoryHealth,
+          agent: session.agent,
+          timeCreated: normalizeTimestamp(session.timeCreated),
+          timeUpdated: normalizeTimestamp(session.timeUpdated),
+        })),
+      })),
+    })),
+  }
+}
+
+export function createSessionGroupsLoader<T>(input: {
+  fetch: () => Promise<T>
+  commit: (groups: T) => void
   setLoading: (loading: boolean) => void
   onError: (error: unknown) => void
 }) {
@@ -164,14 +246,16 @@ export function getPanelBadge(
 export async function openSessionInPanel(params: {
   session: { id: string; title: string }
   sessionDirectory: string
-  spaceName: string
-  spaces: WopalSpace[]
+  targetSpace?: WopalSpace
+  /** Legacy input retained for existing callers during the path migration. */
+  spaceName?: string
+  spaces?: WopalSpace[]
   wb: OpenSessionWB
   actions: OpenSessionActions
   t: (key: string, params?: Record<string, string | number | boolean>) => string
   showOverwriteDialog: (panelIndex: number, onConfirm: () => Promise<void>) => void
 }): Promise<void> {
-  const targetSpace = params.spaces.find((s) => s.name === params.spaceName)
+  const targetSpace = params.targetSpace ?? params.spaces?.find((space) => space.name === params.spaceName)
   if (!targetSpace) return
 
   const targetSpacePath = targetSpace.path

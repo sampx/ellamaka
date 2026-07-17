@@ -85,11 +85,11 @@ const directorySearchSchema = Schema.Struct({
 // ---------------------------------------------------------------------------
 
 const make = Effect.gen(function* () {
+  const adapter = yield* CliAdapter.Service
   let cachedSpaces: SpaceSnapshot | null = null
 
   const refreshSpaces = (executablePath: string): Effect.Effect<SpaceSnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const adapter = yield* CliAdapter.Service
       const result = yield* adapter.execute(
         executablePath,
         ["space", "list", "--json", "--api-version", "1"],
@@ -109,7 +109,6 @@ const make = Effect.gen(function* () {
 
   const refreshProjects = (executablePath: string): Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const adapter = yield* CliAdapter.Service
       const result = yield* adapter.execute(
         executablePath,
         ["space", "projects", "list", "--json", "--api-version", "1"],
@@ -125,7 +124,6 @@ const make = Effect.gen(function* () {
 
   const searchDirectories = (executablePath: string, query: string): Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const adapter = yield* CliAdapter.Service
       const result = yield* adapter.execute(
         executablePath,
         ["space", "directories", "search", query, "--json", "--api-version", "1"],

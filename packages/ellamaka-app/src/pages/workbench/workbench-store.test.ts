@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createWorkbenchStore, type HydratableWorkbench, type PersistedWorkbench } from "./workbench-store"
 
 const fixture = (): PersistedWorkbench => ({
+  schemaVersion: 2,
   display: {
     showTitlebar: true,
     showStatusbar: true,
@@ -35,7 +36,7 @@ const fixture = (): PersistedWorkbench => ({
     { name: "General", path: "", type: "general" },
     { name: "Space A", path: "/fixtures/space-a", type: "space" },
   ],
-  activeSpaceName: "Space A",
+  activeTabPath: "/fixtures/space-a",
 })
 
 describe("WorkbenchStore", () => {
@@ -124,6 +125,58 @@ describe("WorkbenchStore", () => {
 })
 
 describe("WorkbenchStore hydrate/migrate", () => {
+  test("migrates a legacy active space name to its unique path identity", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+      ],
+      activeSpaceName: "Space A",
+    })
+
+    expect(store.activeTabPath).toBe("/fixtures/space-a")
+    expect(store.snapshot()).toMatchObject({ schemaVersion: 2, activeTabPath: "/fixtures/space-a" })
+  })
+
+  test("keeps duplicate display names distinct by path after migration", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Shared", path: "/fixtures/one", type: "space" },
+        { name: "Shared", path: "/fixtures/two", type: "space" },
+      ],
+      activeTabPath: "/fixtures/two",
+    })
+
+    expect(store.activeTab()?.path).toBe("/fixtures/two")
+    store.setActive("/fixtures/one")
+    expect(store.activeTabPath).toBe("/fixtures/one")
+    store.closeTab("/fixtures/one")
+    expect(store.tabs.map((tab) => tab.path)).toEqual(["", "/fixtures/two"])
+  })
+
+  test("falls back to General when a legacy display name is ambiguous", () => {
+    const store = createWorkbenchStore()
+    store.hydrate({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Shared", path: "/fixtures/one", type: "space" },
+        { name: "Shared", path: "/fixtures/two", type: "space" },
+      ],
+      activeSpaceName: "Shared",
+    })
+
+    expect(store.activeTabPath).toBe("")
+  })
+
   test("migrates legacy panels without slotState to have default slotState", () => {
     const legacy = {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
@@ -203,7 +256,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
       activeSpaceName: "Space A",
     })
 
-    store.validateTabs(new Set(["Space B"]))
+    store.validateTabs(new Set(["/fixtures/space-b"]))
 
     expect(store.tabs).toEqual([
       { name: "General", path: "", type: "general" },
@@ -223,7 +276,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
       activeSpaceName: "Space A",
     })
 
-    store.validateTabs(new Set(["Space A"]))
+    store.validateTabs(new Set(["/fixtures/space-a"]))
 
     expect(store.tabs).toHaveLength(2)
     expect(store.activeSpaceName).toBe("Space A")

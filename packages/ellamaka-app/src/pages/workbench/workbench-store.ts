@@ -39,9 +39,12 @@ export type WopalSpace = {
 }
 
 export type PersistedWorkbench = {
+  schemaVersion?: number
   display: WorkbenchDisplayState
   spaces: Record<string, SpaceWorkbenchState>
   tabs: WopalSpace[]
+  activeTabPath?: string
+  /** Legacy v1 field. Read only during hydration; never written back. */
   activeSpaceName?: string
 }
 
@@ -71,10 +74,11 @@ export const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
 }
 
 export const PERSISTED_DEFAULTS: PersistedWorkbench = {
+  schemaVersion: 2,
   display: { ...DISPLAY_DEFAULTS },
   spaces: {},
   tabs: [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }],
-  activeSpaceName: GENERAL_TAB_NAME,
+  activeTabPath: GENERAL_TAB_PATH,
 }
 
 let nextPanelSequence = 0
@@ -92,10 +96,22 @@ function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
   }
 }
 
+function hydratePanel(
+  panel: Omit<WorkbenchPanel, "slotState" | "viewMode"> & { slotState?: PanelSlotState; viewMode?: PanelViewMode },
+): WorkbenchPanel {
+  const viewMode = panel.viewMode ?? (panel.tuiPtyId ? "tui" : undefined)
+  return {
+    ...panel,
+    slotState: panel.slotState ?? (panel.tuiPtyId ? "bound" : "empty"),
+    ...(viewMode === undefined ? {} : { viewMode }),
+  }
+}
+
 export function clonePersistedWorkbench(value: PersistedWorkbench): PersistedWorkbench
 export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableWorkbench
 export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableWorkbench {
   return {
+    schemaVersion: value.schemaVersion,
     display: { ...DISPLAY_DEFAULTS, ...value.display },
     spaces: Object.fromEntries(
       Object.entries(value.spaces ?? {}).map(([spacePath, space]) => [
@@ -107,7 +123,39 @@ export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableW
       ]),
     ),
     tabs: (value.tabs ?? []).map((tab) => ({ ...tab })),
-    activeSpaceName: value.activeSpaceName,
+    ...(value.activeTabPath === undefined ? {} : { activeTabPath: value.activeTabPath }),
+    ...(value.activeSpaceName === undefined ? {} : { activeSpaceName: value.activeSpaceName }),
+  }
+}
+
+function normalizePersistedWorkbench(value: HydratableWorkbench): PersistedWorkbench {
+  const snapshot = clonePersistedWorkbench(value)
+  const tabs = snapshot.tabs.some((tab) => tab.path === GENERAL_TAB_PATH)
+    ? snapshot.tabs
+    : [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...snapshot.tabs]
+  const requestedPath = snapshot.activeTabPath
+  const legacyMatches = snapshot.activeSpaceName
+    ? tabs.filter((tab) => tab.name === snapshot.activeSpaceName)
+    : []
+  const activeTabPath = requestedPath !== undefined && tabs.some((tab) => tab.path === requestedPath)
+    ? requestedPath
+    : legacyMatches.length === 1
+      ? legacyMatches[0].path
+      : GENERAL_TAB_PATH
+  return {
+    schemaVersion: 2,
+    display: snapshot.display,
+    spaces: Object.fromEntries(
+      Object.entries(snapshot.spaces).map(([path, space]) => [
+        path,
+        {
+          ...space,
+          panels: space.panels.map(hydratePanel),
+        },
+      ]),
+    ),
+    tabs,
+    activeTabPath,
   }
 }
 
@@ -116,7 +164,7 @@ function isPanelMode(mode: PanelViewMode): mode is PanelMode {
 }
 
 export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEFAULTS) {
-  const [store, setStore] = createStore<PersistedWorkbench>(clonePersistedWorkbench(initial))
+  const [store, setStore] = createStore<PersistedWorkbench>(normalizePersistedWorkbench(initial))
 
   function migrateLegacyPanels(path: string) {
     const space = store.spaces[path]
@@ -131,28 +179,13 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function hydrate(value: HydratableWorkbench) {
-    const snapshot = clonePersistedWorkbench(value)
-    const tabs = snapshot.tabs.some((tab) => tab.path === GENERAL_TAB_PATH)
-      ? snapshot.tabs
-      : [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...snapshot.tabs]
-    const spaces = Object.fromEntries(
-      Object.entries(snapshot.spaces).map(([path, space]) => [
-        path,
-        {
-          ...space,
-          panels: space.panels.map((panel) => ({
-            ...panel,
-            slotState: panel.slotState ?? (panel.tuiPtyId ? "bound" : "empty"),
-            viewMode: panel.viewMode ?? (panel.tuiPtyId ? "tui" : undefined),
-          })),
-        },
-      ]),
-    )
+    const snapshot = normalizePersistedWorkbench(value)
     batch(() => {
       setStore("display", snapshot.display)
-      setStore("spaces", spaces)
-      setStore("tabs", tabs)
-      setStore("activeSpaceName", snapshot.activeSpaceName || GENERAL_TAB_NAME)
+      setStore("spaces", snapshot.spaces)
+      setStore("tabs", snapshot.tabs)
+      setStore("activeTabPath", snapshot.activeTabPath ?? GENERAL_TAB_PATH)
+      setStore("schemaVersion", 2)
     })
   }
 
@@ -161,7 +194,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function trackPersisted() {
-    store.activeSpaceName
+    store.schemaVersion
+    store.activeTabPath
     store.display.showTitlebar
     store.display.showStatusbar
     store.display.showSpaceRail
@@ -289,15 +323,15 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     setStore("spaces", path, "panels", () => true, "width", 1)
   }
 
-  function closeTab(name: string) {
-    if (name === GENERAL_TAB_NAME) return false
-    const index = store.tabs.findIndex((tab) => tab.name === name)
+  function closeTab(path: string) {
+    if (path === GENERAL_TAB_PATH) return false
+    const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index === -1) return false
     batch(() => {
-      setStore("tabs", (tabs) => tabs.filter((tab) => tab.name !== name))
-      if (store.activeSpaceName === name) {
+      setStore("tabs", (tabs) => tabs.filter((tab) => tab.path !== path))
+      if (store.activeTabPath === path) {
         const next = store.tabs[index + 1] ?? store.tabs[index - 1]
-        setStore("activeSpaceName", next?.name ?? GENERAL_TAB_NAME)
+        setStore("activeTabPath", next?.path ?? GENERAL_TAB_PATH)
       }
     })
     return true
@@ -307,7 +341,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     if (!store.spaces[path]) return false
     const tab = store.tabs.find((candidate) => candidate.path === path)
     batch(() => {
-      if (tab) closeTab(tab.name)
+      if (tab) closeTab(tab.path)
       setStore("spaces", produce((spaces) => {
         delete spaces[path]
       }))
@@ -390,33 +424,31 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function activeTab() {
-    return store.tabs.find((tab) => tab.name === store.activeSpaceName)
+    return store.tabs.find((tab) => tab.path === store.activeTabPath)
   }
 
   function openTab(space: WopalSpace) {
     batch(() => {
-      if (!store.tabs.some((tab) => tab.name === space.name)) {
+      if (!store.tabs.some((tab) => tab.path === space.path)) {
         setStore("tabs", store.tabs.length, { ...space })
       }
-      setStore("activeSpaceName", space.name)
+      setStore("activeTabPath", space.path)
     })
   }
 
-  function setActive(name: string) {
-    if (store.tabs.some((tab) => tab.name === name)) setStore("activeSpaceName", name)
+  function setActive(path: string) {
+    if (store.tabs.some((tab) => tab.path === path)) setStore("activeTabPath", path)
   }
 
-  function validateTabs(validNames: Set<string>) {
+  function validateTabs(validPaths: Set<string>) {
     batch(() => {
       setStore("tabs", (tabs) => {
-        const filtered = tabs.filter((tab) => tab.name === GENERAL_TAB_NAME || validNames.has(tab.name))
+        const filtered = tabs.filter((tab) => tab.path === GENERAL_TAB_PATH || validPaths.has(tab.path))
         return filtered.length === tabs.length ? tabs : filtered
       })
-      const current = store.activeSpaceName
-      if (current && current !== GENERAL_TAB_NAME && !validNames.has(current)) {
-        setStore("activeSpaceName", store.tabs[0]?.name ?? GENERAL_TAB_NAME)
-      } else if (!current && store.tabs.length > 0) {
-        setStore("activeSpaceName", store.tabs[0].name)
+      const current = store.activeTabPath
+      if (!store.tabs.some((tab) => tab.path === current)) {
+        setStore("activeTabPath", store.tabs[0]?.path ?? GENERAL_TAB_PATH)
       }
     })
   }
@@ -456,7 +488,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
       const space = tab ? store.spaces[tab.path] : undefined
       return space?.panels.find((panel) => panel.id === space.activePanelID)?.directory ?? ""
     },
-    get activeSpaceName() { return store.activeSpaceName },
+    get activeTabPath() { return store.activeTabPath ?? GENERAL_TAB_PATH },
+    get activeSpaceName() { return activeTab()?.name ?? GENERAL_TAB_NAME },
     openTab,
     closeTab,
     setActive,

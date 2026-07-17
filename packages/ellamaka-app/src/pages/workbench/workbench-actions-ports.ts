@@ -14,7 +14,10 @@ type WorkbenchState = ReturnType<typeof import("./view-store").useWorkbenchState
 export type SessionServerSDK = {
   createClient: (input: { directory: string; throwOnError: boolean }) => {
     workbench: {
-      createSession: (input: { target: { type: "general" } | { type: "space"; space: string } }) => Promise<{
+      createSession: (input: {
+        requestID: string
+        target: { type: "general" } | { type: "space"; spacePath: string; directory?: string }
+      }) => Promise<{
         data?: {
           id?: string
           title?: string
@@ -49,7 +52,7 @@ export function buildStorePort(wb: WorkbenchState): WorkbenchActionStorePort {
     active: wb.active,
     addPanel: (scope) => wb.addPanel(scopePath(scope)),
     setActivePanel: (scope, panelID) => wb.setActivePanel(scopePath(scope), panelID),
-    setActive: (spaceName) => wb.setActive(spaceName),
+    setActive: (spacePath) => wb.setActive(spacePath),
     activePanelID: (scope) => wb.spaceState(scopePath(scope))?.activePanelID,
     removePanel: (scope, panelID) => wb.removePanel(scopePath(scope), panelID),
     removeSpace: (scope) => wb.removeSpace(scopePath(scope)),
@@ -110,19 +113,25 @@ export function buildSessionPort(
   projection: SessionProjectionWriter,
 ): WorkbenchActionSessionPort {
   return {
-    create: async ({ scope, panel }) => {
+    create: async ({ scope, panel, initialView }) => {
       const client = serverSDK.createClient({ directory: panel.directory, throwOnError: true })
       const target = scope.kind === "general"
         ? { type: "general" as const }
-        : { type: "space" as const, space: scope.name }
-      const result = await client.workbench.createSession({ target })
+        : {
+          type: "space" as const,
+          spacePath: scope.path,
+          directory: panel.directory.startsWith(`${scope.path}/`)
+            ? panel.directory.slice(scope.path.length + 1)
+            : undefined,
+        }
+      const result = await client.workbench.createSession({ requestID: crypto.randomUUID(), target })
       if (!result.data?.id) throw new Error("Session creation returned no session id")
       const createdAt = typeof result.data.timeCreated === "number" ? result.data.timeCreated : Date.now()
       return {
         id: result.data.id,
         title: result.data.title ?? (scope.kind === "general" ? "New chat" : `${scope.name} chat`),
         directory: result.data.directory,
-        type: "chat",
+        type: initialView ?? "chat",
         directoryHealth: result.data.directoryHealth,
         createdAt,
         lastActiveAt: typeof result.data.timeUpdated === "number" ? result.data.timeUpdated : createdAt,
@@ -148,6 +157,7 @@ export function buildSessionPort(
       projection.upsert({
         id: serverSession.id,
         spaceName: scopeName(scope),
+        spacePath: scopePath(scope),
         projectPath: serverSession.directory,
         type: serverSession.type,
         title: serverSession.title,
