@@ -12,7 +12,7 @@ import { ProjectID } from "../../src/project/schema"
 import { Identifier } from "../../src/id/id"
 import { Slug } from "@opencode-ai/core/util/slug"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import type { SpaceEntry } from "../../src/wopal/cli-schema"
+import type { SpaceEntry, ProjectEntry } from "../../src/wopal/cli-schema"
 import { eq } from "drizzle-orm"
 import path from "path"
 
@@ -23,19 +23,19 @@ const it = testEffect(
       getSpaces: () => Effect.succeed({ spaces: [], refreshedAt: 0 }),
       refreshSpaces: () => Effect.succeed({ spaces: [], refreshedAt: 0 }),
       refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
-      searchDirectories: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+      searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
     })),
   ),
 )
 
-function projectionLayer(spaces: SpaceEntry[]) {
+function projectionLayer(spaces: SpaceEntry[], projects: ProjectEntry[] = []) {
   return SessionProjection.layer.pipe(
     Layer.provide(SessionDirectoryHealth.defaultLayer),
     Layer.provide(Layer.succeed(SpaceRegistry.Service, {
       getSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
       refreshSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
-      refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
-      searchDirectories: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+      refreshProjects: () => Effect.succeed({ items: projects, total: projects.length, refreshedAt: 0 }),
+      searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
     })),
   )
 }
@@ -48,7 +48,7 @@ function coldStartLayer(spaces: SpaceEntry[]) {
       getSpaces: () => Effect.succeed({ spaces: [] as SpaceEntry[], refreshedAt: 0 }),
       refreshSpaces: () => Effect.succeed({ spaces, refreshedAt: Date.now() }),
       refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
-      searchDirectories: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+      searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
     })),
   )
 }
@@ -220,6 +220,48 @@ describe("session-projection-group-resolution", () => {
       expect(spaceGroup!.type).toBe("space")
       expect(spaceGroup!.sessions.length).toBeGreaterThanOrEqual(1)
       expect(spaceGroup!.sessions[0].directory).toBe(dir)
+    }),
+  )
+
+  it.instance("getSessionTree maps worktrees returned by CLI projects list v2", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const dir = instance.directory
+      const projDir = path.join(dir, "projects/my-project")
+      const wtDir = path.join(dir, "projects/my-project/.worktrees/my-wt")
+      yield* Effect.sync(() => {
+        require("fs").mkdirSync(projDir, { recursive: true })
+        require("fs").mkdirSync(wtDir, { recursive: true })
+      })
+
+      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir }]
+      const projects: ProjectEntry[] = [
+        {
+          id: "p1",
+          name: "my-project",
+          path: "projects/my-project",
+          worktrees: [{ path: "projects/my-project/.worktrees/my-wt", branch: "feat/wt" }],
+        },
+      ]
+
+      // Insert a session in the worktree directory
+      yield* Effect.sync(() => {
+        ensureGlobalProject()
+        insertSession(wtDir, "wt-session")
+      })
+
+      const projection = yield* SessionProjection.Service
+      const tree = yield* projection.getSessionTree().pipe(
+        Effect.provide(projectionLayer(spaces, projects)),
+      )
+
+      const scope = tree.scopes.find((s) => s.name === "my-space")
+      expect(scope).toBeDefined()
+      const location = scope!.locations.find((l) => l.name === "my-project")
+      expect(location).toBeDefined()
+      expect(location!.sessions.length).toBe(1)
+      expect(location!.sessions[0].marker).toBe("worktree")
+      expect(location!.sessions[0].branch).toBe("feat/wt")
     }),
   )
 })

@@ -418,3 +418,36 @@ export async function openSessionInPanel(params: {
     )
   }
 }
+
+// ── getSessionMarker (pure helper for SessionMarkerIcon UI styling) ────────
+
+export interface SessionMarkerInfo {
+  type: "worktree" | "directory" | "dot"
+  colorClass: string
+  text?: string
+}
+
+export function getSessionMarker(
+  marker: "" | "directory" | "worktree",
+  status: "idle" | "bound" | "archived",
+  dirHealth: "healthy" | "missing" | "unavailable",
+): SessionMarkerInfo {
+  const colorClass =
+    dirHealth !== "healthy"
+      ? "text-amber-500"
+      : status === "bound"
+        ? "text-v2-icon-icon-accent"
+        : "text-v2-icon-icon-muted"
+
+  if (marker === "worktree") {
+    return { type: "worktree", colorClass }
+  }
+  if (marker === "directory") {
+    return { type: "directory", colorClass }
+  }
+  return {
+    type: "dot",
+    colorClass,
+    text: dirHealth !== "healthy" ? "!" : undefined,
+  }
+}

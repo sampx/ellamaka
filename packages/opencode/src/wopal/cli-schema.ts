@@ -46,6 +46,14 @@ export const ProjectEntry = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   path: Schema.String,
+  worktrees: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        branch: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
 })
 
 export const ProjectListData = Schema.Struct({
@@ -56,6 +64,7 @@ export const ProjectListData = Schema.Struct({
 export const DirectoryEntry = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
+  type: Schema.optional(Schema.Literals(["dir", "repo", "file"])),
 })
 
 export const DirectorySearchData = Schema.Struct({

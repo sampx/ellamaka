@@ -37,10 +37,11 @@ export interface SpaceRegistry {
     executablePath: string,
     spaceName?: string,
   ) => Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError>
-  readonly searchDirectories: (
+  readonly searchSpace: (
     executablePath: string,
     query: string,
     spaceName?: string,
+    type?: "dir" | "repo" | "file",
   ) => Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError>
 }
 
@@ -67,6 +68,14 @@ const projectListSchema = Schema.Struct({
       id: Schema.String,
       name: Schema.String,
       path: Schema.String,
+      worktrees: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            path: Schema.String,
+            branch: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
     }),
   ),
   total: Schema.Number,
@@ -77,6 +86,7 @@ const directorySearchSchema = Schema.Struct({
     Schema.Struct({
       name: Schema.String,
       path: Schema.String,
+      type: Schema.optional(Schema.Literals(["dir", "repo", "file"])),
     }),
   ),
   total: Schema.Number,
@@ -116,8 +126,8 @@ const make = Effect.gen(function* () {
       // from CWD), which is wrong for a multi-space server. Always pass the
       // space name so paths are relative to a known, stable root.
       const args = spaceName
-        ? ["--space", spaceName, "space", "projects", "list", "--json", "--api-version", "1"]
-        : ["space", "projects", "list", "--json", "--api-version", "1"]
+        ? ["--space", spaceName, "space", "projects", "list", "--json", "--api-version", "2"]
+        : ["space", "projects", "list", "--json", "--api-version", "2"]
       const result = yield* adapter.execute(
         executablePath,
         args,
@@ -131,15 +141,23 @@ const make = Effect.gen(function* () {
       }
     }) as Effect.Effect<ProjectSnapshot, SpaceControlUnavailable | CapabilityContractError>
 
-  const searchDirectories = (executablePath: string, query: string, spaceName?: string): Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError> =>
+  const searchSpace = (
+    executablePath: string,
+    query: string,
+    spaceName?: string,
+    type?: "dir" | "repo" | "file",
+  ): Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const args = spaceName
-        ? ["--space", spaceName, "space", "directories", "search", query, "--json", "--api-version", "1"]
-        : ["space", "directories", "search", query, "--json", "--api-version", "1"]
+      const baseArgs = ["space", "search", query]
+      if (type) {
+        baseArgs.push("--type", type)
+      }
+      baseArgs.push("--json", "--api-version", "1")
+      const args = spaceName ? ["--space", spaceName, ...baseArgs] : baseArgs
       const result = yield* adapter.execute(
         executablePath,
         args,
-        "space.directories.search",
+        "space.search",
         directorySearchSchema,
       )
       return {
@@ -149,7 +167,7 @@ const make = Effect.gen(function* () {
       }
     }) as Effect.Effect<DirectorySnapshot, SpaceControlUnavailable | CapabilityContractError>
 
-  return Service.of({ refreshSpaces, getSpaces, refreshProjects, searchDirectories })
+  return Service.of({ refreshSpaces, getSpaces, refreshProjects, searchSpace })
 })
 
 export const layer = Layer.effect(Service, make)

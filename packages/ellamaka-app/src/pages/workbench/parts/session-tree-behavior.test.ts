@@ -6,6 +6,7 @@ import {
   resolveTargetPanel,
   getPanelBadge,
   mergeTree,
+  getSessionMarker,
   type SessionGroupsSDK,
   type SessionGroup,
   type SessionTreeScope,
@@ -663,5 +664,47 @@ describe("getPanelBadge", () => {
     )
     // Session is in active space — should find it via activePath
     expect(getPanelBadge(wb, "s1")).toBe("P1")
+  })
+})
+
+// ── getSessionMarker ──────────────────────────────────────────────────────────
+
+describe("getSessionMarker", () => {
+  test("renders dot for normal session", () => {
+    const result = getSessionMarker("", "idle", "healthy")
+    expect(result).toEqual({ type: "dot", colorClass: "text-v2-icon-icon-muted", text: undefined })
+  })
+
+  test("renders folder icon for directory session", () => {
+    const result = getSessionMarker("directory", "idle", "healthy")
+    expect(result).toEqual({ type: "directory", colorClass: "text-v2-icon-icon-muted" })
+  })
+
+  test("renders branch icon for worktree session", () => {
+    const result = getSessionMarker("worktree", "idle", "healthy")
+    expect(result).toEqual({ type: "worktree", colorClass: "text-v2-icon-icon-muted" })
+  })
+
+  test("applies color based on status and health", () => {
+    // 1. bound status
+    expect(getSessionMarker("", "bound", "healthy")).toEqual({
+      type: "dot",
+      colorClass: "text-v2-icon-icon-accent",
+      text: undefined,
+    })
+
+    // 2. idle status (muted color)
+    expect(getSessionMarker("", "idle", "healthy")).toEqual({
+      type: "dot",
+      colorClass: "text-v2-icon-icon-muted",
+      text: undefined,
+    })
+
+    // 3. unhealthy (amber color + !)
+    expect(getSessionMarker("", "idle", "missing")).toEqual({
+      type: "dot",
+      colorClass: "text-amber-500",
+      text: "!",
+    })
   })
 })

@@ -1,5 +1,4 @@
 import { Context, Effect, Layer, Schema } from "effect"
-import { execFile } from "child_process"
 import { realpath } from "fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
@@ -77,7 +76,6 @@ interface RawSessionRow {
 }
 
 const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
-const WORKTREE_CACHE_TTL_MS = 5_000
 const MAX_LIMIT_PER_SCOPE = 500
 
 /**
@@ -102,7 +100,6 @@ export function resolveSpaceRootPath(root: string, value: string): string {
 const make = Effect.gen(function* () {
   const health = yield* SessionDirectoryHealth.Service
   const registry = yield* SpaceRegistry.Service
-  const worktreeCache = new Map<string, { expiresAt: number; items: Array<{ path: string; branch?: string }> }>()
 
   const activeRows = () =>
     Effect.sync(() =>
@@ -188,24 +185,30 @@ const make = Effect.gen(function* () {
         resolvedSpaces.map((space) =>
           registry.refreshProjects(WOPAL_CLI, space.name).pipe(
             Effect.map((snapshot) =>
-              snapshot.items.map((project) => ({
-                name: project.name,
-                path: resolveSpaceRootPath(space.path, project.path),
-              })),
+              snapshot.items.map((project) => {
+                const absoluteProjectPath = resolveSpaceRootPath(space.path, project.path)
+                const projectWorktrees = (project.worktrees ?? []).map((wt) => ({
+                  projectPath: absoluteProjectPath,
+                  path: resolveSpaceRootPath(space.path, wt.path),
+                  branch: wt.branch,
+                }))
+                return {
+                  name: project.name,
+                  path: absoluteProjectPath,
+                  worktrees: projectWorktrees,
+                }
+              }),
             ),
           ),
         ),
         { concurrency: 4 },
       )
-      const resolvedProjects = yield* canonicalProjects(projectsPerSpace.flat())
-      const worktrees = yield* Effect.all(
-        resolvedProjects.map((project) =>
-          listProjectWorktrees(project.path, worktreeCache).pipe(
-            Effect.map((items) => items.map((item) => ({ projectPath: project.path, ...item }))),
-          ),
-        ),
-        { concurrency: 4 },
-      ).pipe(Effect.map((items) => items.flat()))
+      const rawProjects = projectsPerSpace.flat()
+      const rawWorktrees = rawProjects.flatMap((p) => p.worktrees)
+      const [resolvedProjects, worktrees] = yield* Effect.all(
+        [canonicalProjects(rawProjects), canonicalWorktrees(rawWorktrees)],
+        { concurrency: 2 },
+      )
       const enriched = yield* Effect.all(
         rows.map((row) =>
           health.check(row.directory).pipe(
@@ -245,7 +248,7 @@ const make = Effect.gen(function* () {
       const [projects, rows, searched] = yield* Effect.all([
         registry.refreshProjects(WOPAL_CLI, space.name),
         activeRows(),
-        input.query?.trim() ? registry.searchDirectories(WOPAL_CLI, input.query.trim(), space.name) : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+        input.query?.trim() ? registry.searchSpace(WOPAL_CLI, input.query.trim(), space.name, "dir") : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
       ], { concurrency: 3 })
       const candidates: Array<{ kind: WorkbenchLocation["kind"]; name: string; path: string; lastUsedAt?: number }> = [
         { kind: "space-root" as const, name: space.name, path: space.path },
@@ -341,42 +344,21 @@ function relativeDirectory(root: string, target: string) {
   return value === "" ? "" : value
 }
 
-function listProjectWorktrees(
-  projectPath: string,
-  cache: Map<string, { expiresAt: number; items: Array<{ path: string; branch?: string }> }>,
+function canonicalWorktrees(
+  worktrees: Array<{ projectPath: string; path: string; branch?: string }>,
 ) {
-  const existing = cache.get(projectPath)
-  if (existing && existing.expiresAt > Date.now()) return Effect.succeed(existing.items)
-  return Effect.tryPromise(() => new Promise<string>((resolve, reject) => {
-      execFile("git", ["worktree", "list", "--porcelain"], { cwd: projectPath }, (error, stdout) => {
-        if (error) reject(error)
-        else resolve(stdout)
-      })
-    })).pipe(
-    Effect.catch(() => Effect.succeed("")),
-    Effect.map(parseWorktrees),
-    Effect.tap((items) => Effect.sync(() => {
-      cache.set(projectPath, { expiresAt: Date.now() + WORKTREE_CACHE_TTL_MS, items })
-    })),
+  return Effect.all(
+    worktrees.map((wt) =>
+      Effect.all([canonicalPath(wt.projectPath), canonicalPath(wt.path)]).pipe(
+        Effect.map(([canonicalProj, canonicalWt]) => ({
+          projectPath: canonicalProj,
+          path: canonicalWt,
+          branch: wt.branch,
+        })),
+      ),
+    ),
+    { concurrency: 16 },
   )
-}
-
-function parseWorktrees(output: string) {
-  const items: Array<{ path: string; branch?: string }> = []
-  let current: { path?: string; branch?: string } = {}
-  for (const line of output.split("\n")) {
-    if (line.startsWith("worktree ")) {
-      if (current.path) items.push({ path: normalizeWorkbenchPath(current.path), branch: current.branch })
-      current = { path: line.slice("worktree ".length) }
-      continue
-    }
-    if (line.startsWith("branch ")) {
-      const branch = line.slice("branch ".length)
-      current.branch = branch.startsWith("refs/heads/") ? branch.slice("refs/heads/".length) : branch
-    }
-  }
-  if (current.path) items.push({ path: normalizeWorkbenchPath(current.path), branch: current.branch })
-  return items
 }
 
 export const layer = Layer.effect(Service, make)

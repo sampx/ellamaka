@@ -6,13 +6,57 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel } from "./session-tree-dialogs"
-import { getPanelBadge, openSessionInPanel, type GroupSession } from "./session-tree-services"
+import { openSessionInPanel, getSessionMarker, type GroupSession } from "./session-tree-services"
 import type { WopalSpace } from "../space-store"
 
 type MergedSession = {
   id: string
   title: string
   status: "idle" | "bound" | "archived"
+}
+
+export function SessionMarkerIcon(props: {
+  marker: "" | "directory" | "worktree"
+  status: "idle" | "bound" | "archived"
+  dirHealth: "healthy" | "missing" | "unavailable"
+}) {
+  const markerInfo = () => getSessionMarker(props.marker, props.status, props.dirHealth)
+
+  return (
+    <span class={`flex items-center justify-center shrink-0 w-5 h-4.5 select-none ${markerInfo().colorClass}`}>
+      <Show
+        when={markerInfo().type === "worktree"}
+        fallback={
+          <Show
+            when={markerInfo().type === "directory"}
+            fallback={
+              <Show
+                when={markerInfo().text !== undefined}
+                fallback={
+                  <span class="size-1.5 rounded-full bg-current" />
+                }
+              >
+                <span class="text-[11px] font-semibold font-mono leading-none">
+                  {markerInfo().text}
+                </span>
+              </Show>
+            }
+          >
+            <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+          </Show>
+        }
+      >
+        <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="3" x2="6" y2="15" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+      </Show>
+    </span>
+  )
 }
 
 export function SessionTreeRow(props: {
@@ -39,14 +83,11 @@ export function SessionTreeRow(props: {
 
   const handleSessionClick = () => {
     props.setSelectedSessionId(props.session.id)
-    const badge = getPanelBadge(wb, props.session.id)
-    if (badge) {
-      const binding = wb.findSessionBinding(props.session.id)
-      if (binding) {
-        const targetSpace = wb.tabs.find((tab) => tab.path === binding.spacePath)
-        if (targetSpace) wb.openTab(targetSpace)
-        wb.setActivePanel(binding.spacePath, binding.panelID)
-      }
+    const binding = wb.findSessionBinding(props.session.id)
+    if (binding) {
+      const targetSpace = wb.tabs.find((tab) => tab.path === binding.spacePath)
+      if (targetSpace) wb.openTab(targetSpace)
+      wb.setActivePanel(binding.spacePath, binding.panelID)
     } else {
       const targetSpace = wb.tabs.find((tab) => tab.path === props.spacePath)
       if (targetSpace) {
@@ -58,8 +99,8 @@ export function SessionTreeRow(props: {
   }
 
   const handleSessionDblClick = () => {
-    const badge = getPanelBadge(wb, props.session.id)
-    if (badge) {
+    const binding = wb.findSessionBinding(props.session.id)
+    if (binding) {
       handleSessionClick()
       return
     }
@@ -84,12 +125,6 @@ export function SessionTreeRow(props: {
         ))
       },
     })
-  }
-
-  function statusDotClass(status: string) {
-    if (status === "bound") return "bg-green-400"
-    if (status === "archived") return "bg-v2-text-text-faint"
-    return "bg-v2-icon-icon-muted"
   }
 
   return (
@@ -119,27 +154,11 @@ export function SessionTreeRow(props: {
       onDblClick={handleSessionDblClick}
       onContextMenu={props.onContextMenu}
     >
-      <Show
-        when={getPanelBadge(wb, props.session.id)}
-        fallback={
-          <Show
-            when={dirHealth() !== "healthy"}
-            fallback={
-              <span class={`size-1.5 shrink-0 rounded-full ${statusDotClass(props.session.status)}`} />
-            }
-          >
-            <span class="flex items-center justify-center shrink-0 text-[11px] leading-none text-amber-500">
-              !
-            </span>
-          </Show>
-        }
-      >
-        {(badge) => (
-          <span class="flex items-center justify-center shrink-0 rounded-full px-1.25 text-[10px] font-semibold text-white bg-v2-icon-icon-brand leading-none min-w-[20px] h-4.5 select-none">
-            {badge()}
-          </span>
-        )}
-      </Show>
+      <SessionMarkerIcon
+        marker={sessionData()?.marker ?? ""}
+        status={props.session.status}
+        dirHealth={dirHealth()}
+      />
       <span class="flex-1 truncate">{props.session.title}</span>
       <Show when={dirHealth() !== "healthy"}>
         <span class="text-9-regular text-v2-text-text-faint shrink-0">

@@ -21,7 +21,7 @@ function makeMockRegistry(opts: {
     getSpaces: opts.getSpaces,
     refreshSpaces: opts.refreshSpaces,
     refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
-    searchDirectories: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+    searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
   }
 }
 
