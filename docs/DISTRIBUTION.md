@@ -9,7 +9,7 @@
 
 | Date | Type | Summary |
 |---|---|---|
-| 2026-07-18 | Updated | 修正 §3.2/§3.4/§5：`--arch primary` 实际产出 7 个目标（含 3 baseline 变体），与 R2 生产 manifest 一致；重写 §9 Desktop Distribution：基于实际代码（build-node.ts sidecar + electron-builder），明确 sidecar 为 Node.js runtime 无 AVX2 二分，补充 wopal-site 安装入口，厘清 electron-updater P1 行为（检测通知、非自动安装） |
+| 2026-07-18 | Updated | 修正 §3.2/§3.4/§5：`--arch primary` 实际产出 7 个目标（含 3 baseline 变体），与 R2 生产 manifest 一致；重写 §9 Desktop Distribution：基于实际代码（build-node.ts sidecar + electron-builder），明确 sidecar 为 Node.js runtime 无 AVX2 二分，补充 wopal-site 安装入口，厘清 electron-updater P1 行为（检测通知、非自动安装）；新增 §3.6 Re-release Versioning：semver prerelease 后缀方案解决同版本重复发布问题，`tag-release.sh` 自动递增 `-N` 后缀 |
 | 2026-07-16 | Updated | 新增 §9 Desktop Distribution：明确桌面端为独立发布单元，定义 artifact contract、CI matrix、R2 独立路径、electron-updater feed 与签名公证分阶段方案；原 §9/§10 顺延为 §10/§11。 |
 | 2026-06-08 | Updated | 切换为 R2 CDN 主分发；GitHub/Gitee Release 只保留 markdown 索引；macOS 归档格式对齐为 `.tar.gz`。 |
 | 2026-06-01 | Updated | §4.2 补充本地构建入口；§5 标注 channel 值来源；§9 添加 BRANDING.md 引用。 |
@@ -188,6 +188,32 @@ bun packages/ellamaka/build.ts --web-ui ellamaka-app
 | Tag 管理 | 脚本内创建/删除/推送 tag | CI 由 tag push 触发，不在 workflow 内操作 tag |
 | 产物目标 | npm registry + GitHub Release（带 binary） | R2 CDN + GitHub Release（仅 markdown 索引） |
 | 归档格式 | macOS `.zip`，Linux `.tar.gz` | macOS/Linux `.tar.gz`，Windows `.zip`（与 wopal-cli 对齐） |
+
+### 3.6 Re-release Versioning
+
+ellamaka 无法及时跟踪上游 OpenCode 版本，需要在上游基线版本（如 `1.15.13`）上修复问题后重复发布。同版本号重复发布会带来 R2 CDN 缓存冲突（同路径覆盖后旧缓存最多 1 周才过期）和 `wopal ellamaka install` 幂等性失效（版本号不变无法触发更新检测）。
+
+ellamaka 采用 **semver prerelease 后缀** 解决此问题：在 base 版本号后追加 `-N` 递增后缀（如 `1.15.13-1`、`1.15.13-2`），每次重发自增。semver prerelease 是标准格式，`semver.valid()` 接受，`semver.compare()` 排序正确，所有依赖 semver 的代码（`Script.version`、`getReleaseType()`、`Installation.latest()`）正常工作。`wopal ellamaka install` 的版本比较走 string `===`，`1.15.13-1` !== `1.15.13`，能正确检测到新版本。
+
+`tag-release.sh` 实现自动递增逻辑：
+
+1. 用户传 base 版本（如 `1.15.13`）
+2. 检查远程 `v1.15.13` 是否存在
+3. 不存在 → 用 `v1.15.13`
+4. 存在 → 用正则 `^(.*)-([0-9]+)$` 拆分 base 和 suffix，从 1 开始递增，试 `v1.15.13-1`、`v1.15.13-2`...直到找到远程不存在的 tag
+
+用户也可显式传带后缀的版本（如 `1.15.13-1`），脚本同样检测并在已存在时递增。
+
+此机制与上游 opencode 的区别：
+
+| | opencode | ellamaka |
+|---|---|---|
+| 重发方式 | 删除旧 tag 重建同名 tag | 保留旧 tag，自动递增 `-N` 后缀 |
+| `package.json` version | `publish.ts` 遍历所有 `package.json` 统一替换 | 不自动修改，版本号仅存在于 tag 和 `OPENCODE_VERSION` 环境变量 |
+| R2 路径 | 同版本覆盖 | 每个后缀独立路径（`v1.15.13-1/`、`v1.15.13-2/`），无缓存冲突 |
+| latest manifest | 指向同版本 | 指向最新后缀版本 |
+
+等 ellamaka 合并上游新版本时，用正常的三位版本号（如 `1.16.0`），自然回归标准格式，`-N` 后缀的历史版本保留在 R2 上作为不可变归档。
 
 ---
 
