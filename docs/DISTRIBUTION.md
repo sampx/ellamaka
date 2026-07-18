@@ -1,7 +1,7 @@
 # Ellamaka — Distribution
 
 > **状态**: Active
-> **更新时间**: 2026-07-16
+> **更新时间**: 2026-07-18
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **项目设计**: `./DESIGN.md`
 
@@ -9,6 +9,7 @@
 
 | Date | Type | Summary |
 |---|---|---|
+| 2026-07-18 | Updated | 修正 §3.2/§3.4/§5：`--arch primary` 实际产出 7 个目标（含 3 baseline 变体），与 R2 生产 manifest 一致；重写 §9 Desktop Distribution：基于实际代码（build-node.ts sidecar + electron-builder），明确 sidecar 为 Node.js runtime 无 AVX2 二分，补充 wopal-site 安装入口，厘清 electron-updater P1 行为（检测通知、非自动安装） |
 | 2026-07-16 | Updated | 新增 §9 Desktop Distribution：明确桌面端为独立发布单元，定义 artifact contract、CI matrix、R2 独立路径、electron-updater feed 与签名公证分阶段方案；原 §9/§10 顺延为 §10/§11。 |
 | 2026-06-08 | Updated | 切换为 R2 CDN 主分发；GitHub/Gitee Release 只保留 markdown 索引；macOS 归档格式对齐为 `.tar.gz`。 |
 | 2026-06-01 | Updated | §4.2 补充本地构建入口；§5 标注 channel 值来源；§9 添加 BRANDING.md 引用。 |
@@ -34,7 +35,7 @@ ellamaka 的发布是自包含的，但 P1 的自动消费入口是 `wopal ellam
 
 P1 延续上游 OpenCode CLI release pipeline 作为发布骨架。ellamaka 是 OpenCode 的 fork，构建体系通过 `@opencode-ai/script` 包引入上游脚本，`packages/ellamaka/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。ellamaka 对上游的裁剪仅限于：
 
-- **平台裁剪**：`--arch primary` 只构建 4 个 P1 平台（见 §3.2），明确排除 baseline / musl / arm64 变体
+- **平台裁剪**：`--arch primary` 构建 7 个 P1 平台（4 native + 3 baseline），排除 musl、arm64 变体
 - **发布位置**：binary 分发从 GitHub Release 迁移到 Cloudflare R2
 
 P1 的 canonical release source：
@@ -92,14 +93,17 @@ OPENCODE_RELEASE=true \
 bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app
 ```
 
-`--arch primary` 裁剪为 4 个 P1 目标平台。过滤逻辑明确排除 baseline（`avx2: false`）、musl、arm64 等变体：
+`--arch primary` 裁剪为 7 个 P1 目标平台（4 个 native + 3 个 baseline 变体）。过滤逻辑排除 musl、arm64 等变体，保留 baseline 以兼容老 x64 CPU（无 AVX2 指令集）：
 
 | OS | Arch | 条件 |
 |---|---|---|
-| darwin | arm64 | `avx2 !== false` |
-| darwin | x64 | `avx2 !== false` |
-| linux | x64 | `avx2 !== false`, `abi === undefined` |
-| windows | x64 | `avx2 !== false` |
+| darwin | arm64 | — |
+| darwin | x64 | — |
+| darwin | x64 | baseline 变体（`avx2: false`） |
+| linux | x64 | `abi === undefined` |
+| linux | x64 | baseline 变体（`avx2: false`, `abi === undefined`） |
+| windows | x64 | — |
+| windows | x64 | baseline 变体（`avx2: false`） |
 
 `--web-ui` 默认嵌入 `ellamaka-app`。手动发布可以选择 `app` 基线或 `none`。
 
@@ -110,23 +114,26 @@ bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app
 - macOS / Linux → `.tar.gz`
 - Windows → `.zip`
 
-4 个平台产物分别通过 `actions/upload-artifact` 上传：
+7 个平台产物分别通过 `actions/upload-artifact` 上传：
 
 ```
-dist/ellamaka-darwin-arm64.tar.gz      # ← 从 .zip 改为 .tar.gz
-dist/ellamaka-darwin-x64.tar.gz        # ← 从 .zip 改为 .tar.gz
+dist/ellamaka-darwin-arm64.tar.gz
+dist/ellamaka-darwin-x64.tar.gz
+dist/ellamaka-darwin-x64-baseline.tar.gz
 dist/ellamaka-linux-x64.tar.gz
+dist/ellamaka-linux-x64-baseline.tar.gz
 dist/ellamaka-windows-x64.zip
+dist/ellamaka-windows-x64-baseline.zip
 ```
 
 **Step 4 — 生成元数据并发布**（`release` job，仅 `release=true` 时运行）：
 
-1. 下载 4 个 artifact
-2. 验证 4 个文件存在
+1. 下载 7 个 artifact
+2. 验证 7 个文件存在
 3. 运行 `scripts/package-release.mjs manifest` 生成 `manifest.json`、`checksums.txt`、`release-notes.md`
    - `manifest.json` 中 artifact `url` 指向 R2 版本化路径
    - `release-notes.md` 包含平台下载表的 markdown 表格
-4. 上传全部 6 个文件到 R2 版本化路径 `s3://wopal-release/ellamaka/v$VERSION/`
+4. 上传全部 10 个文件到 R2 版本化路径 `s3://wopal-release/ellamaka/v$VERSION/`（7 个 artifact + manifest.json + checksums.txt + release-notes.md）
 5. 上传 `manifest.json` 到 R2 latest 别名 `s3://wopal-release/ellamaka/latest/manifest.json`
 6. 创建 4 个 release 条目（均使用同一份 `release-notes.md`，**不挂 binary**）：
    - GitHub `wopal-cn/ellamaka`：`gh release create v$VERSION --repo wopal-cn/ellamaka --notes-file`
@@ -162,12 +169,12 @@ bun packages/ellamaka/build.ts --web-ui ellamaka-app
 | 检查项 | 命令 / 方法 |
 |---|---|
 | TypeScript 类型检查 | `bun typecheck` |
-| P1 构建成功（4 平台，无 baseline 变体） | `BINARY_NAME=ellamaka bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app` |
-| 产物数正确 | `dist/` 下恰好 4 个目录：`ellamaka-darwin-arm64`、`ellamaka-darwin-x64`、`ellamaka-linux-x64`、`ellamaka-windows-x64`；无 `*-baseline` 目录 |
+| P1 构建成功（7 平台，含 baseline 变体） | `BINARY_NAME=ellamaka bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app` |
+| 产物数正确 | `dist/` 下恰好 7 个目录：`ellamaka-darwin-arm64`、`ellamaka-darwin-x64`、`ellamaka-darwin-x64-baseline`、`ellamaka-linux-x64`、`ellamaka-linux-x64-baseline`、`ellamaka-windows-x64`、`ellamaka-windows-x64-baseline` |
 | 版本号正确 | `./dist/ellamaka-darwin-arm64/bin/ellamaka --version` 输出 `ellamaka/x.y.z` |
-| manifest 生成 | `manifest.json` 包含 4 个 artifact，`url` 指向 `download.coursedao.com/ellamaka/v$VERSION/` |
+| manifest 生成 | `manifest.json` 包含 7 个 artifact，`url` 指向 `download.coursedao.com/ellamaka/v$VERSION/` |
 | checksums 正确 | `sha256sum dist/ellamaka-*.tar.gz dist/ellamaka-*.zip` 与 `checksums.txt` 对比 |
-| R2 上传成功 | `aws s3 ls s3://wopal-release/ellamaka/v$VERSION/` 可见 6 个文件 |
+| R2 上传成功 | `aws s3 ls s3://wopal-release/ellamaka/v$VERSION/` 可见全部产物 |
 | GitHub Release 无 binary | Release 页面有 markdown 下载表，Assets 区域无附件（或仅 manifest/checksums 文本） |
 
 ### 3.5 与上游 opencode 的区别
@@ -175,8 +182,8 @@ bun packages/ellamaka/build.ts --web-ui ellamaka-app
 | | opencode `script/publish.ts` | ellamaka `publish-ellamaka.yml` |
 |---|---|---|
 | 触发方式 | 手动运行脚本 | git tag push / workflow_dispatch |
-| 平台范围 | 完整矩阵（含 musl, baseline, arm64） | `--arch primary` 裁剪为 4 平台，排除 baseline |
-| 发布内容 | npm 包 (CLI/SDK/Plugin) + Desktop finalize | CLI 二进制 × 4 平台 |
+| 平台范围 | 完整矩阵（含 musl, baseline, arm64） | `--arch primary` 裁剪为 7 平台（4 native + 3 baseline），排除 musl、arm64 |
+| 发布内容 | npm 包 (CLI/SDK/Plugin) + Desktop finalize | CLI 二进制 × 7 平台（4 native + 3 baseline） |
 | 版本管理 | 遍历所有 `package.json` 替换版本号 | 通过 `OPENCODE_VERSION` env 传入 |
 | Tag 管理 | 脚本内创建/删除/推送 tag | CI 由 tag push 触发，不在 workflow 内操作 tag |
 | 产物目标 | npm registry + GitHub Release（带 binary） | R2 CDN + GitHub Release（仅 markdown 索引） |
@@ -193,7 +200,7 @@ stable release 是 P1 唯一的自动消费通道。
 每个 stable release 包含：
 
 1. 版本 tag `v<version>`
-2. P1 官方平台 artifacts（4 个）
+2. P1 官方平台 artifacts（7 个）
 3. `manifest.json`（installer 机器入口，artifact URL 指向 R2）
 4. `checksums.txt`
 5. `release-notes.md`（markdown 下载表，供 GitHub/Gitee Release 页面使用）
@@ -218,14 +225,17 @@ P1 的信任边界是 R2 HTTPS 下载与 SHA-256 完整性校验。`checksums.tx
 
 ellamaka 的发布产物使用 `ellamaka` 品牌。
 
-P1 平台矩阵收缩为 one-click 主路径所需的官方优先平台。ellamaka 单包体积较大，musl、baseline、Linux arm64 和 Windows arm64 变体属于后续扩展。
+P1 平台矩阵收缩为 one-click 主路径所需的官方优先平台。ellamaka 单包体积较大，musl、Linux arm64 和 Windows arm64 变体属于后续扩展。x64 平台同时产出 native 与 baseline 变体，baseline 兼容不支持 AVX2 的老 x64 CPU。
 
 | OS | Arch | Variant | Artifact |
 |---|---|---|---|
 | macOS | arm64 | native | `ellamaka-darwin-arm64.tar.gz` |
 | macOS | x64 | native | `ellamaka-darwin-x64.tar.gz` |
+| macOS | x64 | baseline | `ellamaka-darwin-x64-baseline.tar.gz` |
 | Linux | x64 | glibc | `ellamaka-linux-x64.tar.gz` |
+| Linux | x64 | glibc-baseline | `ellamaka-linux-x64-baseline.tar.gz` |
 | Windows | x64 | native | `ellamaka-windows-x64.zip` |
+| Windows | x64 | baseline | `ellamaka-windows-x64-baseline.zip` |
 
 Contract：
 
@@ -296,8 +306,11 @@ s3://wopal-release/
 │   ├── v0.1.0/
 │   │   ├── ellamaka-darwin-arm64.tar.gz
 │   │   ├── ellamaka-darwin-x64.tar.gz
+│   │   ├── ellamaka-darwin-x64-baseline.tar.gz
 │   │   ├── ellamaka-linux-x64.tar.gz
+│   │   ├── ellamaka-linux-x64-baseline.tar.gz
 │   │   ├── ellamaka-windows-x64.zip
+│   │   ├── ellamaka-windows-x64-baseline.zip
 │   │   ├── manifest.json
 │   │   ├── checksums.txt
 │   │   └── release-notes.md
@@ -309,10 +322,13 @@ s3://wopal-release/
     ├── v0.1.0/
     │   ├── ellamaka-desktop-darwin-arm64.dmg
     │   ├── ellamaka-desktop-darwin-arm64.zip
+    │   ├── ellamaka-desktop-darwin-x64.dmg
+    │   ├── ellamaka-desktop-darwin-x64.zip
     │   ├── ellamaka-desktop-win32-x64.exe
     │   ├── ellamaka-desktop-linux-x64.AppImage
     │   ├── ellamaka-desktop-linux-x64.deb
     │   ├── ellamaka-desktop-linux-x64.rpm
+    │   ├── manifest.json
     │   ├── latest-mac.yml
     │   ├── latest.yml
     │   ├── latest-linux.yml
@@ -362,28 +378,43 @@ ellamaka 与 wopal-cli 共享同一套 R2 bucket `wopal-release`、同一个自�
 
 > **状态**: Draft（架构见 `DESKTOP.md`，打包配置见 `packages/ellamaka-desktop/electron-builder.config.ts`）
 
-桌面端（`ellamaka-desktop`，Electron 应用）与 CLI 共享同一 OpenCode 版本基线与 `v$VERSION` tag，但作为**独立发布单元**：R2 子路径独立、CI 构建独立、manifest / updater feed 机制独立。CLI 走 `wopal ellamaka install`，桌面端走独立安装包 + `electron-updater` 自动更新。
+桌面端（`ellamaka-desktop`）是 Electron 应用，承载 `ellamaka-app` Workbench。与 CLI 共享同一 `v$VERSION` tag，但作为**独立发布单元**：R2 子路径独立、CI 构建独立、manifest / updater feed 机制独立。
 
-### 9.1 与 CLI 的关系
+### 9.1 系统构成
 
-| 维度 | CLI | Desktop |
-|------|-----|---------|
-| 版本号 | 同 `v$VERSION` tag | 同 `v$VERSION` tag |
-| R2 顶层目录 | `ellamaka/` | `ellamaka-desktop/` |
-| CI workflow | `publish-ellamaka.yml` | `publish-ellamaka-desktop.yml`（新增） |
-| 消费入口 | `wopal ellamaka install` | 安装包 + `electron-updater` |
-| 产物形态 | 二进制归档 `.tar.gz`/`.zip` | 安装包 + `latest-*.yml` feed |
+Desktop 由两层组成：
 
-### 9.2 Artifact Contract
+| 层 | 是什么 | 构建方式 |
+|---|---|---|
+| Electron 壳子 | 窗口、菜单、系统集成、electron-updater | `electron-builder` 打包 |
+| Sidecar 引擎 | Ellamaka HTTP/WS/PTY 后端 | `packages/opencode/script/build-node.ts` → Node.js runtime bundle |
+
+Sidecar 是 Node.js runtime（`build-node.ts` 产 `dist/node/`），**不是** Bun compile 的 CLI binary，因此不存在 CLI 的 native vs baseline（AVX2）二分——Node.js 代码由 V8 JIT 在运行时自适应 CPU 指令集。`packages/ellamaka-desktop/scripts/utils.ts` 中的 `SIDECAR_BINARIES` 保留自上游 OpenCode 的旧 sidecar 嵌入机制（构建时从 GitHub Release 下载预编译 CLI binary，在 PR #17803 之前使用），ellamaka fork 跟随上游 #17803 改为 `prebuild.ts → build-node.ts` 本地构建 Node.js runtime，`SIDECAR_BINARIES` 相关的下载函数不再被构建流程调用。
+
+### 9.2 构建链路
+
+```
+bun install
+  ↓
+bun packages/opencode/script/build-node.ts    ← 构建 sidecar（Node.js runtime）
+  ↓
+cd packages/ellamaka-desktop
+bun run build                                   ← electron-vite 编译 main/preload/renderer
+bun run package:mac   (或 :win / :linux)       ← electron-builder 打包安装包
+```
+
+本地开发快捷方式：`./scripts/build.sh desktop [--channel main|beta|prod] [--install]`。
+
+### 9.3 Artifact Contract
 
 产物由 `electron-builder` 按 `packages/ellamaka-desktop/electron-builder.config.ts` 生成，`artifactName` 模板为 `ellamaka-desktop-${os}-${arch}.${ext}`。
 
 | OS | Arch | 产物 | 说明 |
 |----|------|------|------|
-| macOS | arm64 | `ellamaka-desktop-darwin-arm64.dmg` + `.zip` | 无签名时 Gatekeeper 拦截，需右键打开 |
-| macOS | x64 | `ellamaka-desktop-darwin-x64.dmg` + `.zip` | 同上（可选，阶段 1 后可补） |
-| Windows | x64 | `ellamaka-desktop-win32-x64.exe`（nsis） | 未签名触发 SmartScreen |
-| Linux | x64 | `ellamaka-desktop-linux-x64.AppImage` + `.deb` + `.rpm` | 不强制签名 |
+| macOS | arm64 | `ellamaka-desktop-darwin-arm64.dmg` + `.zip` | `.zip` 供 electron-updater 增量更新 |
+| macOS | x64 | `ellamaka-desktop-darwin-x64.dmg` + `.zip` | 同上 |
+| Windows | x64 | `ellamaka-desktop-win32-x64.exe`（NSIS） | 一键安装 |
+| Linux | x64 | `ellamaka-desktop-linux-x64.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
 
 Contract：
 
@@ -392,7 +423,7 @@ Contract：
 3. 版本化目录与 latest 别名均独立，不与 CLI 混用。
 4. 自动更新 feed（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）与安装包同传 R2。
 
-### 9.3 CI 构建（matrix）
+### 9.4 CI 构建（matrix）
 
 新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（git tag `v*` / `workflow_dispatch`），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。
 
@@ -400,15 +431,15 @@ Contract：
 
 | Runner | 产物 |
 |--------|------|
-| `macos-latest` | dmg + zip |
-| `windows-latest` | nsis（`.exe`） |
+| `macos-latest` | dmg + zip（arm64 + x64） |
+| `windows-latest` | NSIS（`.exe`） |
 | `ubuntu-latest` | AppImage + deb + rpm |
 
-各 runner 步骤：`bun install` → `bun packages/ellamaka/build.ts`（sidecar）→ `cd packages/ellamaka-desktop` → `bun run build` → `bun run package:<os>`。产物经 sha256 校验后上传 R2 `ellamaka-desktop/v$VERSION/`，并生成 `latest-*.yml` feed 上传至 `ellamaka-desktop/latest/`。
+各 runner 步骤：`bun install` → `bun packages/opencode/script/build-node.ts`（sidecar）→ `cd packages/ellamaka-desktop` → `bun run build` → `bun run package:<os>`。产物经 sha256 校验后上传 R2 `ellamaka-desktop/v$VERSION/`，并生成 `latest-*.yml` feed 上传至 `ellamaka-desktop/latest/`。
 
 R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT 防多部件损坏 + 回比 manifest hash + 主动 purge）。
 
-### 9.4 R2 存储与 URL
+### 9.5 R2 存储与 URL
 
 见 §8 存储结构：`s3://wopal-release/ellamaka-desktop/v$VERSION/` 与 `.../latest/`。
 
@@ -417,7 +448,13 @@ R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT �
 
 缓存策略与 CLI 一致（`v$` 1 周、`latest` 5 分钟）。
 
-### 9.5 自动更新（electron-updater）
+### 9.6 安装入口
+
+Desktop 不走 `wopal ellamaka install`——安装包是自包含原生安装程序，与 CLI 的 binary + 固定路径模型不同。
+
+P1 安装入口为 **wopal-site 下载页面**，链接指向 `download.coursedao.com/ellamaka-desktop/`。用户下载对应平台安装包后自行安装。安装路径由各平台安装程序默认决定（macOS `/Applications`、Windows `Program Files`、Linux 用户自定）。Sidecar 和 Ellamaka 配置仍写入 `~/.wopal/`（与 CLI 共享 Install Contract §6 的 runtime roots），安装包只负责桌面外壳。
+
+### 9.7 自动更新（electron-updater）
 
 `electron-builder` 的 `publish` 配置使用 generic provider，feedURL 指向 R2 `ellamaka-desktop/latest/`，**不走 GitHub Release**（与 CLI canonical source 一致）。
 
@@ -425,48 +462,54 @@ R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT �
 - Windows：`latest.yml`
 - Linux：`latest-linux.yml`
 
-应用内更新检查配合 `BRANDING.md` 描述的 `ellamaka.autoupdate` 设置项（patch 版本且未设为 `notify` 时自动下载安装）。
+P1 启用 electron-updater 的**版本检测 + 通知**能力：应用定期拉取 feed 对比本地版本，检测到新版本时提示用户前往 wopal-site 下载。**P1 不启用自动下载安装**——未签名场景下 macOS Gatekeeper 会拦截自动替换的二进制，可靠性不足。签名就绪后（阶段 2）可切换到 electron-updater 的自动下载 + 安装模式，配合 `BRANDING.md` 的 `ellamaka.autoupdate` 设置项控制行为。
 
-### 9.6 代码签名与公证
+### 9.8 代码签名
 
-正式发布的前置条件，阶段 1（无签名）可跳过，但会损害首批用户体验（mac 右键打开、win SmartScreen 警告）。
+P1 不做签名，与 CLI 信任边界对齐：R2 HTTPS 下载 + SHA-256 完整性校验。
+
+未签名的用户体验约束：
+
+- macOS：首次打开需右键 → 打开，Gatekeeper 提示"来自身份不明的开发者"
+- Windows：SmartScreen 警告，需"仍要运行"
+- Linux：AppImage 需 `chmod +x`
+
+签名属于后续阶段：
 
 | 平台 | 要求 | electron-builder 配置 |
 |------|------|----------------------|
-| macOS | Apple Developer ID Application 证书 + `notarytool` 公证 + `xcrun stapler` | 启用 `hardenedRuntime` / `notarize` |
-| Windows | 代码签名证书（OV 或 EV） | 启用 `verifyUpdateCodeSignature`；`CSC_LINK` / `CSC_KEY_PASSWORD` 通过 CI secrets 注入 |
+| macOS | Apple Developer ID Application 证书 + `notarytool` 公证 | 启用 `hardenedRuntime` / `notarize` |
+| Windows | 代码签名证书（OV 或 EV） | `CSC_LINK` / `CSC_KEY_PASSWORD` 通过 CI secrets 注入 |
 | Linux | 可选 GPG 签名 | 不强制 |
 
-签名证书与密钥仅通过 CI secrets 注入，不入库。
-
-### 9.7 分阶段实施
+### 9.9 分阶段实施
 
 | 阶段 | 范围 | 退出标准 |
 |------|------|----------|
-| 阶段 1（最小可用） | CI matrix + R2 + `latest-*.yml` feed + GH/Gitee 索引；**无签名** | 三平台安装包可从 R2 下载并手动安装 |
-| 阶段 2（签名公证） | mac/win 签名 + 公证；启用 `hardenedRuntime` / `notarize` | 无 Gatekeeper / SmartScreen 拦截 |
-| 阶段 3（自动更新） | `electron-updater` feedURL + 应用内检查 | 应用内检测到新版本并安装 |
+| 阶段 1（最小可用） | CI matrix + R2 + `latest-*.yml` feed + electron-updater 检测通知 + wopal-site 下载页 + GH/Gitee 索引；**无签名** | 三平台安装包可从 R2 下载并手动安装，应用内可检测新版本并提示 |
+| 阶段 2（签名公证） | mac/win 签名 + 公证；electron-updater 切换为自动下载安装 | 无 Gatekeeper / SmartScreen 拦截，应用内自动更新可用 |
 
-若已具备 Apple Developer 账号与 Win 代码签名证书，建议阶段 1 + 2 合并一步到位。
-
-### 9.8 验证清单
+### 9.10 验证清单
 
 | 检查项 | 方法 |
 |--------|------|
 | 三平台产物存在 | R2 `ellamaka-desktop/v$VERSION/` 下 dmg/zip/exe/AppImage/deb/rpm 齐全 |
 | feed 生成 | `latest-mac.yml` / `latest.yml` / `latest-linux.yml` 上传至 `latest/` |
 | sha256 一致 | `checksums.txt` 与各产物比对 |
+| 版本检测 | 旧版本启动后 electron-updater 检测到新版本并提示 |
 | 签名（阶段 2） | mac `spctl -a -vv` 通过；win 右键属性显示数字签名 |
-| 自动更新（阶段 3） | 旧版本启动后检测到新版本并提示 |
+| 自动安装（阶段 2） | 应用内确认更新后自动下载并安装 |
 | GH/Gitee 索引 | Release 页面含桌面下载表，无 binary 附件（或仅元数据） |
 
 ---
 
 ## 10. Out of Scope for P1
 
+以下适用于 Engine。Desktop 的 out of scope 见 §9.9。
+
 1. 自定义安装目录
 2. npm / brew / winget / choco 等多渠道适配
-3. 自动后台更新
+3. 自动后台更新（Engine；Desktop 已通过 electron-updater 提供检测通知）
 4. R2 以外的镜像/分发渠道
 5. 在分发阶段替代 wopal-space mode 的配置融合与 runtime loading
 6. 独立 ellamaka installer 脚本
