@@ -1,6 +1,6 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { Show, createMemo, createSignal, onMount, onCleanup } from "solid-js"
+import { Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
@@ -75,20 +75,7 @@ export function SpaceRail() {
     document.addEventListener("mouseup", onMouseUp)
   }
 
-  const [showDefaultHint, setShowDefaultHint] = createSignal(true)
 
-  onMount(() => {
-    const timer = setTimeout(() => {
-      setShowDefaultHint(false)
-    }, 5000)
-    onCleanup(() => clearTimeout(timer))
-  })
-
-  const effectiveHint = createMemo(() => {
-    if (wb.statusMessage) return wb.statusMessage
-    if (wb.persistentHint) return wb.persistentHint
-    return showDefaultHint() ? t("workbench.status.defaultHint") : ""
-  })
 
   function handleSpaceClick(space: { name: string; path: string; type?: string }) {
     if (space.path === wb.activeTabPath) return
@@ -208,11 +195,7 @@ export function SpaceRail() {
         </Show>
       </div>
 
-      <Show when={expanded()}>
-        <div aria-live="polite" class="shrink-0 border-t border-v2-border-border-base px-2 py-1.5 text-10-regular leading-4 text-v2-text-text-muted min-h-[36px] flex items-center">
-          {effectiveHint()}
-        </div>
-      </Show>
+
 
       <div
         classList={{

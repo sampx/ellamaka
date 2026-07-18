@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { createSignal } from "solid-js"
+import { createRoot, createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import {
   clonePersistedWorkbench,
   createWorkbenchStore,
   PERSISTED_DEFAULTS,
 } from "./workbench-store"
-import { watchWorkbenchPersistence } from "./view-store"
+import { watchWorkbenchPersistence, initWorkbenchState } from "./view-store"
 
 describe("view-store reactive guard", () => {
   test("queues persistence when a persisted store field changes", async () => {
@@ -33,7 +33,6 @@ describe("view-store reactive guard", () => {
   })
 
   test("clonePersistedWorkbench creates a deep clone isolated from mutations", () => {
-
     const original = clonePersistedWorkbench(PERSISTED_DEFAULTS)
     const clone1 = clonePersistedWorkbench(original)
     const clone2 = clonePersistedWorkbench(original)
@@ -87,5 +86,36 @@ describe("view-store reactive guard", () => {
     store.openTab({ name: "Space X", path: "/fixtures/space-x", type: "space" })
     const snap = store.snapshot()
     expect(snap.tabs.some((tab) => tab.name === "Space X")).toBe(true)
+  })
+})
+
+describe("view-store diagnostics", () => {
+  test("pushDiagnostic adds messages and legacy setStatusMessage pushes to diagnostics queue", () => {
+    let state: any
+    const dispose = createRoot((dis) => {
+      state = initWorkbenchState()
+      return dis
+    })
+
+    expect(state.diagnostics).toEqual([])
+
+    const errId = state.pushDiagnostic("error", "Directory load failed", { autoDismiss: false })
+    expect(state.diagnostics.length).toBe(1)
+    expect(state.diagnostics[0].id).toBe(errId)
+    expect(state.diagnostics[0].type).toBe("error")
+    expect(state.diagnostics[0].text).toBe("Directory load failed")
+
+    state.setStatusMessage("Refreshing space...")
+    expect(state.diagnostics.length).toBe(2)
+    expect(state.diagnostics.some((item: any) => item.text === "Refreshing space..." && item.type === "info")).toBe(true)
+
+    state.removeDiagnostic(errId)
+    expect(state.diagnostics.length).toBe(1)
+    expect(state.diagnostics[0].id).not.toBe(errId)
+
+    state.clearAllDiagnostics()
+    expect(state.diagnostics).toEqual([])
+
+    dispose()
   })
 })

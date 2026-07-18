@@ -1,4 +1,4 @@
-import { Show, createMemo, For } from "solid-js"
+import { Show, createMemo, For, createEffect } from "solid-js"
 import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
@@ -7,6 +7,7 @@ import { StatusBarStatusPopover } from "@/components/status-popover"
 import { getStatusBarSegments } from "./status-bar-segments"
 import { WorkbenchActiveDirectoryProvider } from "../workbench-directory-provider"
 import { useWorkbenchRuntime } from "../workbench-runtime"
+import { StatusBarDiagnosticsCenter } from "./status-bar-diagnostics"
 
 export function StatusBar() {
   const wb = useWorkbenchState()
@@ -31,8 +32,38 @@ export function StatusBar() {
     })
   })
 
+  createEffect(() => {
+    const status = runtime.status
+    if (status === "online") {
+      wb.removeDiagnostic("runtime-connection-status")
+    } else {
+      let text = ""
+      let type: "error" | "warning" | "info" = "warning"
+      
+      if (status === "offline") {
+        text = language.t("workbench.runtime.offline") || "已断开连接"
+        type = "error"
+      } else if (status === "degraded") {
+        text = language.t("workbench.runtime.degraded") || "事件流重连中"
+        type = "warning"
+      } else if (status === "recovering") {
+        text = language.t("workbench.runtime.recovering") || "正在重连"
+        type = "info"
+      }
+      
+      wb.pushDiagnostic(type, text, {
+        id: "runtime-connection-status",
+        autoDismiss: false,
+        onRetry: () => {
+          void runtime.retry()
+        },
+        source: "Connection"
+      })
+    }
+  })
+
   return (
-    <footer class="flex h-6 shrink-0 items-center justify-between gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
+    <footer class="relative flex h-6 shrink-0 items-center justify-between gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
       {/* 左区：空间 / panel / 会话 / 路径 的现代紧凑层级链 */}
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <For each={segments()}>
@@ -52,21 +83,11 @@ export function StatusBar() {
         </For>
       </div>
 
+      {/* 中区：绝对居中诊断与提示中心 */}
+      <StatusBarDiagnosticsCenter />
+
       {/* 右区：Server 状态控制按钮 + 名字，带有左边框分割 */}
       <div class="flex max-w-48 shrink-0 items-center gap-1 border-l border-v2-border-border-base pl-2">
-        <Show when={runtime.status !== "online"}>
-          <button
-            type="button"
-            class="rounded px-1 text-9-medium text-amber-600 hover:bg-v2-overlay-simple-overlay-hover"
-            onClick={() => void runtime.retry()}
-          >
-            {runtime.status === "offline"
-              ? language.t("workbench.runtime.offline")
-              : runtime.status === "degraded"
-                ? language.t("workbench.runtime.degraded")
-                : language.t("workbench.runtime.recovering")}
-          </button>
-        </Show>
         <WorkbenchActiveDirectoryProvider>
           {() => <StatusBarStatusPopover />}
         </WorkbenchActiveDirectoryProvider>

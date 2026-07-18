@@ -26,6 +26,19 @@ export {
   type WopalSpace,
 } from "./workbench-store"
 
+export type DiagnosticMessageType = "info" | "warning" | "error"
+
+export interface DiagnosticMessage {
+  id: string
+  type: DiagnosticMessageType
+  text: string
+  timestamp: number
+  source?: string
+  autoDismiss?: boolean
+  onRetry?: () => void | Promise<void>
+  onDismiss?: () => void
+}
+
 const STATUS_MESSAGE_DURATION = 5_000
 
 export function watchWorkbenchPersistence(
@@ -39,13 +52,11 @@ export function watchWorkbenchPersistence(
   })
 }
 
-const WorkbenchStateContext = createSimpleContext({
-  name: "WorkbenchState",
-  init: () => {
-    const workbench = createWorkbenchStore()
-    const [hydrated, setHydrated] = createSignal(false)
+export function initWorkbenchState() {
+  const workbench = createWorkbenchStore()
+  const [hydrated, setHydrated] = createSignal(false)
 
-    const [persisted, setPersisted] = makePersisted(
+  const [persisted, setPersisted] = makePersisted(
       createStore<PersistedWorkbench>(clonePersistedWorkbench(PERSISTED_DEFAULTS)),
       {
         name: "workbench",
@@ -104,16 +115,82 @@ const WorkbenchStateContext = createSimpleContext({
     let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
     let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
 
+    const [diagnosticsList, setDiagnosticsList] = createSignal<DiagnosticMessage[]>([])
+    const diagnosticTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+    const removeDiagnostic = (id: string) => {
+      const timer = diagnosticTimers.get(id)
+      if (timer) {
+        clearTimeout(timer)
+        diagnosticTimers.delete(id)
+      }
+      setDiagnosticsList((prev) => prev.filter((item) => item.id !== id))
+    }
+
+    const clearAllDiagnostics = () => {
+      for (const timer of diagnosticTimers.values()) {
+        clearTimeout(timer)
+      }
+      diagnosticTimers.clear()
+      setDiagnosticsList([])
+    }
+
+    const pushDiagnostic = (
+      type: DiagnosticMessageType,
+      text: string,
+      options?: { id?: string; source?: string; autoDismiss?: boolean; onRetry?: () => void | Promise<void>; onDismiss?: () => void },
+    ): string => {
+      const id = options?.id ?? `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const autoDismiss = options?.autoDismiss ?? (type === "info")
+
+      const existingTimer = diagnosticTimers.get(id)
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+        diagnosticTimers.delete(id)
+      }
+
+      setDiagnosticsList((prev) => {
+        const filtered = prev.filter((item) => item.id !== id)
+        return [
+          ...filtered,
+          {
+            id,
+            type,
+            text,
+            timestamp: Date.now(),
+            source: options?.source,
+            autoDismiss,
+            onRetry: options?.onRetry,
+            onDismiss: options?.onDismiss,
+          },
+        ]
+      })
+
+      if (autoDismiss) {
+        const timer = setTimeout(() => {
+          removeDiagnostic(id)
+        }, STATUS_MESSAGE_DURATION)
+        diagnosticTimers.set(id, timer)
+      }
+
+      return id
+    }
+
     const timedMessage = (
       message: string,
       timer: ReturnType<typeof setTimeout> | undefined,
       setTimer: (value: ReturnType<typeof setTimeout> | undefined) => void,
       setValue: (value: string) => void,
+      diagId: string,
     ) => {
       if (timer) clearTimeout(timer)
       setTimer(undefined)
       setValue(message)
-      if (!message) return
+      if (!message) {
+        removeDiagnostic(diagId)
+        return
+      }
+      pushDiagnostic("info", message, { id: diagId, autoDismiss: true })
       setTimer(setTimeout(() => {
         setValue("")
         setTimer(undefined)
@@ -121,13 +198,17 @@ const WorkbenchStateContext = createSimpleContext({
     }
 
     const setPersistentHint = (message: string) => {
-      timedMessage(message, persistentHintTimer, (value) => { persistentHintTimer = value }, setPersistentHintValue)
+      timedMessage(message, persistentHintTimer, (value) => { persistentHintTimer = value }, setPersistentHintValue, "legacy-persistent-hint")
     }
     const setStatusMessage = (message: string) => {
-      timedMessage(message, statusMessageTimer, (value) => { statusMessageTimer = value }, setStatusMessageValue)
+      timedMessage(message, statusMessageTimer, (value) => { statusMessageTimer = value }, setStatusMessageValue, "legacy-status-message")
     }
 
     onCleanup(() => {
+      for (const timer of diagnosticTimers.values()) {
+        clearTimeout(timer)
+      }
+      diagnosticTimers.clear()
       if (persistentHintTimer) clearTimeout(persistentHintTimer)
       if (statusMessageTimer) clearTimeout(statusMessageTimer)
     })
@@ -162,7 +243,7 @@ const WorkbenchStateContext = createSimpleContext({
       return ctx ? { scope: ctx.scope, panelID: ctx.panel.id } : undefined
     }
 
-    return {
+    const state = {
       ready: hydrated,
       display: () => workbench.display,
       get spaces() { return workbench.spaces },
@@ -203,10 +284,24 @@ const WorkbenchStateContext = createSimpleContext({
       setStatusMessage,
       get persistentHint() { return persistentHint() },
       setPersistentHint,
+      get diagnostics() { return diagnosticsList() },
+      pushDiagnostic,
+      removeDiagnostic,
+      clearAllDiagnostics,
       get refreshVersion() { return refreshVersion() },
       triggerRefresh: () => setRefreshVersion((version) => version + 1),
     }
-  },
+
+    if (typeof window !== "undefined") {
+      (window as any).__workbenchState = state
+    }
+
+    return state
+}
+
+const WorkbenchStateContext = createSimpleContext({
+  name: "WorkbenchState",
+  init: initWorkbenchState,
 })
 
 export const useWorkbenchState = () => WorkbenchStateContext.use()
