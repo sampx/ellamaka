@@ -15,6 +15,7 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import type { SpaceEntry, ProjectEntry } from "../../src/wopal/cli-schema"
 import { eq } from "drizzle-orm"
 import path from "path"
+import { realpath } from "fs/promises"
 
 const it = testEffect(
   SessionProjection.layer.pipe(
@@ -226,7 +227,10 @@ describe("session-projection-group-resolution", () => {
   it.instance("getSessionTree maps worktrees returned by CLI projects list v2", () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance
-      const dir = instance.directory
+      // canonicalSpaces resolves space paths through realpath; session directories
+      // stored in the DB use the raw path. On macOS /var → /private/var, so the
+      // space path and session directory won't match unless we pre-resolve.
+      const dir = yield* Effect.tryPromise(() => realpath(instance.directory))
       const projDir = path.join(dir, "projects/my-project")
       const wtDir = path.join(dir, "projects/my-project/.worktrees/my-wt")
       yield* Effect.sync(() => {
@@ -250,9 +254,16 @@ describe("session-projection-group-resolution", () => {
         insertSession(wtDir, "wt-session")
       })
 
-      const projection = yield* SessionProjection.Service
-      const tree = yield* projection.getSessionTree().pipe(
-        Effect.provide(projectionLayer(spaces, projects)),
+      // Run in a fresh runtime so the custom SpaceRegistry mock (with spaces
+      // and projects) is wired through SessionProjection.layer from scratch,
+      // matching the queryProjection pattern used in earlier tests.
+      const tree = yield* Effect.promise(() =>
+        Effect.runPromise(
+          Effect.gen(function* () {
+            const projection = yield* SessionProjection.Service
+            return yield* projection.getSessionTree()
+          }).pipe(Effect.scoped, Effect.provide(projectionLayer(spaces, projects))),
+        ),
       )
 
       const scope = tree.scopes.find((s) => s.name === "my-space")

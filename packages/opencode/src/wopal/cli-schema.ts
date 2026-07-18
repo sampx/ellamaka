@@ -5,14 +5,14 @@ import { Schema } from "effect"
 // ---------------------------------------------------------------------------
 
 export const CliEnvelopeSuccess = Schema.Struct({
-  apiVersion: Schema.Literal("wopal.capability/v1"),
+  apiVersion: Schema.String,
   capability: Schema.String,
   ok: Schema.Literal(true),
   data: Schema.Any,
 })
 
 export const CliEnvelopeError = Schema.Struct({
-  apiVersion: Schema.Literal("wopal.capability/v1"),
+  apiVersion: Schema.String,
   capability: Schema.String,
   ok: Schema.Literal(false),
   error: Schema.Struct({
