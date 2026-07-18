@@ -88,6 +88,7 @@ import { workspaceHandlers } from "./handlers/workspace"
 import { wopalSpaceHandlers, wopalSpaceInstanceHandlers } from "./handlers/wopal-space"
 import { workbenchHandlers, workbenchInstanceHandlers } from "./handlers/workbench"
 import { SpaceRegistry } from "@/wopal/space-registry"
+import { CliContract } from "@/wopal/cli-contract"
 import { SessionProvisioner } from "@/workbench/session-provisioner"
 import { SessionProjection } from "@/workbench/session-projection"
 import { SessionDirectoryHealth } from "@/workbench/session-directory-health"
@@ -126,6 +127,7 @@ const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.lay
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, globalHandlers, wopalSpaceHandlers, workbenchHandlers]),
   Layer.provide(SpaceRegistry.defaultLayer),
+  Layer.provide(CliContract.defaultLayer),
   Layer.provide(SessionProvisioner.defaultLayer),
   Layer.provide(SessionProjection.defaultLayer),
   Layer.provide(SessionDirectoryHealth.defaultLayer),

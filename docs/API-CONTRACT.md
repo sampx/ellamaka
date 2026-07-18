@@ -1,13 +1,14 @@
 # Ellamaka API 与 SDK 契约
 
 > **状态**：Active
-> **更新时间**：2026-07-17
+> **更新时间**：2026-07-18
 > **上级架构**：`../../../docs/products/wopal-space/DESIGN-wopalspace.md` §1.1
 
 ## 0. 变更记录
 
 | 日期 | 类型 | 摘要 |
 |---|---|---|
+| 2026-07-18 | Added | `/global/health` 新增 Wopal CLI 健康握手，`POST /global/cli/repair` 提供用户确认后的更新或安装恢复。CLI 失效时保留 General Session Runtime。 |
 | 2026-07-17 | Updated | Wopal CLI adapter 消费 `space.projects.list` v2（含 worktrees）和 `space.search` v1（替代 `space.directories.search`）。后端 Session Projection 不再自行调用 `git worktree list`，worktree 数据完全由 CLI 提供。 |
 | 2026-07-17 | Updated | Workbench 新增 Instance 级 session-tree、locations 与 requestID 幂等创建；保留 session-groups 作为兼容读模型。 |
 | 2026-07-15 | Updated | 明确 `GET /workbench/session-groups` 只返回未归档根会话，不暴露归档会话或带 `parentID` 的子会话。 |
@@ -58,6 +59,13 @@ HTTP 路径表达领域资源与自然从属关系。集合使用复数名词，
 
 `POST /workbench/sessions` 对相同 `requestID` 和相同 payload 返回已有 Session；同一 ID 配不同 payload 返回 `WorkbenchRequestConflict`（409）。可预期领域错误为 `InvalidSpaceTarget`（400）、`WorkbenchSpaceNotFound`（404）、`SessionDirectoryUnavailable`（409）、`WorkbenchRequestConflict`（409）、`CapabilityContractError`（502）和 `SpaceControlUnavailable`（503）。
 
+Global API 为 Workbench 提供运行时与 CLI 健康边界：
+
+| Endpoint | 语义 | 关键约束 |
+|---|---|---|
+| `GET /global/health` | 服务端存活与 Wopal CLI 状态 | 始终以服务端健康响应。`cli` 包含 `ok`、`missing`、`incompatible` 或 `broken`，并声明 `requiredVersion`。 |
+| `POST /global/cli/repair` | 修复已检测到的 Wopal CLI 问题 | 只由用户确认的界面操作调用。服务端选择已有 CLI 更新或第一方 installer，并返回新的探测结果。 |
+
 ## 4. Schema、错误与版本
 
 ### 4.1 Schema 是契约真相源
@@ -94,6 +102,8 @@ Effect Schema + HttpApiGroup
 ## 6. Wopal CLI 集成
 
 Ellamaka 的 Wopal CLI adapter 是 Runtime API 的领域服务。它以绝对可执行路径和参数数组调用已登记的 `wopal ... --json --api-version` capability，验证结构化结果，映射稳定 CLI 错误码，并维护非权威查询快照。
+
+CLI 健康契约由 `CliContract` 服务负责。它使用同一安装路径检查 `wopal --version` 是否满足 `MIN_WOPAL_CLI_VERSION`，将检查结果缓存在短时窗口内，并在修复完成后立即失效缓存。CLI 控制能力不可用时，Session Runtime 继续提供 General Session；Space 投影以空 Space 集合降级。
 
 Runtime API 面向 Workbench 暴露 Ellamaka 领域资源与投影，而不是透传 CLI 命令、CLI JSON envelope 或底层 filesystem 参数。CLI 管理的 settings、Git 和 ontology 状态保持事实来源。Session、PTY、消息和 General Session 工作目录由 ellamaka 直接拥有。
 

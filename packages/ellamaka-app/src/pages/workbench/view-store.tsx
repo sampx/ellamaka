@@ -35,7 +35,7 @@ export interface DiagnosticMessage {
   timestamp: number
   source?: string
   autoDismiss?: boolean
-  onRetry?: () => void | Promise<void>
+  onRetry?: () => boolean | Promise<boolean>
   onDismiss?: () => void
 }
 
@@ -138,7 +138,7 @@ export function initWorkbenchState() {
     const pushDiagnostic = (
       type: DiagnosticMessageType,
       text: string,
-      options?: { id?: string; source?: string; autoDismiss?: boolean; onRetry?: () => void | Promise<void>; onDismiss?: () => void },
+      options?: { id?: string; source?: string; autoDismiss?: boolean; onRetry?: () => boolean | Promise<boolean>; onDismiss?: () => void },
     ): string => {
       const id = options?.id ?? `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const autoDismiss = options?.autoDismiss ?? (type === "info")

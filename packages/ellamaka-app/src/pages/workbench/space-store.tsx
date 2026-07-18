@@ -4,6 +4,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useWorkbenchState } from "./view-store"
 import { reportWorkbenchError } from "./workbench-error"
 import { useWorkbenchRuntime } from "./workbench-runtime"
+import { canUseSpaceControl } from "./cli-health"
 
 export type WopalSpace = {
   name: string
@@ -25,9 +26,12 @@ const SpaceStoreContext = createSimpleContext({
     const wb = useWorkbenchState()
     const runtime = useWorkbenchRuntime()
 
-    const [spacesResource, spacesActions] = createResource(() => fetchSpaces(sdk))
     const [lastSuccessful, setLastSuccessful] = createSignal<WopalSpace[]>([])
     const [lastError, setLastError] = createSignal<unknown>()
+    const [spacesResource, spacesActions] = createResource(
+      () => canUseSpaceControl(runtime.cli),
+      (available) => available ? fetchSpaces(sdk) : lastSuccessful(),
+    )
 
     createEffect(() => {
       const list = spacesResource()
@@ -36,10 +40,6 @@ const SpaceStoreContext = createSimpleContext({
       setLastError(undefined)
     })
 
-    createEffect(() => {
-      if (runtime.recoveryVersion === 0) return
-      void spacesActions.refetch()
-    })
     createEffect(() => {
       const error = spacesResource.error
       if (!error) return
@@ -61,7 +61,7 @@ const SpaceStoreContext = createSimpleContext({
       spaces,
       get spacesLoading() { return spacesResource.loading },
       get error() { return lastError() },
-      reload: () => spacesActions.refetch(),
+      reload: () => canUseSpaceControl(runtime.cli) ? spacesActions.refetch() : Promise.resolve(lastSuccessful()),
     }
   },
 })

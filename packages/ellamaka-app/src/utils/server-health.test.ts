@@ -25,6 +25,34 @@ describe("checkServerHealth", () => {
     expect(result).toEqual({ healthy: true, version: "1.2.3" })
   })
 
+  test("preserves the Wopal CLI handshake status", async () => {
+    const fetch = (async () =>
+      new Response(JSON.stringify({
+        healthy: true,
+        version: "1.2.3",
+        cli: {
+          state: "incompatible",
+          requiredVersion: "0.3.4",
+          actualVersion: "0.3.3",
+        },
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof globalThis.fetch
+
+    const result = await checkServerHealth(server, fetch)
+
+    expect(result).toEqual({
+      healthy: true,
+      version: "1.2.3",
+      cli: {
+        state: "incompatible",
+        requiredVersion: "0.3.4",
+        actualVersion: "0.3.3",
+      },
+    })
+  })
+
   test("returns unhealthy when request fails", async () => {
     const fetch = (async () => {
       throw new Error("network")

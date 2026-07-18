@@ -68,6 +68,8 @@ import type {
   FindTextResponses,
   FormatterStatusErrors,
   FormatterStatusResponses,
+  GlobalCliRepairErrors,
+  GlobalCliRepairResponses,
   GlobalConfigGetErrors,
   GlobalConfigGetResponses,
   GlobalConfigUpdateErrors,
@@ -505,6 +507,20 @@ export class App extends HeyApiClient {
   }
 }
 
+export class Cli extends HeyApiClient {
+  /**
+   * Repair Wopal CLI
+   *
+   * Update or reinstall the managed Wopal CLI after explicit user confirmation.
+   */
+  public repair<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<GlobalCliRepairResponses, GlobalCliRepairErrors, ThrowOnError>({
+      url: "/global/cli/repair",
+      ...options,
+    })
+  }
+}
+
 export class Config extends HeyApiClient {
   /**
    * Get global configuration
@@ -602,6 +618,11 @@ export class Global extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  private _cli?: Cli
+  get cli(): Cli {
+    return (this._cli ??= new Cli({ client: this.client }))
   }
 
   private _config?: Config

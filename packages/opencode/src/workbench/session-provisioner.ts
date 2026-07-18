@@ -3,6 +3,7 @@ import { mkdir } from "fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { SpaceRegistry } from "@/wopal/space-registry"
+import { CliContract } from "@/wopal/cli-contract"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
 import { SessionShare } from "@/share/session"
@@ -63,7 +64,7 @@ export interface SessionProvisioner {
 
 export class Service extends Context.Service<Service, SessionProvisioner>()("@opencode/SessionProvisioner") {}
 
-const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+const WOPAL_CLI = CliContract.executablePath()
 const WOPAL_HOME = Global.Path.wopalHome
 
 const make = Effect.gen(function* () {

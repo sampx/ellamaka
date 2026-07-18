@@ -1,13 +1,14 @@
 # Ellamaka
 
 > **状态**: Active
-> **更新时间**: 2026-07-15
+> **更新时间**: 2026-07-18
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 
 ## 0. Change Log
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-18 | Updated | Runtime API 新增 Wopal CLI 健康握手与用户确认修复。CLI 控制能力降级时保留 General Session Runtime、Chat、TUI 和 PTY。 |
 | 2026-07-15 | Updated | Workbench Session Projection 只暴露未归档根会话，归档会话和带 `parentID` 的子会话不进入左侧会话列表。 |
 | 2026-07-11 | Major | §7.1 新增 Runtime API 与 SDK 契约。Effect HttpApi、OpenAPI 和生成 SDK 形成单一 API 链路；Wopal CLI adapter 通过版本化 capability contract 集成空间控制能力。 |
 | 2026-07-04 | Updated | §9 新增 ellamaka-app Web UI 架构设计决策;§1.1 补充 ellamaka-app 引用 |
@@ -108,6 +109,7 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 | Runtime data | `~/.wopal/ellamaka/data/` | ellamaka |
 | Cache | `~/.wopal/ellamaka/cache/` | ellamaka |
 | Process state | `~/.wopal/ellamaka/state/` | ellamaka |
+| Wopal CLI 健康 | `$WOPAL_HOME/bin/wopal` 的短时探测结果 | `CliContract`，CLI 二进制保持版本事实来源 |
 | 空间 ontology | `<space>/.wopal/` | Space Ontology，ellamaka 加载 |
 | 空间运行态 | `<space>/.wopal-space/` | space runtime，ellamaka 不写入 |
 
@@ -118,6 +120,8 @@ Ellamaka 的 HTTP API 是 Workbench 和外部集成使用运行时能力的唯�
 Workbench Session Projection 是左侧会话列表的服务端只读模型，只返回 `time_archived IS NULL` 且 `parent_id IS NULL` 的 Session。归档会话和子会话不属于可直接装载的根会话资源。
 
 Wopal CLI adapter 作为 Runtime 的领域服务使用 `wopal ... --json --api-version` capability。它维护非权威空间快照，并将稳定的 CLI 结果映射为 Ellamaka 领域资源和错误。浏览器只使用 Ellamaka API。
+
+`CliContract` 将 CLI 安装状态与能力调用分开处理。`/global/health` 公开最低版本、已检测版本与兼容状态。CLI 不可用时，Ellamaka 保持 Session Runtime，Workbench 将 Space Control 降级为可恢复状态。用户确认修复后，Runtime 使用已安装 CLI 的更新命令或第一方 installer 修复二进制，并重新探测状态；sidecar 与已有 Workbench 现场继续运行。
 
 完整的路径语义、schema、错误、版本、SDK 生成和端点门禁见 [API-CONTRACT.md](./API-CONTRACT.md)。
 

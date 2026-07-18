@@ -18,13 +18,17 @@ import { diffs as list, message as clean } from "@/utils/diffs"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
+export function requiresGlobalReconciliation(eventType: string) {
+  return eventType === "global.disposed"
+}
+
 export function applyGlobalEvent(input: {
   event: { type: string; properties?: unknown }
   project: Project[]
   setGlobalProject: (next: Project[] | ((draft: Project[]) => Project[])) => void
   refresh: () => void
 }) {
-  if (input.event.type === "global.disposed" || input.event.type === "server.connected") {
+  if (requiresGlobalReconciliation(input.event.type)) {
     input.refresh()
     return
   }

@@ -18,6 +18,7 @@ export function StatusBarDiagnosticsCenter() {
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
   const [showDefaultHint, setShowDefaultHint] = createSignal(true)
+  const [retryingID, setRetryingID] = createSignal<string>()
 
   onMount(() => {
     const timer = setTimeout(() => {
@@ -52,6 +53,18 @@ export function StatusBarDiagnosticsCenter() {
     if (sev === "warning") return "text-icon-warning-base"
     return "text-v2-text-text-primary"
   })
+
+  const retry = async (item: DiagnosticMessage) => {
+    if (!item.onRetry || retryingID()) return
+    setRetryingID(item.id)
+    try {
+      if (await item.onRetry()) wb.removeDiagnostic(item.id)
+    } catch {
+      return
+    } finally {
+      setRetryingID(undefined)
+    }
+  }
 
   return (
     <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center z-10">
@@ -118,12 +131,12 @@ export function StatusBarDiagnosticsCenter() {
                     <Show when={item.onRetry}>
                       <button
                         class="rounded bg-v2-surface-surface-3 px-2 py-0.5 text-10-medium text-v2-text-text-primary hover:bg-v2-surface-surface-4 transition-colors cursor-pointer"
-                        onClick={() => {
-                          item.onRetry?.()
-                          wb.removeDiagnostic(item.id)
-                        }}
+                        disabled={retryingID() === item.id}
+                        onClick={() => void retry(item)}
                       >
-                        {language.t("workbench.status.diagnostics.retry") || "重试"}
+                        {retryingID() === item.id
+                          ? language.t("workbench.status.diagnostics.retrying") || "重试中…"
+                          : language.t("workbench.status.diagnostics.retry") || "重试"}
                       </button>
                     </Show>
                     <button

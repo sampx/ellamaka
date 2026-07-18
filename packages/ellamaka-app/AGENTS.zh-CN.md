@@ -184,7 +184,9 @@ Workbench Chat 的模型选择按 Session 隔离。用户显式选择是当前 S
 ### 5.8 已确立的展示与生命周期契约
 
 - Panel 标题栏中 TUI 的存活标记直接由 `panel.tuiPtyId` 派生，不得另存 UI 标记。该 PTY ID 在启动时写入，关闭或断连时清空。
-- Workbench 瞬时提示统一使用 `wb.statusMessage`，只能传入 i18n 文案，显示在左侧会话树底部并在 5 秒后自动消失；侧栏收缩时提示区完全隐藏。底部状态栏只呈现当前 Space、Panel、Session 和 server context，不承载操作帮助。
+- Workbench 瞬时信息与非阻塞错误统一进入 `wb` 的诊断队列。信息在五秒后淡出，警告和错误保留至用户清除或成功恢复。`reportWorkbenchError` 由 Workbench Shell 接入诊断队列；Shell 未挂载时才回退 Toast。
+- CLI 健康由 `WorkbenchRuntime` 消费 `/global/health` 的 `cli` 状态。CLI 不可用时保留 General Session、Chat、TUI 和 PTY，并暂停 Space Control；诊断中心的修复操作由用户点击确认，恢复后自动重新探测。
+- `runtime.status === "offline"` 时，Shell 在顶层显示连接保护遮罩并将工作台表面设为 inert。恢复连接后自动解除隔离并保留当前现场。
 - Workbench Chat 历史区与输入 dock 共享 `bg-v2-background-bg-deep`；适配只位于 `PanelChatComposer`，不得改变通用 Session Composer 默认底色。
 - 嵌入式 terminal/TUI 不显示 `ghostty-web` canvas 滚动条，也不能沿用 `FitAddon` 固定预留的滚动条宽度；终端列数按容器完整内容宽度计算。
 - TUI 使用向上取整的完整字符网格并由容器裁边，避免右侧或底部 gutter。直接 TUI 使用 `isTui`；普通终端中启动的 Ellamaka TUI 必须同时通过 OSC 标题和 alternate buffer 识别，不能影响其他全屏终端程序。

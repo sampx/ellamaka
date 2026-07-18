@@ -343,7 +343,12 @@ describe("HttpApi SDK", () => {
       const log = yield* call(() => sdk.app.log({ service: "httpapi-sdk-test", level: "info", message: "hello" }))
 
       expect(health.response.status).toBe(200)
-      expect(health.data).toMatchObject({ healthy: true })
+      expect(health.data).toMatchObject({
+        healthy: true,
+        cli: {
+          requiredVersion: "0.3.4",
+        },
+      })
       expect(yield* firstEvent((signal) => sdk.global.event({ signal }))).toMatchObject({
         payload: { type: "server.connected" },
       })

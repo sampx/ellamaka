@@ -6,7 +6,6 @@ import { useWorkbenchState } from "../view-store"
 import { mergeSessionTreeSessions } from "./session-tree-merge"
 import type { WopalSpace } from "../space-store"
 import { useWorkbenchActions } from "../workbench-actions"
-import { useWorkbenchRuntime } from "../workbench-runtime"
 import { scopeFromTab } from "../workbench-scope"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { reportWorkbenchError } from "../workbench-error"
@@ -39,7 +38,6 @@ export function SessionTree(props: {
   const projection = useSessionProjectionWriter()
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
-  const runtime = useWorkbenchRuntime()
   const dialog = useDialog()
   const EXPAND_STORAGE_KEY = "workbench.tree.expanded"
   const PINNED_STORAGE_KEY = "workbench.tree.pinned"
@@ -65,15 +63,10 @@ export function SessionTree(props: {
   const [loading, setLoading] = createSignal(false)
   const [contextMenu, setContextMenu] = createSignal<ContextMenu>()
   const rowRefs = new Map<string, HTMLButtonElement>()
-  // Tracks the combined version snapshot of (refreshKey, refreshVersion,
-  // recoveryVersion) from the last successful load. Any one of these signals
-  // bumping must invalidate the guard so the effect's `load()` call actually
-  // refetches — otherwise manual `triggerRefresh()` (which only bumps
-  // refreshVersion) silently no-ops because `refreshKey === fetchVersion`
-  // still holds.
+  // Tracks the refresh snapshot from the last successful load. A manual
+  // refresh must invalidate the guard so the effect's `load()` call refetches.
   let lastRefreshKey = -1
   let lastRefreshVersion = -1
-  let lastRecoveryVersion = -1
 
   const activeSessionID = createMemo(() => {
     const tab = wb.activeTab()
@@ -130,24 +123,20 @@ export function SessionTree(props: {
   const load = async (force = false) => {
     const key = sessions.refreshKey()
     const refreshVersion = wb.refreshVersion
-    const recoveryVersion = runtime.recoveryVersion
     if (
       !force &&
       tree().scopes.length > 0 &&
       key === lastRefreshKey &&
-      refreshVersion === lastRefreshVersion &&
-      recoveryVersion === lastRecoveryVersion
+      refreshVersion === lastRefreshVersion
     ) return
     lastRefreshKey = key
     lastRefreshVersion = refreshVersion
-    lastRecoveryVersion = recoveryVersion
     await loadTree()
   }
 
   createEffect(() => {
     sessions.refreshKey()
     wb.refreshVersion
-    runtime.recoveryVersion
     const timer = setTimeout(() => void load(), 250)
     onCleanup(() => clearTimeout(timer))
   })

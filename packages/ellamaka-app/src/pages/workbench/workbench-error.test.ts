@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, mock, spyOn } from "bun:test"
-import { reportWorkbenchError } from "./workbench-error"
+import { reportWorkbenchError, WORKBENCH_ERROR_EVENT } from "./workbench-error"
 
 describe("reportWorkbenchError", () => {
   let consoleErrorSpy: ReturnType<typeof spyOn>
@@ -83,5 +83,21 @@ describe("reportWorkbenchError", () => {
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
     const [, message] = consoleErrorSpy.mock.calls[0] ?? []
     expect(message).toBe("Custom fail")
+  })
+
+  it("dispatches errors to an active Workbench host instead of showing a toast", () => {
+    const received: Array<{ operation: string; message: string }> = []
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ operation: string; message: string }>).detail
+      received.push(detail)
+      event.preventDefault()
+    }
+    window.addEventListener(WORKBENCH_ERROR_EVENT, listener)
+
+    reportWorkbenchError("load session tree", new Error("Network error"))
+
+    window.removeEventListener(WORKBENCH_ERROR_EVENT, listener)
+    expect(received).toEqual([{ operation: "load session tree", message: "Network error" }])
+    expect(toastCalls).toHaveLength(0)
   })
 })

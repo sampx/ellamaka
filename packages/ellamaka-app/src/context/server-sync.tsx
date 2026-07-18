@@ -17,7 +17,7 @@ import {
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
-import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
+import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches, requiresGlobalReconciliation } from "./global-sync/event-reducer"
 import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
@@ -366,7 +366,7 @@ export function createServerSyncContext() {
         },
         setGlobalProject: setProjects,
       })
-      if (event.type === "server.connected" || event.type === "global.disposed") {
+      if (requiresGlobalReconciliation(event.type)) {
         if (recent) return
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)

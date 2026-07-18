@@ -4,7 +4,14 @@ import { createSdkForServer } from "./server"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
-export type ServerHealth = { healthy: boolean; version?: string }
+export type WopalCliHealth = {
+  state: "ok" | "missing" | "incompatible" | "broken"
+  requiredVersion: string
+  actualVersion?: string
+  reason?: string
+}
+
+export type ServerHealth = { healthy: boolean; version?: string; cli?: WopalCliHealth }
 
 interface CheckServerHealthOptions {
   timeoutMs?: number
@@ -89,7 +96,13 @@ export async function checkServerHealth(
       signal,
     })
       .global.health()
-      .then((x) => (x.error ? next(count, x.error) : { healthy: x.data?.healthy === true, version: x.data?.version }))
+      .then((x) => x.error
+        ? next(count, x.error)
+        : {
+            healthy: x.data?.healthy === true,
+            version: x.data?.version,
+            ...(x.data?.cli ? { cli: x.data.cli } : {}),
+          })
       .catch((error) => next(count, error))
   return attempt(0).finally(() => timeout?.clear?.())
 }

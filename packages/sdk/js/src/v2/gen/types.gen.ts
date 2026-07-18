@@ -4022,10 +4022,50 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    cli: {
+      state: "ok" | "missing" | "incompatible" | "broken"
+      requiredVersion: string
+      actualVersion?: string
+      reason?: string
+    }
   }
 }
 
 export type GlobalHealthResponse = GlobalHealthResponses[keyof GlobalHealthResponses]
+
+export type GlobalCliRepairData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/cli/repair"
+}
+
+export type GlobalCliRepairErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalCliRepairError = GlobalCliRepairErrors[keyof GlobalCliRepairErrors]
+
+export type GlobalCliRepairResponses = {
+  /**
+   * Wopal CLI repair result
+   */
+  200: {
+    started: boolean
+    cli: {
+      state: "ok" | "missing" | "incompatible" | "broken"
+      requiredVersion: string
+      actualVersion?: string
+      reason?: string
+    }
+    message?: string
+  }
+}
+
+export type GlobalCliRepairResponse = GlobalCliRepairResponses[keyof GlobalCliRepairResponses]
 
 export type GlobalEventData = {
   body?: never

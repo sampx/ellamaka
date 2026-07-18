@@ -1,9 +1,8 @@
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import path from "path"
-import { Global } from "@opencode-ai/core/global"
 import { InstanceHttpApi, RootHttpApi } from "../api"
 import { SpaceRegistry } from "@/wopal/space-registry"
+import { CliContract } from "@/wopal/cli-contract"
 import { Config } from "@/config/config"
 import type { SpaceEntry } from "@/wopal/cli-schema"
 
@@ -11,7 +10,7 @@ import type { SpaceEntry } from "@/wopal/cli-schema"
 // CLI executable path
 // ---------------------------------------------------------------------------
 
-const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+const WOPAL_CLI = CliContract.executablePath()
 
 // ---------------------------------------------------------------------------
 // Space list helper

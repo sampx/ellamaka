@@ -256,7 +256,7 @@ export function Panel(props: {
                           when={session()}
                           fallback={
                             <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
-                              <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+                              <div class="workbench-spinner rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
                               <span class="text-12-regular">正在恢复会话…</span>
                             </div>
                           }

@@ -1,6 +1,16 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
 
+@keyframes workbench-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.workbench-spinner {
+  animation: workbench-spinner-rotate 0.8s linear infinite;
+}
+
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
@@ -166,4 +176,3 @@ html, body, #root {
 html[data-color-scheme="light"] .ellamaka-logo-invert {
   filter: invert(1);
 }
-

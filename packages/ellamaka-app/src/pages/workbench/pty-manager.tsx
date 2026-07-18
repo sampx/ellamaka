@@ -260,10 +260,18 @@ export class PtyManager {
           ptyID: ptyId,
           directory: this.ptyDirectories.get(ptyId),
         })
-        this.ptyDirectories.delete(ptyId)
       } catch (err) {
-        reportWorkbenchError("dispose pty", err, { silent: true })
+        // 404 PtyNotFoundError is expected when the backend already reaped
+        // the session (e.g. the ellamaka TUI process exited and the backend
+        // proc.onExit handler called remove(id) before our DELETE arrived).
+        // Treat it as idempotent success, not a real error.
+        const status = (err as { response?: { status?: number } })?.response?.status
+          ?? (err as { cause?: { status?: number } })?.cause?.status
+        if (status !== 404) {
+          reportWorkbenchError("dispose pty", err, { silent: true })
+        }
       }
+      this.ptyDirectories.delete(ptyId)
     }))
   }
 }

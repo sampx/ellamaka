@@ -1,4 +1,4 @@
-import { ErrorBoundary, Show, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, createEffect, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -12,11 +12,13 @@ import { useLanguage } from "@/context/language"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
-import { WorkbenchRuntimeProvider } from "./workbench-runtime"
+import { WorkbenchRuntimeProvider, useWorkbenchRuntime } from "./workbench-runtime"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
-import { reportWorkbenchError } from "./workbench-error"
+import { reportWorkbenchError, type WorkbenchErrorDetail, WORKBENCH_ERROR_EVENT } from "./workbench-error"
+import { CliRepairDialog } from "./parts/cli-repair-dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
@@ -27,8 +29,50 @@ function WorkbenchShell() {
   const allStoresReady = () => wb.ready()
   const display = () => wb.display()
   const sdk = useServerSDK()
+  const runtime = useWorkbenchRuntime()
   const language = useLanguage()
+  const dialog = useDialog()
   const t: typeof language.t = (key, params) => language.t(key, params)
+  let workbenchSurface: HTMLDivElement | undefined
+
+  const requestCliRepair = (cli: NonNullable<typeof runtime.cli>) => {
+    void dialog.show(() => (
+      <CliRepairDialog
+        cli={cli}
+        repair={runtime.repairCli}
+        onRepaired={() => wb.removeDiagnostic("wopal-cli-status")}
+      />
+    ))
+    return false
+  }
+
+  createEffect(() => {
+    if (!workbenchSurface) return
+    if (runtime.status === "offline") {
+      workbenchSurface.setAttribute("inert", "")
+      return
+    }
+    workbenchSurface.removeAttribute("inert")
+  })
+
+  createEffect(() => {
+    const cli = runtime.cli
+    if (!cli || cli.state === "ok") {
+      wb.removeDiagnostic("wopal-cli-status")
+      return
+    }
+    const text = cli.state === "missing"
+      ? t("workbench.cli.missing", { required: cli.requiredVersion })
+      : cli.state === "incompatible"
+        ? t("workbench.cli.incompatible", { actual: cli.actualVersion ?? "unknown", required: cli.requiredVersion })
+        : t("workbench.cli.broken", { required: cli.requiredVersion })
+    wb.pushDiagnostic("error", text, {
+      id: "wopal-cli-status",
+      autoDismiss: false,
+      onRetry: () => requestCliRepair(cli),
+      source: "Wopal CLI",
+    })
+  })
 
   // Task 3 (O18): Register default views during Shell init instead of at
   // module level. This eliminates import-order sensitivity from the
@@ -79,35 +123,62 @@ function WorkbenchShell() {
     })
   })
 
+  onMount(() => {
+    const onError = (event: Event) => {
+      const detail = (event as CustomEvent<WorkbenchErrorDetail>).detail
+      wb.pushDiagnostic("error", `${detail.operation}: ${detail.message}`, {
+        autoDismiss: false,
+        source: detail.operation,
+      })
+      event.preventDefault()
+    }
+    window.addEventListener(WORKBENCH_ERROR_EVENT, onError)
+    onCleanup(() => window.removeEventListener(WORKBENCH_ERROR_EVENT, onError))
+  })
+
   onCleanup(() => {
     actions.clearPtyMemory()
   })
 
   return (
-    <div class="flex h-dvh flex-col bg-v2-background-bg-deep text-v2-text-text-base overflow-hidden">
-      <Show
-        when={allStoresReady()}
-        fallback={
-          <div class="flex h-full items-center justify-center">
-            <div class="animate-spin rounded-full h-8 w-8 border-2 border-v2-text-text-muted border-t-transparent" />
+    <div class="relative h-dvh overflow-hidden bg-v2-background-bg-deep text-v2-text-text-base">
+      <div ref={workbenchSurface} class="flex h-full flex-col">
+        <Show
+          when={allStoresReady()}
+          fallback={
+            <div class="flex h-full items-center justify-center">
+              <div class="workbench-spinner rounded-full h-8 w-8 border-2 border-v2-text-text-muted border-t-transparent" />
+            </div>
+          }
+        >
+          <Show when={display().showTitlebar}>
+            <WorkbenchActiveDirectoryProvider>
+              {() => <WorkbenchTitlebar />}
+            </WorkbenchActiveDirectoryProvider>
+          </Show>
+          <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <SpaceRail />
+            <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <Workspace />
+            </div>
           </div>
-        }
-      >
-        <Show when={display().showTitlebar}>
-          <WorkbenchActiveDirectoryProvider>
-            {() => <WorkbenchTitlebar />}
-          </WorkbenchActiveDirectoryProvider>
+          <Show when={display().showStatusbar}>
+            <StatusBar />
+          </Show>
+          <WorkbenchSessionDeepLink />
         </Show>
-        <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <SpaceRail />
-          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <Workspace />
+      </div>
+      <Show when={runtime.status === "offline"}>
+        <div
+          class="absolute inset-0 z-50 flex items-center justify-center bg-v2-background-bg-deep/80 backdrop-blur-sm"
+          role="alertdialog"
+          aria-modal="true"
+        >
+          <div class="flex flex-col items-center gap-3 text-center">
+            <div class="workbench-spinner rounded-full h-6 w-6 border-2 border-v2-text-text-muted border-t-transparent" />
+            <p class="text-14-medium text-v2-text-text-primary">{t("workbench.runtime.offlineOverlay")}</p>
           </div>
         </div>
-        <Show when={display().showStatusbar}>
-          <StatusBar />
-        </Show>
-        <WorkbenchSessionDeepLink />
       </Show>
     </div>
   )

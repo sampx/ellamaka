@@ -1,11 +1,11 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import { realpath } from "fs/promises"
 import path from "path"
-import { Global } from "@opencode-ai/core/global"
 import { Database } from "@/storage/db"
 import { SessionTable } from "@/session/session.sql"
 import { SessionDirectoryHealth } from "./session-directory-health"
 import { SpaceRegistry } from "@/wopal/space-registry"
+import { CliContract } from "@/wopal/cli-contract"
 import type { SpaceEntry } from "@/wopal/cli-schema"
 import { SpaceControlUnavailable, CapabilityContractError } from "@/wopal/cli-schema"
 import { and, isNull } from "drizzle-orm"
@@ -75,7 +75,7 @@ interface RawSessionRow {
   time_archived: number | null
 }
 
-const WOPAL_CLI = path.join(Global.Path.wopalHome, "bin", "wopal")
+const WOPAL_CLI = CliContract.executablePath()
 const MAX_LIMIT_PER_SCOPE = 500
 
 /**
@@ -128,9 +128,15 @@ const make = Effect.gen(function* () {
       return (yield* registry.refreshSpaces(WOPAL_CLI)).spaces
     })
 
+  const spacesOrEmpty = () =>
+    spaces().pipe(
+      Effect.catchTag("SpaceControlUnavailable", () => Effect.succeed([])),
+      Effect.catchTag("CapabilityContractError", () => Effect.succeed([])),
+    )
+
   const getSessionGroups = (): Effect.Effect<SessionGroup[], SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spaces()])
+      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spacesOrEmpty()])
       const normalizedSpaces = registeredSpaces
         .map((space) => ({ ...space, path: normalizeWorkbenchPath(space.path) }))
         .sort((a, b) => b.path.length - a.path.length || a.path.localeCompare(b.path))
@@ -174,7 +180,7 @@ const make = Effect.gen(function* () {
 
   const getSessionTree = (input?: { limitPerScope?: number }) =>
     Effect.gen(function* () {
-      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spaces()], { concurrency: 2 })
+      const [rows, registeredSpaces] = yield* Effect.all([activeRows(), spacesOrEmpty()], { concurrency: 2 })
       const resolvedSpaces = yield* canonicalSpaces(registeredSpaces)
       // Fetch projects per space. `wopal space projects list --space <name>`
       // returns paths relative to that space's root; resolve them to absolute

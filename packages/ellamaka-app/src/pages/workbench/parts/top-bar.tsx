@@ -17,7 +17,9 @@ export function WorkbenchTitlebar() {
   const isWopalSpace = () => readWorkbenchDirectoryMode(sdk)
 
   const activeTab = () => wb.activeTab()
-  const spaceType = () => activeTab()?.type?.toUpperCase() ?? ""
+  const spaceName = () => activeTab()?.name ?? ""
+  const isGeneral = () => !activeTab() || activeTab()!.path === ""
+  const spaceLabel = () => isGeneral() ? t("workbench.sidebar.spaces") : spaceName()
 
   return (
     <header class="flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base">
@@ -30,11 +32,8 @@ export function WorkbenchTitlebar() {
 
         <Show when={isWopalSpace()}>
           <span class="text-12-regular text-v2-text-text-muted">·</span>
-          <span class="text-12-regular text-v2-text-text-base">
-            WopalSpace
-            <Show when={spaceType()}>
-              {` · ${spaceType()}`}
-            </Show>
+          <span class="text-12-regular text-v2-text-text-base truncate max-w-48 uppercase tracking-wide">
+            WOPALSPACE · {spaceLabel()}
           </span>
         </Show>
 

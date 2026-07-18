@@ -39,7 +39,7 @@ export function StatusBar() {
     } else {
       let text = ""
       let type: "error" | "warning" | "info" = "warning"
-      
+
       if (status === "offline") {
         text = language.t("workbench.runtime.offline") || "已断开连接"
         type = "error"
@@ -50,14 +50,12 @@ export function StatusBar() {
         text = language.t("workbench.runtime.recovering") || "正在重连"
         type = "info"
       }
-      
+
       wb.pushDiagnostic(type, text, {
         id: "runtime-connection-status",
         autoDismiss: false,
-        onRetry: () => {
-          void runtime.retry()
-        },
-        source: "Connection"
+        onRetry: runtime.retry,
+        source: "Connection",
       })
     }
   })

@@ -10,6 +10,7 @@ import { GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { WorkbenchSettingsMenu } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
 import { Persist, persisted } from "@/utils/persist"
+import { useWorkbenchRuntime } from "../workbench-runtime"
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500
@@ -20,6 +21,7 @@ export function SpaceRail() {
   const store = useSpaceStore()
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
+  const runtime = useWorkbenchRuntime()
   const language = useLanguage()
   const t = (k: string) => language.t(k)
 
@@ -85,6 +87,7 @@ export function SpaceRail() {
   const [refreshing, setRefreshing] = createSignal(false)
 
   function handleRefresh() {
+    if (!runtime.canUseSpaceControl()) return
     if (refreshing()) return
     setRefreshing(true)
     wb.triggerRefresh()
@@ -100,12 +103,20 @@ export function SpaceRail() {
     if (!session) return
     const isBound = wb.isSessionBound(sessionId)
     const boundPanelId = wb.boundPanelIdForSession(sessionId)
-    const tab = wb.tabs.find((tab) => tab.path === (session.spacePath ?? session.spaceName))
+    const sessionSpacePath = session.spacePath ?? session.spaceName
+    const tab = wb.tabs.find((tab) => tab.path === sessionSpacePath)
     if (tab) {
       wb.openTab(tab)
       if (isBound && boundPanelId) {
         wb.setActivePanel(tab.path, boundPanelId)
       }
+      return
+    }
+    // The session belongs to a space whose tab is not open yet. Open a new
+    // tab for that space so clicking a session always navigates to its space.
+    if (sessionSpacePath && sessionSpacePath !== "") {
+      wb.openTab({ name: session.spaceName ?? sessionSpacePath, path: sessionSpacePath, type: "space" })
+      wb.ensureSpace(sessionSpacePath)
     }
   }
 
@@ -156,13 +167,14 @@ export function SpaceRail() {
                   stroke-width="1.8"
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  class={refreshing() ? "animate-spin" : ""}
+                   class={refreshing() ? "workbench-spinner" : ""}
                   style={{ "transform-origin": "center" }}
                 >
                   <path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89L13.5 5.5M13.5 5.5V2m0 3.5H10" />
                 </svg>
               }
               aria-label={t("workbench.sidebar.refresh")}
+              disabled={!runtime.canUseSpaceControl()}
               onClick={handleRefresh}
             />
           </div>

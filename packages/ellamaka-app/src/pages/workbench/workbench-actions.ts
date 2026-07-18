@@ -173,6 +173,15 @@ export function createWorkbenchActions(input: {
     if (!panel || (panel.slotState === "empty" && !panel.boundSessionId)) {
       return { status: "unchanged", panelID }
     }
+    // Flip viewMode to chat and clear all PTY ids synchronously BEFORE awaiting
+    // backend disposal. Otherwise the view-registry createEffect re-enters
+    // while the backend PTY is gone but the store id is still set, spawning a
+    // new PTY (and resurrecting the blue dot / ellamaka process).
+    input.store.commitPanelMode?.(scope, panelID, "chat")
+    input.store.commitPanelPty(scope, panelID, "tui", undefined)
+    input.store.commitPanelPty(scope, panelID, "term", undefined)
+    input.store.commitPanelPty(scope, panelID, "split", undefined)
+    input.store.commitSplitTerminal?.(scope, panelID, false)
     const generation = nextGeneration(scope, panelID)
     await disposePanel(scope, panel)
     if (!isCurrent(scope, panelID, generation)) return { status: "stale", panelID }
@@ -224,6 +233,27 @@ export function createWorkbenchActions(input: {
       input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
       return { status: "committed", panelID: options.panelID }
     },
+    async exitTui(options: {
+      scope: SpaceScope
+      panelID: string
+      ptyID: string
+    }): Promise<WorkbenchActionResult> {
+      // TUI process exited normally (WS code 1000). The backend's proc.onExit
+      // handler already called remove(id) on its side, so we do NOT issue a
+      // DELETE here — that would race with the backend cleanup and surface a
+      // 404 PtyNotFoundError in the browser console. We only clear local
+      // state: flip viewMode to chat first (so the view-registry createEffect
+      // guard returns early and does not spawn a new PTY), then clear the
+      // store's tuiPtyId (removes the blue dot) and drop the in-memory
+      // ptyManager entry. The session binding is kept so the user sees the
+      // conversation they just left.
+      const panel = input.store.panel(options.scope, options.panelID)
+      if (!panel) return { status: "stale", panelID: options.panelID }
+      input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
+      input.store.commitPanelPty(options.scope, options.panelID, "tui", undefined)
+      input.pty.forgetPty?.({ scope: options.scope, panelID: options.panelID, kind: "tui" })
+      return { status: "committed", panelID: options.panelID }
+    },
     async createSession(options: {
       scope: SpaceScope
       panelID: string
@@ -257,9 +287,19 @@ export function createWorkbenchActions(input: {
       if (input.store.panels(options.scope).length <= 1) {
         return unbindPanel(options.scope, options.panelID)
       }
+      // Flip viewMode to chat and clear all PTY ids synchronously BEFORE awaiting
+      // backend disposal. Otherwise the view-registry createEffect re-enters
+      // while the backend PTY is gone but the store id is still set, spawning a
+      // new PTY (and resurrecting the blue dot / ellamaka process).
+      input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
+      input.store.commitPanelPty(options.scope, options.panelID, "tui", undefined)
+      input.store.commitPanelPty(options.scope, options.panelID, "term", undefined)
+      input.store.commitPanelPty(options.scope, options.panelID, "split", undefined)
+      input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
       const generation = nextGeneration(options.scope, options.panelID)
       await disposePanel(options.scope, panel)
-      if (!isCurrent(options.scope, options.panelID, generation)) {
+      const stillCurrent = isCurrent(options.scope, options.panelID, generation)
+      if (!stillCurrent) {
         return { status: "stale", panelID: options.panelID }
       }
       input.store.removePanel(options.scope, options.panelID)

@@ -41,6 +41,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | 模块 | 路径 | 职责 |
 |------|------|------|
 | CLI Adapter | `packages/opencode/src/wopal/cli-adapter.ts` | Effect 服务，通过 ChildProcessSpawner 以绝对路径+参数数组执行 wopal CLI，解析 v1 capability envelope（`wopal.capability/v1`），将 CLI 错误码映射为 Runtime 领域错误（`SpaceControlUnavailable`、`CapabilityContractError`） |
+| CLI Contract | `packages/opencode/src/wopal/cli-contract.ts` | 全局 CLI 健康与修复服务。检查 `$WOPAL_HOME/bin/wopal` 的版本兼容性，提供用户确认后的更新或安装恢复，并在修复后重新探测。 |
 | CLI Schema | `packages/opencode/src/wopal/cli-schema.ts` | CLI envelope、data schema（SpaceEntry、ProjectEntry、DirectoryEntry）、Runtime 领域错误（`SpaceControlUnavailable`、`CapabilityContractError`）与稳定错误码（`StableErrorCode`）定义 |
 | SpaceRegistry | `packages/opencode/src/wopal/space-registry.ts` | 非权威读穿式 Runtime 缓存。通过 CLI adapter 获取 Space 列表、项目列表和目录搜索结果，提供 `refreshSpaces`、`getSpaces`、`refreshProjects`、`searchDirectories` 方法。WopalSpace handler 不再直接读取 `settings.jsonc` |
 | Session Provisioner | `packages/opencode/src/workbench/session-provisioner.ts` | 受控会话创建。`provisionGeneral` 在 `$WOPAL_HOME/general_tasks/` 下创建唯一目录；`provisionSpace` 只接受已登记 Space 和安全的相对目录，拒绝遍历攻击和未知 Space |
@@ -64,6 +65,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | Workbench | POST | `/workbench/sessions` | `SessionProvisioner` + `SessionDirectoryHealth` |
 | Workbench | GET | `/workbench/session-groups` | `SessionProjection` + `SessionDirectoryHealth` |
 | WopalSpace | GET | `/wopal-space/spaces` | `SpaceRegistry`（通过 CLI adapter） |
+| Global | GET | `/global/health` | `CliContract` + Runtime health |
+| Global | POST | `/global/cli/repair` | `CliContract`，由用户确认的 Workbench 修复操作调用 |
 
 > **⚠ 待用户审阅**: 2026-07-11 SDK 迁移后，已移除以下 legacy 端点：`/wopal-space/space-overview`、`/wopal-space/non-space-overview`、`/wopal-space/search-directories`、`/wopal-space/recent-directories`、`/wopal-space/ensure-directory`。前端已完全迁移至 Workbench API（`POST /workbench/sessions` + `GET /workbench/session-groups`）。
 

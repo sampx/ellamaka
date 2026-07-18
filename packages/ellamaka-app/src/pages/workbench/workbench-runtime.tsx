@@ -1,10 +1,21 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
-import { useCheckServerHealth } from "@/utils/server-health"
+import { type WopalCliHealth, useCheckServerHealth } from "@/utils/server-health"
+import { canUseSpaceControl } from "./cli-health"
 
 export type WorkbenchRuntimeStatus = "online" | "degraded" | "recovering" | "offline"
+
+export function resolveWorkbenchRuntimeStatus(
+  healthy: boolean,
+  eventStatus: "stopped" | "connecting" | "connected" | "reconnecting",
+): WorkbenchRuntimeStatus {
+  if (!healthy) return "offline"
+  if (eventStatus === "connected") return "online"
+  if (eventStatus === "connecting") return "recovering"
+  return "degraded"
+}
 
 const WorkbenchRuntimeContext = createSimpleContext({
   name: "WorkbenchRuntime",
@@ -13,40 +24,45 @@ const WorkbenchRuntimeContext = createSimpleContext({
     const sdk = useServerSDK()
     const checkHealth = useCheckServerHealth()
     const [status, setStatus] = createSignal<WorkbenchRuntimeStatus>("recovering")
-    const [recoveryVersion, setRecoveryVersion] = createSignal(0)
-    let becameOnline = false
+    const [cli, setCli] = createSignal<WopalCliHealth>()
+    const [repairingCli, setRepairingCli] = createSignal(false)
     let request = 0
+    let lastHealthy = false
 
-    const refresh = async () => {
+    const refresh = async (): Promise<boolean> => {
       const current = server.current
-      const eventStatus = sdk.eventStatus
       if (!current) {
         setStatus("offline")
-        return
+        setCli(undefined)
+        lastHealthy = false
+        return false
       }
       const id = request + 1
       request = id
       const health = await checkHealth(current.http)
-      if (id !== request) return
-      const next: WorkbenchRuntimeStatus = !health.healthy
-        ? "offline"
-        : eventStatus === "connected"
-          ? "online"
-          : eventStatus === "connecting"
-            ? "recovering"
-            : "degraded"
-      const previous = status()
+      if (id !== request) return false
+      lastHealthy = health.healthy
+      setCli(health.cli)
+      const next = resolveWorkbenchRuntimeStatus(health.healthy, untrack(() => sdk.eventStatus))
       setStatus(next)
-      if (next === "online" && becameOnline && previous !== "online") {
-        setRecoveryVersion((value) => value + 1)
-      }
-      if (next === "online") becameOnline = true
+      return next === "online"
     }
 
+    // Re-fetch health only when the server changes. SSE eventStatus transitions
+    // (connected -> reconnecting -> connected) recompute `status` from the last
+    // known health snapshot instead of hammering /global/health on every blip,
+    // which previously caused the whole workbench to feel like a page refresh.
     createEffect(() => {
       server.key
-      sdk.eventStatus
       void refresh()
+    })
+
+    // eventStatus-only recompute: updates the status label without refetching
+    // health. If the health layer was already offline, keep it offline.
+    createEffect(() => {
+      const eventStatus = sdk.eventStatus
+      if (!lastHealthy) return
+      setStatus(resolveWorkbenchRuntimeStatus(true, eventStatus))
     })
 
     const timer = setInterval(() => void refresh(), 5_000)
@@ -56,11 +72,27 @@ const WorkbenchRuntimeContext = createSimpleContext({
       get status() {
         return status()
       },
-      get recoveryVersion() {
-        return recoveryVersion()
+      get cli() {
+        return cli()
+      },
+      get repairingCli() {
+        return repairingCli()
       },
       canWrite: () => status() === "online" || status() === "degraded",
+      canUseSpaceControl: () => canUseSpaceControl(cli()),
       retry: refresh,
+      repairCli: async () => {
+        if (repairingCli()) return false
+        setRepairingCli(true)
+        return sdk.client.global.cli.repair()
+          .then(async (result) => {
+            if (result.error) return false
+            await refresh()
+            return result.data?.cli.state === "ok"
+          })
+          .catch(() => false)
+          .finally(() => setRepairingCli(false))
+      },
     }
   },
 })

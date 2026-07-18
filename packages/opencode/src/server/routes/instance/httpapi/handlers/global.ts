@@ -3,6 +3,7 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
+import { CliContract } from "@/wopal/cli-contract"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import * as Log from "@opencode-ai/core/util/log"
@@ -70,10 +71,15 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
+    const cliContract = yield* CliContract.Service
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion }
+      return { healthy: true as const, version: InstallationVersion, cli: yield* cliContract.inspect() }
+    })
+
+    const cliRepair = Effect.fn("GlobalHttpApi.cliRepair")(function* () {
+      return yield* cliContract.repair()
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
@@ -148,6 +154,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
 
     return handlers
       .handle("health", health)
+      .handle("cliRepair", cliRepair)
       .handleRaw("event", event)
       .handle("configGet", configGet)
       .handle("configUpdate", configUpdate)

@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-07-15
+> **更新时间**: 2026-07-18
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-18 | Added | Workbench 通过 Runtime API 获取 Wopal CLI 健康状态，并在用户确认后执行 CLI 修复。CLI 故障降级 Space Control，保留 Session Runtime 与 PTY。 |
 | 2026-07-15 | Updated | Workbench Session Projection 在数据库查询边界排除已归档会话和带 `parentID` 的子会话，保证左侧树只展示可直接装载的根会话。 |
 | 2026-07-13 | Updated | §17 简化桌面 PTY 生命周期：Web 与 Desktop 共用 sidecar 断连宽限回收，移除 Electron Main PTY 注册表与专用 IPC 设计；同步更新 `DESKTOP.md` 和 Workbench 设计 |
 | 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
@@ -999,3 +1000,19 @@ Space
 | `docs/DESKTOP.md` | ellamaka-desktop 架构、状态所有权、PTY 生命周期与验证契约 |
 | `docs/ELLAMAKA-WORKBENCH.zh-CN.md` | ellamaka-app Workbench 详细设计 |
 | `docs/DISTRIBUTION.md` | Ellamaka 构建与分发设计 |
+
+---
+
+## 18. Workbench CLI 健康与恢复
+
+### 目的
+
+Workbench 通过 Ellamaka Runtime API 使用 Wopal CLI 管理的 Space Control 能力。CLI 版本变化、损坏或缺失时，Session Runtime 继续拥有会话、Chat、TUI 和 PTY。Workbench 以诊断中心表达 Space Control 的可恢复状态。
+
+### 实现逻辑
+
+`packages/opencode/src/wopal/cli-contract.ts` 定义最低 CLI 版本、跨平台可执行路径和短时健康探测。Global HTTP API 将状态附加到 `/global/health`，并提供 `POST /global/cli/repair`。修复操作由用户从 Workbench 诊断中心显式触发。
+
+不兼容 CLI 优先执行 `wopal update`。缺失或损坏的 CLI 使用第一方 installer。修复后 Runtime 立即重新探测版本。Desktop sidecar 不需要重启，现有 Workbench 状态保持挂载。
+
+Session Projection 在无法读取 Space 注册表时使用空 Space 集合继续构建 General Session 投影。Space 列表与受控 location 在恢复前保持不可用。

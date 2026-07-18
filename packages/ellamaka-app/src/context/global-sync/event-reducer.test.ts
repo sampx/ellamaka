@@ -118,7 +118,7 @@ describe("applyGlobalEvent", () => {
     expect(refreshCount).toBe(1)
   })
 
-  test("handles server.connected by triggering refresh", () => {
+  test("keeps current data for a transport reconnection", () => {
     let refreshCount = 0
     applyGlobalEvent({
       event: { type: "server.connected" },
@@ -129,7 +129,7 @@ describe("applyGlobalEvent", () => {
       setGlobalProject() {},
     })
 
-    expect(refreshCount).toBe(1)
+    expect(refreshCount).toBe(0)
   })
 })
 

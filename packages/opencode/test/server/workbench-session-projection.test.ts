@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
 import { SessionProjection, resolveSpaceRootPath } from "../../src/workbench/session-projection"
@@ -12,7 +12,7 @@ import { ProjectID } from "../../src/project/schema"
 import { Identifier } from "../../src/id/id"
 import { Slug } from "@opencode-ai/core/util/slug"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import type { SpaceEntry, ProjectEntry } from "../../src/wopal/cli-schema"
+import { SpaceControlUnavailable, type SpaceEntry, type ProjectEntry } from "../../src/wopal/cli-schema"
 import { eq } from "drizzle-orm"
 import path from "path"
 import { realpath } from "fs/promises"
@@ -52,6 +52,28 @@ function coldStartLayer(spaces: SpaceEntry[]) {
       searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
     })),
   )
+}
+
+function unavailableSpacesLayer() {
+  let refreshes = 0
+  const dependencies = Layer.mergeAll(
+    SessionDirectoryHealth.defaultLayer,
+    Layer.succeed(SpaceRegistry.Service, {
+      getSpaces: () => Effect.succeed({ spaces: [] as SpaceEntry[], refreshedAt: 0 }),
+      refreshSpaces: () => {
+        refreshes += 1
+        return Effect.fail(new SpaceControlUnavailable({ message: "Wopal CLI unavailable" }))
+      },
+      refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+      searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+    }),
+  )
+  return {
+    get refreshes() {
+      return refreshes
+    },
+    layer: Layer.fresh(SessionProjection.layer.pipe(Layer.provide(dependencies))),
+  }
 }
 
 function ensureGlobalProject() {
@@ -118,6 +140,27 @@ function queryProjectionColdStart(spaces: SpaceEntry[], sessionDir: string, subD
 }
 
 describe("session-projection-group-resolution", () => {
+  it.instance("keeps General sessions available when space discovery is unavailable", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      yield* Effect.sync(() => {
+        ensureGlobalProject()
+        insertSession(instance.directory, "General survives")
+      })
+      const unavailable = unavailableSpacesLayer()
+      const services = yield* Layer.build(unavailable.layer)
+      const groups = yield* Context.get(services, SessionProjection.Service).getSessionGroups()
+
+      expect(unavailable.refreshes).toBe(1)
+      expect(groups).toMatchObject([
+        {
+          type: "general",
+          sessions: [{ title: "General survives" }],
+        },
+      ])
+    }),
+  )
+
   it.instance("returns only active root sessions to the Workbench list", () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance

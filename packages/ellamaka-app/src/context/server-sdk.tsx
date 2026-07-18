@@ -12,6 +12,19 @@ import { createRefCountMap } from "@/utils/refcount"
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
 
+export function preserveServerSdkEventStatus<
+  T extends { readonly eventStatus: string },
+  TExtra extends object,
+>(sdk: T, extra: TExtra) {
+  return {
+    ...sdk,
+    ...extra,
+    get eventStatus(): T["eventStatus"] {
+      return sdk.eventStatus
+    },
+  }
+}
+
 function createServerSdkContext(server: ServerConnection.Any) {
   const platform = usePlatform()
   const abort = new AbortController()
@@ -260,10 +273,9 @@ export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleCo
 
     if (!server.current) throw new Error(language.t("error.serverSDK.noServerAvailable"))
     const sdk = createServerSdkContext(server.current)
-    return {
-      ...sdk,
+    return preserveServerSdkEventStatus(sdk, {
       createDirSdkContext: createRefCountMap((dir) => createDirSdkContext(dir, sdk)),
-    }
+    })
   },
 })
 

@@ -1,6 +1,7 @@
 import { Config } from "@/config/config"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
+import { CliHealthSchema, CliRepairSchema } from "@/wopal/cli-contract"
 import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -9,6 +10,7 @@ import { described } from "./metadata"
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  cli: CliHealthSchema,
 })
 
 const GlobalEventSchema = Schema.Struct({
@@ -35,6 +37,7 @@ const GlobalUpgradeResult = Schema.Union([
 
 export const GlobalPaths = {
   health: "/global/health",
+  cliRepair: "/global/cli/repair",
   event: "/global/event",
   config: "/global/config",
   dispose: "/global/dispose",
@@ -51,6 +54,15 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.health",
           summary: "Get health",
           description: "Get health information about the OpenCode server.",
+        }),
+      ),
+      HttpApiEndpoint.post("cliRepair", GlobalPaths.cliRepair, {
+        success: described(CliRepairSchema, "Wopal CLI repair result"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.cli.repair",
+          summary: "Repair Wopal CLI",
+          description: "Update or reinstall the managed Wopal CLI after explicit user confirmation.",
         }),
       ),
       HttpApiEndpoint.get("event", GlobalPaths.event, {

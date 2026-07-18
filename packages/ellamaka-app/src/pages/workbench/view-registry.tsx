@@ -107,7 +107,7 @@ export function registerDefaultViews(registry: ViewRegistry) {
 
       createEffect(() => {
         if (ctx.panel.slotState !== "bound") return
-        if (ctx.panel.viewMode !== "tui" && !ctx.panel.tuiPtyId) return
+        if (ctx.panel.viewMode !== "tui") return
 
         const sessionId = ctx.session?.id
         const args = sessionId
@@ -150,7 +150,7 @@ export function registerDefaultViews(registry: ViewRegistry) {
               when={ptyError()}
               fallback={
                 <div class="flex flex-col items-center justify-center h-full text-v2-text-text-muted gap-2">
-                  <div class="animate-spin rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+                  <div class="workbench-spinner rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
                   <span class="text-11-regular">Starting TUI...</span>
                 </div>
               }
@@ -183,16 +183,18 @@ export function registerDefaultViews(registry: ViewRegistry) {
                 })
               }}
               onClose={() => {
-                void actions.recoverPanelPty({
+                // TUI process exited (WS code 1000). Delete the backend PTY,
+                // clear the store's tuiPtyId (removes the blue dot), drop the
+                // in-memory ptyManager entry, and switch to chat view — keeping
+                // the session binding intact so the user sees the conversation
+                // they just left.
+                setPtyId(undefined)
+                void actions.exitTui({
                   scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
                   panelID: ctx.panel.id,
-                  kind: "tui",
                   ptyID: id,
-                }).then((result) => {
-                  if (result.status === "committed") setPtyId(undefined)
                 }).catch((e) => {
-                  reportWorkbenchError("recover tui pty", e)
-                  setPtyError("TUI terminal closed unexpectedly")
+                  reportWorkbenchError("exit tui", e)
                 })
               }}
             />

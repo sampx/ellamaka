@@ -93,6 +93,12 @@ export function SessionTreeRow(props: {
       if (targetSpace) {
         wb.openTab(targetSpace)
         wb.ensureSpace(targetSpace.path)
+      } else if (props.spacePath !== "") {
+        // The session belongs to a space whose tab is not open yet. Create
+        // the tab from the session's space identity so clicking a session
+        // always navigates to its space, instead of silently doing nothing.
+        wb.openTab({ name: props.spaceName, path: props.spacePath, type: "space" })
+        wb.ensureSpace(props.spacePath)
       }
     }
     props.onSessionClick(props.session.id)

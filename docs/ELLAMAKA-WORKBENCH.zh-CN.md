@@ -1,7 +1,7 @@
 # Ellamaka Workbench 设计与状态管理规范
 
 > **状态**：核心设计与开发规范。本项目的后续所有开发与重构工作必须严格遵循本文档。
-> **更新时间**：2026-07-14
+> **更新时间**：2026-07-18
 > **相关文档**：`DESKTOP.md`（Electron 桌面承载与共享 PTY 生命周期）
 
 ---
@@ -509,7 +509,8 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 
 | 严重性等级 | 典型场景 | 前端渲染表现 | 自愈/应对机制 |
 | :--- | :--- | :--- | :--- |
-| **致命错误/环境失效 (Fatal)** | `wopal-cli` 缺失或版本不兼容（协议冲突）/ 数据库损坏 | 全局 `ErrorPage` (独占式阻断) | 彻底阻断任何后续操作，防止产生脏状态，打印明确修复建议（如：`wopal update`）。 |
+| **运行时完整性错误 (Fatal)** | 数据库损坏或无法恢复的应用根异常 | 全局 `ErrorPage` (独占式阻断) | 停止会破坏运行时事实的操作，并提供恢复与日志入口。 |
+| **空间控制不可用 (Degraded)** | `wopal-cli` 缺失、损坏或版本不兼容 | 状态栏诊断中心 | General Session、Chat、TUI 与 PTY 保持可用；Space Control 暂停，用户确认修复后自动恢复。 |
 | **瞬态连接丢失 (Connection)** | WebSocket 断连 / 服务端 API 失去响应（抖动） | 模态遮罩层 (Modal Overlay) | 在视口覆盖半透明遮罩，阻断全部用户输入保护状态；启动指数退避自动重连，连接恢复后自动闭合。 |
 | **局部非阻塞错误 (Warning)** | 空面板选择受控目录时 `locations` 接口拉取失败 | 状态栏局部错误区 + 局部重试 | **严禁抛出至面板 ErrorBoundary**！保持面板可操作，在底部状态栏指示错误并提供“重试/清除”入口。 |
 
@@ -520,12 +521,13 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 2. **输入隔离**：遮罩层拦截所有的鼠标、键盘和拖放操作。
 3. **静默水合**：后台自动重连。连接成功后，自动关闭遮罩并恢复之前的操作现场，无需用户刷新页面。
 
-### 7.3 版本冲突与致命诊断 (CLI Version Handshake)
+### 7.3 CLI 健康握手与可恢复修复 (CLI Health Handshake)
 
 系统确立 CLI 的健康与版本握手机制：
-1. **启动与健康握手**：服务端扩展 `/global/health`（或专用握手端点），不仅验证 Hono Server 本身存活，还需主动检查本地 `$WOPAL_HOME/bin/wopal` 是否正常以及是否满足 `MIN_WOPAL_CLI_VERSION`。
-2. **物理阻断**：若 CLI 检测失败（缺失或不兼容），禁止进入工作台，**直接渲染官方统一的 `ErrorPage`** 作为最后的安全围栏。
-3. **修复建议**：在 `ErrorPage` 的错误详情中清晰打印故障排查引导（例如：“`wopal-cli 版本不兼容，请在本地终端运行 wopal update 升级 CLI 后重启。`”）。
+1. **启动与健康握手**：`GET /global/health` 同时返回服务端版本与 Wopal CLI 状态。CLI 状态包含 `ok`、`missing`、`incompatible` 和 `broken`，并携带最低兼容版本与已检测版本。
+2. **运行时保持**：CLI 状态不改变服务端健康语义。CLI 不可用时，Session Runtime 继续服务 General Session、Chat、TUI 与 PTY。Session Projection 将无法归属 Space 的会话作为 General 返回。
+3. **受控降级**：Space 列表刷新、受控 Space location 和其他 CLI 控制能力在 CLI 不可用期间暂停。状态栏诊断中心保留修复入口，并说明最低兼容版本。
+4. **用户确认的修复**：用户点击修复后，`POST /global/cli/repair` 对不兼容 CLI 执行 `wopal update`，并在需要时调用第一方 installer。服务端重新探测 CLI；Workbench 在探测成功后自动恢复 Space Control，不重启 sidecar 或当前 Workbench。
 
 ### 7.4 状态栏居中诊断与信息中心 (Status Bar Diagnostics & Info Center)
 
@@ -543,7 +545,5 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
    - 用户点击状态栏居中消息区时，在状态栏上方弹出一个**气泡弹出框 (Popover)**。
    - 气泡框中以垂直列表形式展示所有当前的活动消息。
    - 每个错误和警告条目右侧提供 **“重试”**（若支持，如 API 重新请求）和 **“清除”**（Dismiss）操作链接。
-   - **自愈消除**：若重试成功或系统在后台自动恢复，对应的错误/警告条目会自动被从队列中删除并随之闭合。
-
-
+    - **自愈消除**：重试操作必须明确返回成功结果后才删除条目。后台恢复同样自动清除对应诊断。
 
