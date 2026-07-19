@@ -6,6 +6,7 @@ import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
+import type { SidecarSpawnFactory } from "./sidecar-supervisor"
 
 export type WslConfig = { enabled: boolean }
 
@@ -251,4 +252,19 @@ function defer<T>() {
     reject = rej
   })
   return { promise, resolve, reject }
+}
+
+/**
+ * Creates a SidecarSpawnFactory that wraps spawnLocalServer.
+ * This is the injectable factory used by SidecarSupervisor.
+ */
+export function createSidecarSpawner(needsMigration: boolean): SidecarSpawnFactory {
+  return (hostname, port, password, options) =>
+    spawnLocalServer(hostname, port, password, {
+      needsMigration,
+      onSqliteProgress: options.onSqliteProgress,
+      onStdout: options.onStdout,
+      onStderr: options.onStderr,
+      onExit: options.onExit,
+    })
 }
