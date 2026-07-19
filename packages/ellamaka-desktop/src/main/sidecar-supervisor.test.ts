@@ -577,4 +577,61 @@ describe("SidecarSupervisor", () => {
     expect(supervisor.getState().generation).toBe(2)
     expect(mockSpawner.callCount).toBe(2)
   })
+
+  // ── W-11: restart from ready suppresses doLost ──────────────────────────
+
+  test("restart from ready does not emit 'lost' state to listeners", async () => {
+    const supervisor = createSupervisor(mockSpawner)
+    const states: SidecarRuntimeStatus[] = []
+    supervisor.subscribe((s) => states.push(s.status))
+
+    // Get to ready with a spawn that triggers exit on stop
+    const startPromise = supervisor.start()
+    await tick()
+    const r1 = createSpawnResult()
+    // Override stop to trigger exit (simulating real sidecar behavior)
+    let exitCode = 0
+    r1.result.listener.stop = async () => { mockSpawner.triggerExit(exitCode) }
+    mockSpawner.resolve(r1.result)
+    r1.passHealth()
+    await startPromise
+    expect(supervisor.getState().status).toBe("ready")
+    states.length = 0 // Reset
+
+    // Restart from ready — suppressNextExit should prevent "lost"
+    exitCode = 0 // clean exit
+    const restartPromise = supervisor.restart("user")
+    await tick()
+
+    // Should see "starting" but NOT "lost" (suppressed by suppressNextExit)
+    expect(states).toContain("starting")
+    expect(states).not.toContain("lost")
+
+    const r2 = createSpawnResult()
+    mockSpawner.resolve(r2.result)
+    r2.passHealth()
+    await restartPromise
+    expect(supervisor.getState().status).toBe("ready")
+  })
+
+  // ── W-12: health check during spawn exit ───────────────────────────────
+
+  test("exit during health check increments attempt only once", async () => {
+    const supervisor = createSupervisor(mockSpawner)
+
+    // Start spawn
+    supervisor.start()
+    await tick()
+    const r1 = createSpawnResult()
+    mockSpawner.resolve(r1.result)
+    // Don't pass health yet — sidecar exits during health check
+    mockSpawner.triggerExit(1)
+    // Now fail health
+    r1.failHealth(new Error("health failed"))
+    await tick()
+
+    // attempt should be incremented only once (from doLost), not twice
+    expect(supervisor.getState().attempt).toBe(1)
+    expect(supervisor.getState().status).toBe("lost")
+  })
 })

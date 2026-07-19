@@ -82,6 +82,7 @@ export class SidecarSupervisor {
   private terminalReason: SidecarTerminalReason | undefined
   private waitForReadyResolve: ((state: SidecarRuntimeState) => void) | undefined
   private waitForReadyReject: ((error: Error) => void) | undefined
+  private suppressNextExit = false
 
   private deps: {
     spawn: SidecarSpawnFactory
@@ -232,7 +233,8 @@ export class SidecarSupervisor {
     }
 
     if (this.state.status === "ready") {
-      // Force restart from ready: stop current sidecar first, then start anew
+      // Force restart from ready: suppress doLost during stop, then start anew
+      this.suppressNextExit = true
       if (this.currentSpawn) {
         try { await this.currentSpawn.listener.stop() } catch {}
         this.currentSpawn = null
@@ -328,6 +330,11 @@ export class SidecarSupervisor {
 
   private handleExit(code: number) {
     if (this.state.status === "stopped") return
+    if (this.suppressNextExit) {
+      this.suppressNextExit = false
+      this.currentSpawn = null
+      return
+    }
     this.currentSpawn = null
     this.doLost(`EXIT_${code}`)
   }
