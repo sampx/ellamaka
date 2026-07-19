@@ -35,6 +35,7 @@ LOGDIR="$space/.wopal-space/logs"
 PIDFILE="$LOGDIR/ellamaka-dev.pid"
 BACKEND_LOG="$LOGDIR/ellamaka-dev-backend.log"
 FRONTEND_LOG="$LOGDIR/ellamaka-dev-frontend.log"
+PLUGIN_DEBUG_LOG="$LOGDIR/wopal-plugins-debug.log"
 
 usage() {
   cat <<EOF
@@ -80,11 +81,14 @@ EOF
 
 # ── Shared helpers ─────────────────────────────────────────
 
-is_running() { lsof -ti :"$1" >/dev/null 2>&1; }
+# 端口是否仍被监听（仅 LISTEN 状态）。
+# CLOSE_WAIT / ESTABLISHED 客户端连接不算占用 —— 避免后端被杀后
+# Chrome 残留的 SSE 连接被误判为"端口仍被占用"。
+is_running() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
-# 校验 pidfile 中记录的进程是否真实存活：pid 可 kill -0 且端口仍被占用。
-# 用法: pid_alive <port> <pid>
-pid_alive() {
+# 校验 pidfile 中记录的进程是否真实存活：pid 可 kill -0 且端口仍被监听。
+# 用法: pid_listening <port> <pid>
+pid_listening() {
   local port="$1" pid="$2"
   [ -n "$pid" ] && [ -n "$port" ] || return 1
   kill -0 "$pid" 2>/dev/null && is_running "$port"
@@ -119,22 +123,22 @@ warmup_config() {
 
 # 读取 pidfile，设置全局变量。返回 1 如果文件不存在或为空。
 # 设置的全局变量：
-#   BP   = backend port（空如果没有 backend 行）
-#   BPID = backend pid（空如果没有 backend 行）
-#   AP   = frontend port（空如果没有 frontend 行）
-#   FPID = frontend pid（空如果没有 frontend 行）
+#   BACKEND_PORT   = backend port（空如果没有 backend 行）
+#   BACKEND_PID    = backend pid（空如果没有 backend 行）
+#   FRONTEND_PORT  = frontend port（空如果没有 frontend 行）
+#   FRONTEND_PID   = frontend pid（空如果没有 frontend 行）
 read_pidfile() {
-  BP=""; BPID=""; AP=""; FPID=""
+  BACKEND_PORT=""; BACKEND_PID=""; FRONTEND_PORT=""; FRONTEND_PID=""
   [ -f "$PIDFILE" ] || return 1
   local line label port pid
   while IFS=$' \t' read -r label port pid; do
     [ -n "$label" ] || continue
     case "$label" in
-      backend)  BP="$port"; BPID="$pid" ;;
-      frontend) AP="$port"; FPID="$pid" ;;
+      backend)  BACKEND_PORT="$port"; BACKEND_PID="$pid" ;;
+      frontend) FRONTEND_PORT="$port"; FRONTEND_PID="$pid" ;;
     esac
   done < "$PIDFILE"
-  [ -n "$BPID" ] || [ -n "$FPID" ] || return 1
+  [ -n "$BACKEND_PID" ] || [ -n "$FRONTEND_PID" ] || return 1
   return 0
 }
 
@@ -169,7 +173,9 @@ remove_pidfile_line() {
 
 # ── 进程 kill helpers ───────────────────────────────────────
 
-# 杀单个 PID（及其进程组），轮询直到端口释放。
+# 杀单个 PID（及其进程组），轮询直到 PID 死亡 或 端口释放。
+# PID 死亡即视为成功 —— 后端被杀后 Chrome 残留 CLOSE_WAIT 连接
+# 会让 is_running 误判，必须以 PID 是否存在为准。
 # 用法: kill_pid_and_wait_port <port> <pid>
 kill_pid_and_wait_port() {
   local port="$1" pid="$2"
@@ -178,6 +184,7 @@ kill_pid_and_wait_port() {
   kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
 
   for i in $(seq 1 30); do
+    ! kill -0 "$pid" 2>/dev/null && return 0
     ! is_running "$port" && return 0
     sleep 0.1
   done
@@ -185,18 +192,19 @@ kill_pid_and_wait_port() {
   kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
 
   for i in $(seq 1 50); do
+    ! kill -0 "$pid" 2>/dev/null && return 0
     ! is_running "$port" && return 0
     sleep 0.1
   done
   return 1
 }
 
-# 杀多个 PID（及其进程组），轮询直到所有给定端口释放。
-# 用法: kill_group_and_wait <port> <app_port> <pid> [<pid> ...]
-kill_group_and_wait() {
+# 杀多个 PID（及其进程组），轮询直到所有 PID 死亡 或 所有给定端口释放。
+# 用法: kill_pids_and_wait_ports <port> <app_port> <pid> [<pid> ...]
+kill_pids_and_wait_ports() {
   local port="$1" app_port="$2"; shift 2
   local pids=("$@")
-  local i pid
+  local i pid alive
 
   for pid in "${pids[@]}"; do
     [ -n "$pid" ] || continue
@@ -204,7 +212,11 @@ kill_group_and_wait() {
   done
 
   for i in $(seq 1 20); do
-    ! is_running "$port" && { [ -z "$app_port" ] || ! is_running "$app_port"; } && return 0
+    alive=0
+    for pid in "${pids[@]}"; do
+      [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && { alive=1; break; }
+    done
+    [ $alive -eq 0 ] && { ! is_running "$port" && { [ -z "$app_port" ] || ! is_running "$app_port"; } && return 0; }
     sleep 0.1
   done
 
@@ -214,7 +226,11 @@ kill_group_and_wait() {
   done
 
   for i in $(seq 1 50); do
-    ! is_running "$port" && { [ -z "$app_port" ] || ! is_running "$app_port"; } && return 0
+    alive=0
+    for pid in "${pids[@]}"; do
+      [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && { alive=1; break; }
+    done
+    [ $alive -eq 0 ] && { ! is_running "$port" && { [ -z "$app_port" ] || ! is_running "$app_port"; } && return 0; }
     sleep 0.1
   done
   return 1
@@ -223,7 +239,7 @@ kill_group_and_wait() {
 # ── start helpers ───────────────────────────────────────────
 
 start_backend() {
-  local port="$1" pidfile="$2" debug="$3" debug_modules="$4" preload="$5" passthrough=("${@:6}")
+  local port="$1" debug="$2" debug_modules="$3" preload="$4" passthrough=("${@:5}")
 
   local srv_env=() srv_args=(serve --port "$port" --print-logs)
 
@@ -231,7 +247,7 @@ start_backend() {
     srv_args+=(--log-level DEBUG)
     srv_env+=(
       WOPAL_PLUGIN_DEBUG="$debug_modules"
-      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+      WOPAL_PLUGIN_LOG_FILE="$PLUGIN_DEBUG_LOG"
       WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
   else
@@ -268,6 +284,49 @@ start_frontend() {
   write_pidfile_line frontend "$app_port" "$!"
 }
 
+# ── stop helpers ────────────────────────────────────────────
+
+# 停掉单个组件：杀进程 + 清理 pidfile + 归档日志。
+# 用法: stop_one <label> <port> <pid> <log_file> [on_fail_mode]
+#   on_fail_mode: "return" (默认, kill 失败则 return 1) | "warn" (kill 失败仅警告继续清理)
+# 返回值：
+#   0  清理完成（含 stale pidfile 清理 / 无可停项）
+#   1  kill 失败且 mode=return
+stop_one() {
+  local label="$1" port="$2" pid="$3" log_file="$4" mode="${5:-return}"
+  local display_label
+  case "$label" in
+    frontend) display_label="workbench" ;;
+    *)        display_label="$label" ;;
+  esac
+
+  if [ -z "$pid" ]; then
+    echo "stop: no $display_label running"
+    return 0
+  fi
+
+  if ! pid_listening "$port" "$pid"; then
+    echo "stop: $display_label not running (stale pidfile line removed)"
+  else
+    echo "stopping $display_label :$port (pid $pid)..."
+    if ! kill_pid_and_wait_port "$port" "$pid"; then
+      if [ "$mode" = "warn" ]; then
+        echo "stop: $display_label did not exit cleanly"
+      else
+        echo "stop: $display_label did not exit"
+        return 1
+      fi
+    else
+      echo "stopped $display_label :$port"
+    fi
+  fi
+
+  remove_pidfile_line "$label"
+  rm -f "$log_file"
+  # plugin debug log 由 backend 在 debug 模式下写入，跟随 backend 一起清理
+  [ "$label" = "backend" ] && rm -f "$PLUGIN_DEBUG_LOG"
+}
+
 # ── stop ───────────────────────────────────────────────────
 
 cmd_stop() {
@@ -292,55 +351,19 @@ EOF
 
   case "$target" in
     backend)
-      if pid_alive "$BP" "$BPID"; then
-        echo "stopping backend :$BP (pid $BPID)..."
-        kill_pid_and_wait_port "$BP" "$BPID" || { echo "stop: backend did not exit"; return 1; }
-        echo "stopped backend :$BP"
-      elif [ -n "$BPID" ]; then
-        echo "stop: backend not running (stale pidfile line removed)"
-      else
-        echo "stop: no backend running"; return 0
-      fi
-      remove_pidfile_line backend
-      rm -f "$BACKEND_LOG"
+      stop_one backend "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" return
       ;;
     frontend)
-      if pid_alive "$AP" "$FPID"; then
-        echo "stopping workbench :$AP (pid $FPID)..."
-        kill_pid_and_wait_port "$AP" "$FPID" || { echo "stop: frontend did not exit"; return 1; }
-        echo "stopped workbench :$AP"
-      elif [ -n "$FPID" ]; then
-        echo "stop: frontend not running (stale pidfile line removed)"
-      else
-        echo "stop: no frontend running"; return 0
-      fi
-      remove_pidfile_line frontend
-      rm -f "$FRONTEND_LOG"
+      stop_one frontend "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" return
       ;;
     all)
       local stopped=0
-      if [ -n "$BPID" ]; then
-        if pid_alive "$BP" "$BPID"; then
-          echo "stopping backend :$BP (pid $BPID)..."
-          kill_pid_and_wait_port "$BP" "$BPID" || echo "stop: backend did not exit cleanly"
-          echo "stopped backend :$BP"
-        else
-          echo "stop: backend not running (stale pidfile line removed)"
-        fi
-        remove_pidfile_line backend
-        rm -f "$BACKEND_LOG"
+      if [ -n "$BACKEND_PID" ]; then
+        stop_one backend "$BACKEND_PORT" "$BACKEND_PID" "$BACKEND_LOG" warn || true
         stopped=1
       fi
-      if [ -n "$FPID" ]; then
-        if pid_alive "$AP" "$FPID"; then
-          echo "stopping workbench :$AP (pid $FPID)..."
-          kill_pid_and_wait_port "$AP" "$FPID" || echo "stop: frontend did not exit cleanly"
-          echo "stopped workbench :$AP"
-        else
-          echo "stop: frontend not running (stale pidfile line removed)"
-        fi
-        remove_pidfile_line frontend
-        rm -f "$FRONTEND_LOG"
+      if [ -n "$FRONTEND_PID" ]; then
+        stop_one frontend "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" warn || true
         stopped=1
       fi
       [ $stopped -eq 0 ] && echo "no dev instances running"
@@ -382,19 +405,19 @@ cmd_tui() {
       attach_args+=(--log-level DEBUG)
       attach_env+=(
         WOPAL_PLUGIN_DEBUG="$debug_modules"
-        WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+        WOPAL_PLUGIN_LOG_FILE="$PLUGIN_DEBUG_LOG"
         WOPAL_DEBUG_LOG_DIR="$LOGDIR"
       )
     fi
 
     # Attach to a healthy running backend if one exists.
-    if read_pidfile && [ -n "$BPID" ] && kill -0 "$BPID" 2>/dev/null \
-       && [ -n "$BP" ] && is_running "$BP" && backend_healthy "$BP"; then
-      echo "attaching to running server :$BP"
-      warmup_config "$BP"
+    if read_pidfile && [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null \
+       && [ -n "$BACKEND_PORT" ] && is_running "$BACKEND_PORT" && backend_healthy "$BACKEND_PORT"; then
+      echo "attaching to running server :$BACKEND_PORT"
+      warmup_config "$BACKEND_PORT"
       cd "$opencode_dir"
       exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" \
-        "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$BP" --dir "$caller_pwd"
+        "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$BACKEND_PORT" --dir "$caller_pwd"
     fi
 
     # No existing backend → start backend + workbench, same as serve.
@@ -414,7 +437,7 @@ cmd_tui() {
 
     $debug && echo "debug: modules=$debug_modules"
 
-    start_backend "$PORT" "$PIDFILE" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
+    start_backend "$PORT" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
 
     if ! wait_backend "$PORT"; then
       echo "backend failed to start; see $BACKEND_LOG"
@@ -442,12 +465,12 @@ cmd_tui() {
     tui_args+=(--log-level DEBUG)
     tui_env+=(
       WOPAL_PLUGIN_DEBUG="$debug_modules"
-      WOPAL_PLUGIN_LOG_FILE="$LOGDIR/wopal-plugins-debug.log"
+      WOPAL_PLUGIN_LOG_FILE="$PLUGIN_DEBUG_LOG"
       WOPAL_DEBUG_LOG_DIR="$LOGDIR"
     )
     echo "debug enabled (modules: $debug_modules)"
-    echo "  plugin log: $LOGDIR/wopal-plugins-debug.log"
-    echo "watch: tail -f $LOGDIR/wopal-plugins-debug.log"
+    echo "  plugin log: $PLUGIN_DEBUG_LOG"
+    echo "watch: tail -f $PLUGIN_DEBUG_LOG"
     sleep 1
   fi
 
@@ -500,7 +523,7 @@ cmd_serve() {
   mkdir -p "$LOGDIR"
   $debug && echo "debug: modules=$debug_modules"
 
-  start_backend "$PORT" "$PIDFILE" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
+  start_backend "$PORT" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || exit 1
 
   if ! wait_backend "$PORT"; then
     echo "backend failed to start; see $BACKEND_LOG"
@@ -556,67 +579,66 @@ EOF
 
   case "$target" in
     backend)
-      if ! pid_alive "$BP" "$BPID"; then
+      if ! pid_listening "$BACKEND_PORT" "$BACKEND_PID"; then
         echo "restart: backend not running"; return 1
       fi
-      echo "restarting backend :$BP ..."
-      kill_pid_and_wait_port "$BP" "$BPID" || { echo "restart: backend did not exit"; return 1; }
-      start_backend "$BP" "$PIDFILE" false "all" "$opencode_preload" || return 1
-      if ! wait_backend "$BP"; then
+      echo "restarting backend :$BACKEND_PORT ..."
+      kill_pid_and_wait_port "$BACKEND_PORT" "$BACKEND_PID" || { echo "restart: backend did not exit"; return 1; }
+      rm -f "$PLUGIN_DEBUG_LOG"
+      start_backend "$BACKEND_PORT" false "all" "$opencode_preload" || return 1
+      if ! wait_backend "$BACKEND_PORT"; then
         echo "restart: backend failed to start; see $BACKEND_LOG"
         return 1
       fi
-      warmup_config "$BP"
-      echo "  backend :$BP restarted"
-      [ -n "$AP" ] && echo "  → http://127.0.0.1:$AP/workbench"
+      warmup_config "$BACKEND_PORT"
+      echo "  backend :$BACKEND_PORT restarted"
+      [ -n "$FRONTEND_PORT" ] && echo "  → http://127.0.0.1:$FRONTEND_PORT/workbench"
       ;;
     frontend)
-      if ! pid_alive "$AP" "$FPID"; then
+      if ! pid_listening "$FRONTEND_PORT" "$FRONTEND_PID"; then
         echo "restart: frontend not running"; return 1
       fi
-      echo "restarting workbench :$AP ..."
-      kill_pid_and_wait_port "$AP" "$FPID" || { echo "restart: frontend did not exit"; return 1; }
-      start_frontend "$AP" "$BP" || return 1
-      echo "  workbench :$AP restarted"
-      echo "  → http://127.0.0.1:$AP/workbench"
+      echo "restarting workbench :$FRONTEND_PORT ..."
+      kill_pid_and_wait_port "$FRONTEND_PORT" "$FRONTEND_PID" || { echo "restart: frontend did not exit"; return 1; }
+      start_frontend "$FRONTEND_PORT" "$BACKEND_PORT" || return 1
+      echo "  workbench :$FRONTEND_PORT restarted"
+      echo "  → http://127.0.0.1:$FRONTEND_PORT/workbench"
       ;;
     all)
       # 保留范围：只 restart pidfile 中存在的组件，不新增。
-      [ -n "$BPID" ] || [ -n "$FPID" ] || { echo "restart: no dev instance in pidfile"; return 1; }
+      [ -n "$BACKEND_PID" ] || [ -n "$FRONTEND_PID" ] || { echo "restart: no dev instance in pidfile"; return 1; }
 
       local restart_backend=false restart_frontend=false
-      [ -n "$BPID" ] && restart_backend=true
-      [ -n "$FPID" ] && restart_frontend=true
+      [ -n "$BACKEND_PID" ] && restart_backend=true
+      [ -n "$FRONTEND_PID" ] && restart_frontend=true
 
-      echo "restarting :${BP:-?} backend + :${AP:-?} workbench ..."
+      echo "restarting :${BACKEND_PORT:-?} backend + :${FRONTEND_PORT:-?} workbench ..."
 
-      # 先停掉所有存活进程
-      if $restart_backend && $restart_frontend && pid_alive "$BP" "$BPID" && pid_alive "$AP" "$FPID"; then
-        kill_group_and_wait "$BP" "$AP" "$BPID" "$FPID" || true
+      # 优先并行 kill（两进程都存活时更快）；否则退化到 stop_one 顺序清理
+      if $restart_backend && $restart_frontend \
+         && pid_listening "$BACKEND_PORT" "$BACKEND_PID" \
+         && pid_listening "$FRONTEND_PORT" "$FRONTEND_PID"; then
+        kill_pids_and_wait_ports "$BACKEND_PORT" "$FRONTEND_PORT" "$BACKEND_PID" "$FRONTEND_PID" || true
+        rm -f "$PLUGIN_DEBUG_LOG"
       else
-        if $restart_backend && pid_alive "$BP" "$BPID"; then
-          kill_pid_and_wait_port "$BP" "$BPID" || true
-        fi
-        if $restart_frontend && pid_alive "$AP" "$FPID"; then
-          kill_pid_and_wait_port "$AP" "$FPID" || true
-        fi
+        $restart_backend  && { stop_one backend  "$BACKEND_PORT"  "$BACKEND_PID"  "$BACKEND_LOG"  warn || true; }
+        $restart_frontend && { stop_one frontend "$FRONTEND_PORT" "$FRONTEND_PID" "$FRONTEND_LOG" warn || true; }
       fi
-      rm -f "$PIDFILE"
 
       if $restart_backend; then
-        start_backend "${BP:-4096}" "$PIDFILE" false "all" "$opencode_preload" || return 1
-        if ! wait_backend "${BP:-4096}"; then
+        start_backend "${BACKEND_PORT:-4096}" false "all" "$opencode_preload" || return 1
+        if ! wait_backend "${BACKEND_PORT:-4096}"; then
           echo "restart: backend failed to start; see $BACKEND_LOG"
           return 1
         fi
-        warmup_config "${BP:-4096}"
-        echo "  backend :${BP} restarted"
+        warmup_config "${BACKEND_PORT:-4096}"
+        echo "  backend :${BACKEND_PORT} restarted"
       fi
       if $restart_frontend; then
-        start_frontend "${AP:-3000}" "${BP:-4096}" || { cmd_stop; return 1; }
-        echo "  workbench :${AP} restarted"
+        start_frontend "${FRONTEND_PORT:-3000}" "${BACKEND_PORT:-4096}" || { cmd_stop; return 1; }
+        echo "  workbench :${FRONTEND_PORT} restarted"
       fi
-      [ -n "$AP" ] && echo "  → http://127.0.0.1:${AP}/workbench"
+      [ -n "$FRONTEND_PORT" ] && echo "  → http://127.0.0.1:${FRONTEND_PORT}/workbench"
       ;;
   esac
 }
@@ -662,19 +684,19 @@ cmd_desktop() {
 cmd_status() {
   read_pidfile || { echo "no dev instances running"; rm -f "$PIDFILE"; return 0; }
 
-  if [ -n "$BPID" ] && kill -0 "$BPID" 2>/dev/null && [ -n "$BP" ] && backend_healthy "$BP"; then
-    echo "  ✓  backend   :$BP  (pid $BPID)"
-    if [ -n "$FPID" ] && [ -n "$AP" ]; then
-      if kill -0 "$FPID" 2>/dev/null && is_running "$AP"; then
-        echo "     workbench :$AP  (pid $FPID)"
+  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null && [ -n "$BACKEND_PORT" ] && backend_healthy "$BACKEND_PORT"; then
+    echo "  ✓  backend   :$BACKEND_PORT  (pid $BACKEND_PID)"
+    if [ -n "$FRONTEND_PID" ] && [ -n "$FRONTEND_PORT" ]; then
+      if kill -0 "$FRONTEND_PID" 2>/dev/null && is_running "$FRONTEND_PORT"; then
+        echo "     workbench :$FRONTEND_PORT  (pid $FRONTEND_PID)"
       else
-        echo "     workbench :$AP  (pid $FPID, not responding)"
+        echo "     workbench :$FRONTEND_PORT  (pid $FRONTEND_PID, not responding)"
       fi
-      echo "     → http://127.0.0.1:$AP/workbench"
+      echo "     → http://127.0.0.1:$FRONTEND_PORT/workbench"
     fi
     echo "     pidfile    $PIDFILE"
     echo "     backend    $BACKEND_LOG"
-    [ -n "$AP" ] && echo "     workbench  $FRONTEND_LOG"
+    [ -n "$FRONTEND_PORT" ] && echo "     workbench  $FRONTEND_LOG"
   else
     echo "  ✗  backend not running (stale pidfile removed)"
     rm -f "$PIDFILE"
