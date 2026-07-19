@@ -12,7 +12,7 @@ import { getView } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
-import { shouldRestoreBoundSession } from "./panel-session-lifecycle"
+import { shouldRestoreBoundSession, isSessionNotFound } from "./panel-session-lifecycle"
 import { sanitizeDirectory } from "../directory-utils"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel, DialogCrossSpaceWarning } from "./session-tree-dialogs"
@@ -92,7 +92,18 @@ export function Panel(props: {
           wb.setStatusMessage(t("workbench.status.restoredSessionChild"))
         }
       })
-      .catch((error) => reportWorkbenchError("restore bound session", error))
+      .catch((error) => {
+        if (isSessionNotFound(error)) {
+          // Session no longer exists on the sidecar (database reset, sidecar
+          // restart with fresh DB, or external deletion). Unbind the panel so
+          // it returns to a clean state instead of retrying on every render.
+          void actions.unbindSession({ scope: panelScope(), panelID: props.panel.id })
+            .then(() => wb.setStatusMessage(t("workbench.status.boundSessionGone")))
+            .catch((err) => reportWorkbenchError("unbind stale session", err))
+          return
+        }
+        reportWorkbenchError("restore bound session", error)
+      })
       .finally(() => {
         restoringSessionIDs.delete(sessionID)
       })

@@ -995,6 +995,7 @@ export const dict = {
   "workbench.status.sessionDeletedExternally": "会话「{{title}}」已在其他位置删除，已从面板释放",
   "workbench.status.restoredSessionArchived": "此前装载的会话已在其他位置归档，已从面板释放",
   "workbench.status.restoredSessionChild": "子会话不能独立恢复，已从面板释放",
+  "workbench.status.boundSessionGone": "绑定的会话在服务器上已不存在，已从面板释放",
   "workbench.status.dirHealthWarning": "警告：此会话的工作目录已不可用，请右击重命名、归档或删除",
   "workbench.status.sessionReadyHint": "提示：双击该会话或将其拖拽到右侧面板以装载打开",
   "workbench.status.sessionNotFound": "通知对应的会话已不可用，无法打开",

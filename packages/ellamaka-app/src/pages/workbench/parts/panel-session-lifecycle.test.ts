@@ -8,6 +8,7 @@ import {
   shouldSyncSessionTitle,
   disconnectRecovery,
   workbenchSessionEvent,
+  isSessionNotFound,
 } from "./panel-session-lifecycle"
 
 describe("shouldAcceptSessionDrop", () => {
@@ -146,5 +147,49 @@ describe("workbenchSessionEvent", () => {
       title: undefined,
       timeArchived: 10,
     })
+  })
+})
+
+describe("isSessionNotFound", () => {
+  test("detects HTTP 404 via statusCode", () => {
+    expect(isSessionNotFound({ statusCode: 404, message: "Not Found" })).toBe(true)
+  })
+
+  test("detects HTTP 404 via status", () => {
+    expect(isSessionNotFound({ status: 404, message: "Not Found" })).toBe(true)
+  })
+
+  test("detects Effect SessionNotFoundError via _tag", () => {
+    expect(isSessionNotFound({ _tag: "SessionNotFoundError", message: "Session not found: ses_x" })).toBe(true)
+  })
+
+  test("detects Error with 'Session not found' message", () => {
+    expect(isSessionNotFound(new Error("Session not found: ses_abc"))).toBe(true)
+  })
+
+  test("detects string with 'not found'", () => {
+    expect(isSessionNotFound("Session not found: ses_xyz")).toBe(true)
+  })
+
+  test("detects object with message containing 'not found'", () => {
+    expect(isSessionNotFound({ message: "Session not found: ses_x" })).toBe(true)
+  })
+
+  test("rejects HTTP 500 (transient server error)", () => {
+    expect(isSessionNotFound({ statusCode: 500, message: "Internal Server Error" })).toBe(false)
+  })
+
+  test("rejects network errors without not-found indicators", () => {
+    expect(isSessionNotFound(new Error("fetch failed"))).toBe(false)
+    expect(isSessionNotFound(new Error("network error"))).toBe(false)
+  })
+
+  test("rejects undefined and null", () => {
+    expect(isSessionNotFound(undefined)).toBe(false)
+    expect(isSessionNotFound(null)).toBe(false)
+  })
+
+  test("rejects empty string", () => {
+    expect(isSessionNotFound("")).toBe(false)
   })
 })

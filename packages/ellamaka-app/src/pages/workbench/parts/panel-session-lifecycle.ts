@@ -60,6 +60,26 @@ export function disconnectRecovery(input: { ptyAlive: boolean }): DisconnectReco
   return input.ptyAlive ? "reconnect" : "fallback"
 }
 
+/**
+ * Detects whether a session fetch error is a "not found" response from the
+ * sidecar. Used to distinguish permanent session deletion (HTTP 404 /
+ * SessionNotFoundError) from transient failures (network, 5xx) — only the
+ * former should trigger automatic unbinding of the panel.
+ */
+export function isSessionNotFound(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    if ("statusCode" in error && typeof error.statusCode === "number" && error.statusCode === 404) return true
+    if ("_tag" in error && error._tag === "SessionNotFoundError") return true
+    if ("status" in error && typeof error.status === "number" && error.status === 404) return true
+  }
+  const message =
+    error instanceof Error ? error.message :
+    typeof error === "string" ? error :
+    (error && typeof error === "object" && "message" in error && typeof (error as { message: unknown }).message === "string") ? (error as { message: string }).message :
+    ""
+  return message.includes("Session not found") || message.includes("not found")
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
