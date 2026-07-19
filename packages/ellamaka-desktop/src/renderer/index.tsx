@@ -16,7 +16,7 @@ import {
 } from "@opencode-ai/ellamaka-app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -24,6 +24,7 @@ import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { DesktopRouter } from "./desktop-router"
+import type { SidecarRuntimeState } from "../preload/types"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -273,6 +274,16 @@ listenForDeepLinks()
   // Fetch sidecar credentials (available immediately, before health check)
   const [sidecar] = createResource(() => window.api.awaitInitialization(() => undefined))
 
+  // Live sidecar state from Supervisor (for generation changes / restarts)
+  const [sidecarState, setSidecarState] = createSignal<SidecarRuntimeState | undefined>()
+
+  onMount(() => {
+    const unsub = window.api.onSidecarState((state) => {
+      setSidecarState(state)
+    })
+    onCleanup(unsub)
+  })
+
   const [defaultServer] = createResource(() =>
     platform.getDefaultServer?.().then((url) => {
       if (url) return ServerConnection.key({ type: "http", http: { url } })
@@ -281,6 +292,23 @@ listenForDeepLinks()
   const [locale] = createResource(loadLocale)
 
   const servers = () => {
+    // Prefer live sidecar state for generation changes
+    const live = sidecarState()
+    if (live?.status === "ready" && live.connection) {
+      const server: ServerConnection.Sidecar = {
+        displayName: "Local Server",
+        type: "sidecar",
+        variant: "base",
+        generation: live.generation,
+        http: {
+          url: live.connection.url,
+          username: live.connection.username,
+          password: live.connection.password,
+        },
+      }
+      return [server] as ServerConnection.Any[]
+    }
+    // Fall back to initial awaitInitialization data
     const data = sidecar()
     if (!data) return []
     const server: ServerConnection.Sidecar = {
