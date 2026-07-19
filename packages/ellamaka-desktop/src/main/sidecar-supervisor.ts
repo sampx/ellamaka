@@ -17,7 +17,6 @@ export type SidecarSpawnResult = {
 }
 
 export type SidecarSpawnOptions = {
-  needsMigration: boolean
   onSqliteProgress?: (progress: any) => void
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
@@ -41,6 +40,10 @@ export type SidecarSupervisorDeps = {
   backoffMs?: number[]
   maxAttempts?: number
   stableWindowMs?: number
+  onSqliteProgress?: (progress: any) => void
+  onStdout?: (message: string) => void
+  onStderr?: (message: string) => void
+  onExit?: (code: number) => void
 }
 
 type Listener = (state: SidecarRuntimeState) => void
@@ -80,7 +83,21 @@ export class SidecarSupervisor {
   private waitForReadyResolve: ((state: SidecarRuntimeState) => void) | undefined
   private waitForReadyReject: ((error: Error) => void) | undefined
 
-  private deps: Required<SidecarSupervisorDeps>
+  private deps: {
+    spawn: SidecarSpawnFactory
+    setTimeout: typeof setTimeout
+    clearTimeout: typeof clearTimeout
+    hostname: string
+    port: number
+    password: string
+    backoffMs: number[]
+    maxAttempts: number
+    stableWindowMs: number
+    onSqliteProgress?: (progress: any) => void
+    onStdout?: (message: string) => void
+    onStderr?: (message: string) => void
+    onExit?: (code: number) => void
+  }
 
   constructor(deps: SidecarSupervisorDeps) {
     this.deps = {
@@ -126,11 +143,10 @@ export class SidecarSupervisor {
         resolve(cloneState(this.state))
         return
       }
-      if (this.state.status === "failed") {
+      if (this.state.status === "failed" || this.state.status === "stopped") {
         reject(new Error(`Sidecar is ${this.state.status}`))
         return
       }
-      // "stopped" is the initial state — don't reject, wait for start
       this.waitForReadyResolve = resolve
       this.waitForReadyReject = reject
     })
@@ -166,7 +182,7 @@ export class SidecarSupervisor {
       this.waitForReadyReject = undefined
     }
     if (
-      this.state.status === "failed" &&
+      (this.state.status === "failed" || this.state.status === "stopped") &&
       this.waitForReadyReject
     ) {
       this.waitForReadyReject(new Error(`Sidecar is ${this.state.status}`))
@@ -273,8 +289,11 @@ export class SidecarSupervisor {
 
     try {
       const result = await this.deps.spawn(hostname, port, password, {
-        needsMigration: false,
+        onSqliteProgress: this.deps.onSqliteProgress,
+        onStdout: this.deps.onStdout,
+        onStderr: this.deps.onStderr,
         onExit: (code: number) => {
+          this.deps.onExit?.(code)
           this.handleExit(code)
         },
       })
@@ -315,6 +334,8 @@ export class SidecarSupervisor {
 
   private doLost(errorCode: string) {
     if (this.state.status === "stopped") return
+    // Prevent double-call: handleExit may fire while we're already processing a loss
+    if (this.state.status === "lost") return
 
     this.clearTimers()
     this.setState({

@@ -461,11 +461,12 @@ describe("SidecarSupervisor", () => {
   test("waitForReady resolves when ready", async () => {
     const supervisor = createSupervisor(mockSpawner)
 
-    const readyPromise = supervisor.waitForReady()
-
-    // Start the supervisor
+    // Start the supervisor first (initial state is stopped, which now rejects)
     supervisor.start()
     await tick()
+
+    const readyPromise = supervisor.waitForReady()
+
     const r1 = createSpawnResult()
     mockSpawner.resolve(r1.result)
     r1.passHealth()
@@ -477,18 +478,18 @@ describe("SidecarSupervisor", () => {
   test("waitForReady rejects when failed", async () => {
     const supervisor = createSupervisor(mockSpawner, { maxAttempts: 1, backoffMs: [5] })
 
+    // Start first so state is not "stopped"
+    supervisor.start()
+    await tick()
+
     let rejected = false
     supervisor.waitForReady().catch(() => { rejected = true })
 
-    // Start and fail immediately
-    supervisor.start()
-    await tick()
+    // First spawn fails immediately
     mockSpawner.reject(new Error("fail"))
     await tick()
-    // Should retry once and fail
+    // No more retries (maxAttempts=1), should go to failed
     await tick(10)
-    mockSpawner.reject(new Error("fail again"))
-    await tick()
 
     expect(rejected).toBe(true)
     expect(supervisor.getState().status).toBe("failed")

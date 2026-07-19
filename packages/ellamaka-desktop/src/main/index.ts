@@ -270,6 +270,10 @@ const main = Effect.gen(function* () {
     hostname,
     port,
     password,
+    onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
+    onStdout: (message) => writeLog("server", "stdout", { message }),
+    onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+    onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
   })
 
   // Subscribe to state changes and broadcast to all windows
