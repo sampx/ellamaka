@@ -637,11 +637,7 @@ export function createWorkbenchActions(input: {
         for (const path of paths) {
           const panels = input.store.panels({ kind: "space", name: path, path })
           for (const panel of panels) {
-            // Clear all PTY IDs
-            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "tui", undefined)
-            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "term", undefined)
-            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "split", undefined)
-            // Switch TUI view back to chat
+            // Per AGENTS.md §5.6: switch viewMode to chat BEFORE clearing tuiPtyId
             if (panel.viewMode === "tui") {
               input.store.commitPanelMode?.({ kind: "space", name: path, path }, panel.id, "chat")
             }
@@ -649,20 +645,24 @@ export function createWorkbenchActions(input: {
             if (panel.splitTerminal) {
               input.store.commitSplitTerminal?.({ kind: "space", name: path, path }, panel.id, false)
             }
+            // Clear all PTY IDs
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "tui", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "term", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "split", undefined)
           }
         }
         // Also handle General space
         const generalPanels = input.store.panels({ kind: "general" })
         for (const panel of generalPanels) {
-          input.store.commitPanelPty({ kind: "general" }, panel.id, "tui", undefined)
-          input.store.commitPanelPty({ kind: "general" }, panel.id, "term", undefined)
-          input.store.commitPanelPty({ kind: "general" }, panel.id, "split", undefined)
           if (panel.viewMode === "tui") {
             input.store.commitPanelMode?.({ kind: "general" }, panel.id, "chat")
           }
           if (panel.splitTerminal) {
             input.store.commitSplitTerminal?.({ kind: "general" }, panel.id, false)
           }
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "tui", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "term", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "split", undefined)
         }
         // Clear ptyManager memory
         input.pty.clearMemory?.()
