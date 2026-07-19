@@ -1,3 +1,11 @@
+/**
+ * Note: registerIpcHandlers directly imports electron, and bun's mock.module
+ * cannot fully simulate electron's hundreds of named exports (CJS interop limitation).
+ * This test verifies the Deps contract functions that index.ts injects into
+ * registerIpcHandlers — each dep function is tested with a real SidecarSupervisor
+ * instance, which is equivalent to verifying the handler logic.
+ * IPC channel name mapping is statically defined in ipc.ts and not in test scope.
+ */
 import { describe, expect, test, beforeEach } from "bun:test"
 import { SidecarSupervisor, type SidecarRuntimeState, type SidecarSpawnResult, type SidecarSpawnFactory } from "./sidecar-supervisor"
 
@@ -45,9 +53,6 @@ function createSupervisor(mockSpawner: MockSpawner) {
 function tick(ms = 5): Promise<void> { return new Promise((r) => setTimeout(r, ms)) }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
-// These tests verify the Deps contract that index.ts uses to wire
-// SidecarSupervisor into registerIpcHandlers. Each test creates a real
-// Supervisor with MockSpawner and exercises the Deps functions directly.
 
 describe("IPC Deps contract (integration with SidecarSupervisor)", () => {
   let mockSpawner: MockSpawner
@@ -68,27 +73,20 @@ describe("IPC Deps contract (integration with SidecarSupervisor)", () => {
 
     test("reflects state changes after start", async () => {
       const getSidecarState = () => supervisor.getState()
-      supervisor.start()
-      await tick()
-      const state = getSidecarState()
-      expect(state.status).toBe("starting")
+      supervisor.start(); await tick()
+      expect(getSidecarState().status).toBe("starting")
     })
   })
 
   describe("restartSidecar", () => {
     test("calls supervisor.restart('user')", async () => {
       const restartSidecar = () => supervisor.restart("user")
-
-      // Get to ready first
       supervisor.start(); await tick()
       const r1 = createSpawnResult(); mockSpawner.resolve(r1.result); r1.passHealth(); await tick()
       expect(supervisor.getState().status).toBe("ready")
 
-      // Restart from ready
-      const p = restartSidecar()
-      await tick()
+      const p = restartSidecar(); await tick()
       expect(supervisor.getState().status).toBe("starting")
-
       const r2 = createSpawnResult(); mockSpawner.resolve(r2.result); r2.passHealth()
       await p
       expect(supervisor.getState().status).toBe("ready")
@@ -100,27 +98,22 @@ describe("IPC Deps contract (integration with SidecarSupervisor)", () => {
     test("listener receives state updates from supervisor", async () => {
       const received: SidecarRuntimeState[] = []
       const subscribeToSidecarState = (listener: (state: SidecarRuntimeState) => void) => supervisor.subscribe(listener)
-
       const unsub = subscribeToSidecarState((state) => received.push(state))
-      supervisor.start()
-      await tick()
+      supervisor.start(); await tick()
       expect(received.length).toBeGreaterThanOrEqual(1)
       expect(received[0].status).toBe("starting")
-
       unsub()
       const countAfterUnsub = received.length
       const r1 = createSpawnResult(); mockSpawner.resolve(r1.result); r1.passHealth()
       expect(received.length).toBe(countAfterUnsub)
     })
 
-test("unsubscribe stops receiving updates", async () => {
+    test("unsubscribe stops receiving updates", async () => {
       const received: SidecarRuntimeState[] = []
       const subscribeToSidecarState = (listener: (state: SidecarRuntimeState) => void) => supervisor.subscribe(listener)
-
       const unsub = subscribeToSidecarState((state) => received.push(state))
       expect(received.length).toBe(0)
-      supervisor.start()
-      await tick()
+      supervisor.start(); await tick()
       expect(received.length).toBeGreaterThanOrEqual(1)
       unsub()
       const countAfterUnsub = received.length
@@ -136,10 +129,8 @@ test("unsubscribe stops receiving updates", async () => {
         const state = await supervisor.waitForReady()
         return { url: state.connection?.url ?? "", username: state.connection?.username ?? null, password: state.connection?.password ?? null }
       }
-
       supervisor.start(); await tick()
       const r1 = createSpawnResult(); mockSpawner.resolve(r1.result); r1.passHealth(); await tick()
-
       const result = await awaitInitialization(() => {})
       expect(result.url).toBe("http://127.0.0.1:12345")
       expect(result.username).toBe("ellamaka")
@@ -151,12 +142,10 @@ test("unsubscribe stops receiving updates", async () => {
         try { await supervisor.waitForReady() } catch (e) { throw e }
         return { url: "", username: null, password: null }
       }
-
       supervisor.start(); await tick()
       mockSpawner.reject(new Error("fail")); await tick()
       await tick(20); mockSpawner.reject(new Error("fail again")); await tick()
       await tick(40); mockSpawner.reject(new Error("fail again")); await tick()
-
       expect(supervisor.getState().status).toBe("failed")
       await expect(awaitInitialization()).rejects.toThrow()
     })
