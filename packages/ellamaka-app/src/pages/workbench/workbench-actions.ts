@@ -683,7 +683,7 @@ import { useWorkbenchState } from "./view-store"
 import { useSessionStore, useSessionProjectionWriter } from "./session-store"
 import { useServerSDK } from "@/context/server-sdk"
 import { buildStorePort, buildPtyPort, buildSessionPort } from "./workbench-actions-ports"
-import { useWorkbenchRuntime, registerPtyCleanupAction } from "./workbench-runtime"
+import { useWorkbenchRuntime } from "./workbench-runtime"
 
 const WorkbenchActionsContext = createSimpleContext({
   name: "WorkbenchActions",
@@ -694,15 +694,12 @@ const WorkbenchActionsContext = createSimpleContext({
     const serverSDK = useServerSDK()
     const runtime = useWorkbenchRuntime()
     const store = buildStorePort(wb)
-    const actions = createWorkbenchActions({
+    return createWorkbenchActions({
       store,
       pty: buildPtyPort(serverSDK, store),
       session: buildSessionPort(serverSDK, sessions, projection),
       runtime,
     })
-    // Register the PTY cleanup action for server key change effect
-    registerPtyCleanupAction(() => actions.clearAllPtyForServerChange())
-    return actions
   },
 })
 

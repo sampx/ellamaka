@@ -13,6 +13,7 @@ import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchRuntimeProvider, useWorkbenchRuntime } from "./workbench-runtime"
+import { WorkbenchSidecarCleanupBinding } from "./workbench-sidecar-cleanup"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
@@ -216,6 +217,7 @@ export default function Workbench() {
         <WorkbenchStateProvider>
           <WorkbenchRuntimeProvider>
             <WorkbenchActionsProvider>
+              <WorkbenchSidecarCleanupBinding />
               <SpaceStoreProvider>
                 <ViewRegistryProvider>
                   <ErrorBoundary
