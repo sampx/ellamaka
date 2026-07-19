@@ -77,6 +77,7 @@ delete process.env["OPENCODE_SERVER_USERNAME"]
 // WopalSpace-specific tests set these explicitly in their own setup.
 delete process.env["WOPAL_SPACE"]
 delete process.env["WOPAL_SPACE_ROOT"]
+process.env["WOPAL_DEBUG_LOG_DIR"] = path.join(dir, "logs")
 
 // Use in-memory sqlite
 process.env["OPENCODE_DB"] = ":memory:"

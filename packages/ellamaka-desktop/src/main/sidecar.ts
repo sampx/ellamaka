@@ -85,7 +85,7 @@ async function start(command: StartCommand) {
     useEnvProxy()
     const { Database, JsonMigration, Log, Server } = await import("virtual:opencode-server")
     // Desktop dev.sh 通过 ELAMAKA_DESKTOP_* 环境变量控制日志行为：
-    //   ELAMAKA_DESKTOP_DEV=1             → dev 模式（写到 WOPAL_DEBUG_LOG_DIR/dev.log）
+    //   ELAMAKA_DESKTOP_DEV=1             → dev 模式（写到 WOPAL_DEBUG_LOG_DIR/ellamaka-dev-sidecar.log）
     //   ELAMAKA_DESKTOP_LOG_LEVEL=<LEVEL> → 日志级别（默认 WARN，向后兼容）
     // 未设置时（打包发布版 / 普通用户）走默认行为，与历史一致。
     const sidecarDev = process.env.ELAMAKA_DESKTOP_DEV === "1"
@@ -94,7 +94,7 @@ async function start(command: StartCommand) {
       | "INFO"
       | "WARN"
       | "ERROR"
-    await Log.init({ level: sidecarLogLevel, dev: sidecarDev })
+    await Log.init({ level: sidecarLogLevel, dev: sidecarDev, devFile: "ellamaka-dev-sidecar.log" })
 
     if (command.needsMigration) {
       await JsonMigration.run(drizzle({ client: Database.Client().$client }), {

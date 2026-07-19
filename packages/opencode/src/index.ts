@@ -26,6 +26,7 @@ import { AttachCommand } from "./cli/cmd/tui/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui/thread"
 import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
+import path from "node:path"
 import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
 import { BINARY_NAME } from "../../ellamaka/branding"
@@ -109,12 +110,13 @@ const cli = yargs(args)
     }
 
     const command = typeof opts._?.[0] === "string" ? opts._[0] : ""
-    if (!opts.disableWopalspace && !SERVER_COMMANDS.has(command)) {
-      const detection = detectWopalSpace(process.cwd())
-      if (detection) {
-        process.env.WOPAL_SPACE = "1"
-        process.env.WOPAL_SPACE_ROOT = detection.root
-      }
+    const detection = detectWopalSpace(process.cwd())
+    if (Installation.isLocal() && detection) {
+      process.env.WOPAL_DEBUG_LOG_DIR = path.join(detection.root, ".wopal-space", "logs")
+    }
+    if (!opts.disableWopalspace && !SERVER_COMMANDS.has(command) && detection) {
+      process.env.WOPAL_SPACE = "1"
+      process.env.WOPAL_SPACE_ROOT = detection.root
     }
     if (opts.logLevel) {
       process.env.OPENCODE_LOG_LEVEL = opts.logLevel
@@ -123,6 +125,7 @@ const cli = yargs(args)
     await Log.init({
       print: process.argv.includes("--print-logs"),
       dev: Installation.isLocal(),
+      devFile: "ellamaka-dev-tui.log",
       level: (() => {
         if (opts.logLevel) return opts.logLevel as Log.Level
         if (Installation.isLocal()) return "DEBUG"
