@@ -1,3 +1,4 @@
+import { batch } from "solid-js"
 import { scopeKey, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
@@ -56,6 +57,8 @@ export type WorkbenchActionStorePort = {
   commitPanelPty: (scope: SpaceScope, panelID: string, kind: WorkbenchActionPtyKind, ptyID?: string) => void
   commitPanelMode?: (scope: SpaceScope, panelID: string, mode: string) => void
   commitSplitTerminal?: (scope: SpaceScope, panelID: string, open: boolean) => void
+  spacePaths: () => string[]
+  pushDiagnostic?: (type: "info" | "warning" | "error", text: string, options?: { id?: string; autoDismiss?: boolean }) => string
 }
 
 export type WorkbenchActionPtyPort = {
@@ -628,6 +631,45 @@ export function createWorkbenchActions(input: {
       if (options.kind === "split") input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
       return { status: "committed", panelID: options.panelID }
     },
+    clearAllPtyForServerChange() {
+      const paths = input.store.spacePaths()
+      batch(() => {
+        for (const path of paths) {
+          const panels = input.store.panels({ kind: "space", name: path, path })
+          for (const panel of panels) {
+            // Clear all PTY IDs
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "tui", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "term", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "split", undefined)
+            // Switch TUI view back to chat
+            if (panel.viewMode === "tui") {
+              input.store.commitPanelMode?.({ kind: "space", name: path, path }, panel.id, "chat")
+            }
+            // Close split terminal
+            if (panel.splitTerminal) {
+              input.store.commitSplitTerminal?.({ kind: "space", name: path, path }, panel.id, false)
+            }
+          }
+        }
+        // Also handle General space
+        const generalPanels = input.store.panels({ kind: "general" })
+        for (const panel of generalPanels) {
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "tui", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "term", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "split", undefined)
+          if (panel.viewMode === "tui") {
+            input.store.commitPanelMode?.({ kind: "general" }, panel.id, "chat")
+          }
+          if (panel.splitTerminal) {
+            input.store.commitSplitTerminal?.({ kind: "general" }, panel.id, false)
+          }
+        }
+        // Clear ptyManager memory
+        input.pty.clearMemory?.()
+        // Add diagnostic hint
+        input.store.pushDiagnostic?.("info", "Sidecar restarted — PTY sessions have been reset. Re-open TUI/Terminal as needed.", { id: "sidecar-restart-pty-reset", autoDismiss: true })
+      })
+    },
   }
 }
 
@@ -641,7 +683,7 @@ import { useWorkbenchState } from "./view-store"
 import { useSessionStore, useSessionProjectionWriter } from "./session-store"
 import { useServerSDK } from "@/context/server-sdk"
 import { buildStorePort, buildPtyPort, buildSessionPort } from "./workbench-actions-ports"
-import { useWorkbenchRuntime } from "./workbench-runtime"
+import { useWorkbenchRuntime, registerPtyCleanupAction } from "./workbench-runtime"
 
 const WorkbenchActionsContext = createSimpleContext({
   name: "WorkbenchActions",
@@ -652,12 +694,15 @@ const WorkbenchActionsContext = createSimpleContext({
     const serverSDK = useServerSDK()
     const runtime = useWorkbenchRuntime()
     const store = buildStorePort(wb)
-    return createWorkbenchActions({
+    const actions = createWorkbenchActions({
       store,
       pty: buildPtyPort(serverSDK, store),
       session: buildSessionPort(serverSDK, sessions, projection),
       runtime,
     })
+    // Register the PTY cleanup action for server key change effect
+    registerPtyCleanupAction(() => actions.clearAllPtyForServerChange())
+    return actions
   },
 })
 

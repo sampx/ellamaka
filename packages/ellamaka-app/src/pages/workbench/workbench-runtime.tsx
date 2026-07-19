@@ -17,6 +17,13 @@ export function resolveWorkbenchRuntimeStatus(
   return "degraded"
 }
 
+// Module-level ref to break circular dependency between runtime and actions
+let _clearAllPtyForServerChange: (() => void) | undefined
+
+export function registerPtyCleanupAction(fn: () => void) {
+  _clearAllPtyForServerChange = fn
+}
+
 const WorkbenchRuntimeContext = createSimpleContext({
   name: "WorkbenchRuntime",
   init: () => {
@@ -55,6 +62,17 @@ const WorkbenchRuntimeContext = createSimpleContext({
     createEffect(() => {
       server.key
       void refresh()
+    })
+
+    // Sidecar generation change → clear all PTY state
+    let firstServerKey = true
+    createEffect(() => {
+      const key = server.key
+      if (firstServerKey) {
+        firstServerKey = false
+        return
+      }
+      _clearAllPtyForServerChange?.()
     })
 
     // eventStatus-only recompute: updates the status label without refetching

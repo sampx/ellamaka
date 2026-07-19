@@ -69,6 +69,7 @@ function createStorePort(options?: { withPty?: boolean }) {
     },
     commitPanelMode: (_scope, _panelID, mode) => { panel = { ...panel, viewMode: mode } },
     commitSplitTerminal: (_scope, _panelID, splitTerminal) => { panel = { ...panel, splitTerminal } },
+    spacePaths: () => [],
   }
   return { store, commits, ptys, panel: () => panel }
 }
@@ -427,6 +428,7 @@ describe("WorkbenchActions", () => {
       commitSessionBinding: () => {},
       commitSessionUnbinding: () => false,
       commitPanelPty: () => {},
+      spacePaths: () => [],
     }
     const actions = createWorkbenchActions({
       store,
@@ -471,6 +473,7 @@ describe("WorkbenchActions", () => {
       commitSessionBinding: () => {},
       commitSessionUnbinding: () => false,
       commitPanelPty: () => {},
+      spacePaths: () => [],
     }
     const actions = createWorkbenchActions({
       store,
@@ -674,6 +677,7 @@ describe("WorkbenchActions store port delegation", () => {
       commitPanelPty: (_s, id, kind, ptyID) => { calls.push(`commitPanelPty:${id}:${kind}:${ptyID ?? "undefined"}`) },
       commitPanelMode: (_s, id, mode) => { calls.push(`commitPanelMode:${id}:${mode}`) },
       commitSplitTerminal: (_s, id, open) => { calls.push(`commitSplitTerminal:${id}:${open}`) },
+      spacePaths: () => [],
     }
     return { store, calls, panel }
   }
@@ -804,6 +808,7 @@ describe("WorkbenchActions General vs Space scope", () => {
       commitSessionBinding: () => {},
       commitSessionUnbinding: () => false,
       commitPanelPty: () => {},
+      spacePaths: () => [],
     }
     return { store, panels }
   }
@@ -936,6 +941,7 @@ describe("WorkbenchActions §5.6 additional coverage", () => {
       },
       commitPanelMode: (_s, _panelID, mode) => { panel = { ...panel, viewMode: mode } },
       commitSplitTerminal: (_s, _panelID, splitTerminal) => { panel = { ...panel, splitTerminal } },
+      spacePaths: () => [],
     }
     return { store, commits, ptys, panel: () => panel }
   }
@@ -1342,6 +1348,7 @@ describe("WorkbenchActions revealSession", () => {
       },
       commitSessionUnbinding: () => false,
       commitPanelPty: () => {},
+      spacePaths: () => [],
     }
     return { store, panels: () => panels, calls, getActive: () => activePanelID }
   }
