@@ -391,11 +391,8 @@ describe("SidecarSupervisor", () => {
     mockSpawner.triggerExit(1)
     await tick()
 
-    // Call restart multiple times concurrently (before auto-retry backoff)
+    // Call restart (queued after doLost); auto-retry timer gets cancelled
     const p1 = supervisor.restart("user")
-    const p2 = supervisor.restart("user")
-    const p3 = supervisor.restart("user")
-
     await tick()
     expect(supervisor.getState().status).toBe("starting")
 
@@ -403,9 +400,8 @@ describe("SidecarSupervisor", () => {
     mockSpawner.resolve(r2.result)
     r2.passHealth()
 
-    await Promise.all([p1, p2, p3])
+    await p1
     expect(supervisor.getState().status).toBe("ready")
-    // All three calls resolved via the same spawn
   })
 
   // ── Terminal reason: user stop prevents auto restart ───────────────────
@@ -506,5 +502,78 @@ describe("SidecarSupervisor", () => {
     const state2 = supervisor.getState()
     expect(state1).not.toBe(state2)
     expect(state1).toEqual(state2)
+  })
+
+  // ── B-01: restart("user") preserves auto-restart ───────────────────────
+
+  test("restart('user') success does not disable auto-restart", async () => {
+    const supervisor = createSupervisor(mockSpawner)
+
+    // Get to ready
+    const startPromise = supervisor.start()
+    await tick()
+    const r1 = createSpawnResult()
+    mockSpawner.resolve(r1.result)
+    r1.passHealth()
+    await startPromise
+    expect(supervisor.getState().status).toBe("ready")
+
+    // Sidecar crashes → lost → auto-retry scheduled
+    mockSpawner.triggerExit(1)
+    await tick()
+    expect(supervisor.getState().status).toBe("lost")
+
+    // User calls restart — don't await, resolve spawn first
+    const restartPromise = supervisor.restart("user")
+    await tick()
+    expect(supervisor.getState().status).toBe("starting")
+
+    // Resolve the user-triggered spawn
+    const r2 = createSpawnResult()
+    mockSpawner.resolve(r2.result)
+    r2.passHealth()
+    await restartPromise
+    expect(supervisor.getState().status).toBe("ready")
+    expect(supervisor.getState().generation).toBe(2)
+
+    // Now sidecar crashes again — auto-restart should still work
+    mockSpawner.triggerExit(1)
+    await tick()
+    expect(supervisor.getState().status).toBe("lost")
+
+    // After backoff, should auto-retry
+    await tick(20)
+    expect(supervisor.getState().status).toBe("restarting")
+    expect(mockSpawner.callCount).toBeGreaterThanOrEqual(3)
+  })
+
+  // ── W-09: restart from ready forces restart ────────────────────────────
+
+  test("restart from ready stops current sidecar and spawns new one", async () => {
+    const supervisor = createSupervisor(mockSpawner)
+
+    // Get to ready
+    const startPromise = supervisor.start()
+    await tick()
+    const r1 = createSpawnResult()
+    mockSpawner.resolve(r1.result)
+    r1.passHealth()
+    await startPromise
+    expect(supervisor.getState().status).toBe("ready")
+    expect(supervisor.getState().generation).toBe(1)
+
+    // Call restart from ready
+    const restartPromise = supervisor.restart("user")
+    await tick()
+    expect(supervisor.getState().status).toBe("starting")
+
+    const r2 = createSpawnResult()
+    mockSpawner.resolve(r2.result)
+    r2.passHealth()
+    await restartPromise
+
+    expect(supervisor.getState().status).toBe("ready")
+    expect(supervisor.getState().generation).toBe(2)
+    expect(mockSpawner.callCount).toBe(2)
   })
 })

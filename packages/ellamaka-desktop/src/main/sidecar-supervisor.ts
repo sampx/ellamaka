@@ -112,8 +112,8 @@ export class SidecarSupervisor {
     return this.enqueue(() => this.doStart())
   }
 
-  restart(reason: SidecarTerminalReason | "auto"): Promise<void> {
-    return this.enqueue(() => this.doRestart(reason))
+  restart(trigger: "user" | "auto"): Promise<void> {
+    return this.enqueue(() => this.doRestart(trigger))
   }
 
   stop(reason: SidecarTerminalReason): Promise<void> {
@@ -205,17 +205,33 @@ export class SidecarSupervisor {
     }
   }
 
-  private async doRestart(reason: SidecarTerminalReason | "auto"): Promise<void> {
-    if (isTerminalReason(reason)) {
-      this.terminalReason = reason
-    }
+  private async doRestart(trigger: "user" | "auto"): Promise<void> {
+    // Only doStop sets terminalReason; restart never does.
+    // "user" trigger means the user explicitly requested a restart (e.g. via IPC),
+    // "auto" trigger is the internal retry mechanism.
 
     // No-op if already in a stable or transitional state
-    if (this.state.status === "ready" || this.state.status === "starting" || this.state.status === "restarting") {
+    if (this.state.status === "starting" || this.state.status === "restarting") {
       return
     }
 
-    if (this.state.status === "failed" && reason === "auto") {
+    if (this.state.status === "ready") {
+      // Force restart from ready: stop current sidecar first, then start anew
+      if (this.currentSpawn) {
+        try { await this.currentSpawn.listener.stop() } catch {}
+        this.currentSpawn = null
+      }
+      this.clearTimers()
+      this.setState({ status: "starting", errorCode: undefined, attempt: 0 })
+      try {
+        await this.spawnAndWait()
+      } catch {
+        // spawnAndWait calls doLost internally
+      }
+      return
+    }
+
+    if (this.state.status === "failed" && trigger === "auto") {
       return
     }
 
@@ -225,13 +241,13 @@ export class SidecarSupervisor {
 
     this.clearTimers()
     // Reset attempt counter for user-triggered restarts
-    const attempt = isTerminalReason(reason) ? 0 : this.state.attempt
+    const attempt = trigger === "user" ? 0 : this.state.attempt
     this.setState({ status: "starting", errorCode: undefined, attempt })
 
     try {
       await this.spawnAndWait()
     } catch {
-      // doRestart failure is handled by spawnAndWait → doLost
+      // spawnAndWait calls doLost internally
     }
   }
 
