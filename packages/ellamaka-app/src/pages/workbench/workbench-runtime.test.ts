@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { resolveWorkbenchRuntimeStatus } from "./workbench-runtime"
-import { createSignal, createEffect } from "solid-js"
-import { render } from "solid-js/web"
+import { shouldTriggerCleanup } from "./workbench-sidecar-cleanup"
 
 describe("resolveWorkbenchRuntimeStatus", () => {
   test("returns online when health and the latest event stream are connected", () => {
@@ -16,67 +15,34 @@ describe("resolveWorkbenchRuntimeStatus", () => {
   })
 })
 
-// ── B-04: server.key change effect contract ──────────────────────────────
-// WorkbenchSidecarCleanupBinding uses useServer() + useWorkbenchActions()
-// which require deep provider trees. These tests verify the effect logic
-// using SolidJS render + signals, equivalent to the component's behavior.
-// Component integration is covered by the 612 existing workbench tests.
+// ── WorkbenchSidecarCleanupBinding: shouldTriggerCleanup decision logic ──
+// The component's effect delegates to this pure function. Tests cover the
+// full transition matrix including the regression case where the first
+// non-empty key (initial sidecar ready, generation 0→1) must NOT trigger
+// cleanup.
 
-function tick(): Promise<void> { return new Promise((r) => setTimeout(r, 0)) }
-
-describe("WorkbenchSidecarCleanupBinding effect logic", () => {
-  test("first server.key mount does not trigger cleanup", async () => {
-    const [serverKey, setServerKey] = createSignal("http://127.0.0.1:12345")
-    const calls: string[] = []
-    const host = document.createElement("div")
-
-    const dispose = render(() => {
-      let firstServerKey = true
-      createEffect(() => {
-        const key = serverKey()
-        if (firstServerKey) { firstServerKey = false; return }
-        calls.push(`cleanup:${key}`)
-      })
-      return null
-    }, host)
-
-    await tick()
-    expect(calls.length).toBe(0)
-
-    setServerKey("http://127.0.0.1:12345#gen2")
-    await tick()
-    expect(calls.length).toBe(1)
-    expect(calls[0]).toBe("cleanup:http://127.0.0.1:12345#gen2")
-
-    dispose()
+describe("shouldTriggerCleanup", () => {
+  test("undefined → undefined does not trigger (before any server connects)", () => {
+    expect(shouldTriggerCleanup(undefined, undefined)).toBe(false)
   })
 
-  test("subsequent server.key changes trigger cleanup", async () => {
-    const [serverKey, setServerKey] = createSignal("key-1")
-    const calls: string[] = []
-    const host = document.createElement("div")
+  test("undefined → first non-empty key does not trigger (initial sidecar ready, generation 0→1)", () => {
+    expect(shouldTriggerCleanup(undefined, "http://127.0.0.1:12345#gen1")).toBe(false)
+  })
 
-    const dispose = render(() => {
-      let firstServerKey = true
-      createEffect(() => {
-        const key = serverKey()
-        if (firstServerKey) { firstServerKey = false; return }
-        calls.push(`cleanup:${key}`)
-      })
-      return null
-    }, host)
+  test("same key does not trigger (no-op re-render)", () => {
+    expect(shouldTriggerCleanup("http://127.0.0.1:12345#gen1", "http://127.0.0.1:12345#gen1")).toBe(false)
+  })
 
-    await tick()
-    expect(calls.length).toBe(0)
+  test("non-empty → different non-empty triggers cleanup (sidecar restart, generation 1→2)", () => {
+    expect(shouldTriggerCleanup("http://127.0.0.1:12345#gen1", "http://127.0.0.1:12345#gen2")).toBe(true)
+  })
 
-    setServerKey("key-2")
-    await tick()
-    expect(calls.length).toBe(1)
+  test("non-empty → undefined does not trigger (server disconnect, not a restart)", () => {
+    expect(shouldTriggerCleanup("http://127.0.0.1:12345#gen1", undefined)).toBe(false)
+  })
 
-    setServerKey("key-3")
-    await tick()
-    expect(calls.length).toBe(2)
-
-    dispose()
+  test("URL switch on Web triggers cleanup", () => {
+    expect(shouldTriggerCleanup("http://server-a:8080", "http://server-b:8080")).toBe(true)
   })
 })
