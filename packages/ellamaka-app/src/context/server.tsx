@@ -84,6 +84,7 @@ export namespace ServerConnection {
   export type Sidecar = {
     type: "sidecar"
     http: HttpBase
+    generation?: number
   } & (
     | // Regular desktop server
     { variant: "base" }
@@ -114,7 +115,8 @@ export namespace ServerConnection {
         return Key.make(conn.http.url)
       case "sidecar": {
         if (conn.variant === "wsl") return Key.make(`wsl:${conn.distro}`)
-        return Key.make("sidecar")
+        const base = conn.http.url
+        return Key.make(conn.generation ? `${base}#gen${conn.generation}` : base)
       }
       case "ssh":
         return Key.make(`ssh:${conn.host}`)

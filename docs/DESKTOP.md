@@ -221,6 +221,8 @@ Sidecar 启动环境遵循 Ellamaka 路径和配置体系：
 
 Main Process 负责 sidecar 健康检查。Renderer 在 sidecar 可用并完成初始化后进入 Workbench。
 
+Sidecar 生命周期由 `SidecarSupervisor`（§13）管理，提供自动重启、退避策略和状态广播。Main Process 不再直接调用 `spawnLocalServer`，而是通过 Supervisor 的 `start()`/`stop()`/`restart()` 接口控制 sidecar。
+
 ## 9. 安全边界
 
 - BrowserWindow 启用 context isolation，Renderer 不启用 Node integration。
@@ -273,3 +275,135 @@ Main Process 负责 sidecar 健康检查。Renderer 在 sidecar 可用并完成�
 - ellamaka 升级 OpenCode 基线时，desktop、app、engine 和 SDK 共同升级。
 
 包级 `AGENTS.md` 维护开发命令、测试方式、生命周期规则和上游基线。`BRANDING.md` 继续记录品牌差异与分发身份，本文件维护桌面架构和运行时行为。
+
+## 13. SidecarSupervisor 状态机
+
+`SidecarSupervisor`（`packages/ellamaka-desktop/src/main/sidecar-supervisor.ts`）是 Main Process 中 sidecar 运行时的真相源。它替代了 `server.ts` 中 `spawnLocalServer` 的一次性 Promise，提供完整的 sidecar 生命周期管理。
+
+### 13.1 状态定义
+
+| 状态 | 含义 |
+|------|------|
+| `starting` | 正在启动 sidecar 进程，等待健康检查通过 |
+| `ready` | Sidecar 正常运行，健康检查通过 |
+| `lost` | Sidecar 进程退出或启动失败，等待自动重试 |
+| `restarting` | 正在执行自动重启（spawn 新进程） |
+| `failed` | 连续 3 次重启失败，停止自动重试 |
+| `stopped` | 应用退出或用户主动停止，不触发自动重启 |
+
+### 13.2 状态转换
+
+```
+starting → ready     (spawn 成功 + 健康检查通过)
+starting → lost      (spawn 失败)
+ready → lost         (sidecar 进程退出)
+lost → restarting    (退避延迟后自动重试)
+restarting → ready   (重启成功)
+restarting → lost    (重启失败，继续重试)
+restarting → failed  (连续 3 次失败)
+failed → starting    (用户手动重试)
+* → stopped          (应用退出 / 用户停止)
+```
+
+### 13.3 串行化
+
+所有 `start()`、`restart()`、`stop()` 操作通过内部 Promise 链串行化。同一时刻最多一个 spawn 操作。并发调用自动合并到同一操作队列。
+
+### 13.4 Terminal Reason
+
+用户主动停止、安装更新、应用退出时设置 terminal reason（`user`/`update`/`quit`）。terminal reason 设置后，sidecar 退出不触发自动重启。
+
+### 13.5 接口
+
+```ts
+class SidecarSupervisor {
+  getState(): SidecarRuntimeState
+  subscribe(listener: (state: SidecarRuntimeState) => void): () => void
+  start(): Promise<void>
+  restart(reason: SidecarTerminalReason | "auto"): Promise<void>
+  stop(reason: SidecarTerminalReason): Promise<void>
+  waitForReady(): Promise<SidecarRuntimeState>
+}
+```
+
+## 14. IPC allowlist 与 Preload
+
+### 14.1 新增 IPC 通道
+
+| 通道 | 方向 | 用途 |
+|------|------|------|
+| `get-sidecar-state` | Renderer → Main (invoke) | 获取当前 SidecarRuntimeState |
+| `restart-sidecar` | Renderer → Main (invoke) | 用户手动重启 sidecar |
+| `sidecar-state` | Main → Renderer (send) | Supervisor 状态变化时广播到所有窗口 |
+
+### 14.2 Preload API
+
+```ts
+// ElectronAPI 新增方法
+getSidecarState: () => Promise<SidecarRuntimeState>
+onSidecarState: (cb: (state: SidecarRuntimeState) => void) => () => void
+restartSidecar: () => Promise<void>
+```
+
+`onSidecarState` 返回 unsubscribe 函数，与现有 `onMenuCommand`、`onDeepLink` 等保持一致的取消订阅模式。
+
+### 14.3 awaitInitialization 兼容
+
+`awaitInitialization` 保留作为首次 loading window 兼容入口。当 Supervisor 进入 `ready` 时解析，进入 `failed` 时拒绝。Renderer 在挂载后通过 `onSidecarState` 持续订阅状态变化，不再依赖一次性 `awaitInitialization`。
+
+### 14.4 凭据保护
+
+`SidecarRuntimeState.connection` 包含 `password`。Preload 不写 `localStorage`，凭据只在 Main/Preload/Renderer 内存中传递。
+
+## 15. 重启策略与退避
+
+### 15.1 退避参数
+
+| 参数 | 值 |
+|------|-----|
+| 退避序列 | 1s → 2s → 5s |
+| 最大连续失败次数 | 3 |
+| 稳定窗口 | 60s |
+
+### 15.2 退避行为
+
+- Sidecar 退出后立即进入 `lost` 状态，attempt 计数 +1
+- 按 `backoffMs[attempt-1]` 延迟后进入 `restarting`，spawn 新进程
+- 重启成功 → `ready`，attempt 清零
+- 重启失败 → `lost`，继续下一次退避
+- 连续 3 次失败 → `failed`，停止自动重试
+- Sidecar 稳定运行 60s 后 attempt 清零（稳定窗口重置）
+
+### 15.3 用户手动重试
+
+`failed` 状态下用户可通过 `restartSidecar()` 手动重试。手动重试重置 attempt 计数器，清除 terminal reason。
+
+## 16. sidecar generation 与 PTY 恢复
+
+### 16.1 generation 概念
+
+每次 sidecar 成功 spawn（健康检查通过）时，`SidecarSupervisor` 的 generation 计数器 +1。generation 通过 `SidecarRuntimeState` 传递给 Renderer，并注入到 `ServerConnection.Sidecar.generation` 字段。
+
+### 16.2 server.key 变化
+
+`ServerConnection.key()` 对 sidecar 类型使用 `{url}#gen{N}` 格式。generation 变化 → `server.key` 变化 → 触发 Workbench 的连锁反应：
+
+1. `workbench-runtime.tsx` 的 `createEffect` 监听到 `server.key` 变化（跳过首次）
+2. 调用 `WorkbenchActions.clearAllPtyForServerChange()`
+3. 清空所有 Panel 的 `tuiPtyId`/`termPtyId`/`splitPtyId`
+4. TUI 视图切回 Chat
+5. Split Terminal 关闭
+6. `ptyManager` 内存引用清理
+7. 显示一次性诊断提示："Sidecar restarted — PTY sessions have been reset"
+
+### 16.3 三种场景对比
+
+| 场景 | generation 变化 | PTY 行为 |
+|------|----------------|---------|
+| Sidecar 崩溃重启 | 是 | 立即清理所有 PTY 状态，TUI→Chat，Split 关闭 |
+| SSE 断线重连 | 否 | 保留 PTY，10s Grace 内重连复用 |
+| Renderer 刷新 | 否 | 保留 PTY，10s Grace 内重连复用 |
+
+### 16.4 不自动恢复
+
+PTY 清理后不自动创建 Session 或 PTY 伪装恢复。用户点击 TUI/Terminal 后按正常 Action 创建新 PTY。Session 绑定和草稿保留。

@@ -1,3 +1,4 @@
+import { batch } from "solid-js"
 import { scopeKey, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
@@ -56,6 +57,8 @@ export type WorkbenchActionStorePort = {
   commitPanelPty: (scope: SpaceScope, panelID: string, kind: WorkbenchActionPtyKind, ptyID?: string) => void
   commitPanelMode?: (scope: SpaceScope, panelID: string, mode: string) => void
   commitSplitTerminal?: (scope: SpaceScope, panelID: string, open: boolean) => void
+  spacePaths: () => string[]
+  pushDiagnostic?: (type: "info" | "warning" | "error", text: string, options?: { id?: string; autoDismiss?: boolean }) => string
 }
 
 export type WorkbenchActionPtyPort = {
@@ -627,6 +630,45 @@ export function createWorkbenchActions(input: {
       if (options.kind === "tui") input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
       if (options.kind === "split") input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
       return { status: "committed", panelID: options.panelID }
+    },
+    clearAllPtyForServerChange() {
+      const paths = input.store.spacePaths()
+      batch(() => {
+        for (const path of paths) {
+          const panels = input.store.panels({ kind: "space", name: path, path })
+          for (const panel of panels) {
+            // Per AGENTS.md §5.6: switch viewMode to chat BEFORE clearing tuiPtyId
+            if (panel.viewMode === "tui") {
+              input.store.commitPanelMode?.({ kind: "space", name: path, path }, panel.id, "chat")
+            }
+            // Close split terminal
+            if (panel.splitTerminal) {
+              input.store.commitSplitTerminal?.({ kind: "space", name: path, path }, panel.id, false)
+            }
+            // Clear all PTY IDs
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "tui", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "term", undefined)
+            input.store.commitPanelPty({ kind: "space", name: path, path }, panel.id, "split", undefined)
+          }
+        }
+        // Also handle General space
+        const generalPanels = input.store.panels({ kind: "general" })
+        for (const panel of generalPanels) {
+          if (panel.viewMode === "tui") {
+            input.store.commitPanelMode?.({ kind: "general" }, panel.id, "chat")
+          }
+          if (panel.splitTerminal) {
+            input.store.commitSplitTerminal?.({ kind: "general" }, panel.id, false)
+          }
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "tui", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "term", undefined)
+          input.store.commitPanelPty({ kind: "general" }, panel.id, "split", undefined)
+        }
+        // Clear ptyManager memory
+        input.pty.clearMemory?.()
+        // Add diagnostic hint
+        input.store.pushDiagnostic?.("info", "Sidecar restarted — PTY sessions have been reset. Re-open TUI/Terminal as needed.", { id: "sidecar-restart-pty-reset", autoDismiss: true })
+      })
     },
   }
 }

@@ -1050,6 +1050,7 @@ export const dict = {
   "workbench.status.sessionDeletedExternally": "Session \"{{title}}\" was deleted elsewhere and has been released from its panel",
   "workbench.status.restoredSessionArchived": "The previously loaded session was archived elsewhere and has been released from its panel",
   "workbench.status.restoredSessionChild": "A child session cannot be restored independently and has been released from its panel",
+  "workbench.status.boundSessionGone": "The bound session no longer exists on the server and has been released from its panel",
   "workbench.status.dirHealthWarning": "Warning: The working directory for this session is unavailable. Right-click to rename, archive, or delete",
   "workbench.status.sessionReadyHint": "Tip: Double-click this session or drag it into a panel to load and open",
   "workbench.status.sessionNotFound": "The notified session is no longer available and cannot be opened",

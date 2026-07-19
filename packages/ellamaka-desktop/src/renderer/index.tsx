@@ -16,7 +16,7 @@ import {
 } from "@opencode-ai/ellamaka-app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { createEffect, createResource, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -24,6 +24,8 @@ import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { DesktopRouter } from "./desktop-router"
+import type { SidecarRuntimeState } from "../preload/types"
+import { mapSidecarStateToAction } from "./sidecar-adapter"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -273,6 +275,17 @@ listenForDeepLinks()
   // Fetch sidecar credentials (available immediately, before health check)
   const [sidecar] = createResource(() => window.api.awaitInitialization(() => undefined))
 
+  // Live sidecar state from Supervisor (for generation changes / restarts)
+  const [sidecarState, setSidecarState] = createSignal<SidecarRuntimeState | undefined>()
+  let previousGeneration = 0
+
+  onMount(() => {
+    const unsub = window.api.onSidecarState((state) => {
+      setSidecarState(state)
+    })
+    onCleanup(unsub)
+  })
+
   const [defaultServer] = createResource(() =>
     platform.getDefaultServer?.().then((url) => {
       if (url) return ServerConnection.key({ type: "http", http: { url } })
@@ -281,6 +294,40 @@ listenForDeepLinks()
   const [locale] = createResource(loadLocale)
 
   const servers = () => {
+    // Use mapSidecarStateToAction for live state
+    const live = sidecarState()
+    if (live) {
+      const action = mapSidecarStateToAction(live, previousGeneration)
+      if (live.status === "ready") {
+        previousGeneration = live.generation
+      }
+      switch (action.action) {
+        case "connect":
+        case "reconnect": {
+          const server: ServerConnection.Sidecar = {
+            displayName: "Local Server",
+            type: "sidecar",
+            variant: "base",
+            generation: live.generation,
+            http: {
+              url: live.connection!.url,
+              username: live.connection!.username,
+              password: live.connection!.password,
+            },
+          }
+          return [server] as ServerConnection.Any[]
+        }
+        case "offline":
+        case "exit":
+          // Return empty — WorkbenchRuntime will show offline state
+          return []
+        case "wait":
+        case "preserve":
+          // Keep current server connection; fall through to initial data
+          break
+      }
+    }
+    // Fall back to initial awaitInitialization data
     const data = sidecar()
     if (!data) return []
     const server: ServerConnection.Sidecar = {

@@ -7,6 +7,7 @@ import type {
   InitStep,
   FatalRendererError,
   ServerReadyData,
+  SidecarRuntimeState,
   SqliteMigrationProgress,
   TitlebarTheme,
   WindowConfig,
@@ -38,6 +39,9 @@ type Deps = {
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
+  getSidecarState: () => SidecarRuntimeState
+  restartSidecar: () => Promise<void> | void
+  subscribeToSidecarState: (listener: (state: SidecarRuntimeState) => void) => () => void
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -67,6 +71,8 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
     deps.recordFatalRendererError(error),
   )
+  ipcMain.handle("get-sidecar-state", () => deps.getSidecarState())
+  ipcMain.handle("restart-sidecar", () => deps.restartSidecar())
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {
       const store = getStore(name)
@@ -226,4 +232,10 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
+}
+
+export function broadcastSidecarState(state: SidecarRuntimeState) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("sidecar-state", state)
+  }
 }

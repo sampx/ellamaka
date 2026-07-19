@@ -82,6 +82,13 @@ const api: ElectronAPI = {
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
+  getSidecarState: () => ipcRenderer.invoke("get-sidecar-state"),
+  onSidecarState: (cb) => {
+    const handler = (_: unknown, state: any) => cb(state)
+    ipcRenderer.on("sidecar-state", handler)
+    return () => ipcRenderer.removeListener("sidecar-state", handler)
+  },
+  restartSidecar: () => ipcRenderer.invoke("restart-sidecar"),
 }
 
 contextBridge.exposeInMainWorld("api", api)

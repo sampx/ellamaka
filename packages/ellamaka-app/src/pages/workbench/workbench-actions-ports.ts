@@ -61,6 +61,8 @@ export function buildStorePort(wb: WorkbenchState): WorkbenchActionStorePort {
     commitPanelPty: (scope, panelID, kind, ptyID) => wb.setPanelPtyId(scopePath(scope), panelID, kind, ptyID),
     commitPanelMode: (scope, panelID, mode) => wb.setPanelViewMode(scopePath(scope), panelID, mode),
     commitSplitTerminal: (scope, panelID, open) => wb.setPanelSplitTerminal(scopePath(scope), panelID, open),
+    spacePaths: () => Object.keys(wb.spaces),
+    pushDiagnostic: (type, text, options) => wb.pushDiagnostic(type, text, options),
   }
 }
 
