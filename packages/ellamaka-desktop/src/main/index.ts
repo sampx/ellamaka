@@ -11,20 +11,20 @@ import { app, BrowserWindow } from "electron"
 
 import contextMenu from "electron-context-menu"
 
-import type { InitStep, ServerReadyData, SqliteMigrationProgress } from "../preload/types"
+import type { InitStep, SidecarRuntimeState, SqliteMigrationProgress } from "../preload/types"
 import { checkAppExists } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
-import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
+import { broadcastSidecarState, registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
+  createSidecarSpawner,
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
-  spawnLocalServer,
-  type SidecarListener,
 } from "./server"
+import { SidecarSupervisor } from "./sidecar-supervisor"
 import {
   createLoadingWindow,
   createMainWindow,
@@ -53,7 +53,7 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
-let server: SidecarListener | null = null
+let supervisor: SidecarSupervisor | null = null
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
@@ -82,10 +82,8 @@ function setInitStep(step: InitStep) {
 }
 
 async function killSidecar() {
-  if (!server) return
-  const current = server
-  server = null
-  await current.stop()
+  if (!supervisor) return
+  await supervisor.stop("quit")
 }
 
 function ensureLoopbackNoProxy() {
@@ -217,43 +215,7 @@ const main = Effect.gen(function* () {
     })
   }
 
-  const serverReady = Deferred.makeUnsafe<ServerReadyData>()
   const loadingComplete = Deferred.makeUnsafe<void>()
-
-  registerIpcHandlers({
-    killSidecar: () => killSidecar(),
-    awaitInitialization: Effect.fnUntraced(
-      function* (sendStep) {
-        sendStep(initStep)
-        const listener = (step: InitStep) => sendStep(step)
-        initEmitter.on("step", listener)
-        try {
-          logger.log("awaiting server ready")
-          const res = yield* Deferred.await(serverReady)
-          logger.log("server ready", { url: res.url })
-          return res
-        } finally {
-          initEmitter.off("step", listener)
-        }
-      },
-      (e) => Effect.runPromise(e),
-    ),
-    getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
-    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
-    getDefaultServerUrl: () => getDefaultServerUrl(),
-    setDefaultServerUrl: (url) => setDefaultServerUrl(url),
-    getDisplayBackend: async () => null,
-    setDisplayBackend: async () => undefined,
-    parseMarkdown: async (markdown) => parseMarkdown(markdown),
-    checkAppExists: (appName) => checkAppExists(appName),
-    loadingWindowComplete: () => Deferred.doneUnsafe(loadingComplete, Effect.void),
-    runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail, killSidecar),
-    checkUpdate: async () => checkUpdate(),
-    installUpdate: async () => installUpdate(killSidecar),
-    setBackgroundColor: (color) => setBackgroundColor(color),
-    exportDebugLogs: () => exportDebugLogs(),
-    recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
-  })
 
   yield* Effect.promise(() => app.whenReady())
 
@@ -300,6 +262,63 @@ const main = Effect.gen(function* () {
   const url = `http://${hostname}:${port}`
   const password = randomUUID()
 
+  // Create SidecarSupervisor
+  supervisor = new SidecarSupervisor({
+    spawn: createSidecarSpawner(needsMigration),
+    setTimeout,
+    clearTimeout,
+    hostname,
+    port,
+    password,
+  })
+
+  // Subscribe to state changes and broadcast to all windows
+  supervisor.subscribe((state: SidecarRuntimeState) => {
+    broadcastSidecarState(state)
+  })
+
+  registerIpcHandlers({
+    killSidecar: () => killSidecar(),
+    awaitInitialization: Effect.fnUntraced(
+      function* (sendStep) {
+        sendStep(initStep)
+        const listener = (step: InitStep) => sendStep(step)
+        initEmitter.on("step", listener)
+        try {
+          logger.log("awaiting server ready")
+          const state = yield* Effect.promise(() => supervisor!.waitForReady())
+          logger.log("server ready", { url: state.connection?.url })
+          return {
+            url: state.connection?.url ?? "",
+            username: state.connection?.username ?? null,
+            password: state.connection?.password ?? null,
+          }
+        } finally {
+          initEmitter.off("step", listener)
+        }
+      },
+      (e) => Effect.runPromise(e),
+    ),
+    getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
+    consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
+    getDefaultServerUrl: () => getDefaultServerUrl(),
+    setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+    getDisplayBackend: async () => null,
+    setDisplayBackend: async () => undefined,
+    parseMarkdown: async (markdown) => parseMarkdown(markdown),
+    checkAppExists: (appName) => checkAppExists(appName),
+    loadingWindowComplete: () => Deferred.doneUnsafe(loadingComplete, Effect.void),
+    runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail, killSidecar),
+    checkUpdate: async () => checkUpdate(),
+    installUpdate: async () => installUpdate(killSidecar),
+    setBackgroundColor: (color) => setBackgroundColor(color),
+    exportDebugLogs: () => exportDebugLogs(),
+    recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
+    getSidecarState: () => supervisor!.getState(),
+    restartSidecar: () => supervisor!.restart("user"),
+    subscribeToSidecarState: (listener) => supervisor!.subscribe(listener),
+  })
+
   const loadingTask = yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
 
@@ -312,31 +331,8 @@ const main = Effect.gen(function* () {
     ensureLoopbackNoProxy()
     useEnvProxy()
 
-    logger.log("spawning sidecar", { url })
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
-        needsMigration,
-        onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
-    )
-    server = listener
-    yield* Deferred.succeed(serverReady, {
-      url,
-      username: "ellamaka",
-      password,
-    })
-
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
-    )
+    logger.log("starting sidecar supervisor", { url })
+    yield* Effect.promise(() => supervisor!.start())
 
     logger.log("loading task finished")
   }).pipe(Effect.forkChild)

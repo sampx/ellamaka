@@ -10,6 +10,19 @@ export type ServerReadyData = {
 
 export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { type: "Done" }
 
+export type SidecarRuntimeStatus = "starting" | "ready" | "lost" | "restarting" | "failed" | "stopped"
+
+export type SidecarTerminalReason = "user" | "update" | "quit"
+
+export type SidecarRuntimeState = {
+  generation: number
+  status: SidecarRuntimeStatus
+  connection?: { url: string; username: string; password: string }
+  attempt: number
+  nextRetryAt?: number
+  errorCode?: string
+}
+
 export type LinuxDisplayBackend = "wayland" | "auto"
 export type TitlebarTheme = {
   mode: "light" | "dark"
@@ -87,4 +100,7 @@ export type ElectronAPI = {
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
+  getSidecarState: () => Promise<SidecarRuntimeState>
+  onSidecarState: (cb: (state: SidecarRuntimeState) => void) => () => void
+  restartSidecar: () => Promise<void>
 }
