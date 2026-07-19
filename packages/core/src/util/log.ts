@@ -51,6 +51,7 @@ export const Default = create({ service: "default" })
 export interface Options {
   print: boolean
   dev?: boolean
+  devFile?: string
   level?: Level
 }
 
@@ -64,24 +65,32 @@ let write = (msg: any) => {
 }
 
 function dir(options: Options) {
-  return options.dev && process.env.WOPAL_DEBUG_LOG_DIR ? process.env.WOPAL_DEBUG_LOG_DIR : Global.Path.log
+  if (!options.dev) return Global.Path.log
+  if (process.env.WOPAL_DEBUG_LOG_DIR) return process.env.WOPAL_DEBUG_LOG_DIR
+  const spaceRoot = process.env.WOPAL_SPACE_ROOT
+  if (spaceRoot) return path.join(spaceRoot, ".wopal-space", "logs")
+  throw new Error("local Ellamaka logging requires WOPAL_DEBUG_LOG_DIR or WOPAL_SPACE_ROOT")
 }
 
 export async function init(options: Options) {
   if (options.level) level = options.level
+  if (options.print) return
   const logdir = dir(options)
   await fs.mkdir(logdir, { recursive: true })
   void cleanup(logdir)
-  if (options.print) return
   logpath = path.join(
     logdir,
-    options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
+    options.dev ? (options.devFile ?? "dev.log") : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
   )
   const runID = process.env.OPENCODE_RUN_ID
   const shouldTruncate = !options.dev || !runID || process.env[initializedRunID] !== runID
   if (shouldTruncate) await fs.truncate(logpath).catch(() => {})
   if (options.dev && runID) process.env[initializedRunID] = runID
   const stream = createWriteStream(logpath, { flags: "a" })
+  await new Promise<void>((resolve, reject) => {
+    stream.once("open", () => resolve())
+    stream.once("error", reject)
+  })
   write = async (msg: any) => {
     return new Promise((resolve, reject) => {
       stream.write(msg, (err) => {

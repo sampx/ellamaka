@@ -48,11 +48,39 @@ it.live("init cleanup keeps the newest timestamped logs", () =>
   }),
 )
 
-it.live("local dev log is not truncated twice for the same run", () =>
+it.live("local dev log uses the WopalSpace log directory", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    const spaceRoot = process.env.WOPAL_SPACE_ROOT
+    const debugLogDir = process.env.WOPAL_DEBUG_LOG_DIR
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        Global.Path.log = log
+        if (spaceRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
+        else process.env.WOPAL_SPACE_ROOT = spaceRoot
+        if (debugLogDir === undefined) delete process.env.WOPAL_DEBUG_LOG_DIR
+        else process.env.WOPAL_DEBUG_LOG_DIR = debugLogDir
+      }),
+    )
+
+    const fallback = yield* tmpdirScoped()
+    const space = yield* tmpdirScoped()
+    Global.Path.log = fallback
+    process.env.WOPAL_SPACE_ROOT = space
+    delete process.env.WOPAL_DEBUG_LOG_DIR
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: true, devFile: "ellamaka-dev-tui.log" }))
+
+    expect(Log.file()).toBe(path.join(space, ".wopal-space", "logs", "ellamaka-dev-tui.log"))
+  }),
+)
+
+it.live("configured local dev log is not truncated twice for the same run", () =>
   Effect.gen(function* () {
     const log = Global.Path.log
     const runID = process.env.OPENCODE_RUN_ID
     const initialized = process.env.OPENCODE_LOG_INITIALIZED_RUN_ID
+    const debugLogDir = process.env.WOPAL_DEBUG_LOG_DIR
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         Global.Path.log = log
@@ -60,18 +88,23 @@ it.live("local dev log is not truncated twice for the same run", () =>
         else process.env.OPENCODE_RUN_ID = runID
         if (initialized === undefined) delete process.env.OPENCODE_LOG_INITIALIZED_RUN_ID
         else process.env.OPENCODE_LOG_INITIALIZED_RUN_ID = initialized
+        if (debugLogDir === undefined) delete process.env.WOPAL_DEBUG_LOG_DIR
+        else process.env.WOPAL_DEBUG_LOG_DIR = debugLogDir
       }),
     )
 
     const dir = yield* tmpdirScoped()
     Global.Path.log = dir
+    process.env.WOPAL_DEBUG_LOG_DIR = dir
     process.env.OPENCODE_RUN_ID = "run-1"
     delete process.env.OPENCODE_LOG_INITIALIZED_RUN_ID
 
-    yield* Effect.promise(() => Log.init({ print: false, dev: true }))
-    yield* Effect.promise(() => fs.writeFile(path.join(dir, "dev.log"), "main startup\n"))
-    yield* Effect.promise(() => Log.init({ print: false, dev: true }))
+    yield* Effect.promise(() => Log.init({ print: false, dev: true, devFile: "ellamaka-dev-tui.log" }))
+    yield* Effect.promise(() => fs.writeFile(path.join(dir, "ellamaka-dev-tui.log"), "main startup\n"))
+    yield* Effect.promise(() => Log.init({ print: false, dev: true, devFile: "ellamaka-dev-tui.log" }))
 
-    expect(yield* Effect.promise(() => fs.readFile(path.join(dir, "dev.log"), "utf8"))).toContain("main startup")
+    expect(yield* Effect.promise(() => fs.readFile(path.join(dir, "ellamaka-dev-tui.log"), "utf8"))).toContain(
+      "main startup",
+    )
   }),
 )
