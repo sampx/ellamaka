@@ -122,6 +122,24 @@ describe("WorkbenchStore", () => {
     store.unbindSessionFromPanel("/fixtures/space-a", "panel-b")
     expect(store.findSessionBinding("session-b")).toBeUndefined()
   })
+
+  test("findSessionBinding ignores bound sessions in spaces whose tab is not open", () => {
+    const store = createWorkbenchStore(fixture())
+    // Close Space A tab while keeping space state in store.spaces
+    store.removeSpace("/fixtures/space-a")
+    expect(store.spaceState("/fixtures/space-a")).toBeUndefined()
+    
+    // Manually ensure space state exists without tab
+    store.ensureSpace("/fixtures/space-a")
+    store.bindSessionToPanel("/fixtures/space-a", "panel-a", {
+      id: "session-a",
+      directory: "/fixtures/space-a/project-a",
+      type: "chat",
+    })
+    // Tab for Space A is not open, so findSessionBinding must return undefined
+    expect(store.findSessionBinding("session-a")).toBeUndefined()
+    expect(store.isSessionBound("session-a")).toBe(false)
+  })
 })
 
 describe("WorkbenchStore hydrate/migrate", () => {

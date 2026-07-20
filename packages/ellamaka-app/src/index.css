@@ -168,8 +168,16 @@ html, body, #root {
   }
 }
 
-/* 自适应主题反相滤镜，对接项目的 data-theme 主题机制 */
+/* 自适应主题反相与透明遮罩，对接项目的 data-theme 主题机制 */
 .ellamaka-logo-invert {
+  -webkit-mask-image: url("/ellamaka-text-logo.png?v=2");
+  mask-image: url("/ellamaka-text-logo.png?v=2");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
   filter: invert(0);
 }
 

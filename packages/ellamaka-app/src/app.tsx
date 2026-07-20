@@ -225,25 +225,25 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
         ),
   )
 
+  const [minSplashDone, setMinSplashDone] = createSignal(false)
+  onMount(() => {
+    const timer = setTimeout(() => setMinSplashDone(true), 500)
+    onCleanup(() => clearTimeout(timer))
+  })
+
+  const showSplash = () => checkMode() === "blocking" && (!minSplashDone() || startupHealthCheck.loading)
+
   return (
-    <Suspense
+    <Show
+      when={!showSplash()}
       fallback={
         <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
           <img src="/ellamaka-text-logo.png?v=2" class="h-20 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
       }
     >
-      {/*<Show
-        when={checkMode() === "blocking" ? !startupHealthCheck.loading : startupHealthCheck.state !== "pending"}
-        fallback={
-          <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-            <img src="/ellamaka-text-logo.png?v=2" class="h-20 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
-          </div>
-        }
-      >*/}
-      {checkMode() === "blocking" ? startupHealthCheck() : startupHealthCheck.latest}
       <Show
-        when={startupHealthCheck()}
+        when={checkMode() === "blocking" ? startupHealthCheck() : startupHealthCheck.latest}
         fallback={
           <ConnectionError
             onRetry={() => {
@@ -259,8 +259,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
       >
         {props.children}
       </Show>
-      {/*</Show>*/}
-    </Suspense>
+    </Show>
   )
 }
 

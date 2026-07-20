@@ -401,9 +401,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function isSessionBound(sessionID: string) {
-    return Object.values(store.spaces).some((space) =>
-      space.panels.some((panel) => panel.boundSessionId === sessionID && panel.slotState === "bound"),
-    )
+    return findSessionBinding(sessionID) !== undefined
   }
 
   function boundPanelIdForSession(sessionID: string): string | undefined {
@@ -415,6 +413,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   // never re-scan `spaces` and lose which Space a binding belongs to.
   function findSessionBinding(sessionID: string): { spacePath: string; panelID: string } | undefined {
     for (const [spacePath, space] of Object.entries(store.spaces)) {
+      if (!store.tabs.some((tab) => tab.path === spacePath)) continue
       const panel = space.panels.find(
         (candidate) => candidate.boundSessionId === sessionID && candidate.slotState === "bound",
       )

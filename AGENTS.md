@@ -109,9 +109,10 @@ Tests cannot run from repo root. Run `./scripts/dev.sh help` and `./scripts/buil
 
 Workbench frontend development rules (state ownership, identity scope, dependency direction, PTY lifecycle, effect race protection, persistence, testing, and other mandatory boundaries) are in `packages/ellamaka-app/AGENTS.md`. This file does not duplicate those rules; changes to Workbench frontend code must follow that specification.
 
-## 5. Testing
+## 5. Testing & Verification
 
 - Code changes follow TDD: write a failing test first, then implement code to make it pass.
+- 在修改任何 TypeScript 代码或添加新文件后，必须自动运行 `bun run typecheck`（或对应 package 的 typecheck），确保零 TypeScript 类型错误。
 - Avoid mocks as much as possible; test real implementations, do not duplicate logic into tests.
 - Tests must run from the corresponding package directory, never from repo root.
 - After modifying CLI/runtime/config/plugin/agent/TUI space mode, verify or document: `WOPAL_SPACE` flag, `.wopal/config/settings.*`, TUI settings, plugin loading, theme loading.

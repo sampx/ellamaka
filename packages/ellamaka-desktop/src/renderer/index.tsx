@@ -16,7 +16,7 @@ import {
 } from "@opencode-ai/ellamaka-app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -293,7 +293,7 @@ listenForDeepLinks()
   )
   const [locale] = createResource(loadLocale)
 
-  const servers = () => {
+  const servers = createMemo(() => {
     // Use mapSidecarStateToAction for live state
     const live = sidecarState()
     if (live) {
@@ -341,7 +341,7 @@ listenForDeepLinks()
       },
     }
     return [server] as ServerConnection.Any[]
-  }
+  })
 
   function handleClick(e: MouseEvent) {
     const link = (e.target as HTMLElement).closest("a.external-link") as HTMLAnchorElement | null
