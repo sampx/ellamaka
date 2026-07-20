@@ -650,7 +650,7 @@ cmd_desktop() {
   read_record desktop
   local desktop_pid="$RECORD_PID" elapsed=0 sidecar_url sidecar_port
   printf "  waiting for Electron to start"
-  while [ "$elapsed" -lt 30 ]; do
+  while [ "$elapsed" -lt 300 ]; do
     service_running desktop || { echo ""; echo "Electron exited unexpectedly; see $DESKTOP_LOG"; remove_service_records desktop; return 1; }
     if grep -q "server ready" "$DESKTOP_LOG" 2>/dev/null; then break; fi
     printf "."
@@ -658,15 +658,15 @@ cmd_desktop() {
     elapsed=$((elapsed + 1))
   done
   echo ""
-  if [ "$elapsed" -eq 30 ]; then
-    echo "Electron did not become ready; stopping it"
-    stop_service desktop || true
+  if [ "$elapsed" -eq 300 ]; then
+    echo "⚠  Electron did not become ready within ${elapsed}s (still running)"
+    echo "  Check logs: $DESKTOP_LOG / $SIDECAR_LOG"
     return 1
   fi
 
   sidecar_url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+' "$DESKTOP_LOG" 2>/dev/null | head -1)"
   sidecar_port="${sidecar_url##*:}"
-  [[ "$sidecar_port" =~ ^[1-9][0-9]*$ ]] || { echo "Electron started without a sidecar port; stopping it"; stop_service desktop || true; return 1; }
+  [[ "$sidecar_port" =~ ^[1-9][0-9]*$ ]] || { echo "⚠  Electron started but sidecar port not found in log (still running)"; echo "  Check logs: $DESKTOP_LOG / $SIDECAR_LOG"; return 1; }
   write_record desktop "$sidecar_port,5173,9222" "$desktop_pid" "$RECORD_PGID"
   record_listener desktop-sidecar "$sidecar_port" || true
   record_listener desktop-vite 5173 || true
