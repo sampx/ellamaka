@@ -1054,4 +1054,13 @@ export const dict = {
   "workbench.error.panelLoadFailed": "面板加载失败",
   "workbench.error.unknownError": "发生未知错误，请重试。",
   "workbench.error.retry": "重试",
+  "workbench.error.feedbackIssue": "反馈 Issue",
+  "workbench.error.viewDocs": "查看文档",
+  "workbench.dateGroup.today": "今天",
+  "workbench.dateGroup.yesterday": "昨天",
+  "workbench.dateGroup.week": "7天内",
+  "workbench.dateGroup.earlier": "更早",
+  "workbench.topbar.spaceBusy": "该空间有会话正在运行中",
+  "workbench.topbar.generalPinned": "日常对话 (固定)",
+  "workbench.topbar.tabPinned": "已钉住 Tab",
 } satisfies Partial<Record<Keys, string>>

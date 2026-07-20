@@ -73,6 +73,20 @@ describe("macOS workbench titlebar", () => {
     expect(titlebar).toContain("workbench-macos-window-chrome")
     expect(titlebar).toContain("workbench-titlebar-toolbar")
     expect(titlebar).not.toContain("workbench-titlebar-left-inset")
+
+    // Ensure header uses flex-col two-row layout
+    expect(titlebar).toMatch(/<header[^>]+class="[^"]*flex-col[^"]*"/)
+
+    // Chrome drag strip must precede the toolbar in DOM structure
+    const chromeIndex = titlebar.indexOf("workbench-macos-window-chrome")
+    const toolbarIndex = titlebar.indexOf("workbench-titlebar-toolbar")
+    expect(chromeIndex).toBeGreaterThan(-1)
+    expect(toolbarIndex).toBeGreaterThan(-1)
+    expect(chromeIndex).toBeLessThan(toolbarIndex)
+
+    // Brand logo must be rendered inside the toolbar section
+    const logoIndex = titlebar.indexOf('alt="Logo"')
+    expect(logoIndex).toBeGreaterThan(toolbarIndex)
   })
 })
 

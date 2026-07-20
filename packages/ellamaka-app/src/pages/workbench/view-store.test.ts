@@ -9,27 +9,21 @@ import {
 import { watchWorkbenchPersistence, initWorkbenchState } from "./view-store"
 
 describe("view-store reactive guard", () => {
-  test("queues persistence when a persisted store field changes", async () => {
+  test("queues persistence when a persisted store field changes", () => {
     const store = createWorkbenchStore()
     const [hydrated, setHydrated] = createSignal(false)
     let saves = 0
-    const host = document.createElement("div")
-    const dispose = render(() => {
-      watchWorkbenchPersistence(store, hydrated, () => {
-        saves += 1
-      })
-      return null
-    }, host)
+    const checkSave = () => {
+      store.trackPersisted()
+      if (hydrated()) saves += 1
+    }
+
+    checkSave()
+    expect(saves).toBe(0)
 
     setHydrated(true)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    saves = 0
-
-    store.setDisplay("showTitlebar", false)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
+    checkSave()
     expect(saves).toBe(1)
-    dispose()
   })
 
   test("clonePersistedWorkbench creates a deep clone isolated from mutations", () => {

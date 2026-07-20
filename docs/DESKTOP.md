@@ -104,6 +104,10 @@ Renderer 通过 `PlatformProvider` 获得 `platform: "desktop"`，用于文件�
 **桌面快捷键规约**：
 - 桌面环境（Electron）中，`Cmd + W` 快捷键受受控拦截保护：允许关闭未钉住的临时 Space Tab 或当前选中的 Panel；**凡处于钉住 (Pinned) 状态的 Tab（包括 General 日常对话 Tab 及已 Pin 的物理 Space Tab）严禁通过 `Cmd + W` 误操作关闭**。
 
+**macOS 窗口标题栏与红绿灯避让规约**：
+- 在 macOS Desktop 环境中，`BrowserWindow` 设置 `titleBarStyle: "hidden"` 及 `trafficLightPosition: { x: 12, y: 14 }`。
+- `ellamaka-app` 的 Topbar组件必须保持 `flex-col` 结构，将 28px 高度的拖拽占位区 (`workbench-macos-window-chrome`) 放在最上方，Logo 与交互元素放置于下方的 toolbar 容器中，严禁在全局重构中将顶栏平铺混叠导致视觉撞车。
+
 ### 3.4 Ellamaka sidecar
 
 Sidecar 由当前仓库的 `packages/opencode` node runtime 构建，提供 Ellamaka HTTP、SSE、WebSocket、Session、PTY 和 WopalSpace 能力。

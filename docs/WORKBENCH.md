@@ -339,6 +339,7 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 ### 5.9 Headbar 标题栏、单空间 Session Tree 与侧栏架构
 
 - **Headbar 标题栏与 Web 兼容性**：
+  - **macOS 红绿灯避让与双层 Layout 契约**：Workbench 顶栏 `<header>` 必须保持 `flex-col` 双层结构。第一层为 `workbench-macos-window-chrome`（28px 高度），在 macOS 桌面端为红绿灯提供专有拖拽避让高度；第二层为 `workbench-titlebar-toolbar`。Logo、Space Tabs 与右侧操作按钮必须全部收纳于第二层 toolbar 内，严禁绝对定位逃逸至第一层拖拽区。
   - 保持原有的品牌 Logo 样式，与空间 Tabs 在第二行 Headbar Toolbar 中平行布设。
   - Headbar 右侧增加 `空间列表` 下拉框与 `用户登录 Logo (头像预留)`，确保网页版 Web 界面与 Electron 桌面端具备完全一致的控件呈现与交互。
   - Tab 栏末尾的 `+` 按钮**严格锁定为添加 Panel (面板) 的功能**，不改变其既有逻辑。

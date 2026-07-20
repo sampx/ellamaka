@@ -1109,4 +1109,13 @@ export const dict = {
   "workbench.error.panelLoadFailed": "Panel failed to load",
   "workbench.error.unknownError": "An unknown error occurred. Please try again.",
   "workbench.error.retry": "Retry",
+  "workbench.error.feedbackIssue": "Feedback Issue",
+  "workbench.error.viewDocs": "View Docs",
+  "workbench.dateGroup.today": "Today",
+  "workbench.dateGroup.yesterday": "Yesterday",
+  "workbench.dateGroup.week": "Past 7 Days",
+  "workbench.dateGroup.earlier": "Earlier",
+  "workbench.topbar.spaceBusy": "Sessions are running in this space",
+  "workbench.topbar.generalPinned": "General Chat (Pinned)",
+  "workbench.topbar.tabPinned": "Pinned Tab",
 }

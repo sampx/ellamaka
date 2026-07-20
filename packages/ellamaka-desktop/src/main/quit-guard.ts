@@ -117,7 +117,7 @@ export function enableQuitGuard(deps: {
 
   // Guard quit with confirmation when sidecar is active
   app.on("before-quit", (e) => {
-    if (forceQuit) return
+    if (forceQuit || confirmShowing) return
 
     const state = getSidecarState()
     if (!shouldConfirmQuit(state)) return

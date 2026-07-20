@@ -1,6 +1,6 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { makePersisted } from "@solid-primitives/storage"
-import { batch, createEffect, createSignal, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, createRenderEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
   clonePersistedWorkbench,

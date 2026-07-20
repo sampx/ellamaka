@@ -3,6 +3,7 @@ import type { WopalSpace } from "../space-store"
 import type { GroupSession, SessionTreeLocation } from "./session-tree-services"
 import { SessionTreeRow } from "./session-tree-row"
 import { useWorkbenchState } from "../view-store"
+import { useLanguage } from "@/context/language"
 
 type MergedSession = {
   id: string
@@ -10,7 +11,7 @@ type MergedSession = {
   status: "idle" | "bound" | "archived"
 }
 
-function ChatIcon(props: { class?: string }) {
+export function ChatIcon(props: { class?: string }) {
   return (
     <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -84,19 +85,12 @@ function groupSessionsByDate(locations: SessionTreeLocation[]): DateGroup[] {
     }
   }
 
-  const titles: Record<string, string> = {
-    today: "今天",
-    yesterday: "昨天",
-    week: "7天内",
-    earlier: "更早",
-  }
-
   const result: DateGroup[] = []
   for (const key of ["today", "yesterday", "week", "earlier"] as const) {
     if (groups[key].length > 0) {
       result.push({
         key,
-        title: titles[key],
+        title: key,
         sessions: groups[key],
       })
     }
@@ -155,7 +149,9 @@ function DateLocationItem(props: {
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
 }) {
   const wb = useWorkbenchState()
+  const language = useLanguage()
   const [expanded, setExpanded] = createSignal(true)
+  const groupTitle = () => language.t(`workbench.dateGroup.${props.group.key}` as any)
   const merged = createMemo(() =>
     sortSessionsByPanelAndPin(
       props.mergeSessions(props.group.sessions),
@@ -174,7 +170,7 @@ function DateLocationItem(props: {
       >
         <div class="flex items-center gap-1.5 truncate">
           <CalendarIcon class="size-3.5 text-v2-text-text-muted shrink-0" />
-          <span class="truncate">{props.group.title}</span>
+          <span class="truncate">{groupTitle()}</span>
           <span class="text-9-regular text-v2-text-text-faint font-normal">({merged().length})</span>
         </div>
         <svg

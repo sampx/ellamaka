@@ -9,6 +9,7 @@ import { useSessionStore } from "../session-store"
 import { GENERAL_SCOPE_NAME } from "../workbench-scope"
 import { WorkbenchSettingsMenu } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
+import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
 
@@ -16,14 +17,6 @@ const MIN_WIDTH = 200
 const MAX_WIDTH = 500
 const DEFAULT_WIDTH = 300
 const COLLAPSED_WIDTH = 44
-
-function ChatIcon(props: { class?: string }) {
-  return (
-    <svg class={props.class ?? "size-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  )
-}
 
 function MaintenanceIcon(props: { class?: string }) {
   return (

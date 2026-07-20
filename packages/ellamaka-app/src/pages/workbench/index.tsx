@@ -229,7 +229,7 @@ function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
             rel="noreferrer"
             class="rounded-md border border-v2-border-border-base bg-v2-background-bg-base px-4 py-2 text-13-semibold text-v2-text-text-primary hover:bg-v2-background-bg-surface transition-colors cursor-pointer"
           >
-            反馈 Issue
+            {t("workbench.error.feedbackIssue")}
           </a>
           <a
             href="https://wopal.cn/docs"
@@ -237,7 +237,7 @@ function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
             rel="noreferrer"
             class="rounded-md border border-v2-border-border-base bg-v2-background-bg-base px-4 py-2 text-13-semibold text-v2-text-text-muted hover:text-v2-text-text-primary transition-colors cursor-pointer"
           >
-            查看文档
+            {t("workbench.error.viewDocs")}
           </a>
         </div>
       </div>
