@@ -26,7 +26,7 @@ export function WorkbenchTitlebar() {
       <div data-tauri-drag-region class="workbench-macos-window-chrome shrink-0" />
       <div data-tauri-drag-region class="workbench-titlebar-toolbar flex h-10 items-center gap-3 px-3">
         <div class="flex items-center gap-2 text-v2-text-text-strong [font-weight:530] text-14-regular">
-          <img src="/favicon-96x96-v3.png?v=4" class="w-5 h-5 object-contain" alt="Icon" />
+          <img src="/favicon-96x96.png" class="w-5 h-5 object-contain" alt="Icon" />
           <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
 

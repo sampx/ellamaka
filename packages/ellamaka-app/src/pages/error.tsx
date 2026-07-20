@@ -287,7 +287,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
     <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-background-base font-sans p-6">
       <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-6">
         <div class="flex items-center justify-center gap-3 mb-2">
-          <img src="/favicon-96x96-v3.png?v=4" class="w-10 h-10 object-contain" alt="Icon" />
+          <img src="/favicon-96x96.png" class="w-10 h-10 object-contain" alt="Icon" />
           <img src="/ellamaka-text-logo.png?v=2" class="h-9 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
         <div class="flex flex-col items-center gap-2 text-center">

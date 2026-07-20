@@ -192,7 +192,7 @@ function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
     <div class="flex h-dvh flex-col items-center justify-center gap-6 bg-v2-background-bg-deep text-v2-text-text-base p-8">
       <div class="flex flex-col items-center max-w-md text-center gap-4">
         <div class="flex items-center gap-3 mb-2">
-          <img src="/favicon-96x96-v3.png?v=4" class="w-8 h-8 object-contain" alt="Icon" />
+          <img src="/favicon-96x96.png" class="w-8 h-8 object-contain" alt="Icon" />
           <img src="/ellamaka-text-logo.png?v=2" class="h-7 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
         <h2 class="text-20-semibold text-v2-text-text-strong">

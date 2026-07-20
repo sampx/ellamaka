@@ -4,7 +4,7 @@ export const Mark = (props: { class?: string }) => {
   return (
     <img
       data-component="logo-mark"
-      src="/favicon-96x96-v3.png?v=4"
+      src="/favicon-96x96.png"
       classList={{ "object-contain": true, [props.class ?? ""]: !!props.class }}
       alt="Ellamaka Icon"
     />
@@ -18,7 +18,7 @@ export const Splash = (props: Pick<ComponentProps<"div">, "ref" | "class">) => {
       data-component="logo-splash"
       classList={{ "flex flex-col items-center justify-center gap-3": true, [props.class ?? ""]: !!props.class }}
     >
-      <img src="/favicon-96x96-v3.png?v=4" class="h-12 w-12 object-contain" alt="Ellamaka Mark" />
+      <img src="/favicon-96x96.png" class="h-12 w-12 object-contain" alt="Ellamaka Mark" />
       <img src="/ellamaka-text-logo.png?v=2" class="h-7 w-auto object-contain ellamaka-logo-invert" alt="Ellamaka Logo" />
     </div>
   )
