@@ -5,6 +5,9 @@ import { createMainWindow, updateTitlebar } from "./windows"
 export type DesktopMenuActionHandlers = Partial<{
   checkForUpdates: () => void
   relaunch: () => void
+  restartSidecar: () => void
+  toggleDebugLogging: () => void
+  exportLogs: () => void
 }>
 
 export function runDesktopMenuAction(
@@ -19,8 +22,14 @@ export function runDesktopMenuAction(
     case "app.relaunch":
       handlers.relaunch?.()
       return
-    case "window.new":
-      createMainWindow()
+    case "app.restartSidecar":
+      handlers.restartSidecar?.()
+      return
+    case "app.toggleDebugLogging":
+      handlers.toggleDebugLogging?.()
+      return
+    case "app.exportLogs":
+      handlers.exportLogs?.()
       return
     case "window.close":
       win?.close()

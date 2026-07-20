@@ -15,7 +15,7 @@ import type { InitStep, SidecarRuntimeState, SqliteMigrationProgress } from "../
 import { checkAppExists } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { broadcastSidecarState, registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
-import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
+import { exportDebugLogs, initCrashReporter, initLogging, isDebugLogging, startNetLog, toggleDebugLogging, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
@@ -375,6 +375,16 @@ const main = Effect.gen(function* () {
           app.exit(0)
         })
       },
+      restartSidecar: () => {
+        void supervisor?.restart("user")
+      },
+      exportLogs: () => {
+        void exportDebugLogs()
+      },
+      toggleDebugLogging: () => {
+        toggleDebugLogging()
+      },
+      isDebugLogging: () => isDebugLogging(),
     })
   }
 

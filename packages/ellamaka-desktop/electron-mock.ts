@@ -48,6 +48,16 @@ mock.module("electron", () => ({
     themeSource: "system",
   },
   Notification: class {},
+  default: {
+    app: {
+      getPath: () => "/tmp",
+      getVersion: () => "41.2.1",
+      isPackaged: true,
+      getName: () => "Ellamaka",
+      on: () => {},
+      whenReady: () => Promise.resolve(),
+    },
+  },
 }))
 
 mock.module("electron-log", () => ({

@@ -14,6 +14,10 @@ type Deps = {
   trigger: (id: string) => void
   checkForUpdates: () => void
   relaunch: () => void
+  restartSidecar: () => void
+  exportLogs: () => void
+  toggleDebugLogging: () => void
+  isDebugLogging: () => boolean
 }
 
 export function createMenu(deps: Deps) {
@@ -42,16 +46,27 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
   }
 
+  if (entry.action === "app.toggleDebugLogging") {
+    item.type = "checkbox"
+    item.checked = deps.isDebugLogging()
+  }
+
   if (entry.command) {
     const command = entry.command
     item.click = () => deps.trigger(command)
   }
   if (entry.action) {
     const action = entry.action
-    item.click = () =>
+    item.click = (menuItem) =>
       runDesktopMenuAction(BrowserWindow.getFocusedWindow(), action, {
         checkForUpdates: deps.checkForUpdates,
         relaunch: deps.relaunch,
+        restartSidecar: deps.restartSidecar,
+        exportLogs: deps.exportLogs,
+        toggleDebugLogging: () => {
+          deps.toggleDebugLogging()
+          if (menuItem) menuItem.checked = deps.isDebugLogging()
+        },
       })
   }
   if (entry.href) {

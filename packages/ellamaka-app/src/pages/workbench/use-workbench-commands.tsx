@@ -1,6 +1,8 @@
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchActions } from "@/pages/workbench/workbench-actions"
+import { useWorkbenchState } from "@/pages/workbench/view-store"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
@@ -17,6 +19,8 @@ export const useWorkbenchCommands = () => {
   const command = useCommand()
   const language = useLanguage()
   const actions = useWorkbenchActions()
+  const wb = useWorkbenchState()
+  const dialog = useDialog()
   const layout = useLayout()
   const platform = usePlatform()
   const settings = useSettings()
@@ -126,6 +130,20 @@ export const useWorkbenchCommands = () => {
   ]
 
   const viewCmds = () => [
+    viewCommand({
+      id: "sidebar.toggle",
+      title: language.t("command.sidebar.toggle"),
+      keybind: "mod+b",
+      onSelect: () => wb.setDisplay("showSpaceRail", !wb.display().showSpaceRail),
+    }),
+    viewCommand({
+      id: "settings.open",
+      title: language.t("command.settings.open"),
+      keybind: "mod+,",
+      onSelect: () => {
+        void import("@/components/dialog-settings").then((x) => dialog.show(() => <x.DialogSettings />))
+      },
+    }),
     viewCommand({
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),

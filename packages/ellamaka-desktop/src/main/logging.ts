@@ -6,6 +6,8 @@ import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
 
+import { getStore } from "./store"
+
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
 const EXPORT_WINDOW = 24 * 60 * 60 * 1000
@@ -15,13 +17,40 @@ const NET_LOG_SIZE = 20 * 1024 * 1024
 let root = ""
 let run = ""
 let netLogPath: string | undefined
+let debugMode = false
 
 let logger: MainLogger
 export const getLogger = () => logger
 
+export function isDebugLogging() {
+  return debugMode
+}
+
+export function setDebugLogging(enabled: boolean) {
+  debugMode = enabled
+  try {
+    getStore().set("debugLogging", enabled)
+  } catch {}
+  log.transports.file.level = enabled ? "debug" : "warn"
+  log.transports.console.level = enabled ? "debug" : "warn"
+  write("main", `log level set to ${enabled ? "debug" : "warn"}`)
+}
+
+export function toggleDebugLogging() {
+  setDebugLogging(!debugMode)
+  return debugMode
+}
+
 export function initLogging() {
   initRunDirectory()
+  try {
+    debugMode = Boolean(getStore().get("debugLogging"))
+  } catch {
+    debugMode = false
+  }
   log.transports.file.maxSize = 5 * 1024 * 1024
+  log.transports.file.level = debugMode ? "debug" : "warn"
+  log.transports.console.level = debugMode ? "debug" : "warn"
   log.transports.file.resolvePathFn = (_vars, message) =>
     join(
       run,
