@@ -29,10 +29,21 @@ function PinIcon(props: { class?: string }) {
   )
 }
 
-function FolderIcon(props: { class?: string }) {
+// 专属空间 (Space / Workspace) 图形 Icon
+function SpaceIcon(props: { class?: string }) {
   return (
-    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    <svg
+      class={props.class ?? "size-3.5"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" fill-opacity="0.15" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
     </svg>
   )
 }
@@ -299,7 +310,7 @@ export function WorkbenchTitlebar() {
                 setShowSpaceMenu(!showSpaceMenu())
               }}
             >
-              <FolderIcon class="size-3.5" />
+              <SpaceIcon class="size-3.5" />
               <span class="text-12-regular">{t("workbench.topbar.selectSpace")}</span>
               <IconV2 name="outline-chevron-down" class="size-3" />
             </ButtonV2>
@@ -329,7 +340,7 @@ export function WorkbenchTitlebar() {
                         }}
                       >
                         <div class="flex items-center gap-2 truncate">
-                          <FolderIcon
+                          <SpaceIcon
                             class={`size-3.5 shrink-0 ${isOpen() ? "text-v2-icon-icon-accent" : "text-v2-text-text-muted"}`}
                           />
                           <span class="truncate">{sp.name.replace(/[\s+*]+$/, "").trim()}</span>
