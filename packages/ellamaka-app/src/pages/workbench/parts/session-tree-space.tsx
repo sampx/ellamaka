@@ -19,10 +19,22 @@ export function ChatIcon(props: { class?: string }) {
   )
 }
 
-function FolderIcon(props: { class?: string }) {
+// 专属项目/工程 (Project) 图形 Icon
+export function ProjectIcon(props: { class?: string }) {
   return (
-    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    <svg
+      class={props.class ?? "size-3.5"}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z" />
+      <path d="M4 9.5h16" />
+      <path d="M9 13.5l-2 2 2 2" />
+      <path d="M15 13.5l2 2-2 2" />
     </svg>
   )
 }
@@ -434,7 +446,7 @@ export function SessionTreeSpace(props: {
                   onClick={() => setProjectExpanded(!projectExpanded())}
                 >
                   <div class="flex items-center gap-1.5">
-                    <FolderIcon class="size-3.5 text-v2-text-text-muted" />
+                    <ProjectIcon class="size-3.5 text-v2-text-text-muted" />
                     <span>{props.t("workbench.tree.group.projectSessions")}</span>
                   </div>
                   <svg
