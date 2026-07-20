@@ -328,56 +328,45 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 
 禁止每次 `mousemove` 序列化整个 Workbench 状态。
 
-### 5.8 持久化配置项
+### 5.8 持久化与 Tab Pin 策略
 
-- `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化（区别于上游 `sessionStorage`），确保关 tab 重开时布局保持。包含显示设置、已打开 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局、Session 绑定、Split Terminal 配置和 PTY ID 重连提示。
+- `workbench`：统一的 Workbench 状态快照。使用 `localStorage` 持久化，确保关 Tab 重开时布局保持。包含显示设置、已打开与已 Pin 的 Space Tabs、当前激活 Space Path、每个 Space 的 Panel 布局、Session 绑定、Split Terminal 配置和 PTY ID 重连提示。
+- **Tab Pin (钉住) 规约**：
+  - `General (日常对话)` Tab 固定钉住，不允许被关闭（UI 屏蔽关闭按钮，Store 层拦截删除请求）。
+  - 物理项目 Space Tabs 支持用户自主 Pin 钉住。已 Pin 的 Tab 不允许关闭，必须解除 Pin 钉住后方可关闭。
+  - 在 Desktop 桌面端，**已钉住的 Tab 拦截并禁止使用 `Cmd + W` 快捷键关闭**。
 
-持久化 schema 当前为 **v2**：`activeTabPath` 是 Tab 身份，`tabs[].path` 与 `spaces[path]` 是唯一关联键；`activeSpaceName` 仅在水合旧数据时映射。名称映射不唯一或失效时回退到 General 的 `""`，不删除旧布局。
+### 5.9 Headbar 标题栏、单空间 Session Tree 与侧栏架构
 
-存储引擎：`localStorage`（key: `"workbench"`）。
-
-**PTY ID 重连提示**：`tuiPtyId`、`termPtyId` 和 `splitPtyId` 随布局一起写入 `localStorage`。`pagehide` 调用普通 `flushPersisted()`，不剥离 PTY ID，也不修改内存 store。水合后的 ID 必须先经过 `ptyManager.ensure()` 探测；sidecar 已回收的 ID 会被清除并按需替换，因此持久化 ID 不承担进程存活状态的权威职责。
-
-单一键，单一 Store，单一水合门控。
-
-### 5.9 侧栏会话浏览器 (Session Tree) 与常驻 Tab 体验
-
-- **常驻通用 Tab (General Tab)**：
-  - 工作台默认且常驻一个名为 `"General"`（会话）的 Tab，其 `path` 标识为 `""`，此 Tab 不允许被用户关闭（UI 屏蔽关闭按钮，Store 层拦截删除请求）。
-  - 当无任何物理项目空间打开时，工作台默认激活并展示此通用 Tab，提供 1~3 个可弹性伸缩的面板，用于装载和操作非物理项目空间关联的独立全局会话。
+- **Headbar 标题栏与 Web 兼容性**：
+  - 保持原有的品牌 Logo 样式，与空间 Tabs 在第二行 Headbar Toolbar 中平行布设。
+  - Headbar 右侧增加 `空间列表` 下拉框与 `用户登录 Logo (头像预留)`，确保网页版 Web 界面与 Electron 桌面端具备完全一致的控件呈现与交互。
+  - Tab 栏末尾的 `+` 按钮**严格锁定为添加 Panel (面板) 的功能**，不改变其既有逻辑。
+- **侧栏 44px 固定竖向 Activity Bar 架构**：
+  - 侧栏最左侧为 44px 固定的竖向图标列 (Vertical Activity Bar)，绝无横向菜单。
+  - 垂直方向保留 `💬 会话 (Sessions)` 与 `🔧 空间维护 (Maintenance)` 图标，支持用户切换侧栏视图或展开/收起面板。
+- **单空间会话隔离 (Current-Space Session Tree)**：
+  - 会话树在视图层**永远只显示当前激活的空间相关会话**，跨空间会话不混排展现。
+  - 保留所有既有的图标（圆点 / Git 分支 / 文件夹）、状态颜色（muted 灰 / accent 绿）、`dirHealth` 提示、Pin 置顶、右键上下文菜单与拖拽体验。
 - **内置独立会话的工作目录 ($WOPAL_HOME/general_tasks/)**：
   - 后端 Session 存在关联物理目录的强约束限制（`directory` 为 `notNull()`）。
-  - 通用 Tab 下新建会话由 `POST /workbench/sessions` 的服务端 provisioner 创建 `$WOPAL_HOME/general_tasks/` 下隔离目录；前端不推测 WOPAL_HOME、不拼接路径。每次请求携带 `requestID`，未知结果先按同一 ID reconcile。
-- **三层树和直接切换**：
-  - 新 UI 只消费 `GET /workbench/session-tree`，固定为 `Scope → 工作位置 → Session` 三层；worktree 与子目录只是 Session marker，不形成第四层。
-  - Space 的点击直接切换，不显示"即将切换"的确认弹窗。关闭 Space、覆盖 Panel、解绑与删除仍保留各自确认。
-  - 创建 Space Session 前，PanelLoader 只显示 `GET /workbench/locations` 返回并经边界验证的目录候选；General 不显示目录选择。Chat/TUI 是 Panel 初始视图，不改变服务端 Session 领域类型；TUI PTY 创建失败会回退 Chat。
-- **展开状态与树层级一致**：
-  - 折叠状态仅以 Scope 的规范化 `path` 为键；Scope 展开后始终呈现其工作位置和会话，不把目录或 worktree 再拆成第四层。
-  - 该状态只服务当前 Renderer 生命周期；刷新后的树以服务端投影和当前 Space 状态为准，不将滚动位置或已失效目录作为持久化契约。
-- **会话行左侧标识与置顶 (Pin)**：
-  - 会话行左侧保留单一图标位，形状表示 Session marker 类型，颜色表示 Panel 绑定状态：
-    - 普通会话（无 marker）→ 圆点
-    - worktree 会话 → Git 分支矢量图标
-    - directory（子目录）会话 → 文件夹矢量图标
-    - 未绑定为 muted 灰，已绑定为 accent 绿（与终端存活指示同色系）。
-  - 取消 P1/P2/P3 序号气泡徽章；绑定状态只通过图标颜色表达，不再显示面板序号。
-  - 目录健康异常时，图标以 amber 提示，行尾保留"缺失"/"不可用"文字。
-  - 支持会话"置顶 (Pin/Unpin)"功能。已置顶的会话在行尾展现大头针矢量图标，并在数据源合并时重排至分类的最顶端，支持右键快捷 Pin/Unpin 切换。
-- **空间高亮与交互解耦**：
-  - 点击左侧 Chevron 图标只控制其展开/折叠，不切换激活空间；点击空间名称/整行其余区域则切换激活空间，两项职责完全解耦。
-  - 区分选中与 hover 背景色：激活的空间背景为独立深色背景，与 hover 背景色明显拉开视觉梯度，取消左侧多余的竖条指示线以维护极简排版。
-  - Space 切换没有确认过渡态；点击名称或行主体立即激活目标 Space。仅关闭、解绑、删除和覆盖仍按各自风险保留确认。
+  - 通用日常对话由 `POST /workbench/sessions` 的服务端 provisioner 创建 `$WOPAL_HOME/general_tasks/` 下隔离目录。
 
-### 5.10 状态栏分区与多面板元数据智能层级链
+### 5.10 Statusbar 真实代码契约与异常诊断中心
 
-- **状态栏分区结构**：划分左右分区——**左区**渲染当前激活面板的工作现场元数据层级链，**右区**渲染服务器连接状态与名称，中区弹性占位起两端拉伸对齐作用。
-- **左区层级链格式**：`空间名 / P{激活面板序号}/{面板总数} / 会话标题 / 工作路径`
-  - 所有文本和层级段使用一致的字体粗细与颜色，不设任何背景色。会话标题无额外高亮，面板序号直接用无背景的文本显示。
-  - 工作路径（CWD）在级联时自动去掉首字符的斜杠 `/`（例如 `/workspace/sub` 显示为 `workspace/sub`）以平滑融入斜杠链条，同时悬停时可通过 HTML title 属性呈现完整的绝对路径。
-  - 若未激活面板，则层级链仅展示 `空间名`。若未绑定会话，则层级链隐藏会话段。
-- **右区服务器状态**：渲染服务器连接指示器（小绿点）和服务器名称，并在其左侧配置 `border-l` 竖分割线与左区层级链分隔开。
-- **响应式更新**：状态栏动态订阅当前活动空间下的聚焦激活面板 `space.activePanelID`、`panel.directory` 路径以及绑定会话标题。一旦发生面板点击切换、或者是 PTY 终端在后台通过命令变更了工作目录（CWD），层级链会立即响应式刷新最新现场。
+Statusbar 实现集中于 `status-bar.tsx`、`status-bar-segments.ts` 与 `status-bar-diagnostics.tsx`，采用响应式三分区结构：
+
+- **左区（元数据层级链）**：由 `getStatusBarSegments` 动态算出当前激活 Panel 的工作现场元数据层级链。
+  - **格式**：`空间名 / P{激活面板序号}/{面板总数} / 会话标题 / 工作路径`
+  - 各层级段用斜杠 `/` (`text-v2-text-text-faint`) 分隔。工作路径（`panel.directory`）去除首字符 `/` 以平滑融入链条，悬停时通过 HTML `title` 属性呈现绝对路径。
+  - 若 `activePanelID` 未激活，仅展示 `空间名`；未绑定 Session，隐藏 Session 段。
+- **中区（居中异常诊断与提示中心 `StatusBarDiagnosticsCenter`）**：
+  - **定位与安全防护**：采用绝对居中定位 (`absolute left-1/2 -translate-x-1/2`)。只读订阅全局消息队列 `wb.diagnostics`，防范冒泡导致面板 ErrorBoundary 卸载。
+  - **缺省淡出提示**：无消息时，前 5 秒呈现默认引导文本（“提示：双击会话或拖拽会话到面板中即可在工作台打开”），5 秒后自动淡出清空。
+  - **消息等级与图标分类**：支持 `error` (图标 `circle-x`, 颜色 `text-icon-critical-base`)、`warning` (图标 `warning`, 颜色 `text-icon-warning-base`) 与 `info` (图标 `bubble-5`) 三级。触发按钮仅渲染最新一条消息 `latest().text`，超出 1 条时显示气泡统计徽章（如 `+2`）。
+  - **交互式诊断 Popover**：点击居中按钮展开顶部 Popover（宽 400px，最大高 320px，倒序 `[...list()].reverse()` 渲染）。
+  - **可恢复与清除机制**：每个条目呈现图标、文本、时间戳 (`formatTime`) 及 `source` 来源；若携带 `onRetry` 句柄，提供异步重试操作（重试成功后自动剔除该条目）；右侧支持单条目关闭与底部一键 `clearAllDiagnostics()`。
+- **右区（服务器状态与控制）**：带有左边框分割 (`border-l border-v2-border-border-base pl-2`)，结合 `StatusBarStatusPopover` 呈现在线指示器（小绿点）与服务器名称 `server.name`。
 
 ### 5.11 浏览器生命周期与单 Tab 互斥
 
