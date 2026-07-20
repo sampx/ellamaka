@@ -347,11 +347,12 @@ export function WorkbenchTitlebar() {
 
           {/* 拆分面板 按钮 (最右侧，使用 SplitPanelIcon) */}
           <IconButtonV2
-            variant="ghost-muted"
+            variant="ghost"
             size="small"
+            class="text-v2-text-text-muted hover:text-v2-text-text-strong"
             icon={<SplitPanelIcon class="size-3.5" />}
-            aria-label="拆分面板"
-            title="拆分面板 (最多3个)"
+            aria-label={t("workbench.topbar.splitPanel")}
+            title={t("workbench.topbar.splitPanelHint")}
             disabled={currentSpacePanelsCount() >= 3}
             onClick={() => {
               const id = wb.addPanel(activePath())
