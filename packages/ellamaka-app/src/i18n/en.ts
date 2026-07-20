@@ -1122,4 +1122,9 @@ export const dict = {
   "workbench.tree.group.spaceSessions": "Space Sessions",
   "workbench.tree.group.projectSessions": "Project Sessions",
   "workbench.tree.noSessions": "No sessions",
+  "workbench.sidebar.spaceTitle": "Space ({{name}})",
+  "workbench.sidebar.maintenance": "Maintenance",
+  "workbench.sidebar.activeSpace": "Active space: {{name}}",
+  "workbench.sidebar.maintenanceDesc": "Configure and sync space diagnostics structure.",
+  "workbench.sidebar.resizeHandle": "Drag to resize width",
 }

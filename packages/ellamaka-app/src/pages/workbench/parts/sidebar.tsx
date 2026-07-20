@@ -32,7 +32,7 @@ export function SpaceRail() {
   const sessionStore = useSessionStore()
   const runtime = useWorkbenchRuntime()
   const language = useLanguage()
-  const t = (k: string) => language.t(k)
+  const t: typeof language.t = (k, p) => language.t(k, p)
 
   const expanded = createMemo(() => wb.display().showSpaceRail)
   const [widthStore, setWidthStore] = persisted(
@@ -205,8 +205,10 @@ export function SpaceRail() {
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong uppercase tracking-wider truncate">
                 {activeNav() === "sessions"
-                  ? (wb.activeTabPath === "" ? "日常对话" : `空间 (${wb.activeSpaceName})`)
-                  : "空间维护"}
+                  ? (wb.activeTabPath === ""
+                      ? t("workbench.sidebar.sessions")
+                      : t("workbench.sidebar.spaceTitle", { name: wb.activeSpaceName }))
+                  : t("workbench.sidebar.maintenance")}
               </span>
               <IconButtonV2
                 variant="ghost-muted"
@@ -262,10 +264,10 @@ export function SpaceRail() {
               <div class="p-3 text-12-regular text-v2-text-text-muted">
                 <div class="flex items-center gap-1.5 font-medium text-v2-text-text-base mb-1">
                   <MaintenanceIcon class="size-4" />
-                  <span>空间维护 (Maintenance)</span>
+                  <span>{t("workbench.sidebar.maintenance")}</span>
                 </div>
-                <p>当前激活空间：{wb.activeSpaceName}</p>
-                <p class="mt-2 text-11-regular text-v2-text-text-faint">配置与同步空间诊断结构。</p>
+                <p>{t("workbench.sidebar.activeSpace", { name: wb.activeSpaceName })}</p>
+                <p class="mt-2 text-11-regular text-v2-text-text-faint">{t("workbench.sidebar.maintenanceDesc")}</p>
               </div>
             </Show>
           </div>
@@ -278,7 +280,7 @@ export function SpaceRail() {
           class="absolute top-0 bottom-0 w-2 cursor-col-resize bg-transparent hover:bg-v2-icon-icon-brand/30 z-30"
           style={{ left: `${sidebarWidth()}px` }}
           onMouseDown={startResize}
-          title="拖动调整宽度"
+          title={t("workbench.sidebar.resizeHandle")}
         />
       </Show>
     </>

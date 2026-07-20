@@ -1067,4 +1067,9 @@ export const dict = {
   "workbench.tree.group.spaceSessions": "空间会话",
   "workbench.tree.group.projectSessions": "项目会话",
   "workbench.tree.noSessions": "暂无会话",
+  "workbench.sidebar.spaceTitle": "空间 ({{name}})",
+  "workbench.sidebar.maintenance": "空间维护",
+  "workbench.sidebar.activeSpace": "当前激活空间：{{name}}",
+  "workbench.sidebar.maintenanceDesc": "配置与同步空间诊断结构。",
+  "workbench.sidebar.resizeHandle": "拖动调整宽度",
 } satisfies Partial<Record<Keys, string>>
