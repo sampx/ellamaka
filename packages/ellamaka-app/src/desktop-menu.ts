@@ -25,7 +25,6 @@ export type DesktopMenuAction =
 
 export type DesktopMenuRole =
   | "about"
-  | "close"
   | "copy"
   | "cut"
   | "hide"
@@ -175,12 +174,11 @@ export const DESKTOP_MENU: DesktopMenu[] = [
   {
     id: "window",
     label: "Window",
-    role: "windowMenu",
     items: [
       { type: "item", label: "Minimize", action: "window.minimize" },
       { type: "item", label: "Maximize", action: "window.toggleMaximize" },
       { type: "separator" },
-      { type: "item", label: "Close Window", action: "window.close", role: "close" },
+      { type: "item", label: "Close Tab", command: "tab.close", accelerator: { macos: "Cmd+W", windows: "Ctrl+W" } },
     ],
   },
   {

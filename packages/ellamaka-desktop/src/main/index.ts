@@ -35,6 +35,7 @@ import {
 } from "./windows"
 import { migrate } from "./migrate"
 import { needsJsonMigration } from "./migration-check"
+import { enableQuitGuard, interceptWindowClose } from "./quit-guard"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
@@ -186,12 +187,14 @@ const main = Effect.gen(function* () {
     emitDeepLinks([url])
   })
 
-  app.on("before-quit", () => {
+  app.on("will-quit", () => {
     void killSidecar()
   })
 
-  app.on("will-quit", () => {
-    void killSidecar()
+  // Install quit guard: Cmd+Q confirmation + macOS window-all-closed / activate
+  enableQuitGuard({
+    getMainWindow: () => mainWindow,
+    getSidecarState: () => supervisor?.getState(),
   })
 
   app.on("child-process-gone", (_event, details) => {
@@ -361,6 +364,7 @@ const main = Effect.gen(function* () {
 
   mainWindow = createMainWindow()
   if (mainWindow) {
+    interceptWindowClose(mainWindow)
     createMenu({
       trigger: (id) => {
         const win = BrowserWindow.getFocusedWindow() ?? mainWindow

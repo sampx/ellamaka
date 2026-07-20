@@ -244,7 +244,7 @@ function StageHeader(props: {
   )
 }
 
-function DialogCloseTab(props: { name: string; path: string }) {
+export function DialogCloseTab(props: { name: string; path: string }) {
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
   const language = useLanguage()

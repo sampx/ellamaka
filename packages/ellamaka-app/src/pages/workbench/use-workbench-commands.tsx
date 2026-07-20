@@ -1,8 +1,10 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
+import { useSessionStore } from "@/pages/workbench/session-store"
 import { useWorkbenchActions } from "@/pages/workbench/workbench-actions"
 import { useWorkbenchState } from "@/pages/workbench/view-store"
+import { scopeName, scopePath } from "@/pages/workbench/workbench-scope"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
@@ -20,6 +22,7 @@ export const useWorkbenchCommands = () => {
   const language = useLanguage()
   const actions = useWorkbenchActions()
   const wb = useWorkbenchState()
+  const sessionStore = useSessionStore()
   const dialog = useDialog()
   const layout = useLayout()
   const platform = usePlatform()
@@ -115,7 +118,58 @@ export const useWorkbenchCommands = () => {
       id: "tab.close",
       title: language.t("command.tab.close"),
       keybind: "mod+w",
-      ...proxyAction("tab.close"),
+      onSelect: () => {
+        if (actions.canExecuteActivePanelAction("tab.close")) {
+          actions.executeActivePanelAction("tab.close")
+          return
+        }
+        const active = actions.activeTarget()
+        if (!active) {
+          if (platform.platform === "desktop") {
+            void platform.runDesktopMenuAction?.("window.close")
+          }
+          return
+        }
+
+        const path = scopePath(active.scope)
+        const panels = wb.spaceState(path)?.panels ?? []
+
+        if (panels.length > 1) {
+          const panel = panels.find((p) => p.id === active.panelID)
+          if (panel?.slotState === "bound") {
+            const session = sessionStore.getSession(panel.boundSessionId ?? "")
+            const sessionTitle = session?.title ?? language.t("workbench.panelClose.title")
+            void import("./parts/session-tree-dialogs").then((m) => {
+              dialog.show(() => (
+                <m.DialogClosePanel
+                  sessionTitle={sessionTitle}
+                  onClose={async () => {
+                    await actions.closePanel({ scope: active.scope, panelID: active.panelID })
+                  }}
+                />
+              ))
+            })
+          } else {
+            void actions.closePanel({ scope: active.scope, panelID: active.panelID })
+          }
+          return
+        }
+
+        if (active.scope.kind === "space") {
+          const name = scopeName(active.scope)
+          const spacePathVal = path
+          void import("./parts/workspace").then((m) => {
+            dialog.show(() => (
+              <m.DialogCloseTab name={name} path={spacePathVal} />
+            ))
+          })
+          return
+        }
+
+        if (platform.platform === "desktop") {
+          void platform.runDesktopMenuAction?.("window.close")
+        }
+      },
     }),
   ]
 
