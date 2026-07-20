@@ -243,7 +243,7 @@ export function WorkbenchTitlebar() {
                     </span>
                   </Show>
 
-                  <span class="max-w-28 truncate text-center">
+                  <span class="max-w-28 truncate text-center text-12-regular">
                     {isGeneral ? t("workbench.sidebar.sessions") : tab.name}
                   </span>
 
@@ -300,14 +300,14 @@ export function WorkbenchTitlebar() {
               }}
             >
               <FolderIcon class="size-3.5" />
-              <span>选择空间</span>
+              <span class="text-12-regular">{t("workbench.topbar.selectSpace")}</span>
               <IconV2 name="outline-chevron-down" class="size-3" />
             </ButtonV2>
 
             <Show when={showSpaceMenu()}>
               <div class="absolute right-0 top-8 z-50 min-w-48 max-h-64 overflow-y-auto rounded-md border border-v2-border-border-base bg-v2-background-bg-base p-1 shadow-lg">
                 <div class="px-2 py-1 text-10-medium text-v2-text-text-muted uppercase tracking-wider">
-                  选择空间
+                  {t("workbench.topbar.selectSpace")}
                 </div>
                 <For each={spaceStore.spaces()}>
                   {(sp) => {

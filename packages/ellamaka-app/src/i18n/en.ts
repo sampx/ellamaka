@@ -1118,4 +1118,5 @@ export const dict = {
   "workbench.topbar.spaceBusy": "Sessions are running in this space",
   "workbench.topbar.generalPinned": "General Chat (Pinned)",
   "workbench.topbar.tabPinned": "Pinned Tab",
+  "workbench.topbar.selectSpace": "Select Space",
 }
