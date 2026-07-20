@@ -189,21 +189,44 @@ function WorkbenchErrorFallback(props: { error: Error; reset: () => void }) {
   const language = useLanguage()
   const t: typeof language.t = (key, params) => language.t(key, params)
   return (
-    <div class="flex h-dvh flex-col items-center justify-center gap-4 bg-v2-background-bg-deep text-v2-text-text-base p-8">
-      <div class="text-center max-w-md">
-        <h2 class="text-18-semibold text-v2-text-text-strong mb-2">
+    <div class="flex h-dvh flex-col items-center justify-center gap-6 bg-v2-background-bg-deep text-v2-text-text-base p-8">
+      <div class="flex flex-col items-center max-w-md text-center gap-4">
+        <div class="flex items-center gap-3 mb-2">
+          <img src="/favicon-96x96-v3.png?v=4" class="w-8 h-8 object-contain" alt="Icon" />
+          <img src="/ellamaka-text-logo.png?v=2" class="h-7 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
+        </div>
+        <h2 class="text-20-semibold text-v2-text-text-strong">
           {t("workbench.error.shellLoadFailed")}
         </h2>
-        <p class="text-14-regular text-v2-text-text-muted mb-4 break-words">
+        <p class="text-14-regular text-v2-text-text-muted break-words bg-v2-background-bg-base/60 border border-v2-border-border-base p-3.5 rounded-lg text-left w-full font-mono text-xs max-h-40 overflow-y-auto">
           {props.error.message || t("workbench.error.unknownError")}
         </p>
-        <button
-          type="button"
-          class="rounded-md bg-v2-icon-icon-brand px-4 py-2 text-12-bold text-white hover:opacity-90 transition-opacity"
-          onClick={() => props.reset()}
-        >
-          {t("workbench.error.retry")}
-        </button>
+
+        <div class="flex items-center gap-3 mt-2">
+          <button
+            type="button"
+            class="rounded-md bg-v2-icon-icon-brand px-5 py-2 text-13-semibold text-white hover:opacity-90 transition-opacity shadow-sm cursor-pointer"
+            onClick={() => props.reset()}
+          >
+            {t("workbench.error.retry")}
+          </button>
+          <a
+            href="https://github.com/sampx/wopal-space/issues"
+            target="_blank"
+            rel="noreferrer"
+            class="rounded-md border border-v2-border-border-base bg-v2-background-bg-base px-4 py-2 text-13-semibold text-v2-text-text-primary hover:bg-v2-background-bg-surface transition-colors cursor-pointer"
+          >
+            反馈 Issue
+          </a>
+          <a
+            href="https://wopal.cn/docs"
+            target="_blank"
+            rel="noreferrer"
+            class="rounded-md border border-v2-border-border-base bg-v2-background-bg-base px-4 py-2 text-13-semibold text-v2-text-text-muted hover:text-v2-text-text-primary transition-colors cursor-pointer"
+          >
+            查看文档
+          </a>
+        </div>
       </div>
     </div>
   )

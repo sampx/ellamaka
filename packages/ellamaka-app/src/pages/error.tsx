@@ -284,11 +284,14 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   }
 
   return (
-    <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-background-base font-sans">
-      <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
-        <Logo class="w-58.5 opacity-12 shrink-0" />
+    <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-background-base font-sans p-6">
+      <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-6">
+        <div class="flex items-center justify-center gap-3 mb-2">
+          <img src="/favicon-96x96-v3.png?v=4" class="w-10 h-10 object-contain" alt="Icon" />
+          <img src="/ellamaka-text-logo.png?v=2" class="h-9 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
+        </div>
         <div class="flex flex-col items-center gap-2 text-center">
-          <h1 class="text-lg font-medium text-text-strong">{language.t("error.page.title")}</h1>
+          <h1 class="text-xl font-semibold text-text-strong">{language.t("error.page.title")}</h1>
           <p class="text-sm text-text-weak">{language.t("error.page.description")}</p>
         </div>
         <TextField
@@ -300,31 +303,39 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           label={language.t("error.page.details.label")}
           hideLabel
         />
-        <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
-          <Button size="large" onClick={platform.restart}>
+        <div class="flex flex-row items-center justify-center gap-3 flex-wrap">
+          <Button
+            size="large"
+            onClick={async () => {
+              if (platform.restart) {
+                await platform.restart().catch(() => {
+                  window.location.reload()
+                })
+              } else {
+                window.location.reload()
+              }
+            }}
+          >
             {language.t("error.page.action.restart")}
+          </Button>
+          <Button
+            size="large"
+            variant="primary"
+            onClick={() => {
+              const url = "https://github.com/sampx/wopal-space/issues"
+              if (platform.openLink) {
+                platform.openLink(url)
+              } else {
+                window.open(url, "_blank")
+              }
+            }}
+          >
+            反馈 Issue 报告
           </Button>
           <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>
             <Button size="large" variant="ghost" onClick={exportDebugLogs}>
               {language.t("error.page.action.exportLogs")}
             </Button>
-          </Show>
-          <Show when={Sentry.isEnabled}>
-            {(_) => {
-              const [reported, setReported] = createSignal(false)
-              return (
-                <Button
-                  size="large"
-                  disabled={reported()}
-                  onClick={() => {
-                    Sentry.captureException(props.error)
-                    setReported(true)
-                  }}
-                >
-                  {language.t(reported() ? "error.page.action.reported" : "error.page.action.report")}
-                </Button>
-              )
-            }}
           </Show>
           <Show when={platform.checkUpdate}>
             <Show
@@ -346,23 +357,20 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
         <Show when={store.actionError}>
           {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
         </Show>
-        <div class="flex flex-col items-center gap-2">
-          <div class="flex items-center justify-center gap-1">
-            {language.t("error.page.report.prefix")}
-            <button
-              type="button"
-              class="flex items-center text-text-interactive-base gap-1"
-              onClick={() => platform.openLink("https://opencode.ai/desktop-feedback")}
-            >
-              <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
-            </button>
-          </div>
-          <Show when={platform.version}>
-            {(version) => (
-              <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
-            )}
-          </Show>
+        <div class="flex items-center justify-center gap-4 text-xs text-text-weak mt-2">
+          <button
+            type="button"
+            class="text-text-interactive-base hover:underline cursor-pointer"
+            onClick={() => {
+              const url = "https://wopal.cn/docs"
+              if (platform.openLink) platform.openLink(url)
+              else window.open(url, "_blank")
+            }}
+          >
+            查看官方文档 (wopal.cn/docs)
+          </button>
+          <span>·</span>
+          <span>版本: {platform.version || "1.15.13"}</span>
         </div>
       </div>
     </div>
