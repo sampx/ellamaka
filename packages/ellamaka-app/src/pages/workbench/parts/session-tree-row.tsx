@@ -7,6 +7,7 @@ import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel } from "./session-tree-dialogs"
 import { openSessionInPanel, getSessionMarker, type GroupSession } from "./session-tree-services"
+import { ProjectIcon } from "./session-tree-space"
 import type { WopalSpace } from "../space-store"
 
 type MergedSession = {
@@ -45,9 +46,7 @@ export function SessionMarkerIcon(props: {
               </Show>
             }
           >
-            <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            </svg>
+            <ProjectIcon class="size-3.5" />
           </Show>
         }
       >
