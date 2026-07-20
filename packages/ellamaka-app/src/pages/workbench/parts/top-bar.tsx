@@ -6,7 +6,11 @@ import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useSpaceStore } from "../space-store"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useSessionStore } from "../session-store"
 import { DialogCloseTab } from "./workspace"
+import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
+import { pathKey } from "@/utils/path-key"
 
 function PinIcon(props: { class?: string }) {
   return (
@@ -58,9 +62,19 @@ type TabContextMenu = { x: number; y: number; tab: { name: string; path: string;
 export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
   const spaceStore = useSpaceStore()
+  const sessionStore = useSessionStore()
   const language = useLanguage()
   const dialog = useDialog()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k, params)
+
+  let sync: ReturnType<typeof useSync> | undefined
+  let serverSync: ReturnType<typeof useServerSync> | undefined
+  try {
+    sync = useSync()
+    serverSync = useServerSync()
+  } catch {
+    // Safe fallback when rendered outside SyncProvider
+  }
 
   const activePath = () => wb.activeTabPath
 
@@ -104,27 +118,96 @@ export function WorkbenchTitlebar() {
           <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
 
-        {/* Space Tabs Bar - 绝对居中算法 */}
-        <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center gap-1 overflow-x-auto max-w-[60%] scrollbar-none z-10">
+        {/* Space Tabs Bar - 绝对居中与全高自适应 (解决容器裁剪横线问题) */}
+        <div class="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 flex items-center justify-center gap-1 h-10 overflow-x-auto max-w-[60%] scrollbar-none z-10">
           <For each={wb.tabs}>
             {(tab) => {
               const isGeneral = tab.path === ""
-              const isActive = () => wb.activeTabPath === tab.path
+              const isActive = () => {
+                if (wb.activeTabPath === tab.path) return true
+                if (tab.path !== undefined && wb.activeTabPath !== undefined) {
+                  return pathKey(wb.activeTabPath).toLowerCase() === pathKey(tab.path).toLowerCase()
+                }
+                return false
+              }
               const isPinned = isGeneral || !!tab.pinned
+
+              const isSpaceBusy = () => {
+                const space = wb.spaceState(tab.path)
+                const candidateIds = new Set<string>()
+
+                if (space) {
+                  for (const panel of space.panels) {
+                    if (panel.slotState === "bound" && panel.boundSessionId) {
+                      candidateIds.add(panel.boundSessionId)
+                    }
+                  }
+                }
+
+                const sessions = [
+                  ...(sessionStore.spaceSessions(tab.name) ?? []),
+                  ...(tab.path ? sessionStore.spaceSessions(tab.path) ?? [] : []),
+                ]
+                for (const s of sessions) {
+                  candidateIds.add(s.id)
+                }
+
+                // 1. 优先校验已知会话 ID 是否处于 working 状态
+                for (const id of candidateIds) {
+                  if (sync?.data.session_working(id)) return true
+                  if (serverSync) {
+                    for (const [, [childStore]] of Object.entries(serverSync.children)) {
+                      if (childStore.session_working(id)) return true
+                    }
+                  }
+                }
+
+                // 2. 直接校验当前 Space 路径自身的 ChildStore 是否有 session_working
+                if (serverSync && tab.path !== undefined) {
+                  const [spaceStore] = serverSync.child(tab.path, { bootstrap: false })
+                  if (spaceStore && Object.keys(spaceStore.session_status).some((id) => spaceStore.session_working(id))) {
+                    return true
+                  }
+                }
+
+                // 3. 全量检索与该 Space 路径相匹配的所有 ChildStore
+                if (serverSync) {
+                  const targetDir = pathKey(tab.path ?? "").toLowerCase()
+                  for (const [rawKey, [childStore]] of Object.entries(serverSync.children)) {
+                    const dirKey = pathKey(rawKey).toLowerCase()
+                    const isMatch = isGeneral
+                      ? (dirKey === "" || dirKey === "general")
+                      : (dirKey === targetDir || dirKey.startsWith(targetDir) || targetDir.startsWith(dirKey))
+
+                    if (isMatch) {
+                      if (Object.keys(childStore.session_status).some((id) => childStore.session_working(id))) {
+                        return true
+                      }
+                    }
+                  }
+                }
+
+                return false
+              }
 
               return (
                 <div
-                  classList={{
-                    "group relative flex items-center gap-1.5 h-7 px-2.5 rounded-md text-12-regular transition-all cursor-pointer shrink-0": true,
-                    "bg-blue-50/80 border-blue-200 dark:bg-blue-950/40 dark:border-blue-900/50 text-v2-text-text-strong font-semibold shadow-sm": isActive(),
-                    "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover border border-transparent": !isActive(),
-                  }}
+                  class={`group relative flex items-center gap-1.5 h-full px-2.5 text-12-regular transition-all cursor-pointer shrink-0 ${
+                    isActive()
+                      ? "text-v2-text-text-strong font-semibold"
+                      : "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover"
+                  }`}
                   onClick={() => wb.setActive(tab.path)}
-                  onContextMenu={(e) => handleTabContextMenu(e, tab)}
+                  onContextMenu={(e: MouseEvent) => handleTabContextMenu(e, tab)}
                 >
-                  {/* 激活状态顶部指示横线 (支持亮色/暗色主题，与 Session 高亮和 Panel 保持 100% 一致) */}
-                  <Show when={isActive()}>
-                    <div class="absolute top-0 inset-x-0 h-[2.5px] bg-blue-600 dark:bg-blue-400 rounded-t-md shadow-sm z-10" />
+                  {/* 活动指示器 / 激活状态高亮横线 (位于顶部 top-0，与 panel header 的 absolute top-0 inset-x-0 风格保持一致，使用设计系统语义色 bg-v2-icon-icon-accent，粗一点 h-[3px]/[3.5px]) */}
+                  <Show when={isActive() || isSpaceBusy()}>
+                    <div
+                      class={`absolute top-0 inset-x-0 transition-all bg-v2-icon-icon-accent ${
+                        isSpaceBusy() ? "h-[3.5px] animate-pulse" : "h-[3px]"
+                      }`}
+                      title={isSpaceBusy() ? "该空间有会话正在运行中" : undefined}
+                    />
                   </Show>
 
                   {/* Pin 状态常驻标识 Icon */}
@@ -185,7 +268,7 @@ export function WorkbenchTitlebar() {
               variant="ghost"
               size="small"
               class="h-7 px-2 text-12-regular text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
-              onClick={(e) => {
+              onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 setShowSpaceMenu(!showSpaceMenu())
               }}

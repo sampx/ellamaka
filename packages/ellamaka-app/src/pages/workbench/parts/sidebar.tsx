@@ -167,7 +167,7 @@ export function SpaceRail() {
           <div class="flex flex-col gap-2.5 items-center">
             {/* 会话 Icon */}
             <IconButtonV2
-              variant={activeNav() === "sessions" ? "secondary" : "ghost-muted"}
+              variant={activeNav() === "sessions" ? "neutral" : "ghost-muted"}
               size="normal"
               class={`size-8 p-0 flex items-center justify-center ${activeNav() === "sessions" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
               icon={<ChatIcon class="size-4" />}
@@ -184,7 +184,7 @@ export function SpaceRail() {
             />
             {/* 空间维护 Icon */}
             <IconButtonV2
-              variant={activeNav() === "maintenance" ? "secondary" : "ghost-muted"}
+              variant={activeNav() === "maintenance" ? "neutral" : "ghost-muted"}
               size="normal"
               class={`size-8 p-0 flex items-center justify-center ${activeNav() === "maintenance" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
               icon={<MaintenanceIcon class="size-4" />}

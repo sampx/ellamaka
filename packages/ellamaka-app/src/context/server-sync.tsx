@@ -452,6 +452,7 @@ export function createServerSyncContext() {
     },
     child: children.child,
     peek: children.peek,
+    children: children.children,
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
     // bootstrap,

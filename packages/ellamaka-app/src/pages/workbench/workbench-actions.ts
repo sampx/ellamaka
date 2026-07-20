@@ -136,6 +136,7 @@ const ptyID = (panel: WorkbenchActionPanel, kind: WorkbenchActionPtyKind) => {
 function snapshotPanel(panel: WorkbenchActionPanel): WorkbenchActionPanel {
   return {
     id: panel.id,
+    mode: panel.mode,
     directory: panel.directory,
     slotState: panel.slotState,
     boundSessionId: panel.boundSessionId,
