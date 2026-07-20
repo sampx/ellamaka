@@ -211,7 +211,7 @@ export function WorkbenchTitlebar() {
                   role="tab"
                   tabIndex={0}
                   aria-selected={isActive()}
-                  class={`group relative flex items-center gap-1.5 h-full px-2.5 text-12-regular transition-all cursor-pointer shrink-0 ${
+                  class={`group relative flex items-center justify-center gap-1.5 h-full px-2.5 text-12-regular transition-all cursor-pointer shrink-0 ${
                     isActive()
                       ? "text-v2-text-text-strong font-semibold"
                       : "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover"
@@ -243,7 +243,7 @@ export function WorkbenchTitlebar() {
                     </span>
                   </Show>
 
-                  <span class="max-w-28 truncate">
+                  <span class="max-w-28 truncate text-center">
                     {isGeneral ? t("workbench.sidebar.sessions") : tab.name}
                   </span>
 
