@@ -16,7 +16,11 @@ export async function fetchSpaces(
   sdk: { client: { wopalSpace: { spaces: () => Promise<{ data?: { spaces?: WopalSpace[] } | null }> } } },
 ): Promise<WopalSpace[]> {
   const res = await sdk.client.wopalSpace.spaces()
-  return res.data?.spaces ?? []
+  const raw = res.data?.spaces ?? []
+  return raw.map((s) => ({
+    ...s,
+    name: s.name.replace(/[\s+*]+$/, "").trim() || s.name,
+  }))
 }
 
 const SpaceStoreContext = createSimpleContext({

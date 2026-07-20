@@ -37,9 +37,12 @@ export function handlePanelDrop(
   e.preventDefault()
   e.stopPropagation()
   const sessionId = e.dataTransfer?.getData("text/sessionId") ?? ""
-  const dragSpacePath = e.dataTransfer?.getData("text/spacePath") ?? ""
-  const dragSpaceName = e.dataTransfer?.getData("text/spaceName") ?? ""
-  if (!sessionId || (!dragSpacePath && !dragSpaceName)) return
+  const rawDragSpacePath = e.dataTransfer?.getData("text/spacePath")
+  const rawDragSpaceName = e.dataTransfer?.getData("text/spaceName")
+  const dragSpacePath = rawDragSpacePath !== null && rawDragSpacePath !== undefined ? rawDragSpacePath : undefined
+  const dragSpaceName = rawDragSpaceName !== null && rawDragSpaceName !== undefined ? rawDragSpaceName : undefined
+
+  if (!sessionId || (dragSpacePath === undefined && dragSpaceName === undefined)) return
 
   if (/[/\\]/.test(sessionId) || sessionId === ".." || sessionId === ".") {
     console.error("Rejected drag payload with path-like sessionId:", sessionId)
@@ -48,9 +51,12 @@ export function handlePanelDrop(
 
   const spacePath = ctx.spacePath
 
-  const sameSpace = dragSpacePath ? dragSpacePath === ctx.spacePath : dragSpaceName === ctx.spaceName
+  const sameSpace =
+    dragSpacePath !== undefined
+      ? dragSpacePath === ctx.spacePath
+      : dragSpaceName === ctx.spaceName
   if (!sameSpace) {
-    showCrossSpaceWarning(dragSpaceName || dragSpacePath, ctx.spaceName)
+    showCrossSpaceWarning(dragSpaceName || dragSpacePath || "", ctx.spaceName)
     return
   }
 
@@ -110,26 +116,38 @@ export function startSplitResize(
   const startY = e.clientY
   const startHeight = currentSplitHeight
   const totalHeight = container.getBoundingClientRect().height
+  splitTerminalEl.style.transition = "none"
+
+  let rafId: number | null = null
 
   const onMouseMove = (moveEvent: MouseEvent) => {
-    const deltaY = moveEvent.clientY - startY
-    let newHeight = startHeight - deltaY
+    if (rafId !== null) return
+    rafId = requestAnimationFrame(() => {
+      rafId = null
+      const deltaY = moveEvent.clientY - startY
+      let newHeight = startHeight - deltaY
 
-    if (newHeight < 120) newHeight = 120
-    const maxHeight = Math.max(120, totalHeight - 4 - 200)
-    if (newHeight > maxHeight) newHeight = maxHeight
+      if (newHeight < 120) newHeight = 120
+      const maxHeight = Math.max(120, totalHeight - 4 - 200)
+      if (newHeight > maxHeight) newHeight = maxHeight
 
-    splitTerminalEl.style.height = `${newHeight}px`
+      splitTerminalEl.style.height = `${newHeight}px`
+    })
   }
 
   const onMouseUp = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
     document.removeEventListener("mousemove", onMouseMove)
     document.removeEventListener("mouseup", onMouseUp)
+    splitTerminalEl.style.transition = ""
 
     const finalHeight = parseFloat(splitTerminalEl.style.height)
     if (!isNaN(finalHeight)) onCommit(finalHeight)
   }
 
-  document.addEventListener("mousemove", onMouseMove)
+  document.addEventListener("mousemove", onMouseMove, { passive: true })
   document.addEventListener("mouseup", onMouseUp)
 }

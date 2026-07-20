@@ -61,7 +61,7 @@ export function PanelHeader(props: {
       }}
     >
       <Show when={props.isActive}>
-        <div class="absolute top-0 inset-x-0 h-[2px] bg-v2-border-border-brand-strong" />
+        <div class="absolute top-0 inset-x-0 h-[2.5px] bg-blue-600 dark:bg-blue-400" />
       </Show>
 
       <span

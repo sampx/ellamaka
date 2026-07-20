@@ -1,7 +1,8 @@
-import { For, Show, createMemo } from "solid-js"
+import { For, Show, createMemo, createSignal } from "solid-js"
 import type { WopalSpace } from "../space-store"
 import type { GroupSession, SessionTreeLocation } from "./session-tree-services"
 import { SessionTreeRow } from "./session-tree-row"
+import { useWorkbenchState } from "../view-store"
 
 type MergedSession = {
   id: string
@@ -9,50 +10,251 @@ type MergedSession = {
   status: "idle" | "bound" | "archived"
 }
 
-export function SessionTreeSpace(props: {
+function ChatIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function FolderIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+// 日期专用日历图标 (Calendar Icon)
+function CalendarIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  )
+}
+
+// 项目专用图标 (Layered Project / Code Stack Icon)
+function ProjectBoxIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  )
+}
+
+type DateGroup = {
+  key: string
+  title: string
+  sessions: GroupSession[]
+}
+
+function groupSessionsByDate(locations: SessionTreeLocation[]): DateGroup[] {
+  const allSessions = locations.flatMap((loc) => loc.sessions)
+  if (allSessions.length === 0) return []
+
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const yesterdayStart = todayStart - 86400000
+  const weekStart = todayStart - 6 * 86400000
+
+  const groups: Record<string, GroupSession[]> = {
+    today: [],
+    yesterday: [],
+    week: [],
+    earlier: [],
+  }
+
+  for (const session of allSessions) {
+    const time = session.timeUpdated || session.timeCreated || 0
+    if (time >= todayStart) {
+      groups.today.push(session)
+    } else if (time >= yesterdayStart) {
+      groups.yesterday.push(session)
+    } else if (time >= weekStart) {
+      groups.week.push(session)
+    } else {
+      groups.earlier.push(session)
+    }
+  }
+
+  const titles: Record<string, string> = {
+    today: "今天",
+    yesterday: "昨天",
+    week: "7天内",
+    earlier: "更早",
+  }
+
+  const result: DateGroup[] = []
+  for (const key of ["today", "yesterday", "week", "earlier"] as const) {
+    if (groups[key].length > 0) {
+      result.push({
+        key,
+        title: titles[key],
+        sessions: groups[key],
+      })
+    }
+  }
+
+  return result
+}
+
+function sortSessionsByPanelAndPin(
+  merged: MergedSession[],
+  pinnedSet: Set<string>,
+  spacePath: string,
+  wb: ReturnType<typeof useWorkbenchState>,
+): MergedSession[] {
+  const getPanelIndex = (sessionID: string) => {
+    const space = wb.spaceState(spacePath)
+    if (!space) return 999
+    const idx = space.panels.findIndex((p) => p.boundSessionId === sessionID && p.slotState === "bound")
+    return idx !== -1 ? idx : 999
+  }
+
+  return [...merged].sort((a, b) => {
+    const aPinned = pinnedSet.has(a.id)
+    const bPinned = pinnedSet.has(b.id)
+
+    // 1. Pinned 优先排在最上方
+    if (aPinned && !bPinned) return -1
+    if (!aPinned && bPinned) return 1
+    if (aPinned && bPinned) return 0
+
+    // 2. Bound (已打开挂载) 排在 Pinned 之下，按 Panel 序号 1 -> 2 -> 3 升序
+    const aBound = a.status === "bound"
+    const bBound = b.status === "bound"
+
+    if (aBound && !bBound) return -1
+    if (!aBound && bBound) return 1
+
+    if (aBound && bBound) {
+      return getPanelIndex(a.id) - getPanelIndex(b.id)
+    }
+
+    // 3. Idle 会话排在最后，保持原序
+    return 0
+  })
+}
+
+function DateLocationItem(props: {
+  group: DateGroup
   space: WopalSpace
-  isActive: boolean
-  expandedSpaces: () => Set<string>
-  loading: () => boolean
-  locations: () => SessionTreeLocation[]
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
-  onSpaceClick: (space: WopalSpace) => void
   onSessionClick: (sessionId: string) => void
-  onToggleSpace: (spacePath: string) => void
-  onSpaceContextMenu: (e: MouseEvent, space: WopalSpace) => void
   onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
   setSelectedSessionId: (id: string) => void
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
-  t: (key: string, params?: Record<string, string | number | boolean>) => string
 }) {
-  const isExpanded = createMemo(() => props.expandedSpaces().has(props.space.path))
+  const wb = useWorkbenchState()
+  const [expanded, setExpanded] = createSignal(true)
+  const merged = createMemo(() =>
+    sortSessionsByPanelAndPin(
+      props.mergeSessions(props.group.sessions),
+      props.pinnedSessions(),
+      props.space.path,
+      wb,
+    ),
+  )
 
   return (
-    <div>
+    <div class="mb-1.5">
       <button
         type="button"
-        classList={{
-          "group flex w-full items-center gap-2 text-left transition-all py-1.5": true,
-          "bg-v2-background-bg-base hover:bg-v2-overlay-simple-overlay-hover px-2 font-medium rounded-md text-v2-text-text-strong shadow-sm":
-            props.isActive,
-          "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base rounded-md px-2":
-            !props.isActive,
-        }}
-        onClick={() => props.onSpaceClick(props.space)}
-        onContextMenu={(e) => props.onSpaceContextMenu(e, props.space)}
+        class="flex w-full items-center justify-between px-2 py-1 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-strong uppercase tracking-wider select-none font-semibold cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors"
+        onClick={() => setExpanded(!expanded())}
       >
-        <span
-          class="size-5 flex items-center justify-center rounded hover:bg-v2-overlay-simple-overlay-hover cursor-pointer shrink-0"
-          onClick={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-            props.onToggleSpace(props.space.path)
-          }}
+        <div class="flex items-center gap-1.5 truncate">
+          <CalendarIcon class="size-3.5 text-v2-text-text-muted shrink-0" />
+          <span class="truncate">{props.group.title}</span>
+          <span class="text-9-regular text-v2-text-text-faint font-normal">({merged().length})</span>
+        </div>
+        <svg
+          class={`size-2.5 text-v2-text-text-muted transition-transform duration-200 shrink-0 ${expanded() ? "" : "-rotate-90"}`}
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
         >
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
+
+      <Show when={expanded()}>
+        <div class="mt-0.5">
+          <For each={merged()}>
+            {(session) => (
+              <SessionTreeRow
+                session={session}
+                spaceName={props.space.name}
+                spacePath={props.space.path}
+                sessions={props.group.sessions}
+                activeSessionId={props.activeSessionId}
+                pinnedSessions={props.pinnedSessions}
+                onSessionClick={props.onSessionClick}
+                onContextMenu={(event) => {
+                  const sessionData = props.group.sessions.find((candidate) => candidate.id === session.id)
+                  if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, "general-date")
+                }}
+                setSelectedSessionId={props.setSelectedSessionId}
+                registerRowRef={props.registerRowRef}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+function ProjectLocationItem(props: {
+  location: SessionTreeLocation
+  space: WopalSpace
+  activeSessionId: () => string | undefined
+  pinnedSessions: () => Set<string>
+  onSessionClick: (sessionId: string) => void
+  onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
+  setSelectedSessionId: (id: string) => void
+  mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
+  registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
+}) {
+  const wb = useWorkbenchState()
+  const [expanded, setExpanded] = createSignal(true)
+  const merged = createMemo(() =>
+    sortSessionsByPanelAndPin(
+      props.mergeSessions(props.location.sessions),
+      props.pinnedSessions(),
+      props.space.path,
+      wb,
+    ),
+  )
+  const projectLabel = () => props.location.label || props.location.relativePath || "项目"
+
+  return (
+    <div class="mb-1.5">
+      <Show when={projectLabel() && projectLabel() !== props.space.name}>
+        <button
+          type="button"
+          class="flex w-full items-center justify-between px-2 py-0.5 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-base select-none cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors font-mono"
+          onClick={() => setExpanded(!expanded())}
+        >
+          <div class="flex items-center gap-1.5 truncate">
+            <ProjectBoxIcon class="size-3 text-v2-text-text-muted shrink-0" />
+            <span class="truncate">{projectLabel()}</span>
+            <span class="text-9-regular text-v2-text-text-faint">({merged().length})</span>
+          </div>
           <svg
-            class={`size-4 text-v2-text-text-muted transition-transform duration-200 ${isExpanded() ? "" : "-rotate-90"}`}
+            class={`size-2.5 text-v2-text-text-muted transition-transform duration-200 shrink-0 ${expanded() ? "" : "-rotate-90"}`}
             viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
@@ -62,49 +264,219 @@ export function SessionTreeSpace(props: {
           >
             <path d="M4 6l4 4 4-4" />
           </svg>
-        </span>
-        <span class="flex-1 truncate text-12-regular text-v2-text-text-base">{props.space.name}</span>
-      </button>
+        </button>
+      </Show>
 
-      <Show when={isExpanded()}>
-        <div class="ml-3">
-          <Show
-            when={!props.loading()}
-            fallback={<div class="py-1 text-10-regular text-v2-text-text-faint">{props.t("common.loading")}</div>}
-          >
-            <For each={props.locations()}>
-              {(location) => {
-                const merged = createMemo(() => props.mergeSessions(location.sessions))
-                return (
-                  <div class="py-0.5">
-                    <Show when={location.kind !== "space-root"}>
-                      <div class="px-2 pt-1 text-10-regular text-v2-text-text-faint truncate">{location.label}</div>
-                    </Show>
-                    <For each={merged()}>
-                      {(session) => (
-                        <SessionTreeRow
-                          session={session}
-                          spaceName={props.space.name}
-                          spacePath={props.space.path}
-                          sessions={location.sessions}
+      <Show when={expanded()}>
+        <div class="mt-0.5">
+          <For each={merged()}>
+            {(session) => (
+              <SessionTreeRow
+                session={session}
+                spaceName={props.space.name}
+                spacePath={props.space.path}
+                sessions={props.location.sessions}
+                activeSessionId={props.activeSessionId}
+                pinnedSessions={props.pinnedSessions}
+                onSessionClick={props.onSessionClick}
+                onContextMenu={(event) => {
+                  const sessionData = props.location.sessions.find((candidate) => candidate.id === session.id)
+                  if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, props.location.kind)
+                }}
+                setSelectedSessionId={props.setSelectedSessionId}
+                registerRowRef={props.registerRowRef}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+export function SessionTreeSpace(props: {
+  space: WopalSpace
+  isActive: boolean
+  loading: () => boolean
+  locations: () => SessionTreeLocation[]
+  activeSessionId: () => string | undefined
+  pinnedSessions: () => Set<string>
+  onSessionClick: (sessionId: string) => void
+  onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
+  setSelectedSessionId: (id: string) => void
+  mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
+  registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
+  t: (key: string, params?: Record<string, string | number | boolean>) => string
+}) {
+  const wb = useWorkbenchState()
+  const [spaceExpanded, setSpaceExpanded] = createSignal(true)
+  const [projectExpanded, setProjectExpanded] = createSignal(true)
+
+  const isGeneralScope = createMemo(() => props.space.path === "")
+  const dateGroups = createMemo(() => groupSessionsByDate(props.locations()))
+
+  const spaceLocations = createMemo(() =>
+    props.locations().filter((loc) => loc.kind === "space-root"),
+  )
+
+  const projectLocations = createMemo(() =>
+    props.locations().filter((loc) => loc.kind !== "space-root"),
+  )
+
+  const hasSessions = createMemo(() =>
+    props.locations().some((loc) => loc.sessions.length > 0),
+  )
+
+  return (
+    <div class="flex flex-col gap-2 py-1">
+      <Show
+        when={!props.loading()}
+        fallback={<div class="px-3 py-4 text-12-regular text-v2-text-text-muted">{props.t("common.loading")}</div>}
+      >
+        <Show
+          when={hasSessions()}
+          fallback={
+            <div class="px-3 py-6 text-12-regular text-v2-text-text-faint text-center">
+              暂无会话
+            </div>
+          }
+        >
+          {/* A. 日常对话模式 (General Scope) — 纯按日期分组展示 */}
+          <Show when={isGeneralScope()}>
+            <div class="flex flex-col gap-1">
+              <For each={dateGroups()}>
+                {(group) => (
+                  <DateLocationItem
+                    group={group}
+                    space={props.space}
+                    activeSessionId={props.activeSessionId}
+                    pinnedSessions={props.pinnedSessions}
+                    onSessionClick={props.onSessionClick}
+                    onSessionContextMenu={props.onSessionContextMenu}
+                    setSelectedSessionId={props.setSelectedSessionId}
+                    mergeSessions={props.mergeSessions}
+                    registerRowRef={props.registerRowRef}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
+
+          {/* B. 空间模式 (Space Tabs) — 区分 空间会话 与 项目会话 */}
+          <Show when={!isGeneralScope()}>
+            {/* 1. 空间会话 (Space Sessions) */}
+            <Show when={spaceLocations().some((loc) => loc.sessions.length > 0)}>
+              <div>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between px-2 py-1 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-strong uppercase tracking-wider select-none font-semibold cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors"
+                  onClick={() => setSpaceExpanded(!spaceExpanded())}
+                >
+                  <div class="flex items-center gap-1.5">
+                    <ChatIcon class="size-3.5 text-v2-text-text-muted" />
+                    <span>空间会话</span>
+                  </div>
+                  <svg
+                    class={`size-3 text-v2-text-text-muted transition-transform duration-200 ${spaceExpanded() ? "" : "-rotate-90"}`}
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4 6l4 4 4-4" />
+                  </svg>
+                </button>
+
+                <Show when={spaceExpanded()}>
+                  <div class="mt-0.5">
+                    <For each={spaceLocations()}>
+                      {(location) => {
+                        const merged = createMemo(() =>
+                          sortSessionsByPanelAndPin(
+                            props.mergeSessions(location.sessions),
+                            props.pinnedSessions(),
+                            props.space.path,
+                            wb,
+                          ),
+                        )
+                        return (
+                          <For each={merged()}>
+                            {(session) => (
+                              <SessionTreeRow
+                                session={session}
+                                spaceName={props.space.name}
+                                spacePath={props.space.path}
+                                sessions={location.sessions}
+                                activeSessionId={props.activeSessionId}
+                                pinnedSessions={props.pinnedSessions}
+                                onSessionClick={props.onSessionClick}
+                                onContextMenu={(event) => {
+                                  const sessionData = location.sessions.find((candidate) => candidate.id === session.id)
+                                  if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, location.kind)
+                                }}
+                                setSelectedSessionId={props.setSelectedSessionId}
+                                registerRowRef={props.registerRowRef}
+                              />
+                            )}
+                          </For>
+                        )
+                      }}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            {/* 2. 项目会话 (Project Sessions) */}
+            <Show when={projectLocations().some((loc) => loc.sessions.length > 0)}>
+              <div>
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between px-2 py-1 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-strong uppercase tracking-wider select-none font-semibold cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors"
+                  onClick={() => setProjectExpanded(!projectExpanded())}
+                >
+                  <div class="flex items-center gap-1.5">
+                    <FolderIcon class="size-3.5 text-v2-text-text-muted" />
+                    <span>项目会话</span>
+                  </div>
+                  <svg
+                    class={`size-3 text-v2-text-text-muted transition-transform duration-200 ${projectExpanded() ? "" : "-rotate-90"}`}
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4 6l4 4 4-4" />
+                  </svg>
+                </button>
+
+                <Show when={projectExpanded()}>
+                  <div class="mt-0.5">
+                    <For each={projectLocations()}>
+                      {(location) => (
+                        <ProjectLocationItem
+                          location={location}
+                          space={props.space}
                           activeSessionId={props.activeSessionId}
                           pinnedSessions={props.pinnedSessions}
                           onSessionClick={props.onSessionClick}
-                          onContextMenu={(event) => {
-                            const sessionData = location.sessions.find((candidate) => candidate.id === session.id)
-                            if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, location.kind)
-                          }}
+                          onSessionContextMenu={props.onSessionContextMenu}
                           setSelectedSessionId={props.setSelectedSessionId}
+                          mergeSessions={props.mergeSessions}
                           registerRowRef={props.registerRowRef}
                         />
                       )}
                     </For>
                   </div>
-                )
-              }}
-            </For>
+                </Show>
+              </div>
+            </Show>
           </Show>
-        </div>
+        </Show>
       </Show>
     </div>
   )

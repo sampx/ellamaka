@@ -299,4 +299,44 @@ describe("WorkbenchStore hydrate/migrate", () => {
     expect(store.tabs).toHaveLength(2)
     expect(store.activeSpaceName).toBe("Space A")
   })
+
+  test("pins and unpins a space tab, preventing close when pinned", () => {
+    const store = createWorkbenchStore(fixture())
+
+    expect(store.closeTab("")).toBe(false) // General cannot be closed
+
+    store.pinTab("/fixtures/space-a")
+    expect(store.tabs.find((t) => t.path === "/fixtures/space-a")?.pinned).toBe(true)
+
+    // Cannot close pinned tab
+    expect(store.closeTab("/fixtures/space-a")).toBe(false)
+    expect(store.tabs).toHaveLength(2)
+
+    store.unpinTab("/fixtures/space-a")
+    expect(store.tabs.find((t) => t.path === "/fixtures/space-a")?.pinned).toBe(false)
+
+    // Now can close
+    expect(store.closeTab("/fixtures/space-a")).toBe(true)
+    expect(store.tabs).toHaveLength(1)
+  })
+
+  test("closes other tabs and closes right tabs while preserving pinned and general tabs", () => {
+    const store = createWorkbenchStore({
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/space-a", type: "space", pinned: true },
+        { name: "Space B", path: "/space-b", type: "space" },
+        { name: "Space C", path: "/space-c", type: "space" },
+      ],
+      activeTabPath: "/space-b",
+    })
+
+    store.closeRightTabs("/space-b")
+    expect(store.tabs.map((t) => t.path)).toEqual(["", "/space-a", "/space-b"])
+
+    store.closeOtherTabs("/space-b")
+    expect(store.tabs.map((t) => t.path)).toEqual(["", "/space-a", "/space-b"])
+  })
 })

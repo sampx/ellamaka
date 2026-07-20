@@ -25,11 +25,35 @@
   font-style: normal;
 }
 
-/* 彻底隐藏所有的原生 WebKit 滚动条，杜绝任何弹性高度微调在页面右侧或内部产生隐蔽的滚动条轨道 */
+/* 默认隐藏全局原生 WebKit 滚动条 */
 ::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* 显式允许的垂直/水平精致滚动条 */
+.has-scrollbar::-webkit-scrollbar,
+.session-tree-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.has-scrollbar::-webkit-scrollbar-track,
+.session-tree-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.has-scrollbar::-webkit-scrollbar-thumb,
+.session-tree-scroll::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 160, 0.35) !important;
+  border-radius: 4px !important;
+}
+
+.has-scrollbar::-webkit-scrollbar-thumb:hover,
+.session-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 140, 160, 0.65) !important;
 }
 
 html, body, #root {

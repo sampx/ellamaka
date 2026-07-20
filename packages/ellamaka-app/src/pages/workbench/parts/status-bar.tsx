@@ -61,7 +61,7 @@ export function StatusBar() {
   })
 
   return (
-    <footer class="relative flex h-6 shrink-0 items-center justify-between gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
+    <footer class="relative z-30 flex h-6 shrink-0 items-center justify-between gap-2 border-t border-v2-border-border-base bg-v2-background-bg-base px-2 text-10-regular text-v2-text-text-muted select-none">
       {/* 左区：空间 / panel / 会话 / 路径 的现代紧凑层级链 */}
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <For each={segments()}>

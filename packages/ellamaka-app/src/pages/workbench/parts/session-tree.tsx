@@ -279,21 +279,17 @@ export function SessionTree(props: {
   }
 
   return (
-    <div class="flex-1 overflow-y-auto px-1.5">
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 session-tree-scroll transition-colors [will-change:scroll-position]">
       <For each={props.spaces}>
         {(space) => (
           <SessionTreeSpace
             space={space}
             isActive={space.path === props.activeSpacePath}
-            expandedSpaces={expandedSpaces}
             loading={loading}
             locations={() => locationsForPath(space.path)}
             activeSessionId={activeSessionID}
             pinnedSessions={pinnedSessions}
-            onSpaceClick={handleSpaceClick}
             onSessionClick={props.onSessionClick}
-            onToggleSpace={toggleSpace}
-            onSpaceContextMenu={showSpaceMenu}
             onSessionContextMenu={showSessionMenu}
             setSelectedSessionId={setSelectedSessionID}
             mergeSessions={mergeSessions}

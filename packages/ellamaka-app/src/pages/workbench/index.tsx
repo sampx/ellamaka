@@ -117,10 +117,23 @@ function WorkbenchShell() {
     const preventContextMenu = (e: MouseEvent) => {
       e.preventDefault()
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        const activeTab = wb.activeTab()
+        const isPinned = !activeTab || activeTab.path === "" || !!activeTab.pinned
+        if (isPinned) {
+          e.preventDefault()
+          e.stopPropagation()
+          wb.setStatusMessage(t("workbench.status.tabPinnedProtected", { default: "Pinned tab protected from closing" }))
+        }
+      }
+    }
     window.addEventListener("contextmenu", preventContextMenu)
+    window.addEventListener("keydown", handleKeyDown)
     onCleanup(() => {
       unsub()
       window.removeEventListener("contextmenu", preventContextMenu)
+      window.removeEventListener("keydown", handleKeyDown)
     })
   })
 

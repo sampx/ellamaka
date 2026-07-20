@@ -33,7 +33,10 @@ export function SessionMarkerIcon(props: {
               <Show
                 when={markerInfo().text !== undefined}
                 fallback={
-                  <span class="size-1.5 rounded-full bg-current" />
+                  <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    <path d="M12 6.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z" fill="currentColor" stroke="none" />
+                  </svg>
                 }
               >
                 <span class="text-[11px] font-semibold font-mono leading-none">
@@ -152,6 +155,7 @@ export function SessionTreeRow(props: {
         if (!dataTransfer) return
         dataTransfer.setData("text/sessionId", props.session.id)
         dataTransfer.setData("text/spacePath", props.spacePath)
+        dataTransfer.setData("text/spaceName", props.spaceName)
         dataTransfer.setData("text/projectPath", sessionData()?.directory ?? "")
         dataTransfer.setData("text/sessionTitle", props.session.title)
         setInvisibleSessionDragPreview(dataTransfer)

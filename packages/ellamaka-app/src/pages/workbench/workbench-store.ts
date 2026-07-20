@@ -36,6 +36,7 @@ export type WopalSpace = {
   name: string
   path: string
   type?: string
+  pinned?: boolean
 }
 
 export type PersistedWorkbench = {
@@ -203,6 +204,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
       tab.name
       tab.path
       tab.type
+      tab.pinned
     }
     for (const [path, space] of Object.entries(store.spaces)) {
       path
@@ -323,10 +325,42 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     setStore("spaces", path, "panels", () => true, "width", 1)
   }
 
+  function reorderTabs() {
+    setStore("tabs", (tabs) => {
+      const general = tabs.filter((t) => t.path === GENERAL_TAB_PATH)
+      const pinned = tabs.filter((t) => t.path !== GENERAL_TAB_PATH && t.pinned)
+      const unpinned = tabs.filter((t) => t.path !== GENERAL_TAB_PATH && !t.pinned)
+      return [...general, ...pinned, ...unpinned]
+    })
+  }
+
+  function pinTab(path: string) {
+    if (path === GENERAL_TAB_PATH) return
+    const index = store.tabs.findIndex((tab) => tab.path === path)
+    if (index !== -1) {
+      batch(() => {
+        setStore("tabs", index, "pinned", true)
+        reorderTabs()
+      })
+    }
+  }
+
+  function unpinTab(path: string) {
+    if (path === GENERAL_TAB_PATH) return
+    const index = store.tabs.findIndex((tab) => tab.path === path)
+    if (index !== -1) {
+      batch(() => {
+        setStore("tabs", index, "pinned", false)
+        reorderTabs()
+      })
+    }
+  }
+
   function closeTab(path: string) {
     if (path === GENERAL_TAB_PATH) return false
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index === -1) return false
+    if (store.tabs[index].pinned) return false
     batch(() => {
       setStore("tabs", (tabs) => tabs.filter((tab) => tab.path !== path))
       if (store.activeTabPath === path) {
@@ -335,6 +369,26 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
       }
     })
     return true
+  }
+
+  function closeOtherTabs(path: string) {
+    batch(() => {
+      setStore("tabs", (tabs) => tabs.filter((tab) => tab.path === GENERAL_TAB_PATH || tab.pinned || tab.path === path))
+      if (!store.tabs.some((tab) => tab.path === store.activeTabPath)) {
+        setStore("activeTabPath", path)
+      }
+    })
+  }
+
+  function closeRightTabs(path: string) {
+    const index = store.tabs.findIndex((tab) => tab.path === path)
+    if (index === -1) return
+    batch(() => {
+      setStore("tabs", (tabs) => tabs.filter((tab, i) => i <= index || tab.path === GENERAL_TAB_PATH || tab.pinned))
+      if (!store.tabs.some((tab) => tab.path === store.activeTabPath)) {
+        setStore("activeTabPath", path)
+      }
+    })
   }
 
   function removeSpace(path: string) {
@@ -491,6 +545,10 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     get activeSpaceName() { return activeTab()?.name ?? GENERAL_TAB_NAME },
     openTab,
     closeTab,
+    closeOtherTabs,
+    closeRightTabs,
+    pinTab,
+    unpinTab,
     setActive,
     validateTabs,
   }

@@ -41,6 +41,7 @@ export function Workspace() {
     tabPanels: WorkbenchPanel[]
   ) => {
     e.preventDefault()
+    e.stopPropagation()
     const handleEl = e.currentTarget
     const container = handleEl.closest(".tab-container")
     if (!(container instanceof HTMLElement)) return
@@ -62,31 +63,49 @@ export function Workspace() {
     const rightStartFlex = tabPanels[leftIndex + 1].width
     const flexSum = leftStartFlex + rightStartFlex
 
+    leftPanelEl.style.transition = "none"
+    rightPanelEl.style.transition = "none"
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+
+    let rafId: number | null = null
+
     const onMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        const deltaX = moveEvent.clientX - startX
 
-      let newLeftWidth = leftStartWidth + deltaX
-      let newRightWidth = rightStartWidth - deltaX
+        let newLeftWidth = leftStartWidth + deltaX
+        let newRightWidth = rightStartWidth - deltaX
 
-      if (newLeftWidth < 280) {
-        newLeftWidth = 280
-        newRightWidth = totalWidth - 280
-      } else if (newRightWidth < 280) {
-        newRightWidth = 280
-        newLeftWidth = totalWidth - 280
-      }
+        if (newLeftWidth < 280) {
+          newLeftWidth = 280
+          newRightWidth = totalWidth - 280
+        } else if (newRightWidth < 280) {
+          newRightWidth = 280
+          newLeftWidth = totalWidth - 280
+        }
 
-      const newLeftFlex = (newLeftWidth / totalWidth) * flexSum
-      const newRightFlex = (newRightWidth / totalWidth) * flexSum
+        const newLeftFlex = (newLeftWidth / totalWidth) * flexSum
+        const newRightFlex = (newRightWidth / totalWidth) * flexSum
 
-      // Bypass SolidJS reactivity and localStorage writes during high-frequency dragging
-      leftPanelEl.style.flex = `${newLeftFlex}`
-      rightPanelEl.style.flex = `${newRightFlex}`
+        leftPanelEl.style.flex = `${newLeftFlex}`
+        rightPanelEl.style.flex = `${newRightFlex}`
+      })
     }
 
     const onMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("mouseup", onMouseUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      leftPanelEl.style.transition = ""
+      rightPanelEl.style.transition = ""
 
       const finalLeftFlex = parseFloat(leftPanelEl.style.flex)
       const finalRightFlex = parseFloat(rightPanelEl.style.flex)
@@ -99,7 +118,7 @@ export function Workspace() {
       }
     }
 
-    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mousemove", onMouseMove, { passive: true })
     document.addEventListener("mouseup", onMouseUp)
   }
 
@@ -108,19 +127,7 @@ export function Workspace() {
   }
 
   return (
-    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-v2-background-bg-base relative">
-      <StageHeader
-        activePath={activePath()}
-        panelCount={currentPanels().length}
-        onAddPanel={() => {
-          const path = activePath()
-          if (path === undefined || path === null) return
-          const id = wb.addPanel(path)
-          if (id) wb.setActivePanel(path, id)
-        }}
-        onCloseTab={handleCloseTab}
-      />
-
+    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-v2-background-bg-base relative z-10">
       <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <Show when={wb.tabs.length === 0}>
           <div class="flex flex-1 items-center justify-center text-v2-text-text-muted">
@@ -187,62 +194,7 @@ export function Workspace() {
   )
 }
 
-function StageHeader(props: {
-  activePath: string
-  panelCount: number
-  onAddPanel: () => void
-  onCloseTab: (name: string, path: string) => void
-}) {
-  const wb = useWorkbenchState()
-  const language = useLanguage()
-  const t = (k: string) => language.t(k)
 
-  return (
-    <div class="flex h-8 shrink-0 items-center gap-0.5 border-b border-v2-border-border-base bg-v2-background-bg-base px-2">
-      <Show when={wb.tabs.length > 0}>
-        <For each={wb.tabs}>
-          {(tab) => (
-            <button
-              type="button"
-              class={`group flex items-center gap-1.5 rounded-t-md px-2.5 py-1 text-12-regular transition-colors ${
-                wb.activeTabPath === tab.path
-                  ? "bg-v2-background-bg-deep text-v2-text-text-strong border-x border-t border-v2-border-border-base -mb-px"
-                  : "text-v2-text-text-muted hover:text-v2-text-text-base"
-              }`}
-              onClick={() => wb.setActive(tab.path)}
-            >
-              <span class="max-w-32 truncate">{tab.name === GENERAL_SCOPE_NAME ? t("workbench.sidebar.spaces") : tab.name}</span>
-              <Show when={tab.path !== ""}>
-                <span
-                  class="flex size-4 items-center justify-center rounded text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    props.onCloseTab(tab.name, tab.path)
-                  }}
-                >
-                  <IconV2 name="xmark-small" />
-                </span>
-              </Show>
-            </button>
-          )}
-        </For>
-      </Show>
-
-      <div class="grow" />
-
-      <Show when={wb.activeTab()}>
-        <IconButtonV2
-          variant="ghost-muted"
-          size="small"
-          icon={<IconV2 name="plus" />}
-          aria-label={t("workbench.panel.add")}
-          disabled={props.panelCount >= 3}
-          onClick={props.onAddPanel}
-        />
-      </Show>
-    </div>
-  )
-}
 
 export function DialogCloseTab(props: { name: string; path: string }) {
   const wb = useWorkbenchState()

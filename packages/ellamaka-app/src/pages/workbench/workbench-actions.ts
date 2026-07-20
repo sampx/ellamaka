@@ -133,6 +133,22 @@ const ptyID = (panel: WorkbenchActionPanel, kind: WorkbenchActionPtyKind) => {
   return panel.splitPtyId
 }
 
+function snapshotPanel(panel: WorkbenchActionPanel): WorkbenchActionPanel {
+  return {
+    id: panel.id,
+    directory: panel.directory,
+    slotState: panel.slotState,
+    boundSessionId: panel.boundSessionId,
+    width: panel.width,
+    viewMode: panel.viewMode,
+    tuiPtyId: panel.tuiPtyId,
+    termPtyId: panel.termPtyId,
+    splitPtyId: panel.splitPtyId,
+    splitTerminal: panel.splitTerminal,
+    splitHeight: panel.splitHeight,
+  }
+}
+
 export function createWorkbenchActions(input: {
   store: WorkbenchActionStorePort
   pty: WorkbenchActionPtyPort
@@ -176,6 +192,9 @@ export function createWorkbenchActions(input: {
     if (!panel || (panel.slotState === "empty" && !panel.boundSessionId)) {
       return { status: "unchanged", panelID }
     }
+    // Capture snapshot BEFORE synchronous store resets so PTY IDs are not lost to reactivity
+    const panelSnap = snapshotPanel(panel)
+
     // Flip viewMode to chat and clear all PTY ids synchronously BEFORE awaiting
     // backend disposal. Otherwise the view-registry createEffect re-enters
     // while the backend PTY is gone but the store id is still set, spawning a
@@ -186,7 +205,7 @@ export function createWorkbenchActions(input: {
     input.store.commitPanelPty(scope, panelID, "split", undefined)
     input.store.commitSplitTerminal?.(scope, panelID, false)
     const generation = nextGeneration(scope, panelID)
-    await disposePanel(scope, panel)
+    await disposePanel(scope, panelSnap)
     if (!isCurrent(scope, panelID, generation)) return { status: "stale", panelID }
     input.store.commitSessionUnbinding(scope, panelID)
     return { status: "committed", panelID }
@@ -290,6 +309,9 @@ export function createWorkbenchActions(input: {
       if (input.store.panels(options.scope).length <= 1) {
         return unbindPanel(options.scope, options.panelID)
       }
+      // Capture snapshot BEFORE synchronous store resets so PTY IDs are not lost to reactivity
+      const panelSnap = snapshotPanel(panel)
+
       // Flip viewMode to chat and clear all PTY ids synchronously BEFORE awaiting
       // backend disposal. Otherwise the view-registry createEffect re-enters
       // while the backend PTY is gone but the store id is still set, spawning a
@@ -300,7 +322,7 @@ export function createWorkbenchActions(input: {
       input.store.commitPanelPty(options.scope, options.panelID, "split", undefined)
       input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
       const generation = nextGeneration(options.scope, options.panelID)
-      await disposePanel(options.scope, panel)
+      await disposePanel(options.scope, panelSnap)
       const stillCurrent = isCurrent(options.scope, options.panelID, generation)
       if (!stillCurrent) {
         return { status: "stale", panelID: options.panelID }
@@ -331,7 +353,7 @@ export function createWorkbenchActions(input: {
       const panels = input.store.panels(scope)
       if (panels.length === 0) return { status: "unchanged" }
       const pending = panels.map((panel) => ({
-        panel,
+        panel: snapshotPanel(panel),
         generation: nextGeneration(scope, panel.id),
       }))
       await Promise.all(pending.map(({ panel }) => disposePanel(scope, panel)))
@@ -365,7 +387,8 @@ export function createWorkbenchActions(input: {
         return { status: "committed", panelID: targetPanelID }
       }
       const replaceGeneration = nextGeneration(options.scope, options.sourcePanelID)
-      await disposePanel(options.scope, sourcePanel)
+      const sourceSnap = snapshotPanel(sourcePanel)
+      await disposePanel(options.scope, sourceSnap)
       if (!isCurrent(options.scope, options.sourcePanelID, replaceGeneration)) {
         return { status: "stale", panelID: options.sourcePanelID }
       }
@@ -433,7 +456,8 @@ export function createWorkbenchActions(input: {
         input.session.project({ scope: options.scope, session })
         return { status: "unchanged", panelID: options.panelID }
       }
-      await disposePanel(options.scope, panel)
+      const panelSnap = snapshotPanel(panel)
+      await disposePanel(options.scope, panelSnap)
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
@@ -538,8 +562,9 @@ export function createWorkbenchActions(input: {
         return { status: "unchanged", panelID: options.panelID }
       }
 
+      const panelSnap = snapshotPanel(panel)
       const generation = nextGeneration(options.scope, options.panelID)
-      await disposePanel(options.scope, panel)
+      await disposePanel(options.scope, panelSnap)
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
