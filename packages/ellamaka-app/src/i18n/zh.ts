@@ -1064,4 +1064,7 @@ export const dict = {
   "workbench.topbar.generalPinned": "日常对话 (固定)",
   "workbench.topbar.tabPinned": "已钉住 Tab",
   "workbench.topbar.selectSpace": "选择空间",
+  "workbench.tree.group.spaceSessions": "空间会话",
+  "workbench.tree.group.projectSessions": "项目会话",
+  "workbench.tree.noSessions": "暂无会话",
 } satisfies Partial<Record<Keys, string>>

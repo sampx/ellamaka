@@ -333,7 +333,7 @@ export function SessionTreeSpace(props: {
           when={hasSessions()}
           fallback={
             <div class="px-3 py-6 text-12-regular text-v2-text-text-faint text-center">
-              暂无会话
+              {props.t("workbench.tree.noSessions")}
             </div>
           }
         >
@@ -370,7 +370,7 @@ export function SessionTreeSpace(props: {
                 >
                   <div class="flex items-center gap-1.5">
                     <ChatIcon class="size-3.5 text-v2-text-text-muted" />
-                    <span>空间会话</span>
+                    <span>{props.t("workbench.tree.group.spaceSessions")}</span>
                   </div>
                   <svg
                     class={`size-3 text-v2-text-text-muted transition-transform duration-200 ${spaceExpanded() ? "" : "-rotate-90"}`}
@@ -435,7 +435,7 @@ export function SessionTreeSpace(props: {
                 >
                   <div class="flex items-center gap-1.5">
                     <FolderIcon class="size-3.5 text-v2-text-text-muted" />
-                    <span>项目会话</span>
+                    <span>{props.t("workbench.tree.group.projectSessions")}</span>
                   </div>
                   <svg
                     class={`size-3 text-v2-text-text-muted transition-transform duration-200 ${projectExpanded() ? "" : "-rotate-90"}`}

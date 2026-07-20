@@ -1119,4 +1119,7 @@ export const dict = {
   "workbench.topbar.generalPinned": "General Chat (Pinned)",
   "workbench.topbar.tabPinned": "Pinned Tab",
   "workbench.topbar.selectSpace": "Select Space",
+  "workbench.tree.group.spaceSessions": "Space Sessions",
+  "workbench.tree.group.projectSessions": "Project Sessions",
+  "workbench.tree.noSessions": "No sessions",
 }
