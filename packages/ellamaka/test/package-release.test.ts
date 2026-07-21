@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "crypto"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { dirname, join, resolve } from "path"
 import { fileURLToPath } from "url"
@@ -60,12 +60,45 @@ describe("package-release.mjs", () => {
       arch: "arm64",
       variant: null,
       ext: "tar.gz",
+      product: "cli",
     })
     expect(script.parseArchiveName("ellamaka-windows-x64.zip")).toEqual({
       os: "windows",
       arch: "x64",
       variant: null,
       ext: "zip",
+      product: "cli",
+    })
+  })
+
+  test("parses ellamaka-desktop archive names", () => {
+    expect(script.parseArchiveName("ellamaka-desktop-darwin-arm64.dmg")).toEqual({
+      os: "darwin",
+      arch: "arm64",
+      variant: null,
+      ext: "dmg",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-win32-x64.exe")).toEqual({
+      os: "windows",
+      arch: "x64",
+      variant: null,
+      ext: "exe",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-linux-x64.AppImage")).toEqual({
+      os: "linux",
+      arch: "x64",
+      variant: null,
+      ext: "AppImage",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-linux-x64.deb")).toEqual({
+      os: "linux",
+      arch: "x64",
+      variant: null,
+      ext: "deb",
+      product: "desktop",
     })
   })
 
@@ -87,8 +120,36 @@ describe("package-release.mjs", () => {
     }
   })
 
-  test("accepts a custom base URL", () => {
+  test("generates manifest with desktop products", () => {
+    const desktopArchives = makeTempdir()
+    for (const name of [
+      "ellamaka-desktop-darwin-arm64.dmg",
+      "ellamaka-desktop-win32-x64.exe",
+      "ellamaka-desktop-linux-x64.AppImage",
+    ]) {
+      writeFileSync(join(desktopArchives, name), `fake-desktop-binary-${name}`)
+    }
     const outputDir = resolve(makeTempdir(), "output")
+    script.manifestCommand({
+      archivesDir: desktopArchives,
+      version: "0.1.0-desktop",
+      outputDir,
+      tag: "v0.1.0-desktop",
+      baseUrl: "https://download.coursedao.com/ellamaka-desktop",
+    })
+
+    const manifest = JSON.parse(readFileSync(join(outputDir, "manifest.json"), "utf8"))
+    expect(manifest.artifacts).toHaveLength(3)
+    for (const artifact of manifest.artifacts) {
+      expect(artifact.name).toMatch(/^ellamaka-desktop-.*\.(dmg|exe|AppImage|deb|rpm)$/)
+      expect(artifact.url).toBe(`https://download.coursedao.com/ellamaka-desktop/v0.1.0-desktop/${artifact.name}`)
+      expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(artifact.size).toBeGreaterThan(0)
+      expect(artifact.product).toBe("desktop")
+    }
+  })
+
+  test("accepts a custom base URL", () => {    const outputDir = resolve(makeTempdir(), "output")
     generate(outputDir, "https://example.com/ellamaka")
     const manifest = JSON.parse(readFileSync(join(outputDir, "manifest.json"), "utf8"))
 
