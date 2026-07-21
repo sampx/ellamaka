@@ -358,7 +358,7 @@ start_process() {
   (
     cd "$dir" || exit 1
     exec perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' nohup "$@"
-  ) > "$log" 2>&1 &
+  ) < /dev/null > "$log" 2>&1 &
   local pid=$! pgid
   sleep 0.1
   pgid="$(pgid_of "$pid")"
