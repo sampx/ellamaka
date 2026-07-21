@@ -54,21 +54,40 @@ export function parseArgs(argv) {
   }
 }
 
+// CLI artifact naming: ellamaka-<os>-<arch>[-baseline].<ext>
+//   os ∈ {darwin, linux, windows}, arch ∈ {arm64, x64}, ext ∈ {tar.gz, zip}
+// Desktop artifact naming: ellamaka-desktop-<os>-<arch>.<ext>
+//   os ∈ {darwin, win32, linux} (win32 normalized to windows),
+//   arch ∈ {arm64, x64}, ext ∈ {dmg, zip, exe, AppImage, deb, rpm}
+const CLI_ARCHIVE_RE = /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/
+const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-([^-]+)-(arm64|x64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
+const DESKTOP_OS_MAP = { darwin: "darwin", win32: "windows", linux: "linux" }
+const ARCHIVE_EXT_RE = /\.(tar\.gz|zip|dmg|exe|AppImage|deb|rpm)$/
+
 export function parseArchiveName(filename) {
-  // Matches: ellamaka-<os>-<arch>[-baseline].<ext>
-  // Examples:
-  //   ellamaka-darwin-arm64.tar.gz       → os=darwin, arch=arm64, variant=null
-  //   ellamaka-linux-x64-baseline.tar.gz → os=linux, arch=x64, variant=baseline
-  const match = filename.match(
-    /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/,
-  )
-  if (!match) throw new Error(`Cannot parse archive name: ${filename}`)
-  return {
-    os: match[1],
-    arch: match[2],
-    variant: match[3] ?? null,
-    ext: match[4],
+  const desktopMatch = filename.match(DESKTOP_ARCHIVE_RE)
+  if (desktopMatch) {
+    return {
+      os: DESKTOP_OS_MAP[desktopMatch[1]] ?? desktopMatch[1],
+      arch: desktopMatch[2],
+      variant: null,
+      ext: desktopMatch[3],
+      product: "desktop",
+    }
   }
+
+  const cliMatch = filename.match(CLI_ARCHIVE_RE)
+  if (cliMatch) {
+    return {
+      os: cliMatch[1],
+      arch: cliMatch[2],
+      variant: cliMatch[3] ?? null,
+      ext: cliMatch[4],
+      product: "cli",
+    }
+  }
+
+  throw new Error(`Cannot parse archive name: ${filename}`)
 }
 
 function osLabel(os) {
@@ -111,10 +130,20 @@ export function manifestCommand(flags) {
 
   const files = fs
     .readdirSync(archivesDir)
-    .filter((file) => file.startsWith("ellamaka-") && (file.endsWith(".tar.gz") || file.endsWith(".zip")))
+    .filter((file) => file.startsWith("ellamaka-") && ARCHIVE_EXT_RE.test(file))
+    // Only keep files whose names actually parse (CLI + desktop artifacts).
+    // A stray ellamaka- prefixed file with an unknown layout is skipped.
+    .filter((file) => {
+      try {
+        parseArchiveName(file)
+        return true
+      } catch {
+        return false
+      }
+    })
     .sort()
 
-  if (files.length === 0) throw new Error("No archive files found matching ellamaka-*-*.tar.gz or ellamaka-*-*.zip")
+  if (files.length === 0) throw new Error("No archive files found matching ellamaka-*-*.{tar.gz,zip,dmg,exe,AppImage,deb,rpm}")
 
   const versionBaseUrl = `${baseUrl}/${flags.tag}`
   const manifestUrl = `${versionBaseUrl}/manifest.json`
@@ -127,6 +156,7 @@ export function manifestCommand(flags) {
       os: parsed.os,
       arch: parsed.arch,
       variant: parsed.variant,
+      product: parsed.product,
       url: `${versionBaseUrl}/${file}`,
       sha256: sha256(filePath),
       size: fileSize(filePath),

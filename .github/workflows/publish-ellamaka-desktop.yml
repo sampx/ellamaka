@@ -1,0 +1,351 @@
+name: publish-ellamaka-desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (optional)"
+        required: false
+        type: string
+      channel:
+        description: "Desktop build channel"
+        required: false
+        default: "main"
+        type: choice
+        options:
+          - main
+          - beta
+          - prod
+  push:
+    tags:
+      - "v*"
+
+# Desktop 不创建 GitHub Release（下载链接在 wopal-site 维护，CLI workflow 负责 Release）。
+# 仅向 R2 上传安装包 + electron-updater feed，故无需 contents: write。
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka'
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Derive version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            release="true"
+            tag="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            version="${{ inputs.version }}"
+            release="true"
+            tag="v${version}"
+          else
+            version="0.0.0-dev"
+            release=""
+            tag=""
+          fi
+          {
+            echo "version=${version}"
+            echo "release=${release}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+  build-desktop:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          # macOS: dmg + zip（arm64 + x64）
+          - os: macos-latest
+            package_cmd: "package:mac --arm64 --x64"
+          # Windows: NSIS（.exe）
+          - os: windows-latest
+            package_cmd: "package:win"
+          # Linux: AppImage + deb + rpm
+          - os: ubuntu-latest
+            package_cmd: "package:linux"
+    runs-on: ${{ matrix.os }}
+    if: github.repository == 'wopal-cn/ellamaka'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - run: bun install
+
+      - name: Build sidecar (Node.js runtime)
+        run: bun packages/opencode/script/build-node.ts
+
+      - name: Build desktop (electron-vite)
+        working-directory: packages/ellamaka-desktop
+        run: bun run build
+
+      - name: Package desktop (electron-builder)
+        working-directory: packages/ellamaka-desktop
+        env:
+          OPENCODE_CHANNEL: ${{ github.event.inputs.channel || 'main' }}
+        run: bun run ${{ matrix.package_cmd }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: packages/ellamaka-desktop/dist
+          if-no-files-found: error
+
+  release:
+    needs: [version, build-desktop]
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka' && needs.version.outputs.release != ''
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - name: Download all desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate manifest, checksums, and release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node scripts/package-release.mjs manifest \
+            --archives-dir dist \
+            --version "$VERSION" \
+            --output-dir release-output \
+            --tag v"$VERSION" \
+            --base-url https://download.coursedao.com/ellamaka-desktop
+
+      - name: Upload binaries and metadata to Cloudflare R2
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          R2_URL="https://${R2_ENDPOINT}"
+
+          # Use s3api put-object (single PUT) instead of s3 cp (multipart).
+          # R2's multipart upload can silently corrupt objects: the stored
+          # bytes diverge from the uploaded data, while content-length
+          # metadata still reflects the original size. Single PUT avoids
+          # multipart entirely — S3 supports up to 5GB per single PUT.
+          #
+          # Delete-then-put: put-object overwrites, but a prior corrupted
+          # object (truncated body with stale content-length metadata) can
+          # leave residue. Deleting first ensures a clean object.
+          #
+          # Retry: R2 single PUT on large (~50-150MB) installers occasionally
+          # returns success yet stores a truncated object. Retry until the
+          # post-upload verify (against manifest hash) confirms integrity.
+          for f in dist/ellamaka-desktop-*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            content_type="application/octet-stream"
+            case "$name" in
+              *.dmg) content_type="application/x-apple-diskimage" ;;
+              *.zip) content_type="application/zip" ;;
+              *.exe) content_type="application/octet-stream" ;;
+              *.AppImage) content_type="application/octet-stream" ;;
+              *.deb) content_type="application/vnd.debian.binary-package" ;;
+              *.rpm) content_type="application/x-rpm" ;;
+            esac
+            key="ellamaka-desktop/v${VERSION}/${name}"
+            aws s3api delete-object \
+              --bucket wopal-release \
+              --key "$key" \
+              --endpoint-url ${R2_URL} >/dev/null 2>&1 || true
+            for attempt in 1 2 3; do
+              if aws s3api put-object \
+                --bucket wopal-release \
+                --key "$key" \
+                --body "$f" \
+                --content-type "$content_type" \
+                --endpoint-url ${R2_URL} >/dev/null; then
+                break
+              fi
+              echo "  put-object attempt $attempt failed for $name"
+              if [ "$attempt" -eq 3 ]; then
+                echo "ERROR: put-object failed after 3 attempts: $name"
+                exit 1
+              fi
+              sleep 5
+            done
+          done
+
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka-desktop/v${VERSION}/manifest.json" \
+            --body release-output/manifest.json \
+            --content-type "application/json" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka-desktop/v${VERSION}/checksums.txt" \
+            --body release-output/checksums.txt \
+            --content-type "text/plain" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          aws s3api put-object \
+            --bucket wopal-release \
+            --key "ellamaka-desktop/v${VERSION}/release-notes.md" \
+            --body release-output/release-notes.md \
+            --content-type "text/markdown" \
+            --endpoint-url ${R2_URL} >/dev/null
+
+          # electron-updater feed 文件（latest-*.yml）上传至 latest 别名路径。
+          # 注意：mac/win/linux 各自生成自己的 feed，release job 已将它们合并到 dist/。
+          for feed in latest-mac.yml latest.yml latest-linux.yml; do
+            if [ -f "dist/${feed}" ]; then
+              aws s3api put-object \
+                --bucket wopal-release \
+                --key "ellamaka-desktop/latest/${feed}" \
+                --body "dist/${feed}" \
+                --content-type "application/x-yaml" \
+                --endpoint-url ${R2_URL} >/dev/null
+              echo "  uploaded feed: ellamaka-desktop/latest/${feed}"
+            else
+              echo "  WARNING: feed not found, skipping: dist/${feed}"
+            fi
+          done
+
+          # Verify uploaded objects by downloading from R2 directly (not CDN).
+          # CDN may serve stale cached copies right after upload, causing false
+          # checksum mismatches. s3api get-object reads straight from R2 storage.
+          #
+          # CRITICAL: compare against the manifest's sha256/size, not the local
+          # dist file. The manifest is generated from the complete local file
+          # before upload; the local file could be mutated after manifest
+          # generation (e.g. truncated during put-object body read), making a
+          # local-vs-remote comparison a false positive when both are corrupted
+          # identically. Users install against the manifest hash — that is the
+          # authoritative source of truth.
+          echo "Verifying R2 uploads against manifest..."
+          VERIFY_DIR="$(mktemp -d)"
+          # Parse manifest.json: name -> sha256, name -> size
+          declare -A manifest_sha manifest_size
+          while IFS=$'\t' read -r mname msha msize; do
+            manifest_sha["$mname"]="$msha"
+            manifest_size["$mname"]="$msize"
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.sha256, a.size].join("\t"));
+          ')
+          for f in dist/ellamaka-desktop-*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            aws s3api get-object \
+              --bucket wopal-release \
+              --key "ellamaka-desktop/v${VERSION}/${name}" \
+              --endpoint-url ${R2_URL} \
+              "${VERIFY_DIR}/${name}" >/dev/null
+            remote_hash="$(sha256sum "${VERIFY_DIR}/${name}" | cut -d' ' -f1)"
+            remote_size="$(stat -c%s "${VERIFY_DIR}/${name}")"
+            expected_hash="${manifest_sha[$name]}"
+            expected_size="${manifest_size[$name]}"
+            if [ "$remote_hash" != "$expected_hash" ]; then
+              echo "ERROR: R2 checksum mismatch: $name"
+              echo "  manifest sha256: $expected_hash"
+              echo "  remote   sha256: $remote_hash"
+              echo "  R2 object does not match manifest. Re-run the workflow to retry."
+              exit 1
+            fi
+            if [ "$remote_size" != "$expected_size" ]; then
+              echo "ERROR: R2 size mismatch: $name"
+              echo "  manifest size: $expected_size"
+              echo "  remote   size: $remote_size"
+              echo "  R2 object is truncated. Re-run the workflow to retry."
+              exit 1
+            fi
+            echo "  OK: $name (sha256=$remote_hash size=$remote_size)"
+          done
+          rm -rf "$VERIFY_DIR"
+
+          echo "R2 upload complete for ellamaka-desktop v${VERSION}"
+
+      - name: Purge Cloudflare CDN cache
+        env:
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+          CLOUDFLARE_CACHE_PURGE_ZONE: ${{ secrets.CLOUDFLARE_CACHE_PURGE_ZONE }}
+        run: |
+          if [ -z "${CLOUDFLARE_CACHE_PURGE_TOKEN:-}" ] || [ -z "${CLOUDFLARE_CACHE_PURGE_ZONE:-}" ]; then
+            echo "WARNING: CLOUDFLARE_CACHE_PURGE_TOKEN or CLOUDFLARE_CACHE_PURGE_ZONE secret not set."
+            echo "Skipping CDN purge. CDN may serve stale files until TTL expires."
+            exit 0
+          fi
+
+          # Build purge URL list: latest alias + all versioned paths.
+          # When a version is re-released (same tag, new artifacts), the old
+          # files must be evicted from CDN edge caches or users will hit
+          # checksum mismatches.
+          PURGE_URLS=(
+            "https://download.coursedao.com/ellamaka-desktop/latest/latest-mac.yml"
+            "https://download.coursedao.com/ellamaka-desktop/latest/latest.yml"
+            "https://download.coursedao.com/ellamaka-desktop/latest/latest-linux.yml"
+            "https://download.coursedao.com/ellamaka-desktop/v${VERSION}/manifest.json"
+            "https://download.coursedao.com/ellamaka-desktop/v${VERSION}/checksums.txt"
+          )
+
+          # Add all artifact URLs from the manifest
+          while IFS= read -r url; do
+            [ -n "$url" ] && PURGE_URLS+=("$url")
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log(a.url);
+          ')
+
+          echo "Purging ${#PURGE_URLS[@]} URLs from Cloudflare CDN..."
+          printf '%s\n' "${PURGE_URLS[@]}"
+
+          # Cloudflare free plan allows up to 30 URLs per purge call
+          JSON_FILES=$(printf '"%s",' "${PURGE_URLS[@]}")
+          JSON_FILES="[${JSON_FILES%,}]"
+
+          HTTP_CODE=$(curl -s -o /tmp/purge-response.json -w "%{http_code}" \
+            -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"files\":${JSON_FILES}}")
+
+          echo "Purge API response (HTTP $HTTP_CODE):"
+          cat /tmp/purge-response.json
+          echo ""
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "WARNING: Cloudflare purge failed (HTTP $HTTP_CODE)."
+            echo "CDN may serve stale files until TTL expires."
+            exit 0
+          fi
+          echo "CDN purge complete for ellamaka-desktop v${VERSION}"
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            echo "## Ellamaka Desktop Release Distribution"
+            echo ""
+            echo "- R2 (CDN): https://download.coursedao.com/ellamaka-desktop/v${VERSION}/"
+            echo "- Updater feed (latest): https://download.coursedao.com/ellamaka-desktop/latest/"
+          } >> $GITHUB_STEP_SUMMARY

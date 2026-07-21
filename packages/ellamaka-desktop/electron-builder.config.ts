@@ -17,6 +17,15 @@ const channel = (() => {
 const getBase = (): Configuration => ({
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
   copyright: "Copyright © 2025 Ellamaka",
+  // Generic provider 指向 R2 latest 别名路径，electron-updater 运行时从该路径
+  // 拉取 feed 检测新版本。所有 channel 共享同一个 R2 feed 路径（channel 区别
+  // 只在 appId/productName，feed 路径相同），故放在 getBase() 而非各分支。
+  // 不走 GitHub Release（与 CLI canonical source 一致）。
+  publish: {
+    provider: "generic",
+    url: "https://download.coursedao.com/ellamaka-desktop/latest",
+    channel: "latest",
+  },
   directories: {
     output: "dist",
     buildResources: "resources",
