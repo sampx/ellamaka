@@ -208,7 +208,18 @@ service_running() {
   local service="$1" label port pid pgid stamp
   while IFS=' ' read -r label port pid pgid stamp; do
     [ -n "$pgid" ] || pgid="$(pgid_of "$pid")"
-    record_is_current "$label" "$pid" "$stamp" && group_running "$pgid" && return 0
+    if record_is_current "$label" "$pid" "$stamp" && group_running "$pgid"; then
+      return 0
+    fi
+    # Recorded PID may have drifted: `bun run dev` (the recorded parent) can
+    # exit while its `vite` child keeps listening on the port. Trust the port:
+    # if a process matching this service is still listening, the service is
+    # alive — refresh the record so stop/restart target the real listener
+    # instead of misreporting "not running" and orphaning the listener.
+    if listener_matches_service "$label" "$port"; then
+      write_record "$label" "$port" "$LISTENER_PID" "$LISTENER_PGID"
+      return 0
+    fi
   done < <(records_for_service "$service")
   return 1
 }
@@ -303,7 +314,13 @@ stop_service() {
 
   while IFS=' ' read -r label port pid pgid stamp; do
     [ -n "$pgid" ] || pgid="$(pgid_of "$pid")"
-    record_is_current "$label" "$pid" "$stamp" && group_running "$pgid" && append_unique "$pgid"
+    if record_is_current "$label" "$pid" "$stamp" && group_running "$pgid"; then
+      append_unique "$pgid"
+    elif listener_matches_service "$label" "$port"; then
+      # PID drifted (e.g. bun dead, vite child still listening) — kill the
+      # real listener's process group so stop actually reclaims the port.
+      append_unique "$LISTENER_PGID"
+    fi
   done < <(records_for_service "$service")
 
   if [ -z "$PROCESS_GROUPS" ]; then
@@ -386,6 +403,25 @@ record_listener() {
   [ -n "$pid" ] || return 1
   pgid="$(pgid_of "$pid")"
   write_record "$label" "$port" "$pid" "$pgid"
+}
+
+# Port-based fallback for drifted records: the recorded PID (e.g. `bun run dev`)
+# may be gone while a child process (`vite`) is still listening on the port.
+# Finds the actual listener on $2 and confirms it belongs to service $1 via
+# record_is_current's command check. Sets LISTENER_PID / LISTENER_PGID on match.
+listener_matches_service() {
+  LISTENER_PID=""
+  LISTENER_PGID=""
+  local label="$1" port="$2" pid pgid
+  [ "$port" != "-" ] || return 1
+  pid="$(listener_pid "$port")"
+  [ -n "$pid" ] || return 1
+  record_is_current "$label" "$pid" "" || return 1
+  pgid="$(pgid_of "$pid")"
+  [ -n "$pgid" ] || return 1
+  LISTENER_PID="$pid"
+  LISTENER_PGID="$pgid"
+  return 0
 }
 
 record_crashpads() {
