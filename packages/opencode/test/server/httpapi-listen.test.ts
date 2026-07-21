@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import net from "node:net"
+import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import * as Log from "@opencode-ai/core/util/log"
 import { Server } from "../../src/server/server"
@@ -301,6 +303,67 @@ describe("HttpApi Server.listen", () => {
     }
 
     expect(output).not.toContain("Sent HTTP response")
+  })
+
+  test("plugin client requests reuse the listening server instance", async () => {
+    await using tmp = await tmpdir({
+      init: async (directory) => {
+        const plugin = path.join(directory, "plugin.ts")
+        const initialized = path.join(directory, "initialized.txt")
+        const completed = path.join(directory, "completed.txt")
+        await Bun.write(
+          plugin,
+          [
+            "export default async function plugin(input) {",
+            `  await Bun.write(${JSON.stringify(initialized)}, "initialized")`,
+            "  queueMicrotask(async () => {",
+            "    try {",
+            "      await input.client.config.get()",
+            `      await Bun.write(${JSON.stringify(completed)}, "completed")`,
+            "    } catch (err) {",
+            `      await Bun.write(${JSON.stringify(completed)}, "error:" + (err?.message ?? String(err)))`,
+            "    }",
+            "  })",
+            "  return {}",
+            "}",
+            "",
+          ].join("\n"),
+        )
+        return { initialized, completed, plugin: pathToFileURL(plugin).href }
+      },
+    })
+    const previousDisable = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
+    const previousContent = process.env.OPENCODE_CONFIG_CONTENT
+    process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = "1"
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      $schema: "https://opencode.ai/config.json",
+      plugin: [tmp.extra.plugin],
+    })
+    let listener: Awaited<ReturnType<typeof startListener>> | undefined
+    try {
+      listener = await startListener()
+      const response = await fetch(new URL("/config", listener.url), {
+        headers: { authorization: authorization(), "x-opencode-directory": tmp.path },
+      })
+      expect(response.status).toBe(200)
+      await Bun.sleep(200)
+      expect(await Bun.file(tmp.extra.initialized).text()).toBe("initialized")
+      const completedFile = Bun.file(tmp.extra.completed)
+      await withTimeout(
+        (async () => {
+          while (!(await completedFile.exists())) await Bun.sleep(10)
+        })(),
+        5_000,
+        "timed out waiting for plugin client request",
+      )
+      expect(await completedFile.text()).toBe("completed")
+    } finally {
+      if (listener) await stop(listener, "timed out cleaning up plugin client listener").catch(() => undefined)
+      if (previousDisable === undefined) delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS
+      else process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = previousDisable
+      if (previousContent === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+      else process.env.OPENCODE_CONFIG_CONTENT = previousContent
+    }
   })
 
   test("port 0 prefers 4096 when free", async () => {
