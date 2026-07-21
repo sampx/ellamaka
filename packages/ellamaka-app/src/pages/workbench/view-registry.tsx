@@ -53,7 +53,14 @@ export type PanelViewDef = {
 export function createViewRegistry() {
   const views: PanelViewDef[] = []
   return {
-    register(def: PanelViewDef) { views.push(def) },
+    register(def: PanelViewDef) {
+      const idx = views.findIndex((v) => v.id === def.id)
+      if (idx !== -1) {
+        views[idx] = def
+      } else {
+        views.push(def)
+      }
+    },
     get(id: string): PanelViewDef | undefined { return views.find((v) => v.id === id) },
     all(): PanelViewDef[] { return views },
   }
@@ -70,6 +77,7 @@ const ViewRegistryContext = createSimpleContext({
   name: "ViewRegistry",
   init: () => {
     const registry = createViewRegistry()
+    registerDefaultViews(registry)
     _currentRegistry = registry
     return registry
   },
