@@ -12,6 +12,7 @@ import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { SpaceIcon } from "./session-tree-space"
+import { Spinner } from "@opencode-ai/ui/spinner"
 
 function PinIcon(props: { class?: string }) {
   return (
@@ -71,74 +72,34 @@ export function WorkbenchTitlebar() {
 
   const activePath = () => wb.activeTabPath
 
-  const checkSpaceBusy = (tabPath: string, tabName: string) => {
-    const isGeneral = tabPath === ""
-    const space = wb.spaceState(tabPath)
-    const candidateIds = new Set<string>()
+  const getTabForDirectory = (dirPath: string): string => {
+    const dirKey = pathKey(dirPath ?? "").toLowerCase()
+    if (!dirKey) return ""
+    if (dirKey === "general") return ""
 
-    if (space) {
-      for (const panel of space.panels) {
-        if (panel.slotState === "bound" && panel.boundSessionId) {
-          candidateIds.add(panel.boundSessionId)
-        }
+    for (const tab of wb.tabs) {
+      if (!tab.path) continue
+      const tabDir = pathKey(tab.path).toLowerCase()
+      if (dirKey === tabDir || dirKey.startsWith(tabDir + "/") || dirKey.startsWith(tabDir + "\\")) {
+        return tab.path
       }
     }
-
-    const sessions = [
-      ...(sessionStore.spaceSessions(tabName) ?? []),
-      ...(tabPath ? sessionStore.spaceSessions(tabPath) ?? [] : []),
-    ]
-    for (const s of sessions) {
-      candidateIds.add(s.id)
-    }
-
-    // 1. 优先校验已知会话 ID 是否处于 working 状态
-    for (const id of candidateIds) {
-      if (sync?.data.session_working(id)) return true
-      if (serverSync) {
-        for (const [, [childStore]] of Object.entries(serverSync.children)) {
-          if (childStore.session_working(id)) return true
-        }
-      }
-    }
-
-    // 2. 直接校验当前 Space 路径自身的 ChildStore 是否有 session_working
-    if (serverSync && tabPath !== undefined) {
-      const [spaceStore] = serverSync.child(tabPath, { bootstrap: false })
-      if (spaceStore && Object.keys(spaceStore.session_status).some((id) => spaceStore.session_working(id))) {
-        return true
-      }
-    }
-
-    // 3. 全量检索与该 Space 路径相匹配的所有 ChildStore
-    if (serverSync) {
-      const targetDir = pathKey(tabPath ?? "").toLowerCase()
-      for (const [rawKey, [childStore]] of Object.entries(serverSync.children)) {
-        const dirKey = pathKey(rawKey).toLowerCase()
-        const isMatch = isGeneral
-          ? (dirKey === "" || dirKey === "general")
-          : (dirKey === targetDir || dirKey.startsWith(targetDir) || targetDir.startsWith(dirKey))
-
-        if (isMatch) {
-          if (Object.keys(childStore.session_status).some((id) => childStore.session_working(id))) {
-            return true
-          }
-        }
-      }
-    }
-
-    return false
+    return ""
   }
 
-  const busyTabSet = createMemo(() => {
-    const set = new Set<string>()
-    for (const tab of wb.tabs) {
-      if (checkSpaceBusy(tab.path, tab.name)) {
-        set.add(tab.path)
+  const isSpaceWorking = (tabPath: string, _tabName?: string) => {
+    if (!serverSync) return false
+    const targetPath = tabPath ?? ""
+
+    for (const [rawKey, [childStore]] of Object.entries(serverSync.children)) {
+      if (getTabForDirectory(rawKey) === targetPath) {
+        if (Object.keys(childStore.session_status).some((id) => childStore.session_working(id))) {
+          return true
+        }
       }
     }
-    return set
-  })
+    return false
+  }
 
   const [showSpaceMenu, setShowSpaceMenu] = createSignal(false)
   const [tabMenu, setTabMenu] = createSignal<TabContextMenu>()
@@ -197,7 +158,6 @@ export function WorkbenchTitlebar() {
                 return false
               }
               const isPinned = isGeneral || !!tab.pinned
-              const isSpaceBusy = () => busyTabSet().has(tab.path)
 
               return (
                 <div
@@ -219,14 +179,9 @@ export function WorkbenchTitlebar() {
                   }}
                   onContextMenu={(e: MouseEvent) => handleTabContextMenu(e, tab)}
                 >
-                  {/* 活动指示器 / 激活状态高亮横线 (位于顶部 top-0，与 panel header 的 absolute top-0 inset-x-0 风格保持一致，使用设计系统语义色 bg-v2-icon-icon-accent，粗一点 h-[3px]/[3.5px]) */}
-                  <Show when={isActive() || isSpaceBusy()}>
-                    <div
-                      class={`absolute top-0 inset-x-0 transition-all bg-v2-icon-icon-accent ${
-                        isSpaceBusy() ? "h-[3.5px] animate-pulse" : "h-[3px]"
-                      }`}
-                      title={isSpaceBusy() ? t("workbench.topbar.spaceBusy") : undefined}
-                    />
+                  {/* 活动指示器 / 激活状态高亮横线 */}
+                  <Show when={isActive()}>
+                    <div class="absolute top-0 inset-x-0 transition-all bg-v2-icon-icon-accent h-[3px]" />
                   </Show>
 
                   {/* Pin 状态常驻标识 Icon */}
@@ -239,6 +194,11 @@ export function WorkbenchTitlebar() {
                   <span class="max-w-32 truncate text-center text-[13px] leading-none">
                     {isGeneral ? t("workbench.sidebar.sessions") : tab.name}
                   </span>
+
+                  {/* 空间内部会话后台运行动效 */}
+                  <Show when={isSpaceWorking(tab.path, tab.name)}>
+                    <Spinner class="size-3.5 shrink-0 text-v2-icon-icon-accent" />
+                  </Show>
 
                   {/* Actions for Space Tabs */}
                   <Show when={!isGeneral}>
