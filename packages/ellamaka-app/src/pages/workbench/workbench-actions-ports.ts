@@ -44,6 +44,19 @@ export type SessionServerSDK = {
   }
 }
 
+export async function probePtyRequest(
+  request: () => Promise<{ response: { status: number } }>,
+): Promise<"alive" | "dead" | "unknown"> {
+  try {
+    const result = await request()
+    if (result.response.status === 404) return "dead"
+    if (result.response.status >= 200 && result.response.status < 300) return "alive"
+    return "unknown"
+  } catch {
+    return "unknown"
+  }
+}
+
 export function buildStorePort(wb: WorkbenchState): WorkbenchActionStorePort {
   return {
     panel: (scope, panelID) => wb.spaceState(scopePath(scope))?.panels.find((panel) => panel.id === panelID),
@@ -96,14 +109,8 @@ export function buildPtyPort(
         sdk: sdkForDirectory(store.panel(scope, panelID)?.directory ?? scopePath(scope)),
         knownPtyId: knownPtyID,
       }),
-    isAlive: async ({ directory, ptyID }) => {
-      try {
-        await serverSDK.createClient({ directory, throwOnError: true }).pty.get({ ptyID })
-        return true
-      } catch {
-        return false
-      }
-    },
+    probe: ({ directory, ptyID }) =>
+      probePtyRequest(() => serverSDK.createClient({ directory, throwOnError: false }).pty.get({ ptyID })),
     forgetPty: ({ scope, panelID, kind }) => ptyManager.delete(scopePath(scope), panelID, kind),
     clearMemory: () => ptyManager.clearMemoryOnly(),
   }

@@ -3,6 +3,7 @@ import { scopeKey, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
 export type WorkbenchActionPtyKind = "tui" | "term" | "split"
+export type WorkbenchPtyProbeResult = "alive" | "dead" | "unknown"
 
 // Task 2 (O5): WorkbenchActionPanel is now a type alias for the canonical
 // WorkbenchPanel. The previous standalone type was a field subset duplicate.
@@ -76,7 +77,7 @@ export type WorkbenchActionPtyPort = {
     kind: WorkbenchActionPtyKind
     knownPtyID: string
   }) => Promise<void>
-  isAlive?: (input: { directory: string; ptyID: string }) => Promise<boolean>
+  probe?: (input: { directory: string; ptyID: string }) => Promise<WorkbenchPtyProbeResult>
   forgetPty?: (input: { scope: SpaceScope; panelID: string; kind: WorkbenchActionPtyKind }) => void
   clearMemory?: () => void
 }
@@ -645,16 +646,18 @@ export function createWorkbenchActions(input: {
         return { status: "stale", panelID: options.panelID }
       }
       const generation = nextGeneration(options.scope, options.panelID)
-      const alive = await (input.pty.isAlive?.({ directory: panel.directory, ptyID: options.ptyID }) ?? Promise.resolve(false))
+      const probe = await (input.pty.probe?.({ directory: panel.directory, ptyID: options.ptyID }) ?? Promise.resolve("unknown"))
       if (!isCurrent(options.scope, options.panelID, generation)) {
         return { status: "stale", panelID: options.panelID }
       }
-      if (alive) return { status: "unchanged", panelID: options.panelID }
+      if (probe !== "dead") return { status: "unchanged", panelID: options.panelID }
 
       input.pty.forgetPty?.({ scope: options.scope, panelID: options.panelID, kind: options.kind })
-      input.store.commitPanelPty(options.scope, options.panelID, options.kind, undefined)
-      if (options.kind === "tui") input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
-      if (options.kind === "split") input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
+      batch(() => {
+        if (options.kind === "tui") input.store.commitPanelMode?.(options.scope, options.panelID, "chat")
+        if (options.kind === "split") input.store.commitSplitTerminal?.(options.scope, options.panelID, false)
+        input.store.commitPanelPty(options.scope, options.panelID, options.kind, undefined)
+      })
       return { status: "committed", panelID: options.panelID }
     },
     clearAllPtyForServerChange() {

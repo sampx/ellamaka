@@ -24,6 +24,7 @@ function createStorePort(options?: { withPty?: boolean }) {
   }
   const commits: string[] = []
   const ptys: Array<string | undefined> = []
+  const transitions: string[] = []
   const store: WorkbenchActionStorePort = {
     panel: (_scope, panelID) => (panel.id === panelID ? panel : undefined),
     panels: () => [panel],
@@ -59,6 +60,7 @@ function createStorePort(options?: { withPty?: boolean }) {
       return true
     },
     commitPanelPty: (_scope, _panelID, kind, ptyID) => {
+      transitions.push(`pty:${kind}:${ptyID ?? "cleared"}`)
       ptys.push(ptyID)
       panel = {
         ...panel,
@@ -67,11 +69,17 @@ function createStorePort(options?: { withPty?: boolean }) {
         splitPtyId: kind === "split" ? ptyID : panel.splitPtyId,
       }
     },
-    commitPanelMode: (_scope, _panelID, mode) => { panel = { ...panel, viewMode: mode } },
-    commitSplitTerminal: (_scope, _panelID, splitTerminal) => { panel = { ...panel, splitTerminal } },
+    commitPanelMode: (_scope, _panelID, mode) => {
+      transitions.push(`mode:${mode}`)
+      panel = { ...panel, viewMode: mode }
+    },
+    commitSplitTerminal: (_scope, _panelID, splitTerminal) => {
+      transitions.push(`split:${splitTerminal}`)
+      panel = { ...panel, splitTerminal }
+    },
     spacePaths: () => [],
   }
-  return { store, commits, ptys, panel: () => panel }
+  return { store, commits, ptys, transitions, panel: () => panel }
 }
 
 const scope = spaceScope("Space A", "/fixtures/workspaces/space-a")
@@ -381,7 +389,7 @@ describe("WorkbenchActions", () => {
         },
         ensure: async ({ create }) => create(),
         disposePty: async () => {},
-        isAlive: async () => false,
+        probe: async () => "dead",
         forgetPty: () => {},
       },
       session: unusedSessionPort,
@@ -599,7 +607,7 @@ describe("WorkbenchActions", () => {
         disposePanel: async () => {},
         ensure: async ({ create }) => create(),
         disposePty: async () => {},
-        isAlive: async () => true,
+        probe: async () => "alive",
         forgetPty: ({ kind }) => { forgotten.push(kind) },
       },
       session: unusedSessionPort,
@@ -615,10 +623,39 @@ describe("WorkbenchActions", () => {
     expect(state.panel().tuiPtyId).toBe("pty-existing")
   })
 
+  test("preserves a split PTY while its liveness is unknown during a transport outage", async () => {
+    const state = createStorePort()
+    state.store.commitPanelPty(scope, state.panel().id, "split", "pty-split")
+    state.store.commitSplitTerminal?.(scope, state.panel().id, true)
+    state.transitions.length = 0
+    const actions = createWorkbenchActions({
+      store: state.store,
+      pty: {
+        disposePanel: async () => {},
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+        probe: async () => "unknown",
+        forgetPty: () => { throw new Error("an unknown PTY must not be forgotten") },
+      },
+      session: unusedSessionPort,
+    })
+
+    expect(await actions.recoverPanelPty({
+      scope,
+      panelID: state.panel().id,
+      kind: "split",
+      ptyID: "pty-split",
+    })).toEqual({ status: "unchanged", panelID: "panel-space-a" })
+    expect(state.transitions).toEqual([])
+    expect(state.panel().splitPtyId).toBe("pty-split")
+    expect(state.panel().splitTerminal).toBeTrue()
+  })
+
   test("clears an exited split PTY and its layout through one Action", async () => {
     const state = createStorePort()
     state.store.commitPanelPty(scope, state.panel().id, "split", "pty-split")
     state.store.commitSplitTerminal?.(scope, state.panel().id, true)
+    state.transitions.length = 0
     const forgotten: string[] = []
     const actions = createWorkbenchActions({
       store: state.store,
@@ -626,7 +663,7 @@ describe("WorkbenchActions", () => {
         disposePanel: async () => {},
         ensure: async ({ create }) => create(),
         disposePty: async () => {},
-        isAlive: async () => false,
+        probe: async () => "dead",
         forgetPty: ({ kind }) => { forgotten.push(kind) },
       },
       session: unusedSessionPort,
@@ -641,6 +678,7 @@ describe("WorkbenchActions", () => {
     expect(forgotten).toEqual(["split"])
     expect(state.panel().splitPtyId).toBeUndefined()
     expect(state.panel().splitTerminal).toBeFalse()
+    expect(state.transitions).toEqual(["split:false", "pty:split:cleared"])
   })
 })
 
@@ -1256,7 +1294,7 @@ describe("WorkbenchActions §5.6 additional coverage", () => {
         disposePanel: async () => {},
         ensure: async ({ create }) => create(),
         disposePty: async () => {},
-        isAlive: async () => false,
+        probe: async () => "dead",
         forgetPty: ({ kind }) => { forgotten.push(kind) },
       },
       session: unusedSessionPort,

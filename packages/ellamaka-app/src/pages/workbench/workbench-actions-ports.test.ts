@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { buildSessionPort, type SessionServerSDK } from "./workbench-actions-ports"
+import { buildSessionPort, probePtyRequest, type SessionServerSDK } from "./workbench-actions-ports"
 import { createSessionProjection } from "./session-store"
 
 test("renaming a session patches the projection without invalidating the tree", async () => {
@@ -85,4 +85,24 @@ test("creates a Space session with a request ID and canonical relative directory
     target: { type: "space", spacePath: "/fixtures/space-a", directory: "project" },
   })
   expect(session.type).toBe("tui")
+})
+
+test("distinguishes a missing PTY from a transient probe transport failure", async () => {
+  const results = [
+    { response: { status: 404 } },
+    new TypeError("Failed to fetch"),
+    { response: { status: 200 } },
+    { response: { status: 503 } },
+  ]
+  const request = async () => {
+    const result = results.shift()
+    if (result instanceof Error) throw result
+    if (!result) throw new Error("missing fixture result")
+    return result
+  }
+
+  expect(await probePtyRequest(request)).toBe("dead")
+  expect(await probePtyRequest(request)).toBe("unknown")
+  expect(await probePtyRequest(request)).toBe("alive")
+  expect(await probePtyRequest(request)).toBe("unknown")
 })
