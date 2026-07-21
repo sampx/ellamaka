@@ -49,6 +49,7 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 - 上游共享代码优先通过 adapter、callback 或小型注入点扩展，禁止复制整段 Session、命令、Dialog 或导航流程。
 - SSE 事件处理：`server.connected` 仅恢复传输，**不触发全局刷新**；只有 `global.disposed` 触发全量对账。改 SSE 事件处理时必须验证：重连后 UI 状态保留、`global.disposed` 仍触发全量刷新。
 - SSE 事件按类型分级处理：高频属性变更（标题、消息流）由对应组件局部处理；结构性事件（`session.created`/`session.deleted`/带 `timeArchived` 的 `session.updated`）才触发 SessionTree 刷新。禁止用 SSE 事件触发无关 Panel 或树级重载。
+- Canvas 渲染必须使用整数 `devicePixelRatio`。ghostty-web（及任何 `canvas.width = cssSize * dpr` + `ctx.scale(dpr)` 模式的 canvas 渲染器）在非整数 dpr 下，浏览器会把 canvas 物理像素截断为整数，而 context scale 仍用原始小数，导致合成器对 canvas 纹理做亚像素重采样，产生按字符单元格周期排列的网格条纹。Electron 窗口缩放（如 110%）会使 `window.devicePixelRatio = nativeDpr × zoomFactor` 变成非整数（如 2.2），必然触发此问题。`Terminal` 组件已对 `renderer.devicePixelRatio` 做整数化处理，禁止移除该修复；新增任何 canvas 渲染路径（直接用 `<canvas>` 或引入新终端渲染库）同样必须将传给渲染器的 dpr 取整。
 
 ## 5. 工作台强制边界
 
@@ -145,6 +146,8 @@ UI 组件 -> WorkbenchActions -> Store / PtyManager / directory-bound SDK / Proj
 
 - `view-registry` 中 TUI 视图的 `createEffect` 守卫只依赖 `ctx.panel.viewMode`，禁止 AND 多个状态字段。`viewMode !== "tui"` 时立即 return。
 - 修改 `viewMode` 和 `tuiPtyId` 必须在同一个 SolidJS `batch` 内完成，且**先切 `viewMode` 到 `chat` 再清 `tuiPtyId`**。反过来会触发 effect 在中间状态（viewMode=tui + tuiPtyId=undefined）创建新 PTY。
+- 修改 `splitTerminal` 和 `splitPtyId` 同样必须在一个 `batch` 内完成，且**先关闭 `splitTerminal` 再清 `splitPtyId`**，禁止让创建 effect 观察到 `splitTerminal=true + splitPtyId=undefined`。
+- PTY 断连探测必须区分 `alive | dead | unknown`：只有服务端明确返回 404 才能判定 `dead` 并清状态；`Failed to fetch`、超时和其他传输错误一律视为 `unknown`，保留 PTY ID，等待 Terminal 重连或 sidecar generation 对账。
 - TUI 进程正常退出场景：后端 `proc.onExit` 已自动清理 session，前端 `exitTui` **不发 DELETE 请求**，只清本地状态（viewMode + tuiPtyId + ptyManager 内存），避免 404 PtyNotFoundError。
 - 用户主动关闭场景（`closePanel`/`unbindPanel`）：先同步清 PTY 状态（切 chat + 清 tui/term/split 三个 ptyId + 关 split terminal），再 `await disposePanel`，最后 `removePanel`/`commitSessionUnbinding`。先清状态让 effect 守卫提前 return，避免 await 期间触发 PTY 重建。
 - PTY dispose 对 404 PtyNotFoundError 视为幂等成功（后端已清理），仍清本地状态，不报错。
@@ -182,6 +185,8 @@ Workbench Chat 的模型选择按 Session 隔离。用户显式选择是当前 S
 - **离线输入隔离**：`runtime.status === "offline"` 时，Shell 在顶层显示连接保护遮罩并将工作台表面设为 `inert`，阻断所有用户输入。恢复连接后自动解除隔离并保留当前现场。
 - **错误不抛 ErrorBoundary**：局部非阻塞错误（如 `locations` 接口拉取失败）严禁抛出至面板 ErrorBoundary 导致崩溃卸载。错误统一进入诊断队列，由状态栏居中显示并提供重试/清除入口。
 - **PTY 资源键**：PTY 由 `spacePath + panelId + resourceKind`（`tui`/`term`/`split`）唯一标识。PTY ID 作为重连提示持久化，但进程存活真相归 sidecar PTY Session Registry，前端使用前必须探测。
+- **Canvas 网格缝隙补偿**：Ghostty 在分数 WebView 缩放下逐行、逐格填充会暴露透明像素缝。补偿必须集中在 `terminal-scrollbar.ts` 的 Renderer adapter 中，仅向右/下覆盖一个物理像素；禁止用全局背景纹理、Panel CSS 或写死 DPR 掩盖。
+- **终端 IME 预编辑**：Ghostty 的隐藏 textarea 只负责接收输入和定位候选窗；composition 期间的拼音等 preedit 文本必须由 `<Terminal>` 的光标锚定 overlay 显示，并在 `compositionend` / `blur` 清除。不得解除 textarea 的裁切后直接把它当可见编辑器。
 - **单 Tab 互斥**：`WorkbenchSingletonGuard` 通过 Web Locks API 获取独占锁，第二个 Tab 打开时显示提示页不初始化。Tab 关闭时浏览器自动释放锁。
 
 ### 5.9 测试与验收证据

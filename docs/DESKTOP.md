@@ -127,7 +127,7 @@ PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subs
 | PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前 sidecar 运行期 |
 | Sidecar 连接凭据 | Electron Main Process | 当前应用进程 |
 
-`localStorage` 继续负责 Workbench 布局，并将 PTY ID 作为重连提示保存。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。Renderer 每次使用持久化 PTY ID 前都通过 `ptyManager.ensure()` 探测；存活则复用，已回收则清除旧 ID 并创建新 PTY。
+`localStorage` 继续负责 Workbench 布局，并将 PTY ID 作为重连提示保存。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。Renderer 每次使用持久化 PTY ID 前都通过 `ptyManager.ensure()` 探测；2xx 表示存活并复用，明确 404 表示已回收并清除旧 ID，传输失败或非权威响应表示状态未知并保留旧 ID。只有 `dead` 结果才能触发 PTY 重建。
 
 ## 5. PTY 断连宽限模型
 
@@ -167,6 +167,8 @@ PTY 连接建立后，Renderer 刷新不会改变其后台进程所有权。
 6. Renderer 使用 `ptyID + directory` 探测已有 PTY。
 7. 探测成功后重新建立 WebSocket 连接，sidecar 取消回收任务。
 8. 已失效的 PTY 从布局缓存中清除，并按需创建新 PTY。
+
+若第 6 步发生 `Failed to fetch`、超时或其他传输错误，Renderer 保留 PTY ID 和 Panel 布局并继续重连；不得在 sidecar 启动窗口内把未知状态误判为 PTY 已失效。
 
 刷新前后复用同一个 PTY ID 和操作系统进程。
 
@@ -391,11 +393,11 @@ restartSidecar: () => Promise<void>
 
 每次 sidecar 成功 spawn（健康检查通过）时，`SidecarSupervisor` 的 generation 计数器 +1。generation 通过 `SidecarRuntimeState` 传递给 Renderer，并注入到 `ServerConnection.Sidecar.generation` 字段。
 
-### 16.2 server.key 变化
+### 16.2 sidecar 连接身份变化
 
-`ServerConnection.key()` 对 sidecar 类型使用 `{url}#gen{N}` 格式。generation 变化 → `server.key` 变化 → 触发 Workbench 的连锁反应：
+Desktop 的选择键保持稳定别名 `sidecar`，不能用于判断 sidecar 是否重启。`ServerConnection.key(server.current)` 对实际 sidecar 连接使用 `{url}#gen{N}` 格式。Renderer 在 `lost` / `restarting` 期间保留最后一次 ready 连接及其 generation；只有新的 ready generation 到达后，Workbench 才观察到连接身份变化并触发连锁反应：
 
-1. `workbench-runtime.tsx` 的 `createEffect` 监听到 `server.key` 变化（跳过首次）
+1. `workbench-sidecar-cleanup.tsx` 的 `createEffect` 监听到实际连接身份变化（跳过首次）
 2. 调用 `WorkbenchActions.clearAllPtyForServerChange()`
 3. 清空所有 Panel 的 `tuiPtyId`/`termPtyId`/`splitPtyId`
 4. TUI 视图切回 Chat

@@ -162,17 +162,32 @@ Workbench 内嵌终端由 `ghostty-web` 的 canvas 渲染。canvas 只能按完�
 3. 终端尺寸必须从容器实际 `clientWidth` / `clientHeight` 扣除 CSS padding 后计算，不允许写死字符宽高、滚动条宽度或补偿像素。
 4. **TUI（`isTui`）采用 full-bleed 策略**：列数与行数向上取整（`ceil`）到完整字符网格。canvas 的宽高始终覆盖容器；超出边缘的不足一格部分由容器裁切，右侧和底部不留下任何正向余量。
 5. **普通 terminal 和 Split Terminal 采用 strict 策略**：列数与行数向下取整（`floor`），保证所有字符格完整可见。该策略不继承 TUI 的裁切行为。
+6. Electron WebView 缩放或显示器缩放可能让字符格边界落在分数物理像素上。`ghostty-web` 逐行清底色、逐格填背景时，必须在 Renderer adapter 中向右和向下多覆盖一个物理像素；相邻行/格随后覆盖重叠区，避免透明 canvas 形成整屏横竖纹理。补偿不得修改 PTY 字符网格尺寸。
 
 用户也可以在普通 terminal 或 Split Terminal 内手动启动 `ellamaka`。此时该终端不能仅凭 alternate screen 判断为 TUI（vim、less 等也会使用 alternate screen）；必须同时满足：TUI 通过 OSC 标题将终端标为 `Ellamaka` / `ellamaka | …`，且 `ghostty-web` 当前 buffer 为 alternate。满足后动态切换为 full-bleed，并把滚轮映射为 TUI 的 `Ctrl+Alt+Y` / `Ctrl+Alt+E` 消息历史滚动命令；退出 TUI 切回 normal buffer 后立即恢复普通 terminal 行为。
 
-该规则集中在 `src/components/terminal-scrollbar.ts`，并由 `src/components/terminal.tsx` 对 `FitAddon.proposeDimensions()` 注入。禁止在 Panel、TUI 视图或主题 CSS 中重复实现尺寸补偿。
+该规则集中在 `src/components/terminal-scrollbar.ts`，并由 `src/components/terminal.tsx` 对 `FitAddon.proposeDimensions()` 和 Ghostty Renderer 注入。适配器必须先检查私有 Renderer 的运行时形状，依赖升级后形状不匹配时安全跳过。禁止在 Panel、TUI 视图或主题 CSS 中重复实现尺寸补偿。
 
 **回归验收**：
 
 - 打开 TUI 后，Panel 的右边和底边不得出现由字符网格或 canvas 滚动条预留造成的可见空带。
 - 改变浏览器窗口、Panel 列宽、Split Terminal 高度后，TUI 仍贴齐右边与底边。
+- 改变 Electron zoom 或在非整数缩放显示器上运行时，统一背景区域不得出现字符格大小的横竖缝隙。
 - 普通 terminal 与 Split Terminal 不出现横向/纵向滚动条，也不因 TUI 的满铺规则裁切字符行。
-- 单元测试至少覆盖：默认滚动条预留被移除、TUI 在小于半格余量时仍向上补足一行/列，以及普通 terminal 保持向下取整。
+- 单元测试至少覆盖：默认滚动条预留被移除、TUI 在小于半格余量时仍向上补足一行/列、普通 terminal 保持向下取整，以及分数 DPR 只多覆盖一个物理像素。
+
+### 4.5 终端中文输入法预编辑
+
+`ghostty-web` 通过隐藏 textarea 接收键盘和 composition 事件；其默认样式使用 `clip-path` 完全裁切，因此系统候选窗可以定位、`compositionend` 也能把汉字发送给 PTY，但 composition 期间的拼音等 preedit 文本不会自动出现在 Canvas 上。
+
+`<Terminal>` 必须把隐藏 textarea 与当前光标字符格同步定位，并在同一位置维护独立的 preedit overlay：
+
+1. `compositionstart` 进入预编辑，`compositionupdate` 显示浏览器提供的 `event.data`；不得提前把 preedit 字符发送到 PTY。
+2. `compositionend` 由 Ghostty 的输入处理器提交最终文本，overlay 立即清空；textarea `blur` 时也必须清空，避免残留。
+3. overlay 使用当前终端字体、前景色、背景色和字符行高，允许文本横向超出一个字符格，但不参与布局和鼠标命中。
+4. textarea 继续保持隐藏和裁切，只用于焦点、输入事件及系统候选窗锚点；不得依赖浏览器显示被裁切 textarea 的内容。
+
+回归测试至少覆盖 composition 的 start → update → end 状态序列以及 blur 清理。桌面端人工验收需确认：输入拼音时可见 preedit，候选窗跟随终端光标，选词后只向 TUI 提交一次最终汉字。
 
 ---
 
@@ -248,7 +263,7 @@ Renderer 中的 PTY 关联由 `pty-manager.tsx` 统一管理，后台进程生�
 | `delete()` | 从 Renderer 内存缓存移除 PTY 关联。该操作只管理前端引用，不把普通 WebSocket 断连解释为进程销毁。 |
 | `disposePty()` / `disposePanel()` / `disposeSpace()` | 用户显式关闭 PTY、Panel 或 Space 时立即请求 sidecar 终止对应进程，并清除 `ptyDirectories` 与持久化 PTY ID。 |
 
-**探测机制**：PTY Manager 在 `ensure()` 时，若持久化状态中存在 PTY ID，先向服务端发起探测请求。探测成功 → 复用，TUI 终端的滚动位置、当前面板等本地状态完整保留。探测失败（404 或超时）→ 视为已死，创建新 PTY 并更新持久化 ID。
+**探测机制**：PTY Manager 在 `ensure()` 或 Terminal 断连恢复时，若持久化状态中存在 PTY ID，先向服务端发起探测请求。结果分为三态：2xx → `alive` 并复用；明确 404 → `dead`，清除旧 ID 并按需创建；`Failed to fetch`、超时和其他非权威响应 → `unknown`，保留 PTY ID 与布局，等待传输重连或 sidecar generation 对账。禁止把 transport failure 当作 PTY 进程退出。
 
 **PTY 真实目录追踪**：PTY 的 `x-opencode-directory` routing header 必须指向 PTY 在服务端的实际 cwd（如 `session.directory`），而非 workbench 的 spacePath（如 General space 的 `""`）。`ptyDirectories` Map 在 `ensure()` 时记录 `ptyId → cwd`，所有 DELETE 操作优先使用该映射的值。
 
@@ -285,7 +300,7 @@ WebSocket 连接关闭与 PTY 进程退出是两个独立事件。前端先确�
 - **瞬时断连**：刷新、Renderer 重载或短暂网络中断只关闭 WebSocket。前端保留 PTY ID，sidecar 进入 Grace，Terminal 在宽限期内重新连接原 PTY。
 - **进程退出**：用户在 TUI 或 Shell 中输入 `exit` 后，sidecar 发布 `pty.exited` / `pty.deleted` 并从 Session Registry 删除 PTY。前端探测得到 404 后清除 PTY ID，并将 TUI 主视图回退到 `chat`。
 - **连接关闭处理**：`<Terminal>` 的普通 `onClose` 不直接调用 `pty.remove`。它进入断连状态并触发探测或重连；只有确认 PTY 已退出时才清理持久化关联。
-- **原子状态回退**：确认 PTY 已退出后，前端通过 SolidJS `batch` 同步清除本地信号、PTY Manager 缓存和 Panel PTY ID，再更新视图模式，避免中间状态触发重复创建。
+- **原子状态回退**：确认 PTY 已退出后，前端先清 PTY Manager 缓存，再通过 SolidJS `batch` 提交布局守卫与 PTY ID。TUI 必须先切 `viewMode=chat` 再清 `tuiPtyId`；Split Terminal 必须先设 `splitTerminal=false` 再清 `splitPtyId`，避免创建 effect 观察到中间状态并抢跑创建新 PTY。
 - **组件 Keyed 实例化隔离**：终端 `<Show>` 使用 `keyed`。PTY ID 变化时卸载旧 Terminal 实例并创建新实例，防止 WebSocket 与终端对象跨 PTY 复用。
 
 > **开发规则**：effect 守卫、action 顺序、DELETE 幂等性等实现约束见 `packages/ellamaka-app/AGENTS.md` §5.6。
