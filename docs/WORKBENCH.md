@@ -373,9 +373,9 @@ Panel 绑定只能由显式的用户关闭/替换操作、服务器 `session.del
 Statusbar 实现集中于 `status-bar.tsx`、`status-bar-segments.ts` 与 `status-bar-diagnostics.tsx`，采用响应式三分区结构：
 
 - **左区（元数据层级链）**：由 `getStatusBarSegments` 动态算出当前激活 Panel 的工作现场元数据层级链。
-  - **格式**：`空间名 / P{激活面板序号}/{面板总数} / 会话标题 / 工作路径`
-  - 各层级段用斜杠 `/` (`text-v2-text-text-faint`) 分隔。工作路径（`panel.directory`）去除首字符 `/` 以平滑融入链条，悬停时通过 HTML `title` 属性呈现绝对路径。
-  - 若 `activePanelID` 未激活，仅展示 `空间名`；未绑定 Session，隐藏 Session 段。
+  - **格式**：`P{激活面板序号}/{面板总数} / 会话标题`
+  - 各层级段用斜杠 `/` (`text-v2-text-text-faint`) 分隔。
+  - 若未绑定 Session，仅展示 `P{激活面板序号}/{面板总数}`。
 - **中区（居中异常诊断与提示中心 `StatusBarDiagnosticsCenter`）**：
   - **定位与安全防护**：采用绝对居中定位 (`absolute left-1/2 -translate-x-1/2`)。只读订阅全局消息队列 `wb.diagnostics`，防范冒泡导致面板 ErrorBoundary 卸载。
   - **缺省淡出提示**：无消息时，前 5 秒呈现默认引导文本（“提示：双击会话或拖拽会话到面板中即可在工作台打开”），5 秒后自动淡出清空。

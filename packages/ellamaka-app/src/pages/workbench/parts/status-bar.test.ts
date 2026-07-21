@@ -2,19 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { getStatusBarSegments } from "./status-bar-segments"
 
 describe("getStatusBarSegments", () => {
-  test("returns space name segment only when activePanelID is undefined", () => {
+  test("returns empty array when activePanelID is undefined", () => {
     const segments = getStatusBarSegments({
       spaceName: "main",
       activePanelID: undefined,
       panels: [],
       getSessionTitle: () => undefined,
     })
-    expect(segments).toEqual([
-      { type: "space", text: "main" }
-    ])
+    expect(segments).toEqual([])
   })
 
-  test("returns space name segment only when active panel is not found in panels list", () => {
+  test("returns empty array when active panel is not found in panels list", () => {
     const segments = getStatusBarSegments({
       spaceName: "main",
       activePanelID: "p-missing",
@@ -23,12 +21,10 @@ describe("getStatusBarSegments", () => {
       ],
       getSessionTitle: () => undefined,
     })
-    expect(segments).toEqual([
-      { type: "space", text: "main" }
-    ])
+    expect(segments).toEqual([])
   })
 
-  test("returns space, panel index and formatted path segments for empty slot panel", () => {
+  test("returns panel index segment for empty slot panel", () => {
     const segments = getStatusBarSegments({
       spaceName: "main",
       activePanelID: "p-2",
@@ -39,13 +35,11 @@ describe("getStatusBarSegments", () => {
       getSessionTitle: () => undefined,
     })
     expect(segments).toEqual([
-      { type: "space", text: "main" },
-      { type: "panel", text: "P2/2" },
-      { type: "path", text: "workspace/main/sub" }
+      { type: "panel", text: "P2/2" }
     ])
   })
 
-  test("returns space, panel, session title and formatted path segments if bound and session title exists", () => {
+  test("returns panel and session title segments if bound and session title exists", () => {
     const getSessionTitle = (id: string) => {
       if (id === "ses-1") return "Fix CSS Bug"
       return undefined
@@ -60,14 +54,12 @@ describe("getStatusBarSegments", () => {
       getSessionTitle,
     })
     expect(segments).toEqual([
-      { type: "space", text: "General" },
       { type: "panel", text: "P1/1" },
-      { type: "session", text: "Fix CSS Bug" },
-      { type: "path", text: "workspace/general" }
+      { type: "session", text: "Fix CSS Bug" }
     ])
   })
 
-  test("returns space, panel and formatted path segments if bound but session title is missing", () => {
+  test("returns panel segment if bound but session title is missing", () => {
     const segments = getStatusBarSegments({
       spaceName: "General",
       activePanelID: "p-1",
@@ -77,9 +69,7 @@ describe("getStatusBarSegments", () => {
       getSessionTitle: () => undefined,
     })
     expect(segments).toEqual([
-      { type: "space", text: "General" },
-      { type: "panel", text: "P1/1" },
-      { type: "path", text: "workspace/general" }
+      { type: "panel", text: "P1/1" }
     ])
   })
 })

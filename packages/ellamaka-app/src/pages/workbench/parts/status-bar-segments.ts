@@ -16,11 +16,8 @@ export type StatusBarMetadataInput = {
 }
 
 export function getStatusBarSegments(input: StatusBarMetadataInput): StatusBarSegment[] {
-  const { spaceName, activePanelID, panels, getSessionTitle } = input
+  const { activePanelID, panels, getSessionTitle } = input
   const segments: StatusBarSegment[] = []
-  if (!spaceName) return segments
-
-  segments.push({ type: "space", text: spaceName })
 
   if (!activePanelID) return segments
   const idx = panels.findIndex((panel) => panel.id === activePanelID)
@@ -35,13 +32,6 @@ export function getStatusBarSegments(input: StatusBarMetadataInput): StatusBarSe
   if (panel.slotState === "bound" && panel.boundSessionId) {
     const title = getSessionTitle(panel.boundSessionId)
     if (title) segments.push({ type: "session", text: title })
-  }
-
-  if (panel.directory) {
-    segments.push({
-      type: "path",
-      text: panel.directory.startsWith("/") ? panel.directory.slice(1) : panel.directory,
-    })
   }
 
   return segments
