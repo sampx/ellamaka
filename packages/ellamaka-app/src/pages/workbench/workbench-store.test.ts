@@ -320,6 +320,21 @@ describe("WorkbenchStore hydrate/migrate", () => {
     expect(store.tabs).toHaveLength(1)
   })
 
+  test("clears space state when space is explicitly removed and opens fresh empty panel next time", () => {
+    const store = createWorkbenchStore(fixture())
+
+    expect(store.spaces["/fixtures/space-a"]).toBeDefined()
+    expect(store.removeSpace("/fixtures/space-a")).toBe(true)
+
+    // Space state must be deleted from spaces map on explicit removeSpace
+    expect(store.spaces["/fixtures/space-a"]).toBeUndefined()
+
+    // When opening space again, ensureSpace initializes a clean empty panel
+    store.ensureSpace("/fixtures/space-a")
+    expect(store.spaces["/fixtures/space-a"]?.panels).toHaveLength(1)
+    expect(store.spaces["/fixtures/space-a"]?.panels[0].slotState).toBe("empty")
+  })
+
   test("closes other tabs and closes right tabs while preserving pinned and general tabs", () => {
     const store = createWorkbenchStore({
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },

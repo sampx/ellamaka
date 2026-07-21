@@ -392,13 +392,15 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function removeSpace(path: string) {
-    if (!store.spaces[path]) return false
+    if (!store.spaces[path] && !store.tabs.some((t) => t.path === path)) return false
     const tab = store.tabs.find((candidate) => candidate.path === path)
     batch(() => {
       if (tab) closeTab(tab.path)
-      setStore("spaces", produce((spaces) => {
-        delete spaces[path]
-      }))
+      if (store.spaces[path]) {
+        setStore("spaces", produce((spaces) => {
+          delete spaces[path]
+        }))
+      }
     })
     return true
   }

@@ -11,26 +11,9 @@ import { DialogCloseTab } from "./workspace"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
+import { SpaceIcon } from "./session-tree-space"
 
 function PinIcon(props: { class?: string }) {
-  return (
-    <svg
-      class={props.class ?? "size-3 shrink-0"}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <line x1="12" y1="17" x2="12" y2="22" />
-      <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.55A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.21L5.8 13.97A2 2 0 0 0 5 15.24V17z" />
-    </svg>
-  )
-}
-
-// 专属空间 (Space / Workspace) 图形 Icon
-function SpaceIcon(props: { class?: string }) {
   return (
     <svg
       class={props.class ?? "size-3.5"}
@@ -41,9 +24,8 @@ function SpaceIcon(props: { class?: string }) {
       stroke-linecap="round"
       stroke-linejoin="round"
     >
-      <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" fill-opacity="0.15" />
-      <path d="M2 17l10 5 10-5" />
-      <path d="M2 12l10 5 10-5" />
+      <line x1="12" y1="17" x2="12" y2="22" />
+      <path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.55A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.21L5.8 13.97A2 2 0 0 0 5 15.24V17z" />
     </svg>
   )
 }
@@ -222,10 +204,10 @@ export function WorkbenchTitlebar() {
                   role="tab"
                   tabIndex={0}
                   aria-selected={isActive()}
-                  class={`group relative flex items-center justify-center gap-1.5 h-full px-2.5 text-12-regular transition-all cursor-pointer shrink-0 ${
+                  class={`group relative flex items-center justify-center gap-1.5 h-full px-3 transition-all cursor-pointer shrink-0 ${
                     isActive()
                       ? "text-v2-text-text-strong font-semibold"
-                      : "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover"
+                      : "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover font-medium"
                   }`}
                   style={{ "-webkit-app-region": "no-drag" }}
                   onClick={() => wb.setActive(tab.path)}
@@ -250,11 +232,11 @@ export function WorkbenchTitlebar() {
                   {/* Pin 状态常驻标识 Icon */}
                   <Show when={isPinned}>
                     <span class="text-v2-icon-icon-accent shrink-0 flex items-center" title={t(isGeneral ? "workbench.topbar.generalPinned" : "workbench.topbar.tabPinned")}>
-                      <PinIcon class="size-3" />
+                      <PinIcon class="size-3.5" />
                     </span>
                   </Show>
 
-                  <span class="max-w-28 truncate text-center text-12-regular">
+                  <span class="max-w-32 truncate text-center text-[13px] leading-none">
                     {isGeneral ? t("workbench.sidebar.sessions") : tab.name}
                   </span>
 
@@ -274,7 +256,7 @@ export function WorkbenchTitlebar() {
                           }
                         }}
                       >
-                        <PinIcon class={`size-3 ${tab.pinned ? "text-v2-icon-icon-accent" : "text-v2-text-text-muted"}`} />
+                        <PinIcon class={`size-3.5 ${tab.pinned ? "text-v2-icon-icon-accent" : "text-v2-text-text-muted"}`} />
                       </button>
                       <Show when={!tab.pinned}>
                         <button
@@ -286,7 +268,7 @@ export function WorkbenchTitlebar() {
                             handleCloseTab(tab.name, tab.path)
                           }}
                         >
-                          <IconV2 name="xmark-small" />
+                          <IconV2 name="xmark-small" class="size-3.5" />
                         </button>
                       </Show>
                     </div>
@@ -304,15 +286,15 @@ export function WorkbenchTitlebar() {
             <ButtonV2
               variant="ghost"
               size="small"
-              class="h-7 px-2 text-12-regular text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
+              class="h-7 px-2.5 text-[13px] font-medium text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 setShowSpaceMenu(!showSpaceMenu())
               }}
             >
               <SpaceIcon class="size-3.5" />
-              <span class="text-12-regular">{t("workbench.topbar.selectSpace")}</span>
-              <IconV2 name="outline-chevron-down" class="size-3" />
+              <span class="text-[13px] font-medium leading-none">{t("workbench.topbar.selectSpace")}</span>
+              <IconV2 name="outline-chevron-down" class="size-3.5" />
             </ButtonV2>
 
             <Show when={showSpaceMenu()}>
@@ -329,7 +311,7 @@ export function WorkbenchTitlebar() {
                       <button
                         type="button"
                         classList={{
-                          "w-full flex items-center justify-between px-2.5 py-1.5 text-left text-12-regular rounded transition-colors": true,
+                          "w-full flex items-center justify-between px-2.5 py-1.5 text-left text-[13px] rounded transition-colors": true,
                           "bg-v2-overlay-simple-overlay-hover text-v2-text-text-strong font-semibold": isActive(),
                           "text-v2-text-text-strong font-medium hover:bg-v2-overlay-simple-overlay-hover": isOpen() && !isActive(),
                           "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover": !isOpen(),
@@ -389,7 +371,7 @@ export function WorkbenchTitlebar() {
               <Show when={!isGeneral}>
                 <button
                   type="button"
-                  class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-12-regular text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover"
+                  class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[13px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover"
                   onClick={() => {
                     if (tab.pinned) wb.unpinTab(tab.path)
                     else wb.pinTab(tab.path)
@@ -404,7 +386,7 @@ export function WorkbenchTitlebar() {
 
               <button
                 type="button"
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-12-regular text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-40"
+                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[13px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-40"
                 disabled={isPinned}
                 onClick={() => {
                   if (!isPinned) handleCloseTab(tab.name, tab.path)

@@ -245,8 +245,7 @@ export function SpaceRail() {
             />
           </header>
 
-          <div class="flex-1 min-h-0 flex flex-col min-w-0 py-1">
-            <Show when={activeNav() === "sessions"}>
+            <div class={`flex-1 min-h-0 flex flex-col min-w-0 py-1 ${activeNav() === "sessions" ? "" : "hidden"}`}>
               <Show
                 when={store.spaces() !== undefined}
                 fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
@@ -258,9 +257,9 @@ export function SpaceRail() {
                   onSessionClick={handleSessionClick}
                 />
               </Show>
-            </Show>
+            </div>
 
-            <Show when={activeNav() === "maintenance"}>
+            <div class={`flex-1 min-h-0 flex flex-col min-w-0 ${activeNav() === "maintenance" ? "" : "hidden"}`}>
               <div class="p-3 text-12-regular text-v2-text-text-muted">
                 <div class="flex items-center gap-1.5 font-medium text-v2-text-text-base mb-1">
                   <MaintenanceIcon class="size-4" />
@@ -269,8 +268,7 @@ export function SpaceRail() {
                 <p>{t("workbench.sidebar.activeSpace", { name: wb.activeSpaceName })}</p>
                 <p class="mt-2 text-11-regular text-v2-text-text-faint">{t("workbench.sidebar.maintenanceDesc")}</p>
               </div>
-            </Show>
-          </div>
+            </div>
         </div>
       </aside>
 

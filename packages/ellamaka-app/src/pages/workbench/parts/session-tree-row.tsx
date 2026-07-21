@@ -7,7 +7,7 @@ import { setInvisibleSessionDragPreview } from "./session-tree-drag-preview"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel } from "./session-tree-dialogs"
 import { openSessionInPanel, getSessionMarker, type GroupSession } from "./session-tree-services"
-import { ProjectIcon } from "./session-tree-space"
+import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import type { WopalSpace } from "../space-store"
 
 type MergedSession = {
@@ -46,7 +46,7 @@ export function SessionMarkerIcon(props: {
               </Show>
             }
           >
-            <ProjectIcon class="size-3.5" />
+            <IconV2 name="code" class="size-3.5 shrink-0" />
           </Show>
         }
       >

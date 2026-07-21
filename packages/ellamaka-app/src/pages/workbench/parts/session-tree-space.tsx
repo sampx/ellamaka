@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
+import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import type { WopalSpace } from "../space-store"
 import type { GroupSession, SessionTreeLocation } from "./session-tree-services"
 import { SessionTreeRow } from "./session-tree-row"
@@ -11,16 +12,8 @@ type MergedSession = {
   status: "idle" | "bound" | "archived"
 }
 
-export function ChatIcon(props: { class?: string }) {
-  return (
-    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  )
-}
-
-// 专属项目/工程 (Project) 图形 Icon
-export function ProjectIcon(props: { class?: string }) {
+// 专属空间 (Space / Workspace) 图形 Icon
+export function SpaceIcon(props: { class?: string }) {
   return (
     <svg
       class={props.class ?? "size-3.5"}
@@ -31,10 +24,25 @@ export function ProjectIcon(props: { class?: string }) {
       stroke-linecap="round"
       stroke-linejoin="round"
     >
-      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6z" />
-      <path d="M4 9.5h16" />
-      <path d="M9 13.5l-2 2 2 2" />
-      <path d="M15 13.5l2 2-2 2" />
+      <path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor" fill-opacity="0.15" />
+      <path d="M2 17l10 5 10-5" />
+      <path d="M2 12l10 5 10-5" />
+    </svg>
+  )
+}
+
+export function ChatIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
+function FolderIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
   )
 }
@@ -51,16 +59,6 @@ function CalendarIcon(props: { class?: string }) {
   )
 }
 
-// 项目专用图标 (Layered Project / Code Stack Icon)
-function ProjectBoxIcon(props: { class?: string }) {
-  return (
-    <svg class={props.class ?? "size-3.5"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polygon points="12 2 2 7 12 12 22 7 12 2" />
-      <polyline points="2 17 12 22 22 17" />
-      <polyline points="2 12 12 17 22 12" />
-    </svg>
-  )
-}
 
 type DateGroup = {
   key: string
@@ -225,6 +223,18 @@ function DateLocationItem(props: {
   )
 }
 
+const [collapsedLocations, setCollapsedLocations] = createSignal<Set<string>>(new Set())
+const [collapsedGroupHeaders, setCollapsedGroupHeaders] = createSignal<Set<string>>(new Set())
+const isGroupExpanded = (key: string) => !collapsedGroupHeaders().has(key)
+const toggleGroup = (key: string) => {
+  setCollapsedGroupHeaders((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+}
+
 function ProjectLocationItem(props: {
   location: SessionTreeLocation
   space: WopalSpace
@@ -237,7 +247,18 @@ function ProjectLocationItem(props: {
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
 }) {
   const wb = useWorkbenchState()
-  const [expanded, setExpanded] = createSignal(true)
+  const locationKey = () => `${props.space.path}:${props.location.key}`
+  const expanded = () => !collapsedLocations().has(locationKey())
+  const toggleExpanded = () => {
+    const key = locationKey()
+    setCollapsedLocations((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const merged = createMemo(() =>
     sortSessionsByPanelAndPin(
       props.mergeSessions(props.location.sessions),
@@ -254,10 +275,10 @@ function ProjectLocationItem(props: {
         <button
           type="button"
           class="flex w-full items-center justify-between px-2 py-0.5 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-base select-none cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors font-mono"
-          onClick={() => setExpanded(!expanded())}
+          onClick={toggleExpanded}
         >
           <div class="flex items-center gap-1.5 truncate">
-            <ProjectBoxIcon class="size-3 text-v2-text-text-muted shrink-0" />
+            <IconV2 name="code" class="size-3.5 text-v2-text-text-muted shrink-0" />
             <span class="truncate">{projectLabel()}</span>
             <span class="text-9-regular text-v2-text-text-faint">({merged().length})</span>
           </div>
@@ -317,11 +338,18 @@ export function SessionTreeSpace(props: {
   t: (key: string, params?: Record<string, string | number | boolean>) => string
 }) {
   const wb = useWorkbenchState()
-  const [spaceExpanded, setSpaceExpanded] = createSignal(true)
-  const [projectExpanded, setProjectExpanded] = createSignal(true)
+  const spaceGroupKey = () => `space:${props.space.path}`
+  const projectsGroupKey = () => `projects:${props.space.path}`
 
-  const isGeneralScope = createMemo(() => props.space.path === "")
-  const dateGroups = createMemo(() => groupSessionsByDate(props.locations()))
+  const spaceExpanded = () => isGroupExpanded(spaceGroupKey())
+  const projectExpanded = () => isGroupExpanded(projectsGroupKey())
+
+  const isGeneralScope = () => props.space.path === ""
+
+  const dateGroups = createMemo(() => {
+    if (!isGeneralScope()) return []
+    return groupSessionsByDate(props.locations())
+  })
 
   const spaceLocations = createMemo(() =>
     props.locations().filter((loc) => loc.kind === "space-root"),
@@ -378,10 +406,10 @@ export function SessionTreeSpace(props: {
                 <button
                   type="button"
                   class="flex w-full items-center justify-between px-2 py-1 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-strong uppercase tracking-wider select-none font-semibold cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors"
-                  onClick={() => setSpaceExpanded(!spaceExpanded())}
+                  onClick={() => toggleGroup(spaceGroupKey())}
                 >
                   <div class="flex items-center gap-1.5">
-                    <ChatIcon class="size-3.5 text-v2-text-text-muted" />
+                    <SpaceIcon class="size-3.5 text-v2-text-text-muted" />
                     <span>{props.t("workbench.tree.group.spaceSessions")}</span>
                   </div>
                   <svg
@@ -443,10 +471,10 @@ export function SessionTreeSpace(props: {
                 <button
                   type="button"
                   class="flex w-full items-center justify-between px-2 py-1 text-10-medium text-v2-text-text-muted hover:text-v2-text-text-strong uppercase tracking-wider select-none font-semibold cursor-pointer rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors"
-                  onClick={() => setProjectExpanded(!projectExpanded())}
+                  onClick={() => toggleGroup(projectsGroupKey())}
                 >
                   <div class="flex items-center gap-1.5">
-                    <ProjectIcon class="size-3.5 text-v2-text-text-muted" />
+                    <FolderIcon class="size-3.5 text-v2-text-text-muted" />
                     <span>{props.t("workbench.tree.group.projectSessions")}</span>
                   </div>
                   <svg
