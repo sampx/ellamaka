@@ -13,7 +13,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
-import { getTerminalImeFrame } from "@/components/terminal-ime-frame"
+import { getTerminalImeFrame, updateTerminalImeComposition } from "@/components/terminal-ime-frame"
 import { disableTerminalScrollbar, terminalColumnsWithoutScrollbar, terminalRowsForContainer, type TerminalFitMode } from "@/components/terminal-scrollbar"
 import { isEllamakaTuiTitle, shouldUseTuiTerminalMode } from "@/components/terminal-tui-mode"
 import { disposeIfDisposable, getHoveredLinkText, setOptionIfSupported } from "@/utils/runtime-adapters"
@@ -195,6 +195,7 @@ export const Terminal = (props: TerminalProps) => {
   let _ghostty: Ghostty
   let serializeAddon: SerializeAddon
   let fitAddon: FitAddon
+  let imeOverlay: HTMLDivElement | undefined
   let handleResize: () => void
   let fitFrame: number | undefined
   let sizeTimer: ReturnType<typeof setTimeout> | undefined
@@ -296,12 +297,17 @@ export const Terminal = (props: TerminalProps) => {
 
   createEffect(() => {
     const colors = terminalColors()
+    if (imeOverlay) {
+      imeOverlay.style.color = colors.foreground
+      imeOverlay.style.backgroundColor = colors.background
+    }
     if (!term) return
     setOptionIfSupported(term, "theme", colors)
   })
 
   createEffect(() => {
     const font = terminalFontFamily(settings.appearance.terminalFont())
+    if (imeOverlay) imeOverlay.style.fontFamily = font
     if (!term) return
     setOptionIfSupported(term, "fontFamily", font)
     scheduleFit()
@@ -486,31 +492,129 @@ export const Terminal = (props: TerminalProps) => {
       // follows the actual input position for both TUI and terminal panels.
       const textarea = t.textarea
       if (renderer && textarea) {
+        const colors = terminalColors()
+        const overlay = document.createElement("div")
+        imeOverlay = overlay
+        overlay.dataset.component = "terminal-ime-preedit"
+        overlay.style.position = "absolute"
+        overlay.style.display = "none"
+        overlay.style.pointerEvents = "none"
+        overlay.style.zIndex = "10"
+        overlay.style.whiteSpace = "pre"
+        overlay.style.overflow = "visible"
+        overlay.style.fontFamily = terminalFontFamily(settings.appearance.terminalFont())
+        overlay.style.fontSize = "14px"
+        overlay.style.fontVariantLigatures = "none"
+        overlay.style.textDecoration = "underline"
+        overlay.style.color = colors.foreground
+        overlay.style.backgroundColor = colors.background
+        container.append(overlay)
+
         const computed = getComputedStyle(container)
         const paddingLeft = Number.parseFloat(computed.paddingLeft) || 0
         const paddingTop = Number.parseFloat(computed.paddingTop) || 0
         const syncImeTextarea = () => {
           if (disposed || !document.contains(container)) return
           const metrics = renderer.getMetrics()
+          // Fallback to 0 if cursorX is NaN or undefined in ghostty-web
+          const cx = t.buffer.active.cursorX || 0
+          const cy = t.buffer.active.cursorY || 0
           const frame = getTerminalImeFrame({
-            cursorX: t.buffer.active.cursorX,
-            cursorY: t.buffer.active.cursorY,
+            cursorX: cx,
+            cursorY: cy,
             cellWidth: metrics.width || 8,
             cellHeight: metrics.height || 18,
             paddingLeft,
             paddingTop,
           })
+          
           textarea.style.left = frame.left
           textarea.style.top = frame.top
           textarea.style.width = frame.width
           textarea.style.height = frame.height
-          textarea.style.opacity = frame.opacity
+          textarea.style.opacity = "0.001"
+          textarea.style.clipPath = "none"
+          textarea.style.overflow = "visible"
+          textarea.style.color = "transparent"
+          textarea.style.backgroundColor = "transparent"
+          textarea.style.caretColor = "transparent"
+          textarea.style.outline = "none"
+          textarea.style.border = "none"
+          textarea.style.boxShadow = "none"
+          
+          overlay.style.left = frame.left
+          overlay.style.top = frame.top
+          overlay.style.minWidth = frame.width
+          overlay.style.height = frame.height
+          overlay.style.lineHeight = frame.height
         }
+        
+        let composition = updateTerminalImeComposition(undefined, { type: "blur" })
+        const renderComposition = () => {
+          const text = composition.active ? (composition.text || textarea.value) : ""
+          overlay.textContent = text
+          overlay.style.display = text ? "block" : "none"
+        }
+        const handleCompositionStart = (event: CompositionEvent) => {
+          syncImeTextarea()
+          composition = updateTerminalImeComposition(composition, { type: "start", data: event.data || textarea.value })
+          renderComposition()
+        }
+        const handleCompositionUpdate = (event: CompositionEvent) => {
+          composition = updateTerminalImeComposition(composition, { type: "update", data: event.data || textarea.value })
+          renderComposition()
+        }
+        const handleCompositionEnd = (event: CompositionEvent) => {
+          composition = updateTerminalImeComposition(composition, { type: "end", data: event.data })
+          renderComposition()
+        }
+        const handleCompositionBlur = () => {
+          composition = updateTerminalImeComposition(composition, { type: "blur" })
+          renderComposition()
+        }
+        const handleInput = (event: Event) => {
+          if (composition.active) {
+            composition = updateTerminalImeComposition(composition, {
+              type: "update",
+              data: (event as InputEvent).data ?? textarea.value,
+            })
+            renderComposition()
+          }
+        }
+        const handleFocus = () => {
+          syncImeTextarea()
+        }
+        const handlePointerDownSync = () => {
+          requestAnimationFrame(syncImeTextarea)
+        }
+        
+        textarea.addEventListener("compositionstart", handleCompositionStart)
+        textarea.addEventListener("compositionupdate", handleCompositionUpdate)
+        textarea.addEventListener("compositionend", handleCompositionEnd)
+        textarea.addEventListener("blur", handleCompositionBlur)
+        textarea.addEventListener("input", handleInput)
+        textarea.addEventListener("focus", handleFocus)
+        container.addEventListener("pointerdown", handlePointerDownSync)
+        
+        cleanups.push(() => {
+          textarea.removeEventListener("compositionstart", handleCompositionStart)
+          textarea.removeEventListener("compositionupdate", handleCompositionUpdate)
+          textarea.removeEventListener("compositionend", handleCompositionEnd)
+          textarea.removeEventListener("blur", handleCompositionBlur)
+          textarea.removeEventListener("input", handleInput)
+          textarea.removeEventListener("focus", handleFocus)
+          container.removeEventListener("pointerdown", handlePointerDownSync)
+          overlay.remove()
+          if (imeOverlay === overlay) imeOverlay = undefined
+        })
+        
         syncImeTextarea()
         const cursorSub = t.onCursorMove(syncImeTextarea)
         cleanups.push(() => disposeIfDisposable(cursorSub))
         const resizeSub = t.onResize(syncImeTextarea)
         cleanups.push(() => disposeIfDisposable(resizeSub))
+        const renderImeSub = t.onRender(syncImeTextarea)
+        cleanups.push(() => disposeIfDisposable(renderImeSub))
       }
       useTerminalUiBindings({
         container,
