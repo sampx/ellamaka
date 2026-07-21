@@ -477,6 +477,18 @@ export const Terminal = (props: TerminalProps) => {
 
       const renderer = t.renderer
       disableTerminalScrollbar(renderer)
+      if (renderer) {
+        // ghostty-web computes the canvas backing store as `cssSize * devicePixelRatio`
+        // and scales the context by the raw dpr. When dpr is non-integral (e.g. macOS
+        // Retina * Electron zoom 1.1 = 2.2), the backing store gets truncated to an
+        // integer while the context scale stays fractional, so the compositor resamples
+        // the canvas texture and produces subpixel seams aligned to character cells
+        // (grid stripes over the TUI). Force an integral dpr so the backing store and
+        // context scale match exactly; the CSS layer handles the fractional display
+        // scaling as a mild blur instead of per-cell stripes.
+        const integralDpr = Math.max(1, Math.round(window.devicePixelRatio || 1))
+        ;(renderer as unknown as { devicePixelRatio: number }).devicePixelRatio = integralDpr
+      }
 
       const titleSub = t.onTitleChange((title) => {
         local.onTitleChange?.(title)
