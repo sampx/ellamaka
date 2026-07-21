@@ -220,6 +220,7 @@ export function Panel(props: {
       {/* Main View Area */}
       <div
         class="flex flex-1 flex-col min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep"
+        style={{ isolation: "isolate", transform: "translateZ(0)" }}
         ref={panelContainerRef}
       >
         <Show when={isDirUnhealthy()}>
@@ -246,7 +247,10 @@ export function Panel(props: {
                 <Show when={isMounted() && viewDef}>
                   <div
                     class="absolute inset-0 flex flex-col min-h-0 min-w-0 overflow-hidden"
-                    classList={{ "hidden": props.panel.slotState === "empty" || props.panel.viewMode !== vm }}
+                    style={{
+                      display: props.panel.slotState !== "empty" && props.panel.viewMode === vm ? "flex" : "none",
+                      visibility: props.panel.slotState !== "empty" && props.panel.viewMode === vm ? "visible" : "hidden",
+                    }}
                   >
                     {(() => {
                       if (!viewDef) return null
