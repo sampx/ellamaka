@@ -26,6 +26,7 @@ export function Panel(props: {
   spacePath: string
   isActive: boolean
   panelCount: number
+  panelIndex?: number
   onActivate: () => void
   onModeChange: (mode: PanelMode) => void
 }) {
@@ -214,6 +215,7 @@ export function Panel(props: {
         spacePath={props.spacePath}
         isActive={props.isActive}
         panelCount={props.panelCount}
+        panelIndex={props.panelIndex}
         onToggleSplit={handleToggleSplit}
       />
 

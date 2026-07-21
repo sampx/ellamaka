@@ -19,6 +19,7 @@ export function PanelHeader(props: {
   spacePath: string
   isActive: boolean
   panelCount: number
+  panelIndex?: number
   onToggleSplit: () => void
 }) {
   const language = useLanguage()
@@ -38,8 +39,13 @@ export function PanelHeader(props: {
       const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
       return session?.title ?? t("workbench.panel.untitledSession")
     }
-    const parts = props.panel.id.split("-")
-    return t("workbench.panel.number", { number: parts[parts.length - 1] ?? props.panel.id })
+    let num = props.panelIndex !== undefined ? props.panelIndex + 1 : 0
+    if (!num) {
+      const panels = wb.spaceState(props.spacePath)?.panels ?? []
+      const idx = panels.findIndex((p) => p.id === props.panel.id)
+      num = idx !== -1 ? idx + 1 : 1
+    }
+    return t("workbench.panel.number", { number: num })
   }
   const headerViews = () => getPanelHeaderViews(listViews(), props.panel.slotState, props.panel.tuiPtyId)
   const hasOpenSplitPty = createMemo(() => !!props.panel.splitPtyId)

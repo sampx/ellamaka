@@ -167,6 +167,7 @@ export function Workspace() {
                                 spacePath={tab.path}
                                 isActive={panel.id === tabActivePanelID()}
                                 panelCount={tabPanels().length}
+                                panelIndex={index()}
                                 onActivate={() => wb.setActivePanel(tab.path, panel.id)}
                                 onModeChange={(mode) => wb.setPanelMode(tab.path, panel.id, mode)}
                               />
