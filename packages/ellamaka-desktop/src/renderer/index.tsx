@@ -25,7 +25,7 @@ import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { DesktopRouter } from "./desktop-router"
 import type { SidecarRuntimeState } from "../preload/types"
-import { mapSidecarStateToAction } from "./sidecar-adapter"
+import { mapSidecarStateToAction, resolveSidecarServer } from "./sidecar-adapter"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -278,6 +278,7 @@ listenForDeepLinks()
   // Live sidecar state from Supervisor (for generation changes / restarts)
   const [sidecarState, setSidecarState] = createSignal<SidecarRuntimeState | undefined>()
   let previousGeneration = 0
+  let previousSidecarServer: ServerConnection.Sidecar | undefined
 
   onMount(() => {
     const unsub = window.api.onSidecarState((state) => {
@@ -293,44 +294,10 @@ listenForDeepLinks()
   )
   const [locale] = createResource(loadLocale)
 
-  const servers = createMemo(() => {
-    // Use mapSidecarStateToAction for live state
-    const live = sidecarState()
-    if (live) {
-      const action = mapSidecarStateToAction(live, previousGeneration)
-      if (live.status === "ready") {
-        previousGeneration = live.generation
-      }
-      switch (action.action) {
-        case "connect":
-        case "reconnect": {
-          const server: ServerConnection.Sidecar = {
-            displayName: "Local Server",
-            type: "sidecar",
-            variant: "base",
-            generation: live.generation,
-            http: {
-              url: live.connection!.url,
-              username: live.connection!.username,
-              password: live.connection!.password,
-            },
-          }
-          return [server] as ServerConnection.Any[]
-        }
-        case "offline":
-        case "exit":
-          // Return empty — WorkbenchRuntime will show offline state
-          return []
-        case "wait":
-        case "preserve":
-          // Keep current server connection; fall through to initial data
-          break
-      }
-    }
-    // Fall back to initial awaitInitialization data
+  const initialSidecarServer = (): ServerConnection.Sidecar | undefined => {
     const data = sidecar()
-    if (!data) return []
-    const server: ServerConnection.Sidecar = {
+    if (!data) return undefined
+    return {
       displayName: "Local Server",
       type: "sidecar",
       variant: "base",
@@ -339,8 +306,21 @@ listenForDeepLinks()
         username: data.username ?? undefined,
         password: data.password ?? undefined,
       },
+    } satisfies ServerConnection.Sidecar
+  }
+
+  const servers = createMemo(() => {
+    const fallback = initialSidecarServer()
+    const live = sidecarState()
+    if (!live) return fallback ? [fallback] : []
+
+    const action = mapSidecarStateToAction(live, previousGeneration)
+    if (live.status === "ready") previousGeneration = live.generation
+    const server = resolveSidecarServer(action, previousSidecarServer, fallback)
+    if (action.action === "connect" || action.action === "reconnect") {
+      previousSidecarServer = server
     }
-    return [server] as ServerConnection.Any[]
+    return server ? [server] : []
   })
 
   function handleClick(e: MouseEvent) {

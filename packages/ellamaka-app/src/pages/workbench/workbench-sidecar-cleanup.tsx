@@ -1,11 +1,11 @@
 import { createEffect } from "solid-js"
-import { useServer } from "@/context/server"
+import { ServerConnection, useServer } from "@/context/server"
 import { useWorkbenchActions } from "./workbench-actions"
 
 /**
- * Decides whether a server.key transition should trigger PTY cleanup.
+ * Decides whether an authoritative server identity transition should trigger PTY cleanup.
  *
- * Trigger only when server.key moves from one non-empty value to a different
+ * Trigger only when the identity moves from one non-empty value to a different
  * non-empty value. The first non-empty key (initial sidecar ready, generation
  * 0→1) does NOT trigger cleanup — it is the initial connection, not a restart.
  * Subsequent changes (generation 1→2 after sidecar restart, or URL switch on
@@ -18,8 +18,27 @@ export function shouldTriggerCleanup(previousKey: string | undefined, currentKey
   return true
 }
 
+export function resolveWorkbenchServerIdentity(input: {
+  key: string | undefined
+  current: ServerConnection.Any | undefined
+}): string | undefined {
+  if (input.current?.type === "sidecar") {
+    if (input.current.generation === undefined) return undefined
+    return ServerConnection.key(input.current)
+  }
+  if (input.key === "sidecar") return undefined
+  return input.key
+}
+
+export function advanceWorkbenchServerIdentity(previousKey: string | undefined, currentKey: string | undefined) {
+  return {
+    key: currentKey ?? previousKey,
+    triggerCleanup: shouldTriggerCleanup(previousKey, currentKey),
+  }
+}
+
 /**
- * Binds server.key changes to WorkbenchActions.clearAllPtyForServerChange().
+ * Binds live server identity changes to WorkbenchActions.clearAllPtyForServerChange().
  *
  * Context wrapper component — consumes both ServerContext (for server.key)
  * and WorkbenchActionsContext (for PTY cleanup action).
@@ -31,12 +50,10 @@ export function WorkbenchSidecarCleanupBinding() {
 
   let previousKey: string | undefined
   createEffect(() => {
-    const key = server.key
-    if (!shouldTriggerCleanup(previousKey, key)) {
-      previousKey = key
-      return
-    }
-    previousKey = key
+    const key = resolveWorkbenchServerIdentity({ key: server.key, current: server.current })
+    const transition = advanceWorkbenchServerIdentity(previousKey, key)
+    previousKey = transition.key
+    if (!transition.triggerCleanup) return
     actions.clearAllPtyForServerChange()
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mapSidecarStateToAction, type SidecarAdapterAction } from "./sidecar-adapter"
+import { mapSidecarStateToAction, resolveSidecarServer } from "./sidecar-adapter"
 import type { SidecarRuntimeState } from "../../preload/types"
 
 describe("mapSidecarStateToAction", () => {
@@ -49,7 +49,25 @@ describe("mapSidecarStateToAction", () => {
     expect(result.action).toBe("reconnect")
     if (result.action === "reconnect") {
       expect(result.server.type).toBe("sidecar")
+      expect(result.server.generation).toBe(2)
     }
+  })
+
+  test("preserve keeps the last ready generation instead of falling back to generation-less initialization data", () => {
+    const previous = {
+      displayName: "Local Server",
+      type: "sidecar",
+      variant: "base",
+      generation: 1,
+      http: { url: connection.url, username: connection.username, password: connection.password },
+    } as const
+    const fallback = {
+      ...previous,
+      generation: undefined,
+    }
+
+    expect(resolveSidecarServer({ action: "preserve" }, previous, fallback)).toBe(previous)
+    expect(resolveSidecarServer({ action: "wait" }, previous, fallback)).toBe(previous)
   })
 
   test("ready (generation unchanged) → preserve", () => {

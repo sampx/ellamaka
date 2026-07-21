@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { resolveWorkbenchRuntimeStatus } from "./workbench-runtime"
-import { shouldTriggerCleanup } from "./workbench-sidecar-cleanup"
+import { advanceWorkbenchServerIdentity, resolveWorkbenchServerIdentity, shouldTriggerCleanup } from "./workbench-sidecar-cleanup"
 
 describe("resolveWorkbenchRuntimeStatus", () => {
   test("returns online when health and the latest event stream are connected", () => {
@@ -44,5 +44,47 @@ describe("shouldTriggerCleanup", () => {
 
   test("URL switch on Web triggers cleanup", () => {
     expect(shouldTriggerCleanup("http://server-a:8080", "http://server-b:8080")).toBe(true)
+  })
+})
+
+describe("resolveWorkbenchServerIdentity", () => {
+  test("waits for the first authoritative sidecar generation", () => {
+    expect(resolveWorkbenchServerIdentity({
+      key: "sidecar",
+      current: {
+        type: "sidecar",
+        variant: "base",
+        http: { url: "http://127.0.0.1:12345" },
+      },
+    })).toBeUndefined()
+  })
+
+  test("uses the live sidecar generation instead of the stable desktop alias", () => {
+    expect(resolveWorkbenchServerIdentity({
+      key: "sidecar",
+      current: {
+        type: "sidecar",
+        variant: "base",
+        generation: 2,
+        http: { url: "http://127.0.0.1:12345" },
+      },
+    })).toBe("http://127.0.0.1:12345#gen2")
+  })
+
+  test("keeps the selected key for regular HTTP servers", () => {
+    expect(resolveWorkbenchServerIdentity({
+      key: "http://server.example.test",
+      current: { type: "http", http: { url: "http://server.example.test" } },
+    })).toBe("http://server.example.test")
+  })
+
+  test("keeps the last generation across a temporary missing connection", () => {
+    const lost = advanceWorkbenchServerIdentity("http://127.0.0.1:12345#gen1", undefined)
+    expect(lost).toEqual({ key: "http://127.0.0.1:12345#gen1", triggerCleanup: false })
+
+    expect(advanceWorkbenchServerIdentity(lost.key, "http://127.0.0.1:12345#gen2")).toEqual({
+      key: "http://127.0.0.1:12345#gen2",
+      triggerCleanup: true,
+    })
   })
 })

@@ -31,6 +31,7 @@ export function mapSidecarStateToAction(
         displayName: "Local Server",
         type: "sidecar",
         variant: "base",
+        generation: state.generation,
         http: {
           url: state.connection.url,
           username: state.connection.username,
@@ -54,4 +55,14 @@ export function mapSidecarStateToAction(
     default:
       return { action: "preserve" }
   }
+}
+
+export function resolveSidecarServer(
+  action: SidecarAdapterAction,
+  previous: ServerConnection.Sidecar | undefined,
+  fallback: ServerConnection.Sidecar | undefined,
+) {
+  if (action.action === "connect" || action.action === "reconnect") return action.server
+  if (action.action === "wait" || action.action === "preserve") return previous ?? fallback
+  return undefined
 }
