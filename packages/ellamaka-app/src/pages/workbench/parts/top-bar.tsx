@@ -10,6 +10,7 @@ import { useSessionStore } from "../session-store"
 import { DialogCloseTab } from "./workspace"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
+import { useNotification } from "@/context/notification"
 import { pathKey } from "@/utils/path-key"
 import { SpaceIcon } from "./session-tree-space"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -59,6 +60,7 @@ export function WorkbenchTitlebar() {
   const sessionStore = useSessionStore()
   const language = useLanguage()
   const dialog = useDialog()
+  const notification = useNotification()
   const t = (k: string, params?: Record<string, string | number | boolean>) => language.t(k, params)
 
   let sync: ReturnType<typeof useSync> | undefined
@@ -95,6 +97,49 @@ export function WorkbenchTitlebar() {
       if (getTabForDirectory(rawKey) === targetPath) {
         if (Object.keys(childStore.session_status).some((id) => childStore.session_working(id))) {
           return true
+        }
+      }
+    }
+    return false
+  }
+
+  // 未读蓝点：严格由本空间在 SessionStore 中是否存在【未读会话 (unseenCount > 0)】动态计算。
+  // 与侧边栏 Session 列表蓝点使用同一事实源，避免孤立目录通知造成空间 Tab 蓝点常亮。
+  const isSpaceUnread = (tabPath: string, tabName?: string) => {
+    const isGeneral = tabPath === ""
+    const allSpaces = sessionStore.sessions()
+    const targetPath = pathKey(tabPath ?? "").toLowerCase()
+    const targetName = (tabName ?? "").toLowerCase()
+
+    for (const [spaceKey, sessions] of Object.entries(allSpaces)) {
+      const keyLower = pathKey(spaceKey).toLowerCase()
+      let isMatch = false
+
+      if (isGeneral) {
+        if (spaceKey === "" || keyLower === "general" || keyLower === "sessions") {
+          isMatch = true
+        }
+      } else {
+        if (
+          (targetPath && keyLower === targetPath) ||
+          (targetName && keyLower === targetName)
+        ) {
+          isMatch = true
+        }
+      }
+
+      for (const s of sessions) {
+        if (!isMatch) {
+          const sPath = pathKey(s.spacePath ?? "").toLowerCase()
+          const sName = (s.spaceName ?? "").toLowerCase()
+          if (
+            (!isGeneral && ((targetPath && sPath === targetPath) || (targetName && sName === targetName))) ||
+            (isGeneral && (sPath === "" || sName === "general" || sName === "sessions"))
+          ) {
+            if (notification.session.unseenCount(s.id) > 0) return true
+          }
+        } else {
+          if (notification.session.unseenCount(s.id) > 0) return true
         }
       }
     }
@@ -198,6 +243,11 @@ export function WorkbenchTitlebar() {
                   {/* 空间内部会话后台运行动效 */}
                   <Show when={isSpaceWorking(tab.path, tab.name)}>
                     <Spinner class="size-3.5 shrink-0 text-v2-icon-icon-accent" />
+                  </Show>
+
+                  {/* 后台会话完成未读指示蓝点 */}
+                  <Show when={!isSpaceWorking(tab.path, tab.name) && isSpaceUnread(tab.path, tab.name)}>
+                    <div class="size-2 rounded-full shrink-0 bg-v2-icon-icon-accent" />
                   </Show>
 
                   {/* Actions for Space Tabs */}

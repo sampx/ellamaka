@@ -10,6 +10,7 @@ import { openSessionInPanel, getSessionMarker, type GroupSession } from "./sessi
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useServerSync } from "@/context/server-sync"
+import { useNotification } from "@/context/notification"
 import { directoryKey } from "@/context/global-sync/utils"
 import type { WopalSpace } from "../space-store"
 
@@ -82,6 +83,7 @@ export function SessionTreeRow(props: {
   const actions = useWorkbenchActions()
   const dialog = useDialog()
   const serverSync = useServerSync()
+  const notification = useNotification()
 
   const sessionData = () => props.sessions.find((s) => s.id === props.session.id)
   const dirHealth = () =>
@@ -200,6 +202,10 @@ export function SessionTreeRow(props: {
 
       <Show when={isWorking()}>
         <Spinner class="size-3.5 shrink-0 ml-1 text-v2-icon-icon-accent" />
+      </Show>
+
+      <Show when={!isWorking() && notification.session.unseenCount(props.session.id) > 0}>
+        <div class="size-2 rounded-full shrink-0 ml-1 bg-v2-icon-icon-accent" />
       </Show>
 
       <Show when={dirHealth() !== "healthy"}>

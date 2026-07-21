@@ -364,6 +364,12 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         unseenHasError(directory: string) {
           return index.project.unseenHasError[directory] ?? false
         },
+        // 返回所有当前有未读通知的 directory（用于顶部 Space Tab 按目录归类聚合未读）。
+        unseenDirectories() {
+          return Object.keys(index.project.unseen).filter(
+            (directory) => (index.project.unseenCount[directory] ?? 0) > 0,
+          )
+        },
         markViewed(directory: string) {
           const unseen = index.project.unseen[directory] ?? empty
           if (!unseen.length) return

@@ -3,6 +3,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Show, createEffect, For, createSignal, on } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
+import { useNotification } from "@/context/notification"
 import { Terminal } from "@/components/terminal"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
@@ -38,7 +39,21 @@ export function Panel(props: {
   const { setPanelSplitTerminal } = wb
   const sessionStore = useSessionStore()
   const dialog = useDialog()
+  const notification = useNotification()
   const panelScope = () => scopeFromTab({ name: props.spaceName, path: props.spacePath })
+
+  // 用户正在查看此面板绑定的会话时，清除其未读蓝点。
+  // 需同时满足：面板绑定了会话、面板是其空间的激活面板、所在空间是当前激活 Tab。
+  // 订阅 unseenCount 以确保后台完成新回复后在激活视图中即时清除未读。
+  createEffect(() => {
+    const sessionID = props.panel.boundSessionId
+    if (!sessionID) return
+    if (!props.isActive) return
+    if (wb.activeTabPath !== props.spacePath) return
+    if (notification.session.unseenCount(sessionID) > 0) {
+      notification.session.markViewed(sessionID)
+    }
+  })
 
 
 
