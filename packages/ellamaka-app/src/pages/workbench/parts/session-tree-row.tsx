@@ -8,6 +8,9 @@ import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel } from "./session-tree-dialogs"
 import { openSessionInPanel, getSessionMarker, type GroupSession } from "./session-tree-services"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
+import { Spinner } from "@opencode-ai/ui/spinner"
+import { useServerSync } from "@/context/server-sync"
+import { directoryKey } from "@/context/global-sync/utils"
 import type { WopalSpace } from "../space-store"
 
 type MergedSession = {
@@ -78,10 +81,35 @@ export function SessionTreeRow(props: {
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
   const dialog = useDialog()
+  const serverSync = useServerSync()
 
   const sessionData = () => props.sessions.find((s) => s.id === props.session.id)
   const dirHealth = () =>
     props.spacePath === "" ? "healthy" : (sessionData()?.directoryHealth ?? "healthy")
+
+  const sessionStatusType = () => {
+    const sessionID = props.session.id
+    if (!sessionID) return "idle"
+
+    const dir = sessionData()?.directory || props.spacePath
+    if (dir) {
+      const key = directoryKey(dir)
+      const child = (key ? serverSync.children[key] : undefined) ?? serverSync.peek(dir)
+      if (child && child[0].session_status[sessionID]?.type) {
+        return child[0].session_status[sessionID].type
+      }
+    }
+
+    for (const [_, [childStore]] of Object.entries(serverSync.children)) {
+      if (childStore.session_status[sessionID]?.type) {
+        return childStore.session_status[sessionID].type
+      }
+    }
+
+    return "idle"
+  }
+
+  const isWorking = () => sessionStatusType() !== "idle"
 
   const handleSessionClick = () => {
     props.setSelectedSessionId(props.session.id)
@@ -169,6 +197,11 @@ export function SessionTreeRow(props: {
         dirHealth={dirHealth()}
       />
       <span class="flex-1 truncate">{props.session.title}</span>
+
+      <Show when={isWorking()}>
+        <Spinner class="size-3.5 shrink-0 ml-1 text-v2-icon-icon-accent" />
+      </Show>
+
       <Show when={dirHealth() !== "healthy"}>
         <span class="text-9-regular text-v2-text-text-faint shrink-0">
           {dirHealth() === "missing" ? "缺失" : "不可用"}
