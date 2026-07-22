@@ -13,6 +13,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { terminalFontFamily, useSettings } from "@/context/settings"
 import type { LocalPTY } from "@/context/terminal"
+import { fitTerminalToContainer, resetTerminalViewport } from "@/components/terminal-fit"
 import { getTerminalImeFrame, updateTerminalImeComposition } from "@/components/terminal-ime-frame"
 import { disableTerminalScrollbar, terminalColumnsWithoutScrollbar, terminalRowsForContainer, type TerminalFitMode } from "@/components/terminal-scrollbar"
 import { isEllamakaTuiTitle, shouldUseTuiTerminalMode } from "@/components/terminal-tui-mode"
@@ -258,6 +259,20 @@ export const Terminal = (props: TerminalProps) => {
 
   const terminalColors = createMemo(getTerminalColors)
 
+  const fitTerminal = () => {
+    const t = term
+    if (!t || !fitAddon) return
+    // ghostty-web temporarily locks FitAddon.fit() after a resize. Font metrics can
+    // settle during that lock, so apply the latest proposal directly instead of
+    // allowing the only corrective fit to be dropped.
+    fitTerminalToContainer({
+      current: { cols: t.cols, rows: t.rows },
+      propose: () => fitAddon.proposeDimensions(),
+      resize: (cols, rows) => t.resize(cols, rows),
+      viewport: container,
+    })
+  }
+
   const scheduleFit = () => {
     if (disposed) return
     if (!fitAddon) return
@@ -266,7 +281,7 @@ export const Terminal = (props: TerminalProps) => {
     fitFrame = requestAnimationFrame(() => {
       fitFrame = undefined
       if (disposed) return
-      fitAddon.fit()
+      fitTerminal()
     })
   }
 
@@ -326,8 +341,12 @@ export const Terminal = (props: TerminalProps) => {
     const t = term
     if (!t) return
     t.focus()
-    t.textarea?.focus()
-    setTimeout(() => t.textarea?.focus(), 0)
+    t.textarea?.focus({ preventScroll: true })
+    resetTerminalViewport(container)
+    setTimeout(() => {
+      t.textarea?.focus({ preventScroll: true })
+      resetTerminalViewport(container)
+    }, 0)
   }
   const handlePointerDown = () => {
     const activeElement = document.activeElement
@@ -335,6 +354,10 @@ export const Terminal = (props: TerminalProps) => {
       activeElement.blur()
     }
     focusTerminal()
+    requestAnimationFrame(() => {
+      if (disposed) return
+      resetTerminalViewport(container)
+    })
   }
 
   const handleLinkClick = (event: MouseEvent) => {
@@ -639,7 +662,7 @@ export const Terminal = (props: TerminalProps) => {
       if (local.autoFocus !== false) focusTerminal()
 
       if (typeof document !== "undefined" && document.fonts) {
-        void document.fonts.ready.then(scheduleFit)
+        void document.fonts.ready.then(() => scheduleFit())
       }
 
       const onResize = t.onResize((size) => {
@@ -658,7 +681,13 @@ export const Terminal = (props: TerminalProps) => {
       cleanups.push(() => disposeIfDisposable(onKey))
 
       const startResize = () => {
-        fit.observeResize()
+        if (typeof ResizeObserver !== "undefined") {
+          // Keep resize notifications under the app's rAF coalescing so FitAddon's
+          // internal resize lock cannot discard a visibility or container change.
+          const observer = new ResizeObserver(scheduleFit)
+          observer.observe(container)
+          cleanups.push(() => observer.disconnect())
+        }
         handleResize = scheduleFit
         window.addEventListener("resize", handleResize)
         cleanups.push(() => window.removeEventListener("resize", handleResize))
@@ -676,12 +705,12 @@ export const Terminal = (props: TerminalProps) => {
 
       if (restore && restoreSize) {
         await write(restore)
-        fit.fit()
+        fitTerminal()
         scheduleSize(t.cols, t.rows)
         if (scrollY !== undefined) t.scrollToLine(scrollY)
         startResize()
       } else {
-        fit.fit()
+        fitTerminal()
         scheduleSize(t.cols, t.rows)
         if (restore) {
           await write(restore)
