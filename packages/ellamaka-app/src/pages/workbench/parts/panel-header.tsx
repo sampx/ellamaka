@@ -62,10 +62,14 @@ export function PanelHeader(props: {
     <div
       class="flex h-7 shrink-0 items-center gap-1 px-2 border-b relative transition-colors duration-200"
       classList={{
-        "bg-v2-background-bg-layer-02 border-v2-border-border-strong": props.isActive,
+        "bg-v2-background-bg-layer-03 border-v2-border-border-strong": props.isActive,
         "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
       }}
     >
+      <Show when={props.isActive}>
+        <div class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-v2-icon-icon-accent pointer-events-none" />
+      </Show>
+
       <span
         class="size-2 rounded-full shrink-0"
         classList={{
