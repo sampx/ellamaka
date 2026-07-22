@@ -530,13 +530,13 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
-          title={language.t("settings.general.row.fontSize.title") ?? "Font Size"}
-          description={language.t("settings.general.row.fontSize.description") ?? "Adjust global UI font size (default: 14px)"}
+          title={language.t("settings.general.row.fontSize.title")}
+          description={language.t("settings.general.row.fontSize.description")}
         >
           <div class="w-full sm:w-[220px]">
             <TextField
               data-action="settings-font-size"
-              label={language.t("settings.general.row.fontSize.title") ?? "Font Size"}
+              label={language.t("settings.general.row.fontSize.title")}
               hideLabel
               type="number"
               value={String(settings.appearance.fontSize())}

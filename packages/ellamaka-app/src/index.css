@@ -64,6 +64,15 @@ html, body, #root {
   text-rendering: optimizeLegibility;
 }
 
+/* 锁定设置弹窗使用标准静态字号，不受主 UI 动态 fontSize 调控干预 */
+.settings-dialog {
+  --ui-font-size-base: 14px !important;
+  --font-size-base: 14px !important;
+  --font-size-small: 13px !important;
+  --font-size-large: 16px !important;
+  --font-size-x-large: 19px !important;
+}
+
 @layer components {
   @keyframes session-progress-whip {
     0% {

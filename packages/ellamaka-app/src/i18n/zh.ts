@@ -647,6 +647,8 @@ export const dict = {
   "settings.general.row.font.description": "自定义代码块使用的字体",
   "settings.general.row.terminalFont.title": "Terminal Font",
   "settings.general.row.terminalFont.description": "Customise the font used in the terminal",
+  "settings.general.row.fontSize.title": "字体大小",
+  "settings.general.row.fontSize.description": "调整界面全局字体大小（默认：14px）",
   "settings.general.row.uiFont.title": "界面字体",
   "settings.general.row.uiFont.description": "自定义整个界面使用的字体",
   "settings.general.row.followup.title": "跟进消息行为",
