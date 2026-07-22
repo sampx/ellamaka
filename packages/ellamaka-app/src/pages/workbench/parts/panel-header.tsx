@@ -62,12 +62,12 @@ export function PanelHeader(props: {
     <div
       class="flex h-7 shrink-0 items-center gap-1 px-2 border-b relative transition-colors duration-200"
       classList={{
-        "bg-blue-50/80 border-blue-200 dark:bg-blue-950/40 dark:border-blue-900/50": props.isActive,
+        "bg-v2-background-bg-layer-02 border-v2-border-border-strong": props.isActive,
         "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
       }}
     >
       <Show when={props.isActive}>
-        <div class="absolute top-0 inset-x-0 h-[2.5px] bg-blue-600 dark:bg-blue-400" />
+        <div class="absolute top-0 inset-x-0 h-[2.5px] bg-v2-text-text-accent" />
       </Show>
 
       <span
