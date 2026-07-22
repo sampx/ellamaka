@@ -117,8 +117,10 @@ export function PanelHeader(props: {
               classList={{
                 "text-v2-text-text-faint cursor-not-allowed": view.disabled,
                 "cursor-pointer": !view.disabled,
-                "bg-v2-overlay-simple-overlay-hover text-v2-text-text-base": props.panel.viewMode === view.id && !view.disabled,
-                "text-v2-text-text-muted hover:text-v2-text-text-base": props.panel.viewMode !== view.id && !view.disabled,
+                "bg-v2-overlay-simple-overlay-hover": props.panel.viewMode === view.id && !view.disabled,
+                "text-v2-icon-icon-accent": view.hasOpenTui && !view.disabled,
+                "text-v2-text-text-base": !view.hasOpenTui && props.panel.viewMode === view.id && !view.disabled,
+                "text-v2-text-text-muted hover:text-v2-text-text-base": !view.hasOpenTui && props.panel.viewMode !== view.id && !view.disabled,
               }}
               disabled={view.disabled}
               onClick={(e) => {
@@ -128,9 +130,6 @@ export function PanelHeader(props: {
               }}
             >
               <span>{view.label}</span>
-              <Show when={view.hasOpenTui}>
-                <span aria-hidden="true" class="size-2 shrink-0 rounded-full bg-v2-icon-icon-accent" />
-              </Show>
             </button>
           )
         }}
