@@ -66,10 +66,6 @@ export function PanelHeader(props: {
         "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
       }}
     >
-      <Show when={props.isActive}>
-        <div class="absolute top-0 inset-x-0 h-[1.5px] bg-v2-text-text-accent" />
-      </Show>
-
       <span
         class="size-2 rounded-full shrink-0"
         classList={{
