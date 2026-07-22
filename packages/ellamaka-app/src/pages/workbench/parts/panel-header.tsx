@@ -67,7 +67,7 @@ export function PanelHeader(props: {
       }}
     >
       <Show when={props.isActive}>
-        <div class="absolute top-0 inset-x-0 h-[2.5px] bg-v2-text-text-accent" />
+        <div class="absolute top-0 inset-x-0 h-[1.5px] bg-v2-text-text-accent" />
       </Show>
 
       <span
@@ -128,11 +128,6 @@ export function PanelHeader(props: {
                 wb.setPanelViewMode(spacePath, props.panel.id, view.id)
               }}
             >
-              <Show when={view.id === "tui"}>
-                <span class={view.hasOpenTui ? "text-v2-icon-icon-accent" : undefined}>
-                  <IconV2 name="terminal" class="size-3 shrink-0" />
-                </span>
-              </Show>
               <span class={view.hasOpenTui && !isActiveView() ? "text-v2-icon-icon-accent" : undefined}>{view.label}</span>
             </button>
           )
