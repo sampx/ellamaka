@@ -546,7 +546,7 @@ export const SettingsGeneral: Component = () => {
                   settings.appearance.setFontSize(parsed)
                 }
               }}
-              placeholder="14"
+              placeholder="15"
               class="text-12-regular"
             />
           </div>

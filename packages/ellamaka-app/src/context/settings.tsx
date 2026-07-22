@@ -127,7 +127,7 @@ const defaultSettings: Settings = {
     startup: true,
   },
   appearance: {
-    fontSize: 14,
+    fontSize: 15,
     mono: "",
     sans: "",
     terminal: "",
@@ -166,7 +166,7 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       root.style.setProperty("--font-family-mono", monoFontFamily(store.appearance?.mono))
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
 
-      const baseSize = store.appearance?.fontSize ?? 14
+      const baseSize = store.appearance?.fontSize ?? 15
       root.style.setProperty("--ui-font-size-base", `${baseSize}px`)
       root.style.setProperty("--font-size-base", `${baseSize}px`)
       root.style.setProperty("--font-size-small", `${Math.max(12, Math.round(baseSize * 0.93))}px`)

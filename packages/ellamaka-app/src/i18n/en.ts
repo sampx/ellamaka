@@ -761,7 +761,7 @@ export const dict = {
   "settings.general.row.theme.title": "Theme",
   "settings.general.row.theme.description": "Customise how Ellamaka is themed.",
   "settings.general.row.fontSize.title": "Font Size",
-  "settings.general.row.fontSize.description": "Adjust global UI font size (default: 14px)",
+  "settings.general.row.fontSize.description": "Adjust global UI font size (default: 15px)",
   "settings.general.row.font.title": "Code Font",
   "settings.general.row.font.description": "Customise the font used in code blocks",
   "settings.general.row.terminalFont.title": "Terminal Font",

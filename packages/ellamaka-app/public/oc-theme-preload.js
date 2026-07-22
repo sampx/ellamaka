@@ -29,6 +29,14 @@
         root.style.setProperty("--font-size-small", Math.max(12, Math.round(baseSize * 0.93)) + "px")
         root.style.setProperty("--font-size-large", Math.round(baseSize * 1.14) + "px")
         root.style.setProperty("--font-size-x-large", Math.round(baseSize * 1.35) + "px")
+      } else {
+        var baseSize = 15
+        var root = document.documentElement
+        root.style.setProperty("--ui-font-size-base", baseSize + "px")
+        root.style.setProperty("--font-size-base", baseSize + "px")
+        root.style.setProperty("--font-size-small", Math.max(12, Math.round(baseSize * 0.93)) + "px")
+        root.style.setProperty("--font-size-large", Math.round(baseSize * 1.14) + "px")
+        root.style.setProperty("--font-size-x-large", Math.round(baseSize * 1.35) + "px")
       }
     }
   } catch (e) {}
