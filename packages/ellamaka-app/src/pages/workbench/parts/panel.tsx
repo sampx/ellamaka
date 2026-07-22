@@ -369,11 +369,6 @@ export function Panel(props: {
               >
                 <span class="tracking-wider flex items-center gap-1.5">
                   {splitTitle()}
-                  <Show when={isTerminalMaximized()}>
-                    <span class="text-[9px] px-1 py-0.2 rounded bg-v2-border-border-base text-v2-text-text-strong font-normal">
-                      {t("workbench.panel.splitTerminal.maximizedTag")}
-                    </span>
-                  </Show>
                 </span>
                 <div class="flex items-center gap-1">
                   <button
