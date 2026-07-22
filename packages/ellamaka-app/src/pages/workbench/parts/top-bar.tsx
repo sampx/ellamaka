@@ -191,7 +191,7 @@ export function WorkbenchTitlebar() {
         {/* Space Tabs Bar */}
         <div
           role="tablist"
-          class="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center gap-1 p-0.5 rounded-lg bg-v2-background-bg-surface-soft/60 border border-v2-border-border-base/60 overflow-x-auto max-w-[60%] scrollbar-none z-10"
+          class="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-lg overflow-x-auto max-w-[60%] scrollbar-none z-10"
           style={{ "-webkit-app-region": "no-drag" }}
         >
           <For each={wb.tabs}>
@@ -211,11 +211,11 @@ export function WorkbenchTitlebar() {
                   role="tab"
                   tabIndex={0}
                   aria-selected={isActive()}
-                  class={`relative grid h-8 w-max grid-cols-[1rem_max-content_1rem] items-center rounded-md px-2 cursor-pointer shrink-0 ${
-                    isActive()
-                      ? "bg-v2-background-bg-base text-v2-text-text-strong font-semibold border border-v2-border-border-brand-strong/70"
-                      : "border border-transparent text-v2-text-text-muted hover:text-v2-text-text-strong hover:bg-v2-overlay-simple-overlay-hover font-medium"
-                  }`}
+                  class="relative grid h-8 w-max grid-cols-[1rem_max-content_1rem] items-center rounded-md px-2 cursor-pointer shrink-0 transition-colors"
+                  classList={{
+                    "text-v2-text-text-strong font-semibold": isActive(),
+                    "text-v2-text-text-muted hover:text-v2-text-text-base font-medium": !isActive(),
+                  }}
                   style={{ "-webkit-app-region": "no-drag" }}
                   onClick={() => wb.setActive(tab.path)}
                   onKeyDown={(e) => {
@@ -232,9 +232,13 @@ export function WorkbenchTitlebar() {
                     handleTabContextMenu(e, tab)
                   }}
                 >
+                  <Show when={isActive()}>
+                    <span class="absolute bottom-0 inset-x-1.5 h-[2px] rounded-full bg-v2-icon-icon-accent" />
+                  </Show>
+
                   <span class="flex size-4 items-center justify-center">
                     <Show when={isPinned()}>
-                      <PinIcon class="size-3.5 text-v2-icon-icon-accent" />
+                      <PinIcon class={`size-3.5 ${isActive() ? "text-v2-text-text-strong" : "text-v2-text-text-muted"}`} />
                     </Show>
                   </span>
 
