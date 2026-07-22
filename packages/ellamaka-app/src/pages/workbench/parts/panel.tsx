@@ -59,6 +59,13 @@ export function Panel(props: {
 
   const [mountedViews, setMountedViews] = createSignal(new Set<string>())
   const [terminalTitle, setTerminalTitle] = createSignal<string>()
+  const [isTerminalMaximized, setIsTerminalMaximized] = createSignal(false)
+
+  createEffect(() => {
+    if (!props.panel.splitTerminal) {
+      setIsTerminalMaximized(false)
+    }
+  })
   createEffect(
     on(
       () => [props.panel.boundSessionId, props.panel.slotState, props.panel.viewMode, props.panel.tuiPtyId] as const,
@@ -248,7 +255,10 @@ export function Panel(props: {
             <span>工作目录{directoryHealth() === "missing" ? "不存在" : "不可用"} — 终端和 Shell 操作不可用，聊天历史仍可查看</span>
           </div>
         </Show>
-        <div class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative">
+        <div
+          class="flex-1 min-h-[200px] min-w-0 overflow-hidden relative"
+          classList={{ "hidden": isTerminalMaximized() }}
+        >
           {/* 1. PanelLoader wrapper container (physically kept but visually toggled via hidden class) */}
           <div class="w-full h-full" classList={{ "hidden": props.panel.slotState !== "empty" }}>
             <PanelLoader panel={props.panel} spaceName={props.spaceName} spacePath={props.spacePath} />
@@ -312,7 +322,7 @@ export function Panel(props: {
         </div>
 
         {/* Split Divider Handle */}
-        <Show when={props.panel.splitTerminal}>
+        <Show when={props.panel.splitTerminal && !isTerminalMaximized()}>
           <div
             class="h-px z-20 cursor-row-resize bg-v2-border-border-base hover:bg-v2-icon-icon-brand/30 transition-colors flex-shrink-0"
             onMouseDown={handleSplitResizeStart}
@@ -325,18 +335,75 @@ export function Panel(props: {
           {(ptyId) => (
             <div
               class="min-w-0 flex flex-col relative overflow-hidden bg-v2-background-bg-deep flex-shrink-0"
-              classList={{ "hidden": !props.panel.splitTerminal }}
-              style={{ height: `${splitHeight()}px` }}
+              classList={{
+                "hidden": !props.panel.splitTerminal,
+                "flex-1 h-full": isTerminalMaximized(),
+              }}
+              style={{ height: isTerminalMaximized() ? undefined : `${splitHeight()}px` }}
               data-split-terminal
             >
-              <div class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none">
-                <span class="tracking-wider">{splitTitle()}</span>
-                <button
-                  class="hover:text-v2-text-text-base cursor-pointer p-0.5 rounded transition-colors"
-                  onClick={handleCloseSplit}
-                >
-                  ✕
-                </button>
+              <div
+                class="flex h-6 shrink-0 items-center justify-between px-2 bg-v2-background-bg-base border-b border-v2-border-border-base text-10-medium text-v2-text-text-muted select-none cursor-pointer"
+                onDblClick={(e) => {
+                  e.stopPropagation()
+                  setIsTerminalMaximized((prev) => !prev)
+                }}
+                title={t(isTerminalMaximized() ? "workbench.panel.splitTerminal.restore" : "workbench.panel.splitTerminal.maximize")}
+              >
+                <span class="tracking-wider flex items-center gap-1.5">
+                  {splitTitle()}
+                  <Show when={isTerminalMaximized()}>
+                    <span class="text-[9px] px-1 py-0.2 rounded bg-v2-border-border-base text-v2-text-text-strong font-normal">
+                      {t("workbench.panel.splitTerminal.maximizedTag")}
+                    </span>
+                  </Show>
+                </span>
+                <div class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    class="flex items-center justify-center p-0.5 rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors cursor-pointer"
+                    title={t(isTerminalMaximized() ? "workbench.panel.splitTerminal.restore" : "workbench.panel.splitTerminal.maximize")}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsTerminalMaximized((prev) => !prev)
+                    }}
+                    onDblClick={(e) => e.stopPropagation()}
+                  >
+                    <Show
+                      when={isTerminalMaximized()}
+                      fallback={
+                        <svg class="size-3 shrink-0 text-v2-text-text-muted hover:text-v2-text-text-base" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M10 2h4v4" />
+                          <path d="M14 2L9.5 6.5" />
+                          <path d="M6 14H2v-4" />
+                          <path d="M2 14l4.5-4.5" />
+                        </svg>
+                      }
+                    >
+                      <svg class="size-3 shrink-0 text-v2-text-text-muted hover:text-v2-text-text-base" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 6h-4V2" />
+                        <path d="M10 6l4.5-4.5" />
+                        <path d="M2 10h4v4" />
+                        <path d="M6 10l-4.5 4.5" />
+                      </svg>
+                    </Show>
+                  </button>
+                  <button
+                    type="button"
+                    class="flex items-center justify-center p-0.5 rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors cursor-pointer"
+                    title={t("workbench.panel.splitTerminal.hide")}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsTerminalMaximized(false)
+                      handleCloseSplit()
+                    }}
+                    onDblClick={(e) => e.stopPropagation()}
+                  >
+                    <svg class="size-3 shrink-0 text-v2-text-text-muted hover:text-v2-text-text-base" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 4l8 8M12 4l-8 8" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div class="flex-1 min-h-0 min-w-0 overflow-hidden bg-v2-background-bg-deep">
                 <Terminal
