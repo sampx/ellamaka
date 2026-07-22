@@ -153,6 +153,15 @@ export function createAutoScroll(options: AutoScrollOptions) {
     }
   }
 
+  const isSelectionInside = () => {
+    const el = store.scrollRef
+    if (!el) return false
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false
+    const range = selection.getRangeAt(0)
+    return el.contains(range.commonAncestorContainer)
+  }
+
   const updateOverflowAnchor = (el: HTMLElement) => {
     const mode = options.overflowAnchor ?? "dynamic"
 
@@ -165,6 +174,13 @@ export function createAutoScroll(options: AutoScrollOptions) {
       el.style.overflowAnchor = "auto"
       return
     }
+
+    // While the user has an active text selection inside the scroller, freeze
+    // overflow-anchor at its current value. Toggling "none" <-> "auto" here
+    // makes the browser recompute the scroll anchor and adjust scrollTop,
+    // which causes the virtual list to recycle the DOM nodes that hold the
+    // selection and silently clears it.
+    if (isSelectionInside()) return
 
     el.style.overflowAnchor = store.userScrolled ? "auto" : "none"
   }
@@ -214,6 +230,25 @@ export function createAutoScroll(options: AutoScrollOptions) {
   })
 
   createEventListener(() => store.scrollRef, "wheel", handleWheel, { passive: true })
+
+  // When the user starts a text selection inside the scroll container, leave
+  // "follow bottom" mode immediately. The auto-scroll bottom-lock (both the
+  // scrollToBottom effect and the rAF anchor loop in MessageTimeline) would
+  // otherwise force the container to the bottom on every frame, causing virtua
+  // to recycle the DOM nodes that hold the selection and silently clear it.
+  //
+  // When the selection is cleared, re-run updateOverflowAnchor so the overflow
+  // anchor value catches up to the current userScrolled state (it was frozen
+  // during the selection to avoid a browser scroll-anchor recompute that would
+  // recycle the selected DOM nodes).
+  createEventListener(document, "selectionchange", () => {
+    if (isSelectionInside()) {
+      if (!store.userScrolled) stop()
+      return
+    }
+    const el = store.scrollRef
+    if (el) updateOverflowAnchor(el)
+  })
 
   onCleanup(() => {
     if (settleTimer) clearTimeout(settleTimer)

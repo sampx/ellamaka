@@ -537,10 +537,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const restoreFocus = () => {
+    // If the user has an active text selection outside the prompt editor
+    // (e.g. selecting assistant message content to copy), do not steal focus
+    // or clear the selection. setCursorPosition calls removeAllRanges() on
+    // the global selection, which would wipe the user's selection in the
+    // message area when a Select onChange (triggered by panel activation)
+    // fires restoreFocus.
+    if (editorRef) {
+      const selection = window.getSelection()
+      if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+        if (!editorRef.contains(selection.getRangeAt(0).commonAncestorContainer)) return
+      }
+    }
     requestAnimationFrame(() => {
       const cursor = prompt.cursor() ?? promptLength(prompt.current())
-      editorRef.focus()
-      setCursorPosition(editorRef, cursor)
+      editorRef?.focus()
+      if (editorRef) setCursorPosition(editorRef, cursor)
       queueScroll()
     })
   }

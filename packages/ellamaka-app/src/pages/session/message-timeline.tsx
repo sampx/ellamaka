@@ -604,8 +604,27 @@ export function MessageTimeline(props: {
   function anchorMeasuredBottom() {
     if (!listRoot) return false
     if (!measuredBottomAnchored) return false
+    // While the user has an active text selection inside the list, force-
+    // locking to the bottom would cause virtua to recycle the DOM nodes that
+    // hold the selection, silently clearing it. Skip the scroll assignment and
+    // let the loop wind down naturally so the selection stays intact.
+    if (isSelectionInsideList()) return false
     listRoot.scrollTop = listRoot.scrollHeight
     return true
+  }
+
+  // Hard ceiling so the rAF loop can never run indefinitely while a session is
+  // streaming. Without this, `working() ? 12 : bottomAnchorFrames - 1` keeps
+  // resetting the counter to 12 for the whole streaming turn.
+  const bottomAnchorMaxFrames = 240
+
+  function isSelectionInsideList(): boolean {
+    const root = listRoot
+    if (!root) return false
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false
+    const range = selection.getRangeAt(0)
+    return root.contains(range.commonAncestorContainer)
   }
 
   function scheduleMeasuredBottomAnchor() {
@@ -622,7 +641,14 @@ export function MessageTimeline(props: {
         return
       }
 
-      bottomAnchorFrames = working() ? 12 : bottomAnchorFrames - 1
+      // Respect an active selection: skip the forced scroll but keep the loop
+      // alive (decrementing) so it self-terminates instead of hard-stopping and
+      // leaving the container in an unmeasured state.
+      if (isSelectionInsideList()) {
+        bottomAnchorFrames -= 1
+      } else {
+        bottomAnchorFrames = working() ? Math.min(bottomAnchorMaxFrames, bottomAnchorFrames + 4) : bottomAnchorFrames - 1
+      }
       if (bottomAnchorFrames <= 0) return
       bottomAnchorFrame = requestAnimationFrame(tick)
     }
