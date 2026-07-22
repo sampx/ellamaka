@@ -92,7 +92,7 @@ export function PanelHeader(props: {
 
       <Show when={props.panel.slotState === "bound"}>
         <IconButtonV2
-          variant="ghost-muted"
+          variant="ghost"
           size="small"
           style={{ color: hasOpenSplitPty() ? "var(--v2-icon-icon-accent)" : undefined }}
           state={props.panel.splitTerminal ? "pressed" : undefined}
@@ -136,7 +136,7 @@ export function PanelHeader(props: {
 
       <Show when={canRemove()}>
         <IconButtonV2
-          variant="ghost-muted"
+          variant="ghost"
           size="small"
           icon={<IconV2 name="xmark-small" />}
           aria-label={t("workbench.panel.close")}
