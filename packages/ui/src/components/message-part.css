@@ -621,13 +621,14 @@
 }
 
 [data-component="context-tool-group-trigger"] {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   min-height: 24px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: flex-start;
   gap: 0px;
-  cursor: default;
+  cursor: pointer;
 
   [data-slot="context-tool-group-title"] {
     flex-shrink: 1;

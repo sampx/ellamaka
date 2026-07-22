@@ -1,9 +1,10 @@
 [data-component="tool-trigger"] {
   content-visibility: auto;
-  width: 100%;
-  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
   align-items: center;
-  align-self: stretch;
+  align-self: flex-start;
   gap: 0px;
   justify-content: flex-start;
 

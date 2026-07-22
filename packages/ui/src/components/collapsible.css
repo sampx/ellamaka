@@ -14,13 +14,14 @@
   }
 
   [data-slot="collapsible-trigger"] {
-    width: 100%;
-    display: flex;
+    width: fit-content;
+    max-width: 100%;
+    display: inline-flex;
     height: 32px;
     padding: 0;
     align-items: center;
-    align-self: stretch;
-    cursor: default;
+    align-self: flex-start;
+    cursor: pointer;
     user-select: none;
     color: var(--text-base);
 
