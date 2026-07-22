@@ -7,7 +7,7 @@ import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { GENERAL_SCOPE_NAME } from "../workbench-scope"
-import { WorkbenchSettingsMenu } from "./workbench-settings"
+import { WorkbenchSettingsButton } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
 import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
@@ -175,27 +175,10 @@ export function SpaceRail() {
                 }
               }}
             />
-            {/* 空间维护 Icon */}
-            <IconButtonV2
-              variant={activeNav() === "maintenance" ? "neutral" : "ghost-muted"}
-              size="normal"
-              class={`size-8 p-0 flex items-center justify-center ${activeNav() === "maintenance" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
-              icon={<MaintenanceIcon class="size-4" />}
-              aria-label="Maintenance"
-              title="Space Maintenance"
-              onClick={() => {
-                if (activeNav() === "maintenance") {
-                  wb.setDisplay("showSpaceRail", !expanded())
-                } else {
-                  setActiveNav("maintenance")
-                  wb.setDisplay("showSpaceRail", true)
-                }
-              }}
-            />
           </div>
 
           <div class="mt-auto flex flex-col items-center">
-            <WorkbenchSettingsMenu />
+            <WorkbenchSettingsButton />
           </div>
         </div>
 
@@ -204,11 +187,7 @@ export function SpaceRail() {
           <header class="flex h-8 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong uppercase tracking-wider truncate">
-                {activeNav() === "sessions"
-                  ? (wb.activeTabPath === ""
-                      ? t("workbench.sidebar.sessions")
-                      : t("workbench.sidebar.spaceTitle", { name: wb.activeSpaceName }))
-                  : t("workbench.sidebar.maintenance")}
+                {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : t("workbench.sidebar.maintenance")}
               </span>
               <IconButtonV2
                 variant="ghost-muted"

@@ -325,23 +325,11 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     setStore("spaces", path, "panels", () => true, "width", 1)
   }
 
-  function reorderTabs() {
-    setStore("tabs", (tabs) => {
-      const general = tabs.filter((t) => t.path === GENERAL_TAB_PATH)
-      const pinned = tabs.filter((t) => t.path !== GENERAL_TAB_PATH && t.pinned)
-      const unpinned = tabs.filter((t) => t.path !== GENERAL_TAB_PATH && !t.pinned)
-      return [...general, ...pinned, ...unpinned]
-    })
-  }
-
   function pinTab(path: string) {
     if (path === GENERAL_TAB_PATH) return
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index !== -1) {
-      batch(() => {
-        setStore("tabs", index, "pinned", true)
-        reorderTabs()
-      })
+      setStore("tabs", index, "pinned", true)
     }
   }
 
@@ -349,10 +337,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     if (path === GENERAL_TAB_PATH) return
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index !== -1) {
-      batch(() => {
-        setStore("tabs", index, "pinned", false)
-        reorderTabs()
-      })
+      setStore("tabs", index, "pinned", false)
     }
   }
 

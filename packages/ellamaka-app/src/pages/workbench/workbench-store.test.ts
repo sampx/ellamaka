@@ -320,6 +320,19 @@ describe("WorkbenchStore hydrate/migrate", () => {
     expect(store.tabs).toHaveLength(1)
   })
 
+  test("pinning preserves the existing tab order", () => {
+    const input = fixture()
+    input.tabs.push({ name: "Space B", path: "/fixtures/space-b", type: "space" })
+    const store = createWorkbenchStore(input)
+    const initialOrder = store.tabs.map((tab) => tab.path)
+
+    store.pinTab("/fixtures/space-b")
+    expect(store.tabs.map((tab) => tab.path)).toEqual(initialOrder)
+
+    store.unpinTab("/fixtures/space-b")
+    expect(store.tabs.map((tab) => tab.path)).toEqual(initialOrder)
+  })
+
   test("clears space state when space is explicitly removed and opens fresh empty panel next time", () => {
     const store = createWorkbenchStore(fixture())
 

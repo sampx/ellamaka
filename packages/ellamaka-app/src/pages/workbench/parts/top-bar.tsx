@@ -54,6 +54,8 @@ function CheckIcon(props: { class?: string }) {
 
 type TabContextMenu = { x: number; y: number; tab: { name: string; path: string; pinned?: boolean } }
 
+const displaySpaceName = (name: string) => /^[\x00-\x7F]+$/.test(name) ? name.toUpperCase() : name
+
 export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
   const spaceStore = useSpaceStore()
@@ -186,10 +188,10 @@ export function WorkbenchTitlebar() {
           <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
         </div>
 
-        {/* Space Tabs Bar - 绝对居中与全高自适应 (解决容器裁剪横线问题) */}
+        {/* Space Tabs Bar */}
         <div
           role="tablist"
-          class="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 flex items-center justify-center gap-1 h-10 overflow-x-auto max-w-[60%] scrollbar-none z-10"
+          class="absolute left-1/2 top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center gap-1 p-0.5 rounded-lg bg-v2-background-bg-surface-soft/60 border border-v2-border-border-base/60 overflow-x-auto max-w-[60%] scrollbar-none z-10"
           style={{ "-webkit-app-region": "no-drag" }}
         >
           <For each={wb.tabs}>
@@ -202,17 +204,17 @@ export function WorkbenchTitlebar() {
                 }
                 return false
               }
-              const isPinned = isGeneral || !!tab.pinned
+              const isPinned = () => isGeneral || !!tab.pinned
 
               return (
                 <div
                   role="tab"
                   tabIndex={0}
                   aria-selected={isActive()}
-                  class={`group relative flex items-center justify-center gap-1.5 h-full px-3 transition-all cursor-pointer shrink-0 ${
+                  class={`relative grid h-8 w-max grid-cols-[1rem_max-content_1rem] items-center rounded-md px-2 cursor-pointer shrink-0 ${
                     isActive()
-                      ? "text-v2-text-text-strong font-semibold"
-                      : "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover font-medium"
+                      ? "bg-v2-background-bg-base text-v2-text-text-strong font-semibold border border-v2-border-border-brand-strong/70"
+                      : "border border-transparent text-v2-text-text-muted hover:text-v2-text-text-strong hover:bg-v2-overlay-simple-overlay-hover font-medium"
                   }`}
                   style={{ "-webkit-app-region": "no-drag" }}
                   onClick={() => wb.setActive(tab.path)}
@@ -222,67 +224,33 @@ export function WorkbenchTitlebar() {
                       wb.setActive(tab.path)
                     }
                   }}
-                  onContextMenu={(e: MouseEvent) => handleTabContextMenu(e, tab)}
+                  onContextMenu={(e: MouseEvent) => {
+                    if (isGeneral) {
+                      e.preventDefault()
+                      return
+                    }
+                    handleTabContextMenu(e, tab)
+                  }}
                 >
-                  {/* 活动指示器 / 激活状态高亮横线 */}
-                  <Show when={isActive()}>
-                    <div class="absolute top-0 inset-x-0 transition-all bg-v2-icon-icon-accent h-[3px]" />
-                  </Show>
-
-                  {/* Pin 状态常驻标识 Icon */}
-                  <Show when={isPinned}>
-                    <span class="text-v2-icon-icon-accent shrink-0 flex items-center" title={t(isGeneral ? "workbench.topbar.generalPinned" : "workbench.topbar.tabPinned")}>
-                      <PinIcon class="size-3.5" />
-                    </span>
-                  </Show>
-
-                  <span class="max-w-32 truncate text-center text-[13px] leading-none">
-                    {isGeneral ? t("workbench.sidebar.sessions") : tab.name}
+                  <span class="flex size-4 items-center justify-center">
+                    <Show when={isPinned()}>
+                      <PinIcon class="size-3.5 text-v2-icon-icon-accent" />
+                    </Show>
                   </span>
 
-                  {/* 空间内部会话后台运行动效 */}
-                  <Show when={isSpaceWorking(tab.path, tab.name)}>
-                    <Spinner class="size-3.5 shrink-0 text-v2-icon-icon-accent" />
-                  </Show>
+                  <span class="whitespace-nowrap text-center text-[12px] leading-none tracking-[0.01em]">
+                    {isGeneral ? t("workbench.sidebar.sessions") : displaySpaceName(tab.name)}
+                  </span>
 
-                  {/* 后台会话完成未读指示蓝点 */}
-                  <Show when={!isSpaceWorking(tab.path, tab.name) && isSpaceUnread(tab.path, tab.name)}>
-                    <div class="size-2 rounded-full shrink-0 bg-v2-icon-icon-accent" />
-                  </Show>
+                  <span class="flex size-4 items-center justify-center">
+                    <Show when={isSpaceWorking(tab.path, tab.name)}>
+                      <Spinner class="size-3.5 text-v2-icon-icon-accent" />
+                    </Show>
+                    <Show when={!isSpaceWorking(tab.path, tab.name) && isSpaceUnread(tab.path, tab.name)}>
+                      <div class="size-2 rounded-full bg-v2-icon-icon-accent" />
+                    </Show>
+                  </span>
 
-                  {/* Actions for Space Tabs */}
-                  <Show when={!isGeneral}>
-                    <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        class="p-0.5 rounded text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-background-bg-base"
-                        title={tab.pinned ? "取消钉住" : "钉住 Tab"}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (tab.pinned) {
-                            wb.unpinTab(tab.path)
-                          } else {
-                            wb.pinTab(tab.path)
-                          }
-                        }}
-                      >
-                        <PinIcon class={`size-3.5 ${tab.pinned ? "text-v2-icon-icon-accent" : "text-v2-text-text-muted"}`} />
-                      </button>
-                      <Show when={!tab.pinned}>
-                        <button
-                          type="button"
-                          class="p-0.5 rounded text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-background-bg-base"
-                          title="关闭 Tab"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleCloseTab(tab.name, tab.path)
-                          }}
-                        >
-                          <IconV2 name="xmark-small" class="size-3.5" />
-                        </button>
-                      </Show>
-                    </div>
-                  </Show>
                 </div>
               )
             }}
@@ -335,7 +303,7 @@ export function WorkbenchTitlebar() {
                           <SpaceIcon
                             class={`size-3.5 shrink-0 ${isOpen() ? "text-v2-icon-icon-accent" : "text-v2-text-text-muted"}`}
                           />
-                          <span class="truncate">{sp.name.replace(/[\s+*]+$/, "").trim()}</span>
+                          <span class="truncate">{displaySpaceName(sp.name.replace(/[\s+*]+$/, "").trim())}</span>
                         </div>
                         <Show when={isActive()}>
                           <CheckIcon class="size-3.5 text-v2-icon-icon-accent shrink-0" />
@@ -392,20 +360,19 @@ export function WorkbenchTitlebar() {
                   <span>{tab.pinned ? "取消钉住 Tab" : "钉住 Tab"}</span>
                 </button>
                 <div class="my-1 border-t border-v2-border-border-base" />
+                <button
+                  type="button"
+                  class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[13px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-40"
+                  disabled={isPinned}
+                  onClick={() => {
+                    if (!isPinned) handleCloseTab(tab.name, tab.path)
+                    setTabMenu(undefined)
+                  }}
+                >
+                  <IconV2 name="xmark-small" class="size-3.5" />
+                  <span>关闭 Tab</span>
+                </button>
               </Show>
-
-              <button
-                type="button"
-                class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-[13px] text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-40"
-                disabled={isPinned}
-                onClick={() => {
-                  if (!isPinned) handleCloseTab(tab.name, tab.path)
-                  setTabMenu(undefined)
-                }}
-              >
-                <IconV2 name="xmark-small" class="size-3.5" />
-                <span>关闭 Tab</span>
-              </button>
             </div>
           )
         }}
