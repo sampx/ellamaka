@@ -357,6 +357,7 @@ export const Terminal = (props: TerminalProps) => {
     requestAnimationFrame(() => {
       if (disposed) return
       resetTerminalViewport(container)
+      focusTerminal()
     })
   }
 

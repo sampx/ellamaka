@@ -1511,6 +1511,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   if (!(target instanceof HTMLElement)) return
                   if (target.closest('[data-action^="prompt-"]')) return
                   editorRef?.focus()
+                  requestAnimationFrame(() => {
+                    const selection = window.getSelection()
+                    if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+                      if (!editorRef.contains(selection.getRangeAt(0).commonAncestorContainer)) return
+                    }
+                    editorRef?.focus()
+                  })
                 }}
               >
                 <div class="relative max-h-[180px] overflow-y-auto no-scrollbar" ref={(el) => (scrollRef = el)}>
@@ -1536,6 +1543,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     onCompositionEnd={handleCompositionEnd}
                     onBlur={handleBlur}
                     onKeyDown={handleKeyDown}
+                    onMouseDown={() => {
+                      editorRef?.focus()
+                      requestAnimationFrame(() => {
+                        editorRef?.focus()
+                      })
+                    }}
+                    onClick={() => {
+                      editorRef?.focus()
+                    }}
                     classList={{
                       "select-text": true,
                       "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base": true,

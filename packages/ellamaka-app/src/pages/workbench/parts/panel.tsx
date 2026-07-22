@@ -21,6 +21,14 @@ import { handlePanelDrop, startSplitResize } from "./panel-services"
 import { PanelHeader } from "./panel-header"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
+function isInteractiveInputElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true
+  if (target.closest('[contenteditable="true"], [role="textbox"], textarea, input, .xterm, [data-component="terminal"]')) return true
+  return false
+}
+
 export function Panel(props: {
   panel: WorkbenchPanel
   spaceName: string
@@ -223,9 +231,18 @@ export function Panel(props: {
 
   return (
     <div
-      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-all duration-200"
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-[flex] duration-200"
       style={{ flex: props.panel.width }}
-      onClick={props.onActivate}
+      onMouseDown={(e: MouseEvent) => {
+        if (!props.isActive && isInteractiveInputElement(e.target)) {
+          props.onActivate()
+        }
+      }}
+      onClick={() => {
+        if (!props.isActive) {
+          props.onActivate()
+        }
+      }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
       data-panel-id={props.panel.id}
@@ -303,9 +320,9 @@ export function Panel(props: {
                             </div>
                           }
                         >
-                          {(loadedSession) => viewDef.render({
+                          {viewDef.render({
                             panel: props.panel,
-                            session: loadedSession(),
+                            session: session()!,
                             directory: props.panel.directory,
                             sdk,
                             spaceName: props.spaceName,
