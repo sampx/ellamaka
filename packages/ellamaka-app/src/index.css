@@ -58,6 +58,10 @@
 
 html, body, #root {
   overflow: hidden !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
 }
 
 @layer components {

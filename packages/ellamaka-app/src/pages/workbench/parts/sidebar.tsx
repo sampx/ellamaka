@@ -186,7 +186,7 @@ export function SpaceRail() {
         <div class={`flex-1 min-w-0 flex flex-col h-full bg-v2-background-bg-deep ${expanded() ? "" : "hidden"}`}>
           <header class="flex h-8 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
-              <span class="text-11-medium text-v2-text-text-strong uppercase tracking-wider truncate">
+              <span class="text-11-medium text-v2-text-text-strong truncate">
                 {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : t("workbench.sidebar.maintenance")}
               </span>
               <IconButtonV2

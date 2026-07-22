@@ -16,9 +16,22 @@
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
 
-  // Update theme-color meta tag to match app color scheme
-  var metas = document.querySelectorAll("meta[name='theme-color']")
-  if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#131010" : "#F8F7F7")
+  // Preload UI font sizes to prevent FOUT / layout shift on reload
+  try {
+    var rawSettings = localStorage.getItem("opencode.settings.v3") || localStorage.getItem("settings.v3")
+    if (rawSettings) {
+      var settingsData = JSON.parse(rawSettings)
+      if (settingsData && settingsData.appearance && settingsData.appearance.fontSize) {
+        var baseSize = settingsData.appearance.fontSize
+        var root = document.documentElement
+        root.style.setProperty("--ui-font-size-base", baseSize + "px")
+        root.style.setProperty("--font-size-base", baseSize + "px")
+        root.style.setProperty("--font-size-small", Math.max(12, Math.round(baseSize * 0.93)) + "px")
+        root.style.setProperty("--font-size-large", Math.round(baseSize * 1.14) + "px")
+        root.style.setProperty("--font-size-x-large", Math.round(baseSize * 1.35) + "px")
+      }
+    }
+  } catch (e) {}
 
   if (themeId === "oc-2") return
 

@@ -59,7 +59,8 @@ export const newLayoutDesignsDefault = import.meta.env.VITE_OPENCODE_CHANNEL !==
 
 const monoFallback =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-const sansFallback = 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+const sansFallback =
+  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif'
 const terminalFallback =
   '"JetBrainsMono Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
 
@@ -164,6 +165,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       const root = document.documentElement
       root.style.setProperty("--font-family-mono", monoFontFamily(store.appearance?.mono))
       root.style.setProperty("--font-family-sans", sansFontFamily(store.appearance?.sans))
+
+      const baseSize = store.appearance?.fontSize ?? 14
+      root.style.setProperty("--ui-font-size-base", `${baseSize}px`)
+      root.style.setProperty("--font-size-base", `${baseSize}px`)
+      root.style.setProperty("--font-size-small", `${Math.max(12, Math.round(baseSize * 0.93))}px`)
+      root.style.setProperty("--font-size-large", `${Math.round(baseSize * 1.14)}px`)
+      root.style.setProperty("--font-size-x-large", `${Math.round(baseSize * 1.35)}px`)
     })
 
     createEffect(() => {

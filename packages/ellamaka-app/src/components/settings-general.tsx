@@ -542,6 +542,29 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
+          title={language.t("settings.general.row.fontSize.title") ?? "Font Size"}
+          description={language.t("settings.general.row.fontSize.description") ?? "Adjust global UI font size (default: 14px)"}
+        >
+          <div class="w-full sm:w-[220px]">
+            <TextField
+              data-action="settings-font-size"
+              label={language.t("settings.general.row.fontSize.title") ?? "Font Size"}
+              hideLabel
+              type="number"
+              value={String(settings.appearance.fontSize())}
+              onChange={(value) => {
+                const parsed = parseInt(value, 10)
+                if (!isNaN(parsed) && parsed >= 10 && parsed <= 24) {
+                  settings.appearance.setFontSize(parsed)
+                }
+              }}
+              placeholder="14"
+              class="text-12-regular"
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
           title={language.t("settings.general.row.uiFont.title")}
           description={language.t("settings.general.row.uiFont.description")}
         >

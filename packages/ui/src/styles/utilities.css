@@ -43,11 +43,39 @@
   text-align: left;
 }
 
+.text-11-regular {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-style: normal;
+  font-weight: 450;
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-11-medium {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-style: normal;
+  font-weight: 500;
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+.text-11-mono {
+  font-family: var(--font-family-mono);
+  font-feature-settings: var(--font-feature-settings-mono);
+  font-size: var(--font-size-small);
+  font-style: normal;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
 .text-12-regular {
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
   font-style: normal;
-  font-weight: var(--font-weight-regular);
+  font-weight: 450;
   line-height: var(--line-height-large); /* 166.667% */
   letter-spacing: var(--letter-spacing-normal);
 }
@@ -56,7 +84,7 @@
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
   font-style: normal;
-  font-weight: var(--font-weight-medium);
+  font-weight: 500;
   line-height: var(--line-height-large); /* 166.667% */
   letter-spacing: var(--letter-spacing-normal);
 }
@@ -75,7 +103,7 @@
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base);
   font-style: normal;
-  font-weight: var(--font-weight-regular);
+  font-weight: 450;
   line-height: var(--line-height-x-large); /* 171.429% */
   letter-spacing: var(--letter-spacing-normal);
 }

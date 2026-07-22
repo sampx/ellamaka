@@ -233,7 +233,7 @@ export function WorkbenchTitlebar() {
                   }}
                 >
                   <Show when={isActive()}>
-                    <span class="absolute bottom-0 inset-x-1.5 h-[2px] rounded-full bg-v2-icon-icon-accent" />
+                    <span class="absolute bottom-0 inset-x-6 h-[2px] rounded-full bg-v2-icon-icon-accent" />
                   </Show>
 
                   <span class="flex size-4 items-center justify-center">
@@ -242,7 +242,7 @@ export function WorkbenchTitlebar() {
                     </Show>
                   </span>
 
-                  <span class="whitespace-nowrap text-center text-[12px] leading-none tracking-[0.01em]">
+                  <span class="whitespace-nowrap inline-flex items-center text-center text-11-medium leading-none">
                     {isGeneral ? t("workbench.sidebar.sessions") : displaySpaceName(tab.name)}
                   </span>
 
