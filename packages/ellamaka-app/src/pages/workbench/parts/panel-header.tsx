@@ -110,17 +110,16 @@ export function PanelHeader(props: {
       <For each={headerViews()}>
         {(view) => {
           const spacePath = props.spacePath
+          const isActiveView = () => props.panel.viewMode === view.id
           return (
             <button
               type="button"
-              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-10-regular transition-colors"
+              class="h-5 inline-flex items-center justify-center gap-1 px-1.5 rounded-md text-10-medium transition-all select-none"
               classList={{
                 "text-v2-text-text-faint cursor-not-allowed": view.disabled,
                 "cursor-pointer": !view.disabled,
-                "bg-v2-overlay-simple-overlay-hover": props.panel.viewMode === view.id && !view.disabled,
-                "text-v2-icon-icon-accent": view.hasOpenTui && !view.disabled,
-                "text-v2-text-text-base": !view.hasOpenTui && props.panel.viewMode === view.id && !view.disabled,
-                "text-v2-text-text-muted hover:text-v2-text-text-base": !view.hasOpenTui && props.panel.viewMode !== view.id && !view.disabled,
+                "bg-v2-overlay-simple-overlay-pressed text-v2-text-text-strong font-semibold shadow-xs": isActiveView() && !view.disabled,
+                "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover font-normal": !isActiveView() && !view.disabled,
               }}
               disabled={view.disabled}
               onClick={(e) => {
@@ -129,7 +128,12 @@ export function PanelHeader(props: {
                 wb.setPanelViewMode(spacePath, props.panel.id, view.id)
               }}
             >
-              <span>{view.label}</span>
+              <Show when={view.id === "tui"}>
+                <span class={view.hasOpenTui ? "text-v2-icon-icon-accent" : undefined}>
+                  <IconV2 name="terminal" class="size-3 shrink-0" />
+                </span>
+              </Show>
+              <span class={view.hasOpenTui && !isActiveView() ? "text-v2-icon-icon-accent" : undefined}>{view.label}</span>
             </button>
           )
         }}
