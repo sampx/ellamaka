@@ -233,7 +233,7 @@ export function WorkbenchTitlebar() {
                   }}
                 >
                   <Show when={isActive()}>
-                    <span class="absolute bottom-0 inset-x-6 h-[2px] rounded-full bg-v2-icon-icon-accent" />
+                    <span class="absolute top-0 inset-x-6 h-[2px] rounded-full bg-v2-icon-icon-accent" />
                   </Show>
 
                   <span class="flex size-4 items-center justify-center">
