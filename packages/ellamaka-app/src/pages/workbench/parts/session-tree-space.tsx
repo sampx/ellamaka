@@ -115,12 +115,16 @@ function sortSessionsByPanelAndPin(
   spacePath: string,
   wb: ReturnType<typeof useWorkbenchState>,
 ): MergedSession[] {
-  const getPanelIndex = (sessionID: string) => {
-    const space = wb.spaceState(spacePath)
-    if (!space) return 999
-    const idx = space.panels.findIndex((p) => p.boundSessionId === sessionID && p.slotState === "bound")
-    return idx !== -1 ? idx : 999
+  const space = wb.spaceState(spacePath)
+  const panelIndexMap = new Map<string, number>()
+  if (space) {
+    space.panels.forEach((panel, index) => {
+      if (panel.slotState === "bound" && panel.boundSessionId) {
+        panelIndexMap.set(panel.boundSessionId, index)
+      }
+    })
   }
+  const getPanelIndex = (sessionID: string) => panelIndexMap.get(sessionID) ?? 999
 
   return [...merged].sort((a, b) => {
     const aPinned = pinnedSet.has(a.id)

@@ -1,4 +1,4 @@
-import { Show } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useWorkbenchActions } from "../workbench-actions"
@@ -89,7 +89,7 @@ export function SessionTreeRow(props: {
   const dirHealth = () =>
     props.spacePath === "" ? "healthy" : (sessionData()?.directoryHealth ?? "healthy")
 
-  const sessionStatusType = () => {
+  const sessionStatusType = createMemo(() => {
     const sessionID = props.session.id
     if (!sessionID) return "idle"
 
@@ -109,7 +109,7 @@ export function SessionTreeRow(props: {
     }
 
     return "idle"
-  }
+  })
 
   const isWorking = () => sessionStatusType() !== "idle"
 
