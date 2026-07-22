@@ -365,7 +365,6 @@ export function Panel(props: {
                   e.stopPropagation()
                   setIsTerminalMaximized((prev) => !prev)
                 }}
-                title={t(isTerminalMaximized() ? "workbench.panel.splitTerminal.restore" : "workbench.panel.splitTerminal.maximize")}
               >
                 <span class="tracking-wider flex items-center gap-1.5">
                   {splitTitle()}
@@ -374,7 +373,6 @@ export function Panel(props: {
                   <button
                     type="button"
                     class="flex items-center justify-center p-0.5 rounded hover:bg-v2-overlay-simple-overlay-hover transition-colors cursor-pointer"
-                    title={t(isTerminalMaximized() ? "workbench.panel.splitTerminal.restore" : "workbench.panel.splitTerminal.maximize")}
                     onClick={(e) => {
                       e.stopPropagation()
                       setIsTerminalMaximized((prev) => !prev)

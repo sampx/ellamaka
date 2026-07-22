@@ -1019,8 +1019,6 @@ export const dict = {
   "workbench.panel.splitTerminal.title": "Split terminal",
   "workbench.panel.splitTerminal.resize": "Drag to resize the split terminal",
   "workbench.panel.splitTerminal.loading": "Starting split shell...",
-  "workbench.panel.splitTerminal.maximize": "Maximize terminal",
-  "workbench.panel.splitTerminal.restore": "Restore terminal",
   "workbench.sidebar.spaces": "Sessions",
   "workbench.sidebar.sessions": "ASSISTANT",
   "workbench.sidebar.refreshing": "Refreshing session list...",
