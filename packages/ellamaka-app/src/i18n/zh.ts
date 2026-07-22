@@ -966,7 +966,6 @@ export const dict = {
   "workbench.panel.splitTerminal.loading": "正在启动拆分终端...",
   "workbench.panel.splitTerminal.maximize": "铺满面板 (双击标题栏)",
   "workbench.panel.splitTerminal.restore": "还原终端高度 (双击标题栏)",
-  "workbench.panel.splitTerminal.maximizedTag": "已铺满",
   "workbench.sidebar.spaces": "会话",
   "workbench.sidebar.sessions": "助理",
   "workbench.sidebar.refreshing": "正在刷新会话列表...",
