@@ -223,7 +223,11 @@ export function Panel(props: {
 
   return (
     <div
-      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-all duration-200"
+      class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b opacity-100 transition-all duration-200"
+      classList={{
+        "ring-1 ring-v2-icon-icon-accent/40 z-10 border-v2-border-border-strong": props.isActive,
+        "border-v2-border-border-base": !props.isActive,
+      }}
       style={{ flex: props.panel.width }}
       onClick={props.onActivate}
       onDragOver={(e) => e.preventDefault()}
