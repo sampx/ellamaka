@@ -46,7 +46,7 @@ describe("desktop release repair", () => {
 
     expect(config).toContain('identity: "-"')
     expect(config).toContain("extraMetadata")
-    expect(config).toContain('name: "ellamaka"')
+    expect(config).toContain("packageName")
     expect(config).toContain('executableName: "ellamaka"')
     expect(config).toContain("OPENCODE_VERSION")
     expect(config).toContain("OPENCODE_BUILD_ID")

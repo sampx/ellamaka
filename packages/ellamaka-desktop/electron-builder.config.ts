@@ -14,11 +14,17 @@ function getPublishUrl(): string | undefined {
   return undefined
 }
 
+const packageName = (() => {
+  if (channel === "beta") return "ellamaka-beta"
+  if (channel === "main") return "ellamaka-main"
+  return "ellamaka"
+})()
+
 const getBase = (): Configuration => ({
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
   copyright: "Copyright © 2025 Ellamaka",
   extraMetadata: {
-    name: "ellamaka",
+    name: packageName,
     ...(version ? { version } : {}),
     ...(build ? { ellamakaBuild: build } : {}),
   },
