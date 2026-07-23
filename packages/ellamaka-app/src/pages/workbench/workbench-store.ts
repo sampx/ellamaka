@@ -1,6 +1,6 @@
 import { batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { GENERAL_SPACE_NAME } from "./workbench-scope"
+import { GENERAL_SPACE_NAME, normalizeSpacePath } from "./workbench-scope"
 
 export type PanelMode = "" | "tui" | "chat"
 export type PanelSlotState = "empty" | "bound"
@@ -90,9 +90,10 @@ function uniquePanelID() {
 }
 
 function defaultSpaceState(directory = "/"): SpaceWorkbenchState {
+  const normDir = normalizeSpacePath(directory) || directory
   const firstID = uniquePanelID()
   return {
-    panels: [{ id: firstID, slotState: "empty", mode: "", directory, width: 1 }],
+    panels: [{ id: firstID, slotState: "empty", mode: "", directory: normDir, width: 1 }],
     activePanelID: firstID,
   }
 }
@@ -101,8 +102,10 @@ function hydratePanel(
   panel: Omit<WorkbenchPanel, "slotState" | "viewMode"> & { slotState?: PanelSlotState; viewMode?: PanelViewMode },
 ): WorkbenchPanel {
   const viewMode = panel.viewMode ?? (panel.tuiPtyId ? "tui" : undefined)
+  const normDir = normalizeSpacePath(panel.directory) || panel.directory
   return {
     ...panel,
+    directory: normDir,
     slotState: panel.slotState ?? (panel.tuiPtyId ? "bound" : "empty"),
     ...(viewMode === undefined ? {} : { viewMode }),
   }
@@ -116,15 +119,15 @@ export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableW
     display: { ...DISPLAY_DEFAULTS, ...value.display },
     spaces: Object.fromEntries(
       Object.entries(value.spaces ?? {}).map(([spacePath, space]) => [
-        spacePath,
+        normalizeSpacePath(spacePath),
         {
           ...space,
           panels: (space.panels ?? []).map((panel) => ({ ...panel })),
         },
       ]),
     ),
-    tabs: (value.tabs ?? []).map((tab) => ({ ...tab })),
-    ...(value.activeTabPath === undefined ? {} : { activeTabPath: value.activeTabPath }),
+    tabs: (value.tabs ?? []).map((tab) => ({ ...tab, path: normalizeSpacePath(tab.path) })),
+    ...(value.activeTabPath === undefined ? {} : { activeTabPath: normalizeSpacePath(value.activeTabPath) }),
     ...(value.activeSpaceName === undefined ? {} : { activeSpaceName: value.activeSpaceName }),
   }
 }
@@ -148,7 +151,7 @@ function normalizePersistedWorkbench(value: HydratableWorkbench): PersistedWorkb
     display: snapshot.display,
     spaces: Object.fromEntries(
       Object.entries(snapshot.spaces).map(([path, space]) => [
-        path,
+        normalizeSpacePath(path),
         {
           ...space,
           panels: space.panels.map(hydratePanel),
@@ -167,7 +170,8 @@ function isPanelMode(mode: PanelViewMode): mode is PanelMode {
 export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEFAULTS) {
   const [store, setStore] = createStore<PersistedWorkbench>(normalizePersistedWorkbench(initial))
 
-  function migrateLegacyPanels(path: string) {
+  function migrateLegacyPanels(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     const space = store.spaces[path]
     if (!space?.panels.some((panel) => panel.slotState === undefined)) return
     setStore("spaces", path, "panels", (panels) =>
@@ -226,11 +230,12 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     }
   }
 
-  function spaceState(path: string): SpaceWorkbenchState | undefined {
-    return store.spaces[path]
+  function spaceState(rawPath: string): SpaceWorkbenchState | undefined {
+    return store.spaces[normalizeSpacePath(rawPath)]
   }
 
-  function ensureSpace(path: string) {
+  function ensureSpace(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (!store.spaces[path]) {
       setStore("spaces", path, defaultSpaceState(path))
       return
@@ -238,7 +243,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     migrateLegacyPanels(path)
   }
 
-  function addPanel(path: string): string | undefined {
+  function addPanel(rawPath: string): string | undefined {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     const space = store.spaces[path]
     if (!space || space.panels.length >= 3) return undefined
@@ -254,7 +260,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     return id
   }
 
-  function removePanel(path: string, id: string) {
+  function removePanel(rawPath: string, id: string) {
+    const path = normalizeSpacePath(rawPath)
     const space = store.spaces[path]
     if (!space || space.panels.length <= 1 || !space.panels.some((panel) => panel.id === id)) return false
     setStore(
@@ -273,7 +280,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     return true
   }
 
-  function setPanelMode(path: string, id: string, mode: PanelMode) {
+  function setPanelMode(rawPath: string, id: string, mode: PanelMode) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === id, produce((panel) => {
       panel.mode = mode
@@ -281,7 +289,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     }))
   }
 
-  function setPanelPtyId(path: string, id: string, type: "tui" | "term" | "split", ptyID: string | undefined) {
+  function setPanelPtyId(rawPath: string, id: string, type: "tui" | "term" | "split", ptyID: string | undefined) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === id, produce((panel) => {
       if (type === "tui") panel.tuiPtyId = ptyID
@@ -290,42 +299,50 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     }))
   }
 
-  function setPanelSplitTerminal(path: string, id: string, open: boolean) {
+  function setPanelSplitTerminal(rawPath: string, id: string, open: boolean) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === id, "splitTerminal", open)
   }
 
-  function setActivePanel(path: string, id: string) {
+  function setActivePanel(rawPath: string, id: string) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     if (!store.spaces[path]?.panels.some((panel) => panel.id === id)) return
     setStore("spaces", path, "activePanelID", id)
   }
 
-  function setPanelDirectory(path: string, id: string, directory: string) {
+  function setPanelDirectory(rawPath: string, id: string, directory: string) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
-    setStore("spaces", path, "panels", (panel) => panel.id === id, "directory", directory)
+    const normDir = normalizeSpacePath(directory) || directory
+    setStore("spaces", path, "panels", (panel) => panel.id === id, "directory", normDir)
   }
 
   function setDisplay<K extends keyof WorkbenchDisplayState>(key: K, value: WorkbenchDisplayState[K]) {
     setStore("display", key, value)
   }
 
-  function setPanelWidth(path: string, id: string, width: number) {
+  function setPanelWidth(rawPath: string, id: string, width: number) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === id, "width", width)
   }
 
-  function setPanelSplitHeight(path: string, id: string, height: number) {
+  function setPanelSplitHeight(rawPath: string, id: string, height: number) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === id, "splitHeight", height)
   }
 
-  function resetPanelWidths(path: string) {
+  function resetPanelWidths(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", () => true, "width", 1)
   }
 
-  function pinTab(path: string) {
+  function pinTab(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (path === GENERAL_TAB_PATH) return
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index !== -1) {
@@ -333,7 +350,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     }
   }
 
-  function unpinTab(path: string) {
+  function unpinTab(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (path === GENERAL_TAB_PATH) return
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index !== -1) {
@@ -341,7 +359,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     }
   }
 
-  function closeTab(path: string) {
+  function closeTab(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (path === GENERAL_TAB_PATH) return false
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index === -1) return false
@@ -356,7 +375,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     return true
   }
 
-  function closeOtherTabs(path: string) {
+  function closeOtherTabs(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     batch(() => {
       setStore("tabs", (tabs) => tabs.filter((tab) => tab.path === GENERAL_TAB_PATH || tab.pinned || tab.path === path))
       if (!store.tabs.some((tab) => tab.path === store.activeTabPath)) {
@@ -365,7 +385,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     })
   }
 
-  function closeRightTabs(path: string) {
+  function closeRightTabs(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     const index = store.tabs.findIndex((tab) => tab.path === path)
     if (index === -1) return
     batch(() => {
@@ -376,7 +397,8 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     })
   }
 
-  function removeSpace(path: string) {
+  function removeSpace(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (!store.spaces[path] && !store.tabs.some((t) => t.path === path)) return false
     const tab = store.tabs.find((candidate) => candidate.path === path)
     batch(() => {
@@ -390,18 +412,21 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     return true
   }
 
-  function bindSessionToPanel(path: string, panelID: string, session: WorkbenchSessionBinding) {
+  function bindSessionToPanel(rawPath: string, panelID: string, session: WorkbenchSessionBinding) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
+    const normDir = normalizeSpacePath(session.directory) || session.directory || path
     setStore("spaces", path, "panels", (panel) => panel.id === panelID, produce((panel) => {
       panel.slotState = "bound"
       panel.boundSessionId = session.id
       panel.viewMode = session.type
       panel.mode = session.type
-      panel.directory = session.directory || path
+      panel.directory = normDir
     }))
   }
 
-  function unbindSessionFromPanel(path: string, panelID: string) {
+  function unbindSessionFromPanel(rawPath: string, panelID: string) {
+    const path = normalizeSpacePath(rawPath)
     const panel = store.spaces[path]?.panels.find((candidate) => candidate.id === panelID)
     if (!panel || (panel.slotState === "empty" && !panel.boundSessionId)) return false
     setStore("spaces", path, "panels", (candidate) => candidate.id === panelID, produce((value) => {
@@ -428,12 +453,14 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     return changed
   }
 
-  function setPanelSlotState(path: string, panelID: string, state: PanelSlotState) {
+  function setPanelSlotState(rawPath: string, panelID: string, state: PanelSlotState) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === panelID, "slotState", state)
   }
 
-  function setPanelViewMode(path: string, panelID: string, mode: PanelViewMode) {
+  function setPanelViewMode(rawPath: string, panelID: string, mode: PanelViewMode) {
+    const path = normalizeSpacePath(rawPath)
     ensureSpace(path)
     setStore("spaces", path, "panels", (panel) => panel.id === panelID, produce((panel) => {
       panel.viewMode = mode
@@ -468,22 +495,26 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
   }
 
   function openTab(space: WopalSpace) {
+    const normPath = normalizeSpacePath(space.path)
+    const normSpace = { ...space, path: normPath }
     batch(() => {
-      if (!store.tabs.some((tab) => tab.path === space.path)) {
-        setStore("tabs", store.tabs.length, { ...space })
+      if (!store.tabs.some((tab) => tab.path === normPath)) {
+        setStore("tabs", store.tabs.length, normSpace)
       }
-      setStore("activeTabPath", space.path)
+      setStore("activeTabPath", normPath)
     })
   }
 
-  function setActive(path: string) {
+  function setActive(rawPath: string) {
+    const path = normalizeSpacePath(rawPath)
     if (store.tabs.some((tab) => tab.path === path)) setStore("activeTabPath", path)
   }
 
   function validateTabs(validPaths: Set<string>) {
+    const normalizedValid = new Set(Array.from(validPaths).map(normalizeSpacePath))
     batch(() => {
       setStore("tabs", (tabs) => {
-        const filtered = tabs.filter((tab) => tab.path === GENERAL_TAB_PATH || validPaths.has(tab.path))
+        const filtered = tabs.filter((tab) => tab.path === GENERAL_TAB_PATH || normalizedValid.has(tab.path))
         return filtered.length === tabs.length ? tabs : filtered
       })
       const current = store.activeTabPath

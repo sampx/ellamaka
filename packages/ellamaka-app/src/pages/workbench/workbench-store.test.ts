@@ -367,4 +367,22 @@ describe("WorkbenchStore hydrate/migrate", () => {
     store.closeOtherTabs("/space-b")
     expect(store.tabs.map((t) => t.path)).toEqual(["", "/space-a", "/space-b"])
   })
+
+  test("normalizes Windows backslash paths seamlessly for spaces and tabs lookup", () => {
+    const store = createWorkbenchStore()
+    const winPath = "C:\\Users\\Sam\\Project"
+    const normPath = "C:/Users/Sam/Project"
+
+    store.ensureSpace(winPath)
+    expect(store.spaceState(winPath)).toBeDefined()
+    expect(store.spaceState(normPath)).toBeDefined()
+    expect(store.spaceState(winPath)).toBe(store.spaceState(normPath))
+
+    const panel = store.spaceState(normPath)?.panels[0]
+    expect(panel).toBeDefined()
+
+    store.openTab({ name: "Win Project", path: winPath, type: "space" })
+    expect(store.activeTabPath).toBe(normPath)
+    expect(store.tabs.some((t) => t.path === normPath)).toBe(true)
+  })
 })

@@ -14,7 +14,7 @@ export type ScopeTab = {
   type?: string
 }
 
-function normalizeSpacePath(path: string) {
+export function normalizeSpacePath(path: string) {
   const normalized = path.replaceAll("\\", "/")
   if (normalized === "/" || /^[A-Za-z]:\/$/.test(normalized)) return normalized
   return normalized.replace(/\/+$/, "")
