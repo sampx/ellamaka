@@ -3,67 +3,89 @@ set -euo pipefail
 
 SCRIPT="$(basename "$0")"
 
+# --- Utility ---
+die() {
+  echo "错误: $*" >&2
+  exit 1
+}
+
+# --- Help ---
 usage() {
   cat <<EOF
 $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellamaka-desktop，并 watch 至完成
 
 用法:
-  $SCRIPT <version> [remote] [--channel <beta|prod>] [--retag] [--cli|--desktop]
+  $SCRIPT <version> [remote] [选项]
 
-参数:
-  version   版本号（必填），如 0.0.1-p1-test（v 前缀自动补齐）
+━━━ 参数 ━━━
+  version   版本号（必填）
+              CLI / prod Desktop: 任意版本号，如 0.0.1-p1-test、1.15.14
+              beta Desktop:       X.Y.Z 或 X.Y.Z-beta.N（见下方自动行为）
   remote    Git remote 名（可选，默认 origin）
 
-选项:
-  -h, --help   显示此帮助信息
-  --channel    Desktop channel（默认 prod）；beta 版本必须使用 X.Y.Z-beta.N
-  --retag      复用已存在的远程 tag（覆盖同版本 R2 路径，用于 CI 失败后重试）
-               不加此选项时，远程 tag 已存在则自动递增 -N 后缀
-  --cli        仅发布 CLI（仅 dispatch publish-ellamaka）
-  --desktop    仅发布 Desktop（仅 dispatch publish-ellamaka-desktop）
+━━━ 选项 ━━━
+  -h, --help   显示此帮助
+  --channel    Desktop 发布渠道: beta | prod（默认 prod）
+  --retag      强制复用已存在的远程 tag（CI 失败后重试）
+               不加此选项时，远程 tag 已存在则自动递增
+  --cli        仅发布 CLI（dispatch publish-ellamaka）
+  --desktop    仅发布 Desktop（dispatch publish-ellamaka-desktop）
                不加 --cli/--desktop 时默认双发
 
-行为:
-  1. 解析最终 tag：
-       - prod：若远程同名 tag 已存在，自动递增 -N 后缀（如 v1.15.13 → v1.15.13-1）
-       - beta：若远程同名 tag 已存在，递增 beta 序号（如 v1.15.14-beta.1 → v1.15.14-beta.2）
-       - --retag：强制复用传入的 tag，若远程已存在则先删除远程 + 本地旧 tag 再重建
-  2. 若本地 tag 已存在 → 删除（处理上次脚本中途失败残留）
-  3. 在当前 HEAD 创建新 tag
-  4. 原子推送 main 和 tag（tag 供 dispatch 时 --ref 引用，不再自动触发 workflow）
-  5. 按需 dispatch workflow：
-       - --cli      → 仅 dispatch publish-ellamaka
-       - --desktop  → 仅 dispatch publish-ellamaka-desktop
-       - 默认       → 两者都 dispatch
-  6. Watch 选定的 workflow 至全部完成（Ctrl+C 可中断）
-  7. 打印发布 URL
+━━━ 自动行为 ━━━
+  tag 自增规则:
+    prod 通道 — 自动递增 -N 后缀（v1.15.13 → v1.15.13-1 → v1.15.13-2 …）
+    beta 通道 — 自动递增 beta 序号（v1.15.14-beta.1 → v1.15.14-beta.2 …）
 
-示例:
+  beta 版本号自动补全:
+    当 --channel beta 且版本号不含 -beta.N 后缀时（如 1.15.14），
+    自动查询远程已有的 v1.15.14-beta.* tag，取最大序号 +1。
+    若远程无任何 beta tag，则从 beta.1 开始。
+    ⚠️ --retag 模式下必须显式指定完整 beta 版本号，不能自动补全。
+
+  beta 版本号校验:
+    手动指定 -beta.N 时，必须符合 X.Y.Z-beta.N 格式，否则报错。
+
+  版本号 v 前缀自动补齐（输入 1.15.14 等价于 v1.15.14）
+
+━━━ 示例 ━━━
+  # CLI 测试版
   $SCRIPT 0.0.1-p1-test
-  $SCRIPT 0.0.2-alpha upstream
-  $SCRIPT 0.0.2-alpha --retag        # CI 失败后重试，复用同一 tag
-  $SCRIPT 1.15.14-beta.1 --channel beta --desktop
+
+  # CLI 仅发布
+  $SCRIPT 1.15.14 --cli
+
+  # Desktop beta（自动补全 beta 序号）
+  $SCRIPT 1.15.14 --channel beta --desktop
+
+  # Desktop beta（手动指定序号）
+  $SCRIPT 1.15.14-beta.3 --channel beta --desktop
+
+  # Desktop 正式版
   $SCRIPT 1.15.14 --channel prod --desktop
-  $SCRIPT 0.0.2-alpha --cli         # 仅发布 CLI，跳过桌面端构建
-  $SCRIPT 0.0.2-alpha --desktop     # 仅发布 Desktop，跳过 CLI 构建
+
+  # CI 失败后重试（显式指定完整版本号）
+  $SCRIPT 1.15.14-beta.1 --channel beta --desktop --retag
+
+  # 指定 remote
+  $SCRIPT 0.0.2-alpha upstream
 EOF
   exit 0
 }
 
-# --- 参数解析 ---
+# --- Argument parsing ---
 RETAG=false
 CHANNEL="prod"
 CHANNEL_EXPLICIT=false
 WATCH_CLI=true
-WATCH_DESKTOP_AUTO=true   # 由文件存在性 + --cli/--desktop 共同决定
+WATCH_DESKTOP_AUTO=true
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
     --channel)
       if [[ $# -lt 2 || "$2" == --* ]]; then
-        echo "错误: --channel 需要 beta 或 prod"
-        exit 1
+        die "--channel 需要 beta 或 prod"
       fi
       CHANNEL="$2"
       CHANNEL_EXPLICIT=true
@@ -72,7 +94,7 @@ while [[ $# -gt 0 ]]; do
     --retag) RETAG=true; shift ;;
     --cli) WATCH_CLI=true; WATCH_DESKTOP_AUTO=false; shift ;;
     --desktop) WATCH_CLI=false; WATCH_DESKTOP_AUTO=true; shift ;;
-    -*) echo "未知选项: $1"; exit 1 ;;
+    -*) die "未知选项: $1" ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
@@ -80,75 +102,112 @@ done
 VERSION="${ARGS[0]:-}"
 REMOTE="${ARGS[1]:-origin}"
 
-if [ -z "$VERSION" ]; then
-  echo "错误: 缺少版本参数"
-  echo "用法: $SCRIPT <version> [remote] [--channel <beta|prod>] [--retag] [--cli|--desktop]"
-  echo "试试: $SCRIPT --help"
-  exit 1
-fi
+[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT <version> [remote] [选项]\n试试: $SCRIPT --help"
 
-# 规范化 tag：确保 v 前缀（dispatch 时 --ref 需引用该 tag）
+# Normalize v prefix
 case "$VERSION" in
   v*) ;;
   *) VERSION="v$VERSION" ;;
 esac
 TAG="$VERSION"
 
+# Validate channel
 case "$CHANNEL" in
   beta|prod) ;;
-  *) echo "错误: 无效 Desktop channel: $CHANNEL（只支持 beta 或 prod）"; exit 1 ;;
+  *) die "无效 Desktop channel: $CHANNEL (只支持 beta 或 prod)" ;;
 esac
 
-PLAIN_VERSION="${VERSION#v}"
+# Validate beta version format
+PLAIN_VERSION="${TAG#v}"
 if [ "$CHANNEL" = "beta" ]; then
-  if ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-    echo "错误: beta 版本必须使用 X.Y.Z-beta.N 格式"
-    exit 1
+  if ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
+     ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+    die "beta 版本号格式无效: $PLAIN_VERSION (期望 X.Y.Z 或 X.Y.Z-beta.N)"
   fi
 elif [[ "$PLAIN_VERSION" == *-beta.* ]]; then
-  echo "错误: beta 版本必须指定 --channel beta"
-  exit 1
+  die "beta 版本号必须指定 --channel beta"
 fi
 
+# CLI + beta channel conflict
 if [ "$WATCH_DESKTOP_AUTO" = false ] && [ "$CHANNEL_EXPLICIT" = true ] && [ "$CHANNEL" != "prod" ]; then
-  echo "错误: --channel beta 仅适用于包含 Desktop 的发布"
-  exit 1
+  die "--channel $CHANNEL 仅适用于包含 Desktop 的发布"
 fi
 
-# --- gh 可用性检测 ---
+# --- gh availability ---
 HAVE_GH=false
-if command -v gh &>/dev/null; then
-  if gh auth status &>/dev/null 2>&1; then
-    HAVE_GH=true
-  fi
+if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+  HAVE_GH=true
 fi
 
-# --- 定位仓库 ---
+# --- Locate repo ---
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# --- 仓库守卫 ---
+# --- Repo guard ---
 REPO_URL="$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null || echo "")"
 if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
-  echo "错误: remote '$REMOTE' 不是 wopal-cn/ellamaka"
-  echo "  remote: $REPO_URL"
-  echo "  仓库: $REPO_ROOT"
-  exit 1
+  die "remote '$REMOTE' 不是 wopal-cn/ellamaka\n  remote: $REPO_URL\n  仓库: $REPO_ROOT"
 fi
 
-# --- 解析最终 tag ---
-# 默认：prod 递增 -N revision，beta 递增 beta.N（旧 tag 保留不删除）
-# --retag：强制复用传入的 tag，远程已存在则先删除远程 + 本地旧 tag
+# --- Pre-flight checks ---
+check_workspace_clean() {
+  if ! git -C "$REPO_ROOT" diff --quiet HEAD -- . 2>/dev/null; then
+    echo "工作区有未提交变更:"
+    git -C "$REPO_ROOT" status --short
+    die "请先提交或 stash"
+  fi
+  if ! git -C "$REPO_ROOT" diff --cached --quiet HEAD -- . 2>/dev/null; then
+    echo "暂存区有未提交变更:"
+    git -C "$REPO_ROOT" diff --cached --stat
+    die "请先提交"
+  fi
+}
+
+check_remote_main() {
+  git -C "$REPO_ROOT" fetch "$REMOTE" main 2>/dev/null || true
+  local remote_main
+  remote_main=$(git -C "$REPO_ROOT" rev-parse "$REMOTE/main" 2>/dev/null || echo "")
+  if [ -z "$remote_main" ]; then
+    die "$REMOTE/main 不存在，请先 git push $REMOTE main"
+  fi
+  local unpushed
+  unpushed=$(git -C "$REPO_ROOT" rev-list --count HEAD "^$REMOTE/main" 2>/dev/null)
+  if [ "$unpushed" -gt 0 ]; then
+    echo "local main 有 $unpushed 个 commit 未推送至 $REMOTE/main:"
+    git -C "$REPO_ROOT" log --oneline "$REMOTE/main..HEAD"
+    die "请先 git push $REMOTE main"
+  fi
+}
+
+# --- Beta version auto-completion ---
+resolve_beta_version() {
+  local base_tag="$1"  # e.g. v1.15.14
+  local max_n=0
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ refs/tags/${base_tag}-beta\.([0-9]+)$ ]]; then
+      local n="${BASH_REMATCH[1]}"
+      [ "$n" -gt "$max_n" ] && max_n="$n"
+    fi
+  done < <(git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "refs/tags/${base_tag}-beta.*" 2>/dev/null)
+
+  echo "${base_tag}-beta.$((max_n + 1))"
+}
+
+# --- Tag resolution ---
+# Resolves the final tag to use. If the tag already exists remotely:
+#   --retag: delete remote tag and reuse the name
+#   default: auto-increment (-N for prod, beta.N for beta)
 resolve_tag() {
   local base_tag="$1"
 
-  # 远程不存在 → 直接使用
-  if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$base_tag" | grep -q "$base_tag"; then
+  # Remote doesn't exist → use directly
+  if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$base_tag" | grep -q "refs/tags/${base_tag}$"; then
     echo "$base_tag"
     return 0
   fi
 
-  # 远程已存在
+  # Remote exists
   if [ "$RETAG" = true ]; then
     echo "  ℹ️  --retag 模式：删除远程旧 tag $base_tag" >&2
     git -C "$REPO_ROOT" push "$REMOTE" ":refs/tags/$base_tag" >&2
@@ -174,94 +233,17 @@ resolve_tag() {
   local n=$start
   while [ "$n" -le 999 ]; do
     local candidate="${base}${separator}${n}"
-    if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$candidate" | grep -q "$candidate"; then
+    if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$candidate" | grep -q "refs/tags/${candidate}$"; then
       echo "$candidate"
       return 0
     fi
     n=$((n + 1))
   done
 
-  echo "错误: 无法为 $base_tag 找到可用的递增 tag（已达上限 999）" >&2
-  return 1
+  die "无法为 $base_tag 找到可用的递增 tag (已达上限 999)"
 }
 
-# --- 执行 ---
-
-# 0. 发布前检查：变更必须先提交并 push 到 remote
-if ! git -C "$REPO_ROOT" diff --quiet HEAD -- . 2>/dev/null; then
-  echo "错误: 工作区有未提交变更，请先提交或 stash"
-  git -C "$REPO_ROOT" status --short
-  exit 1
-fi
-if ! git -C "$REPO_ROOT" diff --cached --quiet HEAD -- . 2>/dev/null; then
-  echo "错误: 暂存区有未提交变更，请先提交"
-  git -C "$REPO_ROOT" diff --cached --stat
-  exit 1
-fi
-git -C "$REPO_ROOT" fetch "$REMOTE" main 2>/dev/null || true
-REMOTE_MAIN=$(git -C "$REPO_ROOT" rev-parse "$REMOTE/main" 2>/dev/null || echo "")
-if [ -z "$REMOTE_MAIN" ]; then
-  echo "错误: $REMOTE/main 不存在，请先 git push $REMOTE main"
-  exit 1
-fi
-UNPUSHED=$(git -C "$REPO_ROOT" rev-list --count HEAD "^$REMOTE_MAIN" 2>/dev/null)
-if [ "$UNPUSHED" -gt 0 ]; then
-  echo "错误: local main 有 $UNPUSHED 个 commit 未推送至 $REMOTE/main:"
-  git -C "$REPO_ROOT" log --oneline "$REMOTE_MAIN..HEAD"
-  echo "请先 git push $REMOTE main"
-  exit 1
-fi
-
-# 1. 解析最终 tag
-echo "→ 解析最终 tag: $TAG"
-RESOLVED_TAG="$(resolve_tag "$TAG")"
-RESOLVED_VERSION="${RESOLVED_TAG#v}"
-if [ "$RESOLVED_TAG" != "$TAG" ] && [ "$RETAG" = false ]; then
-  echo "  ℹ️  $TAG 已存在，自动递增为 $RESOLVED_TAG"
-fi
-
-# 2. 清理本地可能残留的（上次脚本中途失败）同名 tag
-echo "→ 检查本地 tag: $RESOLVED_TAG"
-if git -C "$REPO_ROOT" tag -l "$RESOLVED_TAG" | grep -q "$RESOLVED_TAG"; then
-  echo "  本地 tag 已存在，删除..."
-  git -C "$REPO_ROOT" tag -d "$RESOLVED_TAG"
-fi
-
-# 3. 创建 tag + 原子推送
-echo "→ 创建 tag: $RESOLVED_TAG"
-git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
-
-echo "→ 原子推送 main 和 $RESOLVED_TAG"
-git -C "$REPO_ROOT" push "$REMOTE" main "$RESOLVED_TAG"
-
-# 4. 按需 dispatch workflow
-echo ""
-if [ "$HAVE_GH" = false ]; then
-  echo "ℹ️  gh CLI 不可用或未认证，跳过 dispatch + watch。"
-  echo "   tag 已推送，可手动在 GitHub Actions 页面触发 workflow。"
-  exit 0
-fi
-
-# 检测 desktop workflow 是否存在（不存在则优雅降级为仅 dispatch CLI）
-DESKTOP_WF=".github/workflows/publish-ellamaka-desktop.yml"
-DESKTOP_WF_EXISTS=false
-if [ -f "$REPO_ROOT/$DESKTOP_WF" ]; then
-  DESKTOP_WF_EXISTS=true
-fi
-
-# 根据文件存在性 + --cli/--desktop 标志决定实际 dispatch 范围
-DO_WATCH_CLI=$WATCH_CLI
-DO_WATCH_DESKTOP=false
-if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
-  DO_WATCH_DESKTOP=true
-fi
-
-# dispatch_workflow: 触发指定 workflow 并返回本次 dispatch 的 run id
-#   $1 = workflow 文件名（如 publish-ellamaka.yml）
-#   $2 = run 名称标签（如 "CLI" / "Desktop"）
-#   stdout = run id
-# 通过 --ref 指向刚推送的 tag，让 workflow checkout 到对应 commit；
-# 通过 -f version=... 传入版本号（workflow 内 inputs.version 优先）。
+# --- Dispatch workflow ---
 dispatch_workflow() {
   local wf="$1"
   local label="$2"
@@ -293,25 +275,7 @@ dispatch_workflow() {
   return 1
 }
 
-RUN_CLI=""
-RUN_DESKTOP=""
-
-if [ "$DO_WATCH_CLI" = true ]; then
-  if ! RUN_CLI="$(dispatch_workflow publish-ellamaka.yml "CLI")"; then
-    echo "错误: 无法确定本次 CLI workflow run。"
-    exit 1
-  fi
-  echo "  CLI run id: $RUN_CLI"
-fi
-
-if [ "$DO_WATCH_DESKTOP" = true ]; then
-  if ! RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"; then
-    echo "错误: 无法确定本次 Desktop workflow run。"
-    exit 1
-  fi
-  echo "  Desktop run id: $RUN_DESKTOP"
-fi
-
+# --- Poll workflow run ---
 poll_run() {
   gh run view "$1" -R wopal-cn/ellamaka --json status,conclusion,jobs -q '
     "\(.status) \(.conclusion // "")",
@@ -319,6 +283,87 @@ poll_run() {
   ' 2>/dev/null || echo "unknown"
 }
 
+# ============================================================
+# Main
+# ============================================================
+
+echo "→ 检查工作区..."
+check_workspace_clean
+
+echo "→ 检查 remote main..."
+check_remote_main
+
+# Beta auto-completion
+if [ "$CHANNEL" = "beta" ] && [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [ "$RETAG" = true ]; then
+    die "--retag 需要显式指定完整 beta 版本号 (如 1.15.14-beta.3)，不能自动补全"
+  fi
+  RESOLVED_BETA="$(resolve_beta_version "$TAG")"
+  echo "  ℹ️  自动检测 beta 版本: $TAG → $RESOLVED_BETA"
+  TAG="$RESOLVED_BETA"
+  PLAIN_VERSION="${TAG#v}"
+fi
+
+# Resolve tag
+echo "→ 解析最终 tag: $TAG"
+RESOLVED_TAG="$(resolve_tag "$TAG")"
+RESOLVED_VERSION="${RESOLVED_TAG#v}"
+if [ "$RESOLVED_TAG" != "$TAG" ] && [ "$RETAG" = false ]; then
+  echo "  ℹ️  $TAG 已存在，自动递增为 $RESOLVED_TAG"
+fi
+
+# Clean local tag
+echo "→ 检查本地 tag: $RESOLVED_TAG"
+if git -C "$REPO_ROOT" tag -l "$RESOLVED_TAG" | grep -q "$RESOLVED_TAG"; then
+  echo "  本地 tag 已存在，删除..."
+  git -C "$REPO_ROOT" tag -d "$RESOLVED_TAG"
+fi
+
+# Create tag + push
+echo "→ 创建 tag: $RESOLVED_TAG"
+git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
+
+echo "→ 原子推送 main 和 $RESOLVED_TAG"
+git -C "$REPO_ROOT" push "$REMOTE" main "$RESOLVED_TAG"
+
+# Dispatch workflows
+echo ""
+if [ "$HAVE_GH" = false ]; then
+  echo "ℹ️  gh CLI 不可用或未认证，跳过 dispatch + watch。"
+  echo "   tag 已推送，可手动在 GitHub Actions 页面触发 workflow。"
+  exit 0
+fi
+
+DESKTOP_WF=".github/workflows/publish-ellamaka-desktop.yml"
+DESKTOP_WF_EXISTS=false
+if [ -f "$REPO_ROOT/$DESKTOP_WF" ]; then
+  DESKTOP_WF_EXISTS=true
+fi
+
+DO_WATCH_CLI=$WATCH_CLI
+DO_WATCH_DESKTOP=false
+if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
+  DO_WATCH_DESKTOP=true
+fi
+
+RUN_CLI=""
+RUN_DESKTOP=""
+
+if [ "$DO_WATCH_CLI" = true ]; then
+  if ! RUN_CLI="$(dispatch_workflow publish-ellamaka.yml "CLI")"; then
+    die "无法确定本次 CLI workflow run"
+  fi
+  echo "  CLI run id: $RUN_CLI"
+fi
+
+if [ "$DO_WATCH_DESKTOP" = true ]; then
+  if ! RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"; then
+    die "无法确定本次 Desktop workflow run"
+  fi
+  echo "  Desktop run id: $RUN_DESKTOP"
+fi
+
+# Watch runs
 echo "→ Watching runs (Ctrl+C 中断)..."
 POLL_INTERVAL=15
 i=0
@@ -363,7 +408,7 @@ while true; do
   sleep $POLL_INTERVAL
 done
 
-# 5. 输出发布 URL
+# Output URLs
 echo ""
 echo "✅ Release complete"
 echo "   Release:     https://github.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"
