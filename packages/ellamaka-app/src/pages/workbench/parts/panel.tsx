@@ -1,6 +1,6 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, For, createSignal, on } from "solid-js"
+import { Show, createEffect, For, createSignal, on, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useNotification } from "@/context/notification"
@@ -21,11 +21,17 @@ import { handlePanelDrop, startSplitResize } from "./panel-services"
 import { PanelHeader } from "./panel-header"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
-function isInteractiveInputElement(target: EventTarget | null): boolean {
+export function isInteractiveInputElement(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
   if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true
-  if (target.closest('[contenteditable="true"], [role="textbox"], textarea, input, .xterm, [data-component="terminal"]')) return true
+  if (
+    target.closest(
+      'button, a, [contenteditable="true"], [role="button"], [role="menuitem"], [role="tab"], [role="option"], [role="dialog"], [data-prevent-autofocus], .xterm, [data-split-terminal], [data-component="terminal"], [data-component="prompt-input"], [data-component="session-prompt-dock"]',
+    )
+  ) {
+    return true
+  }
   return false
 }
 
@@ -89,6 +95,116 @@ export function Panel(props: {
     ),
   )
 
+  // Locate this panel's visible prompt editor. Hidden (display:none)
+  // editors from other lazily-mounted views must never be focused.
+  const findEditor = (): HTMLElement | undefined => {
+    const root = panelContainerRef
+    if (!root) return undefined
+    const candidates = root.querySelectorAll<HTMLElement>(
+      '[data-component="session-prompt-dock"] [contenteditable="true"]',
+    )
+    for (const el of candidates) {
+      if (el.isConnected && el.getClientRects().length > 0) return el
+    }
+    return undefined
+  }
+
+  const focusEditor = (): boolean => {
+    if (props.panel.viewMode !== "chat" || props.panel.slotState === "empty") return false
+    const editor = findEditor()
+    if (!editor) return false
+
+    editor.focus()
+    try {
+      const sel = window.getSelection()
+      if (sel) {
+        const range = document.createRange()
+        range.selectNodeContents(editor)
+        range.collapse(false)
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+    } catch {
+      // Ignore range setup errors
+    }
+    return document.activeElement === editor
+  }
+
+  createEffect(
+    on(
+      () =>
+        [
+          props.isActive && wb.activeTabPath === props.spacePath,
+          props.panel.viewMode,
+          props.panel.boundSessionId,
+          props.panel.slotState,
+        ] as const,
+      ([isActive, viewMode]) => {
+        if (!isActive || viewMode !== "chat") return
+
+        let cancelled = false
+        let timer: number | undefined
+        let frame: number | undefined
+
+        const tryFocus = (): boolean => {
+          if (cancelled) return true
+
+          // If the panel was just activated by clicking directly into the
+          // prompt editor, leave caret alone.
+          if (Date.now() - lastEditorPointerAt < 600) return true
+
+          // 1. Never destroy an active text selection anywhere in the document
+          const selection = window.getSelection()
+          if (selection && selection.rangeCount > 0 && !selection.isCollapsed) return true
+
+          // 2. Do not steal focus if activeElement is currently inside THIS PANEL's
+          //    terminal or editable elements
+          const activeEl = document.activeElement
+          if (activeEl instanceof HTMLElement) {
+            const isInsideThisPanel =
+              panelContainerRef?.contains(activeEl) ||
+              activeEl.closest('[data-panel-id]')?.getAttribute("data-panel-id") === props.panel.id
+            if (isInsideThisPanel) {
+              if (activeEl.closest('[data-split-terminal], .xterm, [data-component="terminal"]')) return true
+              if (activeEl.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName)) return true
+            }
+          }
+
+          // 3. Focus editor
+          return focusEditor()
+        }
+
+        // Progressive retry with backoff while the composer mounts after async
+        // session restore. The effect also re-runs when slotState flips to
+        // "bound" and when this space's tab becomes active, covering slow
+        // restores and tab activation.
+        const delays = [50, 100, 200, 400, 800, 1200]
+        let attempt = -1
+        const step = () => {
+          if (cancelled) return
+          if (tryFocus()) {
+            cancelled = true
+            return
+          }
+          attempt += 1
+          if (attempt >= delays.length) {
+            cancelled = true
+            return
+          }
+          timer = window.setTimeout(step, delays[attempt])
+        }
+        frame = requestAnimationFrame(step)
+
+        onCleanup(() => {
+          cancelled = true
+          if (timer !== undefined) window.clearTimeout(timer)
+          if (frame !== undefined) cancelAnimationFrame(frame)
+        })
+      },
+    ),
+  )
+
+
   const directoryHealth = () => {
     if (props.panel.slotState !== "bound") return "healthy" as const
     const session = sessionStore.getSession(props.panel.boundSessionId ?? "")
@@ -100,12 +216,13 @@ export function Panel(props: {
 
   createEffect(() => {
     const sessionID = props.panel.boundSessionId
-    const existing = sessionID ? sessionStore.getSession(sessionID) : undefined
     if (!shouldRestoreBoundSession({
       slotState: props.panel.slotState,
       boundSessionId: sessionID,
-      hasLocalSession: !!existing,
-    })) return
+      hasLocalSession: !!(sessionID && sessionStore.getSession(sessionID)),
+    })) {
+      return
+    }
     if (!sessionID || restoringSessionIDs.has(sessionID)) return
 
     restoringSessionIDs.add(sessionID)
@@ -217,6 +334,10 @@ export function Panel(props: {
   }
 
   let panelContainerRef: HTMLDivElement | undefined
+  // Timestamp of the most recent pointerdown that landed inside this panel's
+  // prompt editor. Used by the auto-focus effect to avoid stealing/moving the
+  // caret when the panel was activated by clicking directly into the input.
+  let lastEditorPointerAt = 0
 
   const splitHeight = () => props.panel.splitHeight ?? 180
 
@@ -234,13 +355,29 @@ export function Panel(props: {
       class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-[flex] duration-200"
       style={{ flex: props.panel.width }}
       onMouseDown={(e: MouseEvent) => {
-        if (!props.isActive && isInteractiveInputElement(e.target)) {
+        const target = e.target
+        if (
+          target instanceof HTMLElement &&
+          target.closest('[data-component="prompt-input"], [data-component="session-prompt-dock"]')
+        ) {
+          lastEditorPointerAt = Date.now()
+        }
+        if (!props.isActive) {
           props.onActivate()
         }
       }}
-      onClick={() => {
+      onClick={(e: MouseEvent) => {
         if (!props.isActive) {
           props.onActivate()
+        }
+        if (props.panel.viewMode === "chat" && props.panel.slotState !== "empty") {
+          const selection = window.getSelection()
+          if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+            return
+          }
+          if (!isInteractiveInputElement(e.target)) {
+            focusEditor()
+          }
         }
       }}
       onDragOver={(e) => e.preventDefault()}
