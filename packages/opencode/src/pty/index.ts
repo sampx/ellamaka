@@ -9,6 +9,7 @@ import { Shell } from "@/shell/shell"
 import type { Proc } from "#pty"
 import * as Log from "@opencode-ai/core/util/log"
 import { PtyID } from "./schema"
+import { PtyCommand } from "./command"
 import { Effect, Layer, Context, Schema, Types } from "effect"
 import { NonNegativeInt, PositiveInt } from "@opencode-ai/core/schema"
 
@@ -235,11 +236,12 @@ export const makeLayer = (graceMs: number = DEFAULT_GRACE_MS) =>
         env.LC_CTYPE = "C.UTF-8"
         env.LANG = "C.UTF-8"
       }
+      const resolvedCommand = PtyCommand.resolvePtyCommand(command, process.platform, env)
       log.info("creating session", { id, cmd: command, args, cwd })
 
       const { spawn } = yield* Effect.promise(() => pty())
       const proc = yield* Effect.sync(() =>
-        spawn(command, args, {
+        spawn(resolvedCommand, args, {
           name: "xterm-256color",
           cwd,
           env,
