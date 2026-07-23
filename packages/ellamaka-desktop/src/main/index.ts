@@ -367,8 +367,8 @@ const main = Effect.gen(function* () {
   mainWindow = createMainWindow()
   if (mainWindow) {
     interceptWindowClose(mainWindow, {
-      getSidecarState: () => sidecarState,
-      stopSidecar: () => stopSidecar(),
+      getSidecarState: () => supervisor?.getState(),
+      stopSidecar: killSidecar,
     })
     createMenu({
       trigger: (id) => {
