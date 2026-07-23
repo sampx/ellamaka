@@ -1,34 +1,22 @@
-import { execFile } from "node:child_process"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-import { promisify } from "node:util"
-
 import type { Configuration } from "electron-builder"
-
-const execFileAsync = promisify(execFile)
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
   if (raw === "main" || raw === "beta" || raw === "prod") return raw
   return "main"
 })()
+const version = process.env.OPENCODE_VERSION?.trim()
+
+function getPublishUrl(): string | undefined {
+  if (channel === "beta") return "https://download.coursedao.com/ellamaka-desktop/beta/latest"
+  if (channel === "prod") return "https://download.coursedao.com/ellamaka-desktop/latest"
+  return undefined
+}
 
 const getBase = (): Configuration => ({
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
-  // 显式指定可执行文件名，避免 electron-builder 从 package.json name
-  // (@opencode-ai/ellamaka-desktop) 推导出含 @ 的非法路径字符
-  executableName: "ellamaka",
   copyright: "Copyright © 2025 Ellamaka",
-  // Generic provider 指向 R2 latest 别名路径，electron-updater 运行时从该路径
-  // 拉取 feed 检测新版本。所有 channel 共享同一个 R2 feed 路径（channel 区别
-  // 只在 appId/productName，feed 路径相同），故放在 getBase() 而非各分支。
-  // 不走 GitHub Release（与 CLI canonical source 一致）。
-  publish: {
-    provider: "generic",
-    url: "https://download.coursedao.com/ellamaka-desktop/latest",
-    channel: "latest",
-  },
+  extraMetadata: version ? { version } : undefined,
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -44,6 +32,7 @@ const getBase = (): Configuration => ({
   mac: {
     category: "public.app-category.developer-tools",
     icon: "resources/icons/icon.icns",
+    identity: "-",
     hardenedRuntime: false,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
@@ -75,11 +64,17 @@ const getBase = (): Configuration => ({
     category: "Development",
     target: ["AppImage", "deb", "rpm"],
     artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
+    // AppImage 文件名从 package.json name (@opencode-ai/ellamaka-desktop) 推导，
+    // 含 @ 的路径字符非法。显式指定可执行文件名避免该问题。
+    // 仅 Linux 需要 — macOS .app 用 productName，Windows nsis 用 productName。
+    executableName: "ellamaka",
   },
 })
 
-function getConfig() {
+function getConfig(): Configuration {
   const base = getBase()
+  const publishUrl = getPublishUrl()
+  const publish = publishUrl ? { provider: "generic" as const, url: publishUrl, channel: "latest" } : undefined
 
   switch (channel) {
     case "main": {
@@ -95,6 +90,7 @@ function getConfig() {
         ...base,
         appId: "ai.ellamaka.desktop.beta",
         productName: "Ellamaka Beta",
+        publish,
         protocols: { name: "Ellamaka Beta", schemes: ["ellamaka"] },
         rpm: { packageName: "ellamaka-beta" },
       }
@@ -104,11 +100,13 @@ function getConfig() {
         ...base,
         appId: "ai.ellamaka.desktop",
         productName: "Ellamaka",
+        publish,
         protocols: { name: "Ellamaka", schemes: ["ellamaka"] },
         rpm: { packageName: "ellamaka" },
       }
     }
   }
+  throw new Error("Unsupported desktop channel")
 }
 
 export default getConfig()

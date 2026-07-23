@@ -80,6 +80,8 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | Build ellamaka-branded CLI | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` |
 | Build CLI binary | `./scripts/build.sh cli` |
 | Build desktop app | `./scripts/build.sh desktop` |
+| Release Desktop beta | `./scripts/tag-release.sh X.Y.Z-beta.N --channel beta --desktop` |
+| Release Desktop prod | `./scripts/tag-release.sh X.Y.Z --channel prod --desktop` |
 | Dev server (TUI/Workbench/Desktop) | `./scripts/dev.sh` |
 | Post-upstream clean check | `./scripts/check-cleanup.sh` |
 | Desktop package tests | `bun test --preload ./electron-mock.ts --force-exit src` (from `packages/ellamaka-desktop`) |
@@ -108,6 +110,15 @@ Tests cannot run from repo root. Run `./scripts/dev.sh help` and `./scripts/buil
 ### Workbench Frontend Development
 
 Workbench frontend development rules (state ownership, identity scope, dependency direction, PTY lifecycle, effect race protection, persistence, testing, and other mandatory boundaries) are in `packages/ellamaka-app/AGENTS.md`. This file does not duplicate those rules; changes to Workbench frontend code must follow that specification.
+
+### Desktop Release Contract
+
+- `main` is for local `build.sh desktop --channel main` verification only. Release workflows accept only `beta` and `prod`.
+- Beta versions use `X.Y.Z-beta.N` and publish to `ellamaka-desktop/beta/`. Prod publishes to `ellamaka-desktop/`.
+- Sidecar, Electron Main/Renderer, icons, and electron-builder share the same channel/version environment variables.
+- Public macOS packages use ad-hoc signing. This guarantees bundle signature integrity, but users must still accept Gatekeeper risk manually.
+- Re-releasing the same version clears the R2 version prefix, uploads fresh artifacts, and purges CDN cache for old objects, new objects, and the channel's latest feed.
+- Download tables show DMG, EXE, AppImage, deb, and rpm. ZIP, blockmap, and `latest-*.yml` are updater assets.
 
 ## 5. Testing & Verification
 

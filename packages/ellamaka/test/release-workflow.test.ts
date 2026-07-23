@@ -35,8 +35,8 @@ describe("publish-ellamaka workflow", () => {
   test("generates metadata and uploads binaries to R2", () => {
     expect(workflow).toContain("node scripts/package-release.mjs manifest")
     expect(workflow).toContain("--tag v\"$VERSION\"")
-    expect(workflow).toContain("s3://wopal-release/ellamaka/v${VERSION}")
-    expect(workflow).toContain("s3://wopal-release/ellamaka/latest")
+    expect(workflow).toContain('VERSION_PREFIX="ellamaka/v${VERSION}"')
+    expect(workflow).toContain('aws s3 rm "s3://wopal-release/${VERSION_PREFIX}/"')
     expect(workflow).toContain("ellamaka/latest/manifest.json")
     expect(workflow).not.toContain("ellamaka/latest/checksums.txt")
     expect(workflow).not.toContain("ellamaka/latest/release-notes.md")
@@ -54,9 +54,10 @@ describe("publish-ellamaka workflow", () => {
     // Comparing against local dist files can pass when both are identically
     // corrupted; comparing against the manifest catches that case.
     expect(workflow).toContain("Verifying R2 uploads against manifest...")
-    expect(workflow).toContain("manifest sha256")
-    expect(workflow).toContain("manifest size")
-    expect(workflow).toContain("R2 object is truncated")
+    expect(workflow).toContain("manifest_sha")
+    expect(workflow).toContain("manifest_size")
+    expect(workflow).toContain("head-object")
+    expect(workflow).toContain("expected_hash")
     expect(workflow).not.toContain("local  sha256")
     expect(workflow).not.toContain("local_hash")
   })
@@ -67,6 +68,8 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).toContain("Purge Cloudflare CDN cache")
     expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_TOKEN")
     expect(workflow).toContain("CLOUDFLARE_CACHE_PURGE_ZONE")
+    expect(workflow).toContain("old-cli-release-urls")
+    expect(workflow).toContain("offset+=30")
     expect(workflow).toContain("ellamaka/latest/manifest.json")
     expect(workflow).toContain("ellamaka/v${VERSION}/manifest.json")
     expect(workflow).toContain("for (const a of m.artifacts) console.log(a.url)")

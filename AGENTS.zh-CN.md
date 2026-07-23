@@ -80,6 +80,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | 构建 ellamaka 品牌 CLI | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` |
 | 构建 CLI 二进制 | `./scripts/build.sh cli` |
 | 构建桌面应用 | `./scripts/build.sh desktop` |
+| 发布 Desktop beta | `./scripts/tag-release.sh X.Y.Z-beta.N --channel beta --desktop` |
+| 发布 Desktop prod | `./scripts/tag-release.sh X.Y.Z --channel prod --desktop` |
 | 开发服务（TUI/Workbench/桌面） | `./scripts/dev.sh` |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh` |
 | 桌面包测试 | `bun test --preload ./electron-mock.ts --force-exit src`（from `packages/ellamaka-desktop`） |
@@ -108,6 +110,15 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ### Workbench 前端开发
 
 Workbench 前端开发规则（状态所有权、身份作用域、依赖方向、PTY 生命周期、effect 竞态防护、持久化、测试等强制边界）见 `packages/ellamaka-app/AGENTS.md`。本文件不重复这些规则，修改 Workbench 前端代码时必须遵守该规范。
+
+### Desktop 发布契约
+
+- `main` 只用于 `build.sh desktop --channel main` 本地构建验证。发布 workflow 只接受 `beta` 和 `prod`。
+- beta 版本使用 `X.Y.Z-beta.N`，发布到 `ellamaka-desktop/beta/`。prod 发布到 `ellamaka-desktop/`。
+- sidecar、Electron Main/Renderer、图标和 electron-builder 共用同一组 channel/version 环境变量。
+- macOS 公共包使用 ad-hoc 签名。它保证 bundle 签名结构完整，但用户仍需主动接受 Gatekeeper 风险。
+- 同版本重发先清空 R2 版本前缀，再上传完整产物并失效旧对象、当前对象和 latest feed 的 CDN 缓存。
+- 下载表展示 DMG、EXE、AppImage、deb 和 rpm。ZIP、blockmap 与 `latest-*.yml` 属于 updater 资产。
 
 ## 5. Testing
 

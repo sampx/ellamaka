@@ -128,6 +128,23 @@ describe("package-release.mjs", () => {
     })
   })
 
+  test("normalizes electron-builder mac and win names", () => {
+    expect(script.parseArchiveName("ellamaka-desktop-mac-arm64.dmg")).toEqual({
+      os: "darwin",
+      arch: "arm64",
+      variant: null,
+      ext: "dmg",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-win-x64.exe")).toEqual({
+      os: "windows",
+      arch: "x64",
+      variant: null,
+      ext: "exe",
+      product: "desktop",
+    })
+  })
+
   test("generates manifest.json with R2 URLs", () => {
     const outputDir = resolve(makeTempdir(), "output")
     generate(outputDir)
@@ -208,5 +225,29 @@ describe("package-release.mjs", () => {
     expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/manifest.json`)
     expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/checksums.txt`)
     for (const item of platformArtifacts) expect(notes).toContain(`${defaultBaseUrl}/v0.1.0-test/${item.artifact}`)
+  })
+
+  test("hides updater-only desktop archives from release notes", () => {
+    const desktopArchives = makeTempdir()
+    for (const name of [
+      "ellamaka-desktop-mac-arm64.dmg",
+      "ellamaka-desktop-mac-arm64.zip",
+      "ellamaka-desktop-win-x64.exe",
+    ]) {
+      writeFileSync(join(desktopArchives, name), `fake-desktop-binary-${name}`)
+    }
+    const outputDir = resolve(makeTempdir(), "output")
+    script.manifestCommand({
+      archivesDir: desktopArchives,
+      version: "1.0.0",
+      outputDir,
+      tag: "v1.0.0",
+      baseUrl: "https://download.coursedao.com/ellamaka-desktop",
+    })
+
+    const notes = readFileSync(join(outputDir, "release-notes.md"), "utf8")
+    expect(notes).toContain("ellamaka-desktop-mac-arm64.dmg")
+    expect(notes).toContain("ellamaka-desktop-win-x64.exe")
+    expect(notes).not.toContain("ellamaka-desktop-mac-arm64.zip")
   })
 })

@@ -8,7 +8,7 @@ usage() {
 $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-desktop 双 CI，并 watch 至完成
 
 用法:
-  $SCRIPT <version> [remote] [--retag]
+  $SCRIPT <version> [remote] [--channel <beta|prod>] [--retag] [--cli|--desktop]
 
 参数:
   version   版本号（必填），如 0.0.1-p1-test（v 前缀自动补齐）
@@ -16,35 +16,61 @@ $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-deskt
 
 选项:
   -h, --help   显示此帮助信息
+  --channel    Desktop channel（默认 prod）；beta 版本必须使用 X.Y.Z-beta.N
   --retag      复用已存在的远程 tag（覆盖同版本 R2 路径，用于 CI 失败后重试）
                不加此选项时，远程 tag 已存在则自动递增 -N 后缀
+  --cli        仅发布 CLI（取消 Desktop workflow run，省去桌面端构建）
+  --desktop    仅发布 Desktop（取消 CLI workflow run，省去 CLI 构建）
+               不加 --cli/--desktop 时默认双发
 
 行为:
   1. 解析最终 tag：
-       - 默认：若远程同名 tag 已存在，自动递增 -N 后缀（如 v1.15.13 → v1.15.13-1），旧 tag 保留不删除
+       - prod：若远程同名 tag 已存在，自动递增 -N 后缀（如 v1.15.13 → v1.15.13-1）
+       - beta：若远程同名 tag 已存在，递增 beta 序号（如 v1.15.14-beta.1 → v1.15.14-beta.2）
        - --retag：强制复用传入的 tag，若远程已存在则先删除远程 + 本地旧 tag 再重建
   2. 若本地 tag 已存在 → 删除（处理上次脚本中途失败残留）
   3. 在当前 HEAD 创建新 tag
   4. 原子推送 main 和 tag → 同 tag 双发，同时触发 publish-ellamaka 与 publish-ellamaka-desktop 两个 CI workflow
-  5. Watch 两个 workflow 至全部完成（Ctrl+C 可中断）；若 desktop workflow 不存在则仅 watch CLI
-  6. 打印发布 URL（含 Desktop R2 路径）
+  5. 取消不需要的 workflow run（--cli 取消 desktop，--desktop 取消 CLI）
+  6. Watch 选定的 workflow 至全部完成（Ctrl+C 可中断）
+  7. 打印发布 URL
 
 示例:
   $SCRIPT 0.0.1-p1-test
   $SCRIPT 0.0.2-alpha upstream
   $SCRIPT 0.0.2-alpha --retag        # CI 失败后重试，复用同一 tag
+  $SCRIPT 1.15.14-beta.1 --channel beta --desktop
+  $SCRIPT 1.15.14 --channel prod --desktop
+  $SCRIPT 0.0.2-alpha --cli         # 仅发布 CLI，跳过桌面端构建
+  $SCRIPT 0.0.2-alpha --desktop     # 仅发布 Desktop，跳过 CLI 构建
 EOF
   exit 0
 }
 
 # --- 参数解析 ---
 RETAG=false
-for arg in "$@"; do
-  case "$arg" in
+CHANNEL="prod"
+CHANNEL_EXPLICIT=false
+WATCH_CLI=true
+WATCH_DESKTOP_AUTO=true   # 由文件存在性 + --cli/--desktop 共同决定
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -h|--help) usage ;;
-    --retag) RETAG=true ;;
-    -*) echo "未知选项: $arg"; usage ;;
-    *) ARGS+=("$arg") ;;
+    --channel)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "错误: --channel 需要 beta 或 prod"
+        exit 1
+      fi
+      CHANNEL="$2"
+      CHANNEL_EXPLICIT=true
+      shift 2
+      ;;
+    --retag) RETAG=true; shift ;;
+    --cli) WATCH_CLI=true; WATCH_DESKTOP_AUTO=false; shift ;;
+    --desktop) WATCH_CLI=false; WATCH_DESKTOP_AUTO=true; shift ;;
+    -*) echo "未知选项: $1"; exit 1 ;;
+    *) ARGS+=("$1"); shift ;;
   esac
 done
 
@@ -53,7 +79,7 @@ REMOTE="${ARGS[1]:-origin}"
 
 if [ -z "$VERSION" ]; then
   echo "错误: 缺少版本参数"
-  echo "用法: $SCRIPT <version> [remote] [--retag]"
+  echo "用法: $SCRIPT <version> [remote] [--channel <beta|prod>] [--retag] [--cli|--desktop]"
   echo "试试: $SCRIPT --help"
   exit 1
 fi
@@ -64,6 +90,27 @@ case "$VERSION" in
   *) VERSION="v$VERSION" ;;
 esac
 TAG="$VERSION"
+
+case "$CHANNEL" in
+  beta|prod) ;;
+  *) echo "错误: 无效 Desktop channel: $CHANNEL（只支持 beta 或 prod）"; exit 1 ;;
+esac
+
+PLAIN_VERSION="${VERSION#v}"
+if [ "$CHANNEL" = "beta" ]; then
+  if ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+    echo "错误: beta 版本必须使用 X.Y.Z-beta.N 格式"
+    exit 1
+  fi
+elif [[ "$PLAIN_VERSION" == *-beta.* ]]; then
+  echo "错误: beta 版本必须指定 --channel beta"
+  exit 1
+fi
+
+if [ "$WATCH_DESKTOP_AUTO" = false ] && [ "$CHANNEL_EXPLICIT" = true ] && [ "$CHANNEL" != "prod" ]; then
+  echo "错误: --channel beta 仅适用于包含 Desktop 的发布"
+  exit 1
+fi
 
 # --- gh 可用性检测 ---
 HAVE_GH=false
@@ -87,7 +134,7 @@ if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
 fi
 
 # --- 解析最终 tag ---
-# 默认：远程同名 tag 已存在 → 自动递增 -N 后缀（旧 tag 保留不删除）
+# 默认：prod 递增 -N revision，beta 递增 beta.N（旧 tag 保留不删除）
 # --retag：强制复用传入的 tag，远程已存在则先删除远程 + 本地旧 tag
 resolve_tag() {
   local base_tag="$1"
@@ -106,19 +153,24 @@ resolve_tag() {
     return 0
   fi
 
-  # 默认模式：拆分 base 与 suffix，有 -N 后缀时从 N+1 起，否则从 1 起
-  local base suffix start
-  if [[ "$base_tag" =~ ^(.*)-([0-9]+)$ ]]; then
+  local base separator start
+  if [ "$CHANNEL" = "beta" ] && [[ "$base_tag" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+-beta\.)([0-9]+)$ ]]; then
     base="${BASH_REMATCH[1]}"
+    separator=""
+    start=$(( ${BASH_REMATCH[2]} + 1 ))
+  elif [[ "$base_tag" =~ ^(.*)-([0-9]+)$ ]]; then
+    base="${BASH_REMATCH[1]}"
+    separator="-"
     start=$(( ${BASH_REMATCH[2]} + 1 ))
   else
     base="$base_tag"
+    separator="-"
     start=1
   fi
 
   local n=$start
   while [ "$n" -le 999 ]; do
-    local candidate="${base}-${n}"
+    local candidate="${base}${separator}${n}"
     if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$candidate" | grep -q "$candidate"; then
       echo "$candidate"
       return 0
@@ -160,6 +212,7 @@ fi
 # 1. 解析最终 tag
 echo "→ 解析最终 tag: $TAG"
 RESOLVED_TAG="$(resolve_tag "$TAG")"
+RESOLVED_VERSION="${RESOLVED_TAG#v}"
 if [ "$RESOLVED_TAG" != "$TAG" ] && [ "$RETAG" = false ]; then
   echo "  ℹ️  $TAG 已存在，自动递增为 $RESOLVED_TAG"
 fi
@@ -176,6 +229,7 @@ echo "→ 创建 tag: $RESOLVED_TAG"
 git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
 
 echo "→ 原子推送 main 和 $RESOLVED_TAG"
+PUSHED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 git -C "$REPO_ROOT" push "$REMOTE" main "$RESOLVED_TAG"
 
 # 3. Watch workflows（CLI + Desktop 双发）
@@ -187,20 +241,29 @@ fi
 
 # 检测 desktop workflow 是否存在（不存在则优雅降级为仅 watch CLI）
 DESKTOP_WF=".github/workflows/publish-ellamaka-desktop.yml"
-WATCH_DESKTOP=false
+DESKTOP_WF_EXISTS=false
 if [ -f "$REPO_ROOT/$DESKTOP_WF" ]; then
-  WATCH_DESKTOP=true
+  DESKTOP_WF_EXISTS=true
 fi
 
-COMMIT="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+# 根据文件存在性 + --cli/--desktop 标志决定实际 watch 范围
+DO_WATCH_CLI=$WATCH_CLI
+DO_WATCH_DESKTOP=false
+if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
+  DO_WATCH_DESKTOP=true
+fi
 
 find_run() {
   local wf="$1"
   local run_id=""
   for _ in $(seq 1 12); do
-    run_id=$(gh run list -R wopal-cn/ellamaka --workflow "$wf" --commit "$COMMIT" --status in_progress,queued --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
-    if [ -n "$run_id" ]; then echo "$run_id"; return 0; fi
-    run_id=$(gh run list -R wopal-cn/ellamaka --workflow "$wf" --commit "$COMMIT" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || echo "")
+    run_id=$(gh run list -R wopal-cn/ellamaka \
+      --workflow "$wf" \
+      --branch "$RESOLVED_TAG" \
+      --event push \
+      --limit 10 \
+      --json databaseId,createdAt \
+      -q "map(select(.createdAt >= \"$PUSHED_AT\"))[0].databaseId // \"\"" 2>/dev/null || echo "")
     if [ -n "$run_id" ]; then echo "$run_id"; return 0; fi
     sleep 5
   done
@@ -208,21 +271,36 @@ find_run() {
   return 0
 }
 
+# 等待两个 workflow 都启动（即使要取消的也要先找到 run id 才能 cancel）
 echo "→ 等待 publish-ellamaka workflow 启动..."
 RUN_CLI="$(find_run publish-ellamaka.yml)"
-if [ -z "$RUN_CLI" ]; then
+
+echo "→ 等待 publish-ellamaka-desktop workflow 启动..."
+RUN_DESKTOP=""
+if [ "$DESKTOP_WF_EXISTS" = true ]; then
+  RUN_DESKTOP="$(find_run publish-ellamaka-desktop.yml)"
+fi
+
+# 取消不需要的 workflow run
+if [ "$DO_WATCH_CLI" = false ] && [ -n "$RUN_CLI" ]; then
+  echo "→ 取消 CLI workflow run: $RUN_CLI（--desktop 模式）"
+  gh run cancel "$RUN_CLI" -R wopal-cn/ellamaka 2>/dev/null || true
+  RUN_CLI=""
+fi
+if [ "$DO_WATCH_DESKTOP" = false ] && [ -n "$RUN_DESKTOP" ]; then
+  echo "→ 取消 Desktop workflow run: $RUN_DESKTOP（--cli 模式）"
+  gh run cancel "$RUN_DESKTOP" -R wopal-cn/ellamaka 2>/dev/null || true
+  RUN_DESKTOP=""
+fi
+
+# 检查需要 watch 的 run 是否找到
+if [ "$DO_WATCH_CLI" = true ] && [ -z "$RUN_CLI" ]; then
   echo "⚠️  60 秒内未找到 CLI workflow run。"
   exit 0
 fi
-
-RUN_DESKTOP=""
-if [ "$WATCH_DESKTOP" = true ]; then
-  echo "→ 等待 publish-ellamaka-desktop workflow 启动..."
-  RUN_DESKTOP="$(find_run publish-ellamaka-desktop.yml)"
-  if [ -z "$RUN_DESKTOP" ]; then
-    echo "⚠️  60 秒内未找到 Desktop workflow run，仅 watch CLI。"
-    WATCH_DESKTOP=false
-  fi
+if [ "$DO_WATCH_DESKTOP" = true ] && [ -z "$RUN_DESKTOP" ]; then
+  echo "⚠️  60 秒内未找到 Desktop workflow run。"
+  DO_WATCH_DESKTOP=false
 fi
 
 poll_run() {
@@ -238,13 +316,16 @@ i=0
 while true; do
   i=$((i + 1))
 
-  CLI_FULL="$(poll_run "$RUN_CLI")"
-  CLI_STATUS="$(echo "$CLI_FULL" | head -n 1)"
-  echo "  [CLI #$i] $CLI_STATUS"
-  echo "$CLI_FULL" | tail -n +2
+  CLI_STATUS="skipped"
+  if [ "$DO_WATCH_CLI" = true ] && [ -n "$RUN_CLI" ]; then
+    CLI_FULL="$(poll_run "$RUN_CLI")"
+    CLI_STATUS="$(echo "$CLI_FULL" | head -n 1)"
+    echo "  [CLI #$i] $CLI_STATUS"
+    echo "$CLI_FULL" | tail -n +2
+  fi
 
   DESKTOP_STATUS="skipped"
-  if [ "$WATCH_DESKTOP" = true ] && [ -n "$RUN_DESKTOP" ]; then
+  if [ "$DO_WATCH_DESKTOP" = true ] && [ -n "$RUN_DESKTOP" ]; then
     DESKTOP_FULL="$(poll_run "$RUN_DESKTOP")"
     DESKTOP_STATUS="$(echo "$DESKTOP_FULL" | head -n 1)"
     echo "  [Desktop #$i] $DESKTOP_STATUS"
@@ -261,10 +342,10 @@ while true; do
     exit 1
   fi
 
-  CLI_DONE=false
-  [ "$CLI_STATUS" = "completed success" ] && CLI_DONE=true
+  CLI_DONE=true
+  [ "$DO_WATCH_CLI" = true ] && [ "$CLI_STATUS" != "completed success" ] && [ "$CLI_STATUS" != "skipped" ] && CLI_DONE=false
   DESKTOP_DONE=true
-  [ "$WATCH_DESKTOP" = true ] && [ "$DESKTOP_STATUS" != "completed success" ] && DESKTOP_DONE=false
+  [ "$DO_WATCH_DESKTOP" = true ] && [ "$DESKTOP_STATUS" != "completed success" ] && [ "$DESKTOP_STATUS" != "skipped" ] && DESKTOP_DONE=false
 
   if [ "$CLI_DONE" = true ] && [ "$DESKTOP_DONE" = true ]; then
     break
@@ -277,7 +358,9 @@ done
 echo ""
 echo "✅ Release complete"
 echo "   Release:     https://github.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"
-echo "   CLI R2:      https://download.coursedao.com/ellamaka/${RESOLVED_TAG}/"
-echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/${RESOLVED_TAG}/"
-echo "   Ontology:    https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-${VERSION#v}"
-echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"
+[ "$DO_WATCH_CLI" = true ] && echo "   CLI R2:      https://download.coursedao.com/ellamaka/${RESOLVED_TAG}/"
+[ "$DO_WATCH_DESKTOP" = true ] && [ "$CHANNEL" = "prod" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/${RESOLVED_TAG}/"
+[ "$DO_WATCH_DESKTOP" = true ] && [ "$CHANNEL" = "beta" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/beta/${RESOLVED_TAG}/"
+[ "$DO_WATCH_CLI" = true ] && echo "   Ontology:    https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-v${RESOLVED_VERSION}"
+[ "$DO_WATCH_DESKTOP" = true ] && echo "   Ontology Desktop: https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-desktop-v${RESOLVED_VERSION}"
+[ "$DO_WATCH_CLI" = true ] && echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"

@@ -23,6 +23,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -63,7 +66,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
@@ -120,27 +123,30 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           R2_URL="https://${R2_ENDPOINT}"
-          VERSION_KEY="s3://wopal-release/ellamaka/v${VERSION}"
-          LATEST_KEY="s3://wopal-release/ellamaka/latest"
+          VERSION_PREFIX="ellamaka/v${VERSION}"
+          OLD_OBJECTS="${RUNNER_TEMP}/old-cli-release-objects.json"
+          OLD_URLS="${RUNNER_TEMP}/old-cli-release-urls.txt"
 
-          # Use s3api put-object (single PUT) instead of s3 cp (multipart).
-          # R2's multipart upload can silently corrupt objects: the stored
-          # bytes diverge from the uploaded data, while content-length
-          # metadata still reflects the original size. Single PUT avoids
-          # multipart entirely — S3 supports up to 5GB per single PUT.
-          #
-          # Delete-then-put: put-object overwrites, but a prior corrupted
-          # object (truncated body with stale content-length metadata) can
-          # leave residue. Deleting first ensures a clean object.
-          #
-          # Retry: R2 single PUT on large (~35-50MB) archives occasionally
-          # returns success yet stores a truncated object. Retry until the
-          # post-upload verify (against manifest hash) confirms integrity.
-          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
-            name="$(basename "$f")"
-            content_type="application/octet-stream"
-            case "$name" in *.tar.gz) content_type="application/x-tar";; *.zip) content_type="application/zip";; esac
-            key="ellamaka/v${VERSION}/${name}"
+          aws s3api list-objects-v2 \
+            --bucket wopal-release \
+            --prefix "${VERSION_PREFIX}/" \
+            --endpoint-url "$R2_URL" \
+            --output json > "$OLD_OBJECTS"
+          node - "$OLD_OBJECTS" "$OLD_URLS" <<'NODE'
+          const fs = require("fs")
+          const [input, output] = process.argv.slice(2)
+          const data = JSON.parse(fs.readFileSync(input, "utf8"))
+          const urls = (data.Contents ?? []).map((entry) => `https://download.coursedao.com/${entry.Key}`)
+          fs.writeFileSync(output, urls.join("\n") + (urls.length ? "\n" : ""))
+          NODE
+          aws s3 rm "s3://wopal-release/${VERSION_PREFIX}/" \
+            --recursive \
+            --endpoint-url "$R2_URL"
+
+          # Cache-Control: versioned paths immutable (1 week), latest alias
+          # short TTL (5 min). CDN purge on release ensures latest is fresh.
+          put_with_cache() {
+            local file="$1" key="$2" cache="$3" ct="$4"
             aws s3api delete-object \
               --bucket wopal-release \
               --key "$key" \
@@ -149,62 +155,41 @@ jobs:
               if aws s3api put-object \
                 --bucket wopal-release \
                 --key "$key" \
-                --body "$f" \
-                --content-type "$content_type" \
+                --body "$file" \
+                --content-type "$ct" \
+                --cache-control "$cache" \
                 --endpoint-url ${R2_URL} >/dev/null; then
                 break
               fi
-              echo "  put-object attempt $attempt failed for $name"
+              echo "  put-object attempt $attempt failed for $(basename "$file")"
               if [ "$attempt" -eq 3 ]; then
-                echo "ERROR: put-object failed after 3 attempts: $name"
+                echo "ERROR: put-object failed after 3 attempts: $(basename "$file")"
                 exit 1
               fi
               sleep 5
             done
+          }
+
+          # Binary archives (immutable, 1-week cache)
+          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
+            name="$(basename "$f")"
+            ct="application/octet-stream"
+            case "$name" in *.tar.gz) ct="application/x-tar";; *.zip) ct="application/zip";; esac
+            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=604800" "$ct"
           done
 
-          aws s3api put-object \
-            --bucket wopal-release \
-            --key "ellamaka/v${VERSION}/manifest.json" \
-            --body release-output/manifest.json \
-            --content-type "application/json" \
-            --endpoint-url ${R2_URL} >/dev/null
+          # Metadata (1-week cache)
+          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=604800" "application/json"
+          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=604800" "text/plain"
+          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=604800" "text/markdown"
 
-          aws s3api put-object \
-            --bucket wopal-release \
-            --key "ellamaka/v${VERSION}/checksums.txt" \
-            --body release-output/checksums.txt \
-            --content-type "text/plain" \
-            --endpoint-url ${R2_URL} >/dev/null
+          # Latest alias: manifest only (short TTL)
+          put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=300" "application/json"
 
-          aws s3api put-object \
-            --bucket wopal-release \
-            --key "ellamaka/v${VERSION}/release-notes.md" \
-            --body release-output/release-notes.md \
-            --content-type "text/markdown" \
-            --endpoint-url ${R2_URL} >/dev/null
-
-          aws s3api put-object \
-            --bucket wopal-release \
-            --key "ellamaka/latest/manifest.json" \
-            --body release-output/manifest.json \
-            --content-type "application/json" \
-            --endpoint-url ${R2_URL} >/dev/null
-
-          # Verify uploaded objects by downloading from R2 directly (not CDN).
-          # CDN may serve stale cached copies right after upload, causing false
-          # checksum mismatches. s3api get-object reads straight from R2 storage.
-          #
-          # CRITICAL: compare against the manifest's sha256/size, not the local
-          # dist file. The manifest is generated from the complete local file
-          # before upload; the local file could be mutated after manifest
-          # generation (e.g. truncated during put-object body read), making a
-          # local-vs-remote comparison a false positive when both are corrupted
-          # identically. Users install against the manifest hash — that is the
-          # authoritative source of truth.
+          # Verify: head-object for size first (fast), full download only if
+          # size mismatches. R2 single PUT can silently truncate; size check
+          # catches truncation without re-downloading ~200MB of archives.
           echo "Verifying R2 uploads against manifest..."
-          VERIFY_DIR="$(mktemp -d)"
-          # Parse manifest.json: name -> sha256, name -> size
           declare -A manifest_sha manifest_size
           while IFS=$'\t' read -r mname msha msize; do
             manifest_sha["$mname"]="$msha"
@@ -215,32 +200,36 @@ jobs:
           ')
           for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
             name="$(basename "$f")"
-            aws s3api get-object \
+            key="${VERSION_PREFIX}/${name}"
+            remote_size=$(aws s3api head-object \
               --bucket wopal-release \
-              --key "ellamaka/v${VERSION}/${name}" \
+              --key "$key" \
               --endpoint-url ${R2_URL} \
-              "${VERIFY_DIR}/${name}" >/dev/null
-            remote_hash="$(sha256sum "${VERIFY_DIR}/${name}" | cut -d' ' -f1)"
-            remote_size="$(stat -c%s "${VERIFY_DIR}/${name}")"
-            expected_hash="${manifest_sha[$name]}"
+              --query 'ContentLength' \
+              --output text 2>/dev/null || echo "0")
             expected_size="${manifest_size[$name]}"
-            if [ "$remote_hash" != "$expected_hash" ]; then
-              echo "ERROR: R2 checksum mismatch: $name"
-              echo "  manifest sha256: $expected_hash"
-              echo "  remote   sha256: $remote_hash"
-              echo "  R2 object does not match manifest. Re-run the workflow to retry."
-              exit 1
-            fi
             if [ "$remote_size" != "$expected_size" ]; then
-              echo "ERROR: R2 size mismatch: $name"
-              echo "  manifest size: $expected_size"
-              echo "  remote   size: $remote_size"
-              echo "  R2 object is truncated. Re-run the workflow to retry."
-              exit 1
+              echo "  size mismatch ($name): manifest=$expected_size remote=$remote_size — full hash verify"
+              VERIFY_DIR="$(mktemp -d)"
+              aws s3api get-object \
+                --bucket wopal-release \
+                --key "$key" \
+                --endpoint-url ${R2_URL} \
+                "${VERIFY_DIR}/${name}" >/dev/null
+              remote_hash="$(sha256sum "${VERIFY_DIR}/${name}" | cut -d' ' -f1)"
+              expected_hash="${manifest_sha[$name]}"
+              if [ "$remote_hash" != "$expected_hash" ]; then
+                echo "ERROR: R2 checksum mismatch: $name"
+                echo "  manifest sha256: $expected_hash"
+                echo "  remote   sha256: $remote_hash"
+                exit 1
+              fi
+              rm -rf "$VERIFY_DIR"
+              echo "  OK: $name (sha256=$remote_hash size=$remote_size) [full verify]"
+            else
+              echo "  OK: $name (size=$remote_size) [head-only]"
             fi
-            echo "  OK: $name (sha256=$remote_hash size=$remote_size)"
           done
-          rm -rf "$VERIFY_DIR"
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 
@@ -249,11 +238,11 @@ jobs:
         env:
           CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
           CLOUDFLARE_CACHE_PURGE_ZONE: ${{ secrets.CLOUDFLARE_CACHE_PURGE_ZONE }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           if [ -z "${CLOUDFLARE_CACHE_PURGE_TOKEN:-}" ] || [ -z "${CLOUDFLARE_CACHE_PURGE_ZONE:-}" ]; then
-            echo "WARNING: CLOUDFLARE_CACHE_PURGE_TOKEN or CLOUDFLARE_CACHE_PURGE_ZONE secret not set."
-            echo "Skipping CDN purge. CDN may serve stale files until TTL expires."
-            exit 0
+            echo "ERROR: CDN purge credentials are required for release publishing."
+            exit 1
           fi
 
           # Build purge URL list: latest alias + all versioned paths.
@@ -264,7 +253,15 @@ jobs:
             "https://download.coursedao.com/ellamaka/latest/manifest.json"
             "https://download.coursedao.com/ellamaka/v${VERSION}/manifest.json"
             "https://download.coursedao.com/ellamaka/v${VERSION}/checksums.txt"
+            "https://download.coursedao.com/ellamaka/v${VERSION}/release-notes.md"
           )
+
+          OLD_URLS="${RUNNER_TEMP}/old-cli-release-urls.txt"
+          if [ -f "$OLD_URLS" ]; then
+            while IFS= read -r url; do
+              [ -n "$url" ] && PURGE_URLS+=("$url")
+            done < "$OLD_URLS"
+          fi
 
           # Add all artifact URLs from the manifest
           while IFS= read -r url; do
@@ -274,28 +271,28 @@ jobs:
             for (const a of m.artifacts) console.log(a.url);
           ')
 
-          echo "Purging ${#PURGE_URLS[@]} URLs from Cloudflare CDN..."
-          printf '%s\n' "${PURGE_URLS[@]}"
-
-          # Cloudflare free plan allows up to 30 URLs per purge call
-          JSON_FILES=$(printf '"%s",' "${PURGE_URLS[@]}")
-          JSON_FILES="[${JSON_FILES%,}]"
-
-          HTTP_CODE=$(curl -s -o /tmp/purge-response.json -w "%{http_code}" \
-            -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
-            -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"files\":${JSON_FILES}}")
-
-          echo "Purge API response (HTTP $HTTP_CODE):"
-          cat /tmp/purge-response.json
-          echo ""
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "WARNING: Cloudflare purge failed (HTTP $HTTP_CODE)."
-            echo "CDN may serve stale files until TTL expires."
-            exit 0
-          fi
+          mapfile -t PURGE_URLS < <(printf '%s\n' "${PURGE_URLS[@]}" | sort -u)
+          for ((offset=0; offset<${#PURGE_URLS[@]}; offset+=30)); do
+            batch=("${PURGE_URLS[@]:offset:30}")
+            payload=$(printf '%s\n' "${batch[@]}" | node -e '
+              let input = "";
+              process.stdin.on("data", (chunk) => input += chunk);
+              process.stdin.on("end", () => {
+                const files = input.split(/\r?\n/).filter(Boolean);
+                process.stdout.write(JSON.stringify({ files }));
+              });
+            ')
+            response="${RUNNER_TEMP}/cli-purge-response-${offset}.json"
+            code=$(curl -sS -o "$response" -w "%{http_code}" \
+              -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$payload")
+            if [ "$code" != "200" ] || ! node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).success ? 0 : 1)' "$response"; then
+              echo "ERROR: Cloudflare purge failed (HTTP $code)."
+              exit 1
+            fi
+          done
           echo "CDN purge complete for ellamaka v${VERSION}"
 
       - name: Create or update ellamaka GitHub release (no binary assets)

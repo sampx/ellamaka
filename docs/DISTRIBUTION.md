@@ -346,11 +346,11 @@ s3://wopal-release/
 │       └── manifest.json
 └── ellamaka-desktop/         ← 桌面安装包（见 §9）
     ├── v0.1.0/
-    │   ├── ellamaka-desktop-darwin-arm64.dmg
-    │   ├── ellamaka-desktop-darwin-arm64.zip
-    │   ├── ellamaka-desktop-darwin-x64.dmg
-    │   ├── ellamaka-desktop-darwin-x64.zip
-    │   ├── ellamaka-desktop-win32-x64.exe
+    │   ├── ellamaka-desktop-mac-arm64.dmg
+    │   ├── ellamaka-desktop-mac-arm64.zip
+    │   ├── ellamaka-desktop-mac-x64.dmg
+    │   ├── ellamaka-desktop-mac-x64.zip
+    │   ├── ellamaka-desktop-win-x64.exe
     │   ├── ellamaka-desktop-linux-x64.AppImage
     │   ├── ellamaka-desktop-linux-x64.deb
     │   ├── ellamaka-desktop-linux-x64.rpm
@@ -362,11 +362,12 @@ s3://wopal-release/
     │   └── release-notes.md
     ├── v0.2.0/
     │   └── ...
-    └── latest/               ← updater feed（latest-*.yml）+ manifest.json
+    ├── latest/               ← prod updater payload、blockmap 与 latest-*.yml
         ├── latest-mac.yml
         ├── latest.yml
         ├── latest-linux.yml
-        └── manifest.json
+        └── ellamaka-desktop-*
+    └── beta/                 ← beta 版本目录与独立 latest
 ```
 
 ### URL 结构
@@ -380,6 +381,8 @@ Desktop：
 
 - 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
 - Latest 别名（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
+- Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
 
 ### 缓存策略
 
@@ -437,17 +440,18 @@ bun run package:mac   (或 :win / :linux)       ← electron-builder 打包安�
 
 | OS | Arch | 产物 | 说明 |
 |----|------|------|------|
-| macOS | arm64 | `ellamaka-desktop-darwin-arm64.dmg` + `.zip` | `.zip` 供 electron-updater 增量更新 |
-| macOS | x64 | `ellamaka-desktop-darwin-x64.dmg` + `.zip` | 同上 |
-| Windows | x64 | `ellamaka-desktop-win32-x64.exe`（NSIS） | 一键安装 |
+| macOS | arm64 | `ellamaka-desktop-mac-arm64.dmg` + `.zip` | DMG 是用户安装包；ZIP 供 electron-updater 使用 |
+| macOS | x64 | `ellamaka-desktop-mac-x64.dmg` + `.zip` | 同上 |
+| Windows | x64 | `ellamaka-desktop-win-x64.exe`（NSIS） | 一键安装及 updater payload |
 | Linux | x64 | `ellamaka-desktop-linux-x64.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
 
 Contract：
 
-1. 三档 channel（`main` / `beta` / `prod`）对应不同 `appId` 与 `productName`，与 `build.sh desktop --channel` 一致。
+1. `main` 只用于本地构建；发布 workflow 只接受 `beta` / `prod`。
 2. `prod` channel 的 `appId` 为 `ai.ellamaka.desktop`，deep link scheme 为 `ellamaka://`。
-3. 版本化目录与 latest 别名均独立，不与 CLI 混用。
+3. beta 与 prod 的版本化目录和 latest feed 相互独立，也不与 CLI 混用。
 4. 自动更新 feed（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）与安装包同传 R2。
+5. Release 下载表展示 DMG、EXE、AppImage、deb 和 rpm。ZIP 与 blockmap 属于 updater 资产。
 
 ### 9.4 CI 构建（matrix）
 
@@ -461,7 +465,7 @@ Contract：
 | `windows-latest` | NSIS（`.exe`） |
 | `ubuntu-latest` | AppImage + deb + rpm |
 
-各 runner 步骤：`bun install` → `bun packages/opencode/script/build-node.ts`（sidecar）→ `cd packages/ellamaka-desktop` → `bun run build` → `bun run package:<os>`。产物经 sha256 校验后上传 R2 `ellamaka-desktop/v$VERSION/`，并生成 `latest-*.yml` feed 上传至 `ellamaka-desktop/latest/`。
+workflow 在整个 matrix job 注入同一组 `OPENCODE_CHANNEL`、`OPENCODE_VERSION` 和 `OPENCODE_RELEASE`。`bun run build` 的 prebuild 负责构建 sidecar，随后 electron-builder 使用相同 context 打包。产物经 sha256 校验后上传到对应 channel 的版本路径，updater payload、blockmap 与 feed 同步到该 channel 的 latest 路径。
 
 R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT 防多部件损坏 + 回比 manifest hash + 主动 purge）。
 
@@ -469,8 +473,10 @@ R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT �
 
 见 §8 存储结构：`s3://wopal-release/ellamaka-desktop/v$VERSION/` 与 `.../latest/`。
 
-- 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
-- Latest feed：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Prod 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
+- Prod Latest：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
+- Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
 
 缓存策略与 CLI 一致（`v$` 1 周、`latest` 5 分钟）。
 
@@ -488,15 +494,15 @@ P1 安装入口为 **wopal-site 下载页面**，链接指向 `download.courseda
 - Windows：`latest.yml`
 - Linux：`latest-linux.yml`
 
-P1 启用 electron-updater 的**版本检测 + 通知**能力：应用定期拉取 feed 对比本地版本，检测到新版本时提示用户前往 wopal-site 下载。**P1 不启用自动下载安装**——未签名场景下 macOS Gatekeeper 会拦截自动替换的二进制，可靠性不足。签名就绪后（阶段 2）可切换到 electron-updater 的自动下载 + 安装模式，配合 `BRANDING.md` 的 `ellamaka.autoupdate` 设置项控制行为。
+beta 与 prod 启用 electron-updater。prod 使用稳定 latest feed；beta 使用独立 beta latest feed并允许 prerelease。main 本地构建不启用 updater。macOS ZIP、Windows NSIS EXE、AppImage 及对应 blockmap 位于 updater latest 路径，普通下载表只展示用户安装产物。
 
 ### 9.8 代码签名
 
-P1 不做签名，与 CLI 信任边界对齐：R2 HTTPS 下载 + SHA-256 完整性校验。
+P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过 `codesign --verify --deep --strict`，不提供开发者身份认证或 Apple notarization。
 
 未签名的用户体验约束：
 
-- macOS：首次打开需右键 → 打开，Gatekeeper 提示"来自身份不明的开发者"
+- macOS：首次打开需右键 → 打开，或在“隐私与安全性”中选择“仍要打开”
 - Windows：SmartScreen 警告，需"仍要运行"
 - Linux：AppImage 需 `chmod +x`
 
@@ -512,7 +518,7 @@ P1 不做签名，与 CLI 信任边界对齐：R2 HTTPS 下载 + SHA-256 完整�
 
 | 阶段 | 范围 | 退出标准 |
 |------|------|----------|
-| 阶段 1（最小可用） | CI matrix + R2 + `latest-*.yml` feed + electron-updater 检测通知 + wopal-site 下载页 + GH/Gitee 索引；**无签名** | 三平台安装包可从 R2 下载并手动安装，应用内可检测新版本并提示 |
+| 阶段 1（最小可用） | CI matrix + R2 + channel feed + updater 资产 + wopal-site 下载页 + GH/Gitee 索引；macOS ad-hoc 签名 | 三平台安装包可从 R2 下载；macOS 用户可主动接受风险后运行 |
 | 阶段 2（签名公证） | mac/win 签名 + 公证；electron-updater 切换为自动下载安装 | 无 Gatekeeper / SmartScreen 拦截，应用内自动更新可用 |
 
 ### 9.10 验证清单
