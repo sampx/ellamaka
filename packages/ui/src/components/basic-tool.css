@@ -12,6 +12,12 @@
     cursor: pointer;
   }
 
+  &[data-hide-details="true"] {
+    [data-slot="basic-tool-tool-trigger-content"] {
+      max-width: 100%;
+    }
+  }
+
   [data-slot="basic-tool-tool-trigger-content"] {
     flex: 0 1 auto;
     width: auto;
@@ -84,6 +90,7 @@
 
   [data-slot="basic-tool-tool-title"] {
     flex-shrink: 0;
+    white-space: nowrap;
     font-family: var(--font-family-sans);
     font-size: 14px;
     font-style: normal;

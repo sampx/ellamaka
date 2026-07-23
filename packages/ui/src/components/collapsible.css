@@ -66,6 +66,7 @@
     &[data-hide-details="true"] {
       height: auto;
       align-items: stretch;
+      cursor: default;
     }
 
     [data-slot="collapsible-arrow"] {
