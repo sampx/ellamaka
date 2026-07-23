@@ -8,17 +8,21 @@ usage() {
 $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-desktop 双 CI，并 watch 至完成
 
 用法:
-  $SCRIPT <version> [remote]
+  $SCRIPT <version> [remote] [--retag]
 
 参数:
   version   版本号（必填），如 0.0.1-p1-test（v 前缀自动补齐）
   remote    Git remote 名（可选，默认 origin）
 
 选项:
-  -h, --help  显示此帮助信息
+  -h, --help   显示此帮助信息
+  --retag      复用已存在的远程 tag（覆盖同版本 R2 路径，用于 CI 失败后重试）
+               不加此选项时，远程 tag 已存在则自动递增 -N 后缀
 
 行为:
-  1. 解析最终 tag：若远程同名 tag 已存在，自动递增 -N 后缀（如 v1.15.13 → v1.15.13-1），旧 tag 保留不删除
+  1. 解析最终 tag：
+       - 默认：若远程同名 tag 已存在，自动递增 -N 后缀（如 v1.15.13 → v1.15.13-1），旧 tag 保留不删除
+       - --retag：强制复用传入的 tag，若远程已存在则先删除远程 + 本地旧 tag 再重建
   2. 若本地 tag 已存在 → 删除（处理上次脚本中途失败残留）
   3. 在当前 HEAD 创建新 tag
   4. 原子推送 main 和 tag → 同 tag 双发，同时触发 publish-ellamaka 与 publish-ellamaka-desktop 两个 CI workflow
@@ -28,14 +32,17 @@ $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-deskt
 示例:
   $SCRIPT 0.0.1-p1-test
   $SCRIPT 0.0.2-alpha upstream
+  $SCRIPT 0.0.2-alpha --retag        # CI 失败后重试，复用同一 tag
 EOF
   exit 0
 }
 
 # --- 参数解析 ---
+RETAG=false
 for arg in "$@"; do
   case "$arg" in
     -h|--help) usage ;;
+    --retag) RETAG=true ;;
     -*) echo "未知选项: $arg"; usage ;;
     *) ARGS+=("$arg") ;;
   esac
@@ -46,7 +53,7 @@ REMOTE="${ARGS[1]:-origin}"
 
 if [ -z "$VERSION" ]; then
   echo "错误: 缺少版本参数"
-  echo "用法: $SCRIPT <version> [remote]"
+  echo "用法: $SCRIPT <version> [remote] [--retag]"
   echo "试试: $SCRIPT --help"
   exit 1
 fi
@@ -79,9 +86,9 @@ if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
   exit 1
 fi
 
-# --- 解析最终 tag（自动递增 -N 后缀）---
-# 若远程同名 tag 已存在，则追加 -1 / -2 / ... 直到找到一个不存在的。
-# 旧 tag 一律保留，不删除（避免 R2 CDN 缓存冲突与 install 幂等性失效）。
+# --- 解析最终 tag ---
+# 默认：远程同名 tag 已存在 → 自动递增 -N 后缀（旧 tag 保留不删除）
+# --retag：强制复用传入的 tag，远程已存在则先删除远程 + 本地旧 tag
 resolve_tag() {
   local base_tag="$1"
 
@@ -91,7 +98,15 @@ resolve_tag() {
     return 0
   fi
 
-  # 拆分 base 与 suffix：有 -N 后缀时从 N+1 起，否则从 1 起
+  # 远程已存在
+  if [ "$RETAG" = true ]; then
+    echo "  ℹ️  --retag 模式：删除远程旧 tag $base_tag" >&2
+    git -C "$REPO_ROOT" push "$REMOTE" ":refs/tags/$base_tag" >&2
+    echo "$base_tag"
+    return 0
+  fi
+
+  # 默认模式：拆分 base 与 suffix，有 -N 后缀时从 N+1 起，否则从 1 起
   local base suffix start
   if [[ "$base_tag" =~ ^(.*)-([0-9]+)$ ]]; then
     base="${BASH_REMATCH[1]}"
@@ -142,10 +157,10 @@ if [ "$UNPUSHED" -gt 0 ]; then
   exit 1
 fi
 
-# 1. 解析最终 tag（自动递增 -N 后缀）
+# 1. 解析最终 tag
 echo "→ 解析最终 tag: $TAG"
 RESOLVED_TAG="$(resolve_tag "$TAG")"
-if [ "$RESOLVED_TAG" != "$TAG" ]; then
+if [ "$RESOLVED_TAG" != "$TAG" ] && [ "$RETAG" = false ]; then
   echo "  ℹ️  $TAG 已存在，自动递增为 $RESOLVED_TAG"
 fi
 
