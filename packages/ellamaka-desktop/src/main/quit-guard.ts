@@ -148,20 +148,49 @@ export function enableQuitGuard(deps: {
   })
 }
 
+export type WindowCloseDeps = {
+  getSidecarState?: () => SidecarRuntimeState | undefined
+  stopSidecar?: () => Promise<void>
+}
+
 /**
- * Intercepts the `close` event on a BrowserWindow so that on macOS
- * the window is hidden rather than destroyed, keeping the app alive
- * in the Dock.
- *
- * Must be called after the window is created.
+ * Intercepts the `close` event on a BrowserWindow:
+ * - On macOS: hides the window rather than destroying it, keeping app alive in Dock.
+ * - On Windows & Linux: intercepts close while window is still valid, prompts for confirmation
+ *   if Sidecar is active, gracefully shuts down Sidecar, and quits the application cleanly.
  */
-export function interceptWindowClose(win: BrowserWindow) {
+export function interceptWindowClose(win: BrowserWindow, deps?: WindowCloseDeps) {
   win.on("close", (e) => {
     if (forceQuit) return
-    if (process.platform !== "darwin") return
 
+    if (process.platform === "darwin") {
+      e.preventDefault()
+      win.hide()
+      return
+    }
+
+    // Non-macOS (Windows/Linux): prompt for confirmation and stop sidecar before window dies
     e.preventDefault()
-    win.hide()
+    if (shutdownInProgress) return
+
+    shutdownInProgress = true
+    void (async () => {
+      try {
+        const state = deps?.getSidecarState?.()
+        if (shouldConfirmQuit(state)) {
+          const targetWin = win.isDestroyed() ? null : win
+          const confirmed = await confirmQuit(targetWin)
+          if (!confirmed) return
+        }
+
+        await stopSidecarThenQuit(deps?.stopSidecar ?? (async () => {}), () => {
+          forceQuit = true
+          app.quit()
+        })
+      } finally {
+        if (!forceQuit) shutdownInProgress = false
+      }
+    })()
   })
 }
 

@@ -366,7 +366,10 @@ const main = Effect.gen(function* () {
 
   mainWindow = createMainWindow()
   if (mainWindow) {
-    interceptWindowClose(mainWindow)
+    interceptWindowClose(mainWindow, {
+      getSidecarState: () => sidecarState,
+      stopSidecar: () => stopSidecar(),
+    })
     createMenu({
       trigger: (id) => {
         const win = BrowserWindow.getFocusedWindow() ?? mainWindow

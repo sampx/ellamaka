@@ -133,24 +133,26 @@ describe("quit guard", () => {
       expect(events).toEqual([])
     })
 
-    test("on non-macOS, close is never intercepted", () => {
-      const events: string[] = []
-      const fakeEvent = {
-        preventDefault: () => events.push("prevented"),
-      }
+    test("on non-macOS, close is intercepted and prompts confirmation before quitting", async () => {
+      const mod = await import("./quit-guard")
+      const closeListeners: Array<(e: { preventDefault: () => void }) => void> = []
+      let prevented = false
+
       const fakeWindow = {
-        hide: () => events.push("hidden"),
-      }
+        on: (event: string, fn: (e: { preventDefault: () => void }) => void) => {
+          if (event === "close") closeListeners.push(fn)
+        },
+        hide: () => {},
+        isDestroyed: () => false,
+      } as unknown as import("electron").BrowserWindow
 
-      const forceQuit = false
-      const platform = "linux"
+      mod.interceptWindowClose(fakeWindow)
+      expect(closeListeners).toHaveLength(1)
 
-      if (!forceQuit && platform === "darwin") {
-        fakeEvent.preventDefault()
-        fakeWindow.hide()
-      }
+      const listener = closeListeners[0]
+      listener({ preventDefault: () => { prevented = true } })
 
-      expect(events).toEqual([])
+      expect(prevented).toBe(true)
     })
   })
 })
