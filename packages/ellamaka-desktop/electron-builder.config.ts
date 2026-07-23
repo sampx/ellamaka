@@ -16,6 +16,9 @@ const channel = (() => {
 
 const getBase = (): Configuration => ({
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
+  // 显式指定可执行文件名，避免 electron-builder 从 package.json name
+  // (@opencode-ai/ellamaka-desktop) 推导出含 @ 的非法路径字符
+  executableName: "ellamaka",
   copyright: "Copyright © 2025 Ellamaka",
   // Generic provider 指向 R2 latest 别名路径，electron-updater 运行时从该路径
   // 拉取 feed 检测新版本。所有 channel 共享同一个 R2 feed 路径（channel 区别
