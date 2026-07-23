@@ -15,13 +15,12 @@ usage() {
 $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellamaka-desktop，并 watch 至完成
 
 用法:
-  $SCRIPT <version> [remote] [选项]
+  $SCRIPT <version> [选项]
 
 ━━━ 参数 ━━━
   version   版本号（必填）
               CLI / prod Desktop: 任意版本号，如 0.0.1-p1-test、1.15.14
               beta Desktop:       X.Y.Z 或 X.Y.Z-beta.N（见下方自动行为）
-  remote    Git remote 名（可选，默认 origin）
 
 ━━━ 选项 ━━━
   -h, --help   显示此帮助
@@ -66,9 +65,6 @@ $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellam
 
   # CI 失败后重试（显式指定完整版本号）
   $SCRIPT 1.15.14-beta.1 --channel beta --desktop --retag
-
-  # 指定 remote
-  $SCRIPT 0.0.2-alpha upstream
 EOF
   exit 0
 }
@@ -100,9 +96,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 VERSION="${ARGS[0]:-}"
-REMOTE="${ARGS[1]:-origin}"
 
-[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT <version> [remote] [选项]\n试试: $SCRIPT --help"
+[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT <version> [选项]\n试试: $SCRIPT --help"
 
 # Normalize v prefix
 case "$VERSION" in
@@ -144,9 +139,9 @@ SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # --- Repo guard ---
-REPO_URL="$(git -C "$REPO_ROOT" remote get-url "$REMOTE" 2>/dev/null || echo "")"
+REPO_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")"
 if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
-  die "remote '$REMOTE' 不是 wopal-cn/ellamaka\n  remote: $REPO_URL\n  仓库: $REPO_ROOT"
+  die "remote 'origin' 不是 wopal-cn/ellamaka\n  remote: $REPO_URL\n  仓库: $REPO_ROOT"
 fi
 
 # --- Pre-flight checks ---
@@ -164,18 +159,18 @@ check_workspace_clean() {
 }
 
 check_remote_main() {
-  git -C "$REPO_ROOT" fetch "$REMOTE" main 2>/dev/null || true
+  git -C "$REPO_ROOT" fetch origin main 2>/dev/null || true
   local remote_main
-  remote_main=$(git -C "$REPO_ROOT" rev-parse "$REMOTE/main" 2>/dev/null || echo "")
+  remote_main=$(git -C "$REPO_ROOT" rev-parse "origin/main" 2>/dev/null || echo "")
   if [ -z "$remote_main" ]; then
-    die "$REMOTE/main 不存在，请先 git push $REMOTE main"
+    die "origin/main 不存在，请先 git push origin main"
   fi
   local unpushed
-  unpushed=$(git -C "$REPO_ROOT" rev-list --count HEAD "^$REMOTE/main" 2>/dev/null)
+  unpushed=$(git -C "$REPO_ROOT" rev-list --count HEAD "^origin/main" 2>/dev/null)
   if [ "$unpushed" -gt 0 ]; then
-    echo "local main 有 $unpushed 个 commit 未推送至 $REMOTE/main:"
-    git -C "$REPO_ROOT" log --oneline "$REMOTE/main..HEAD"
-    die "请先 git push $REMOTE main"
+    echo "local main 有 $unpushed 个 commit 未推送至 origin/main:"
+    git -C "$REPO_ROOT" log --oneline "origin/main..HEAD"
+    die "请先 git push origin main"
   fi
 }
 
@@ -189,7 +184,7 @@ resolve_beta_version() {
       local n="${BASH_REMATCH[1]}"
       [ "$n" -gt "$max_n" ] && max_n="$n"
     fi
-  done < <(git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "refs/tags/${base_tag}-beta.*" 2>/dev/null)
+  done < <(git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/${base_tag}-beta.*" 2>/dev/null)
 
   echo "${base_tag}-beta.$((max_n + 1))"
 }
@@ -202,7 +197,7 @@ resolve_tag() {
   local base_tag="$1"
 
   # Remote doesn't exist → use directly
-  if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$base_tag" | grep -q "refs/tags/${base_tag}$"; then
+  if ! git -C "$REPO_ROOT" ls-remote --tags origin "$base_tag" | grep -q "refs/tags/${base_tag}$"; then
     echo "$base_tag"
     return 0
   fi
@@ -210,7 +205,7 @@ resolve_tag() {
   # Remote exists
   if [ "$RETAG" = true ]; then
     echo "  ℹ️  --retag 模式：删除远程旧 tag $base_tag" >&2
-    git -C "$REPO_ROOT" push "$REMOTE" ":refs/tags/$base_tag" >&2
+    git -C "$REPO_ROOT" push origin ":refs/tags/$base_tag" >&2
     echo "$base_tag"
     return 0
   fi
@@ -233,7 +228,7 @@ resolve_tag() {
   local n=$start
   while [ "$n" -le 999 ]; do
     local candidate="${base}${separator}${n}"
-    if ! git -C "$REPO_ROOT" ls-remote --tags "$REMOTE" "$candidate" | grep -q "refs/tags/${candidate}$"; then
+    if ! git -C "$REPO_ROOT" ls-remote --tags origin "$candidate" | grep -q "refs/tags/${candidate}$"; then
       echo "$candidate"
       return 0
     fi
@@ -324,7 +319,7 @@ echo "→ 创建 tag: $RESOLVED_TAG"
 git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
 
 echo "→ 原子推送 main 和 $RESOLVED_TAG"
-git -C "$REPO_ROOT" push "$REMOTE" main "$RESOLVED_TAG"
+git -C "$REPO_ROOT" push origin main "$RESOLVED_TAG"
 
 # Dispatch workflows
 echo ""
