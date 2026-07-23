@@ -16,9 +16,11 @@ on:
           - ellamaka-app
           - app
           - none
-  push:
-    tags:
-      - "v*"
+
+# tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
+# 旧设计同时监听 push:tags 与 dispatch，导致 --desktop 时 CLI workflow 仍被 push
+# 自动触发，虽脚本会在启动后 cancel，但浪费 runner 配额且令用户困惑。
+# 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
 
 permissions:
   contents: write
@@ -38,11 +40,7 @@ jobs:
       - name: Derive version
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-            release="true"
-            tag="${GITHUB_REF_NAME}"
-          elif [[ -n "${{ inputs.version }}" ]]; then
+          if [[ -n "${{ inputs.version }}" ]]; then
             version="${{ inputs.version }}"
             release="true"
             tag="v${version}"

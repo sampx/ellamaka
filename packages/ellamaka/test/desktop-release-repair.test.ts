@@ -18,6 +18,17 @@ describe("desktop release repair", () => {
     expect(workflow).toContain("--publish never")
   })
 
+  test("triggers only by manual dispatch, not by tag push", async () => {
+    const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
+
+    expect(workflow).toContain("workflow_dispatch:")
+    // Match the actual trigger block, not explanatory comments that
+    // reference the old push:tags design we removed.
+    expect(workflow).not.toMatch(/\n  push:\s*\n\s*tags:\s*\n\s*-\s*"v\*"/)
+    expect(workflow).not.toContain('github.event_name == "push"')
+    expect(workflow).not.toContain("${GITHUB_REF_NAME#v}")
+  })
+
   test("isolates beta storage and replaces repeated releases", async () => {
     const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
 
@@ -47,14 +58,25 @@ describe("desktop release repair", () => {
     expect(updater).toContain('autoUpdater.allowPrerelease = CHANNEL === "beta"')
   })
 
-  test("tag helper accepts an explicit release channel", async () => {
+  test("tag helper dispatches workflows instead of push-trigger + cancel", async () => {
     const script = await source("scripts/tag-release.sh")
 
     expect(script).toContain("--channel")
     expect(script).toContain('CHANNEL="prod"')
     expect(script).toContain("X.Y.Z-beta.N")
     expect(script).toContain("Desktop channel")
-    expect(script).toContain("PUSHED_AT")
-    expect(script).toContain("createdAt")
+
+    // Option D: tag-release.sh owns trigger authority via gh workflow run.
+    // No push:tags auto-trigger, no cancel-after-start.
+    expect(script).toContain("gh workflow run")
+    expect(script).toContain("--ref")
+    expect(script).toContain("-f \"version=$plain_version\"")
+    expect(script).toContain("workflow_dispatch")
+    expect(script).toContain("dispatch_workflow")
+
+    // Anti-patterns we removed:
+    expect(script).not.toContain("gh run cancel")
+    expect(script).not.toContain("--event push")
+    expect(script).not.toContain("PUSHED_AT")
   })
 })

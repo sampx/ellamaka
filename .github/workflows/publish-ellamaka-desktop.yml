@@ -15,9 +15,11 @@ on:
         options:
           - beta
           - prod
-  push:
-    tags:
-      - "v*"
+
+# tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
+# 旧设计同时监听 push:tags 与 dispatch，导致 --cli 时 desktop workflow 仍被 push
+# 自动触发，虽脚本会在启动后 cancel，但浪费 runner 配额且令用户困惑。
+# 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
 
 # Desktop 创建 wopal-space-ontology GitHub/Gitee Release（与 CLI workflow 一致），
 # tag 前缀 ellamaka-desktop-v 以区分 CLI 的 ellamaka-v。
@@ -40,11 +42,7 @@ jobs:
       - name: Derive version
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-            release="true"
-            tag="${GITHUB_REF_NAME}"
-          elif [[ -n "${{ inputs.version }}" ]]; then
+          if [[ -n "${{ inputs.version }}" ]]; then
             version="${{ inputs.version }}"
             release="true"
             tag="v${version}"
@@ -60,11 +58,7 @@ jobs:
             inferred_channel="prod"
           fi
 
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            channel="$inferred_channel"
-          else
-            channel="${{ inputs.channel || 'prod' }}"
-          fi
+          channel="${{ inputs.channel || 'prod' }}"
 
           if [[ "$channel" == "beta" && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
             echo "ERROR: beta releases require X.Y.Z-beta.N"

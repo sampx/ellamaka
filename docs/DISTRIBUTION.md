@@ -71,7 +71,7 @@ P1 的 canonical consumer：
 
 ### 3.2 自动化发布（CI）
 
-**触发条件**：向 `wopal-cn/ellamaka` 推送 `v*` 格式的 tag，或手动触发 `workflow_dispatch`。
+**触发条件**：仅 `workflow_dispatch`。由 `scripts/tag-release.sh` 推 tag 后通过 `gh workflow run --ref <tag> -f version=<ver>` 按需触发；workflow 不监听 `push: tags`。
 
 **工作流文件**：`.github/workflows/publish-ellamaka.yml`
 
@@ -181,11 +181,11 @@ bun packages/ellamaka/build.ts --web-ui ellamaka-app
 
 | | opencode `script/publish.ts` | ellamaka `publish-ellamaka.yml` |
 |---|---|---|
-| 触发方式 | 手动运行脚本 | git tag push / workflow_dispatch |
+| 触发方式 | 手动运行脚本 | workflow_dispatch（由 tag-release.sh dispatch） |
 | 平台范围 | 完整矩阵（含 musl, baseline, arm64） | `--arch primary` 裁剪为 7 平台（4 native + 3 baseline），排除 musl、arm64 |
 | 发布内容 | npm 包 (CLI/SDK/Plugin) + Desktop finalize | CLI 二进制 × 7 平台（4 native + 3 baseline） |
 | 版本管理 | 遍历所有 `package.json` 替换版本号 | 通过 `OPENCODE_VERSION` env 传入 |
-| Tag 管理 | 脚本内创建/删除/推送 tag | CI 由 tag push 触发，不在 workflow 内操作 tag |
+| Tag 管理 | 脚本内创建/删除/推送 tag | tag 由 tag-release.sh 推送，workflow 由 dispatch 触发，不在 workflow 内操作 tag |
 | 产物目标 | npm registry + GitHub Release（带 binary） | R2 CDN + GitHub Release（仅 markdown 索引） |
 | 归档格式 | macOS `.zip`，Linux `.tar.gz` | macOS/Linux `.tar.gz`，Windows `.zip`（与 wopal-cli 对齐） |
 
@@ -455,7 +455,7 @@ Contract：
 
 ### 9.4 CI 构建（matrix）
 
-新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（git tag `v*` / `workflow_dispatch`），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。
+新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（仅 `workflow_dispatch`，由 `tag-release.sh` dispatch），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。
 
 原生安装包无法在单一 runner 跨平台生成，必须用 matrix：
 

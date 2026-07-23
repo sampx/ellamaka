@@ -5,7 +5,7 @@ SCRIPT="$(basename "$0")"
 
 usage() {
   cat <<EOF
-$SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-desktop 双 CI，并 watch 至完成
+$SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellamaka-desktop，并 watch 至完成
 
 用法:
   $SCRIPT <version> [remote] [--channel <beta|prod>] [--retag] [--cli|--desktop]
@@ -19,8 +19,8 @@ $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-deskt
   --channel    Desktop channel（默认 prod）；beta 版本必须使用 X.Y.Z-beta.N
   --retag      复用已存在的远程 tag（覆盖同版本 R2 路径，用于 CI 失败后重试）
                不加此选项时，远程 tag 已存在则自动递增 -N 后缀
-  --cli        仅发布 CLI（取消 Desktop workflow run，省去桌面端构建）
-  --desktop    仅发布 Desktop（取消 CLI workflow run，省去 CLI 构建）
+  --cli        仅发布 CLI（仅 dispatch publish-ellamaka）
+  --desktop    仅发布 Desktop（仅 dispatch publish-ellamaka-desktop）
                不加 --cli/--desktop 时默认双发
 
 行为:
@@ -30,8 +30,11 @@ $SCRIPT — 打 tag 并推送，触发 publish-ellamaka + publish-ellamaka-deskt
        - --retag：强制复用传入的 tag，若远程已存在则先删除远程 + 本地旧 tag 再重建
   2. 若本地 tag 已存在 → 删除（处理上次脚本中途失败残留）
   3. 在当前 HEAD 创建新 tag
-  4. 原子推送 main 和 tag → 同 tag 双发，同时触发 publish-ellamaka 与 publish-ellamaka-desktop 两个 CI workflow
-  5. 取消不需要的 workflow run（--cli 取消 desktop，--desktop 取消 CLI）
+  4. 原子推送 main 和 tag（tag 供 dispatch 时 --ref 引用，不再自动触发 workflow）
+  5. 按需 dispatch workflow：
+       - --cli      → 仅 dispatch publish-ellamaka
+       - --desktop  → 仅 dispatch publish-ellamaka-desktop
+       - 默认       → 两者都 dispatch
   6. Watch 选定的 workflow 至全部完成（Ctrl+C 可中断）
   7. 打印发布 URL
 
@@ -84,7 +87,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-# 规范化 tag：确保 v 前缀（publish-ellamaka.yml 仅由 v* tag 触发）
+# 规范化 tag：确保 v 前缀（dispatch 时 --ref 需引用该 tag）
 case "$VERSION" in
   v*) ;;
   *) VERSION="v$VERSION" ;;
@@ -229,41 +232,70 @@ echo "→ 创建 tag: $RESOLVED_TAG"
 git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
 
 echo "→ 原子推送 main 和 $RESOLVED_TAG"
-PUSHED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 git -C "$REPO_ROOT" push "$REMOTE" main "$RESOLVED_TAG"
 
-# 3. Watch workflows（CLI + Desktop 双发）
+# 4. 按需 dispatch workflow
 echo ""
 if [ "$HAVE_GH" = false ]; then
-  echo "ℹ️  gh CLI 不可用或未认证，跳过 watch。"
+  echo "ℹ️  gh CLI 不可用或未认证，跳过 dispatch + watch。"
+  echo "   tag 已推送，可手动在 GitHub Actions 页面触发 workflow。"
   exit 0
 fi
 
-# 检测 desktop workflow 是否存在（不存在则优雅降级为仅 watch CLI）
+# 检测 desktop workflow 是否存在（不存在则优雅降级为仅 dispatch CLI）
 DESKTOP_WF=".github/workflows/publish-ellamaka-desktop.yml"
 DESKTOP_WF_EXISTS=false
 if [ -f "$REPO_ROOT/$DESKTOP_WF" ]; then
   DESKTOP_WF_EXISTS=true
 fi
 
-# 根据文件存在性 + --cli/--desktop 标志决定实际 watch 范围
+# 根据文件存在性 + --cli/--desktop 标志决定实际 dispatch 范围
 DO_WATCH_CLI=$WATCH_CLI
 DO_WATCH_DESKTOP=false
 if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
   DO_WATCH_DESKTOP=true
 fi
 
-find_run() {
+# dispatch_workflow: 触发指定 workflow 并返回 run id
+#   $1 = workflow 文件名（如 publish-ellamaka.yml）
+#   $2 = run 名称标签（如 "CLI" / "Desktop"）
+#   stdout = run id（失败时为空）
+# 通过 --ref 指向刚推送的 tag，让 workflow checkout 到对应 commit；
+# 通过 -f version=... 传入版本号（workflow 内 inputs.version 优先）。
+dispatch_workflow() {
+  local wf="$1"
+  local label="$2"
+  local plain_version="${RESOLVED_TAG#v}"
+  local channel_arg=""
+
+  if [[ "$wf" == publish-ellamaka-desktop.yml ]]; then
+    channel_arg="-f channel=$CHANNEL"
+  fi
+
+  echo "→ dispatch $label workflow: $wf (ref=$RESOLVED_TAG, version=$plain_version${channel_arg:+, channel=$CHANNEL})"
+  # shellcheck disable=SC2086
+  gh workflow run "$wf" -R wopal-cn/ellamaka \
+    --ref "$RESOLVED_TAG" \
+    -f "version=$plain_version" \
+    $channel_arg 2>&1 || true
+}
+
+# find_dispatched_run: 轮询查找刚 dispatch 的 workflow run
+#   $1 = workflow 文件名
+#   stdout = run id（60 秒内未找到则为空）
+# dispatch 到 run 启动之间有延迟，需轮询。通过 event=workflow_dispatch +
+# branch=tag 过滤；为排除历史 run，仅取最新一条（dispatch 是顺序的）。
+find_dispatched_run() {
   local wf="$1"
   local run_id=""
   for _ in $(seq 1 12); do
     run_id=$(gh run list -R wopal-cn/ellamaka \
       --workflow "$wf" \
       --branch "$RESOLVED_TAG" \
-      --event push \
-      --limit 10 \
-      --json databaseId,createdAt \
-      -q "map(select(.createdAt >= \"$PUSHED_AT\"))[0].databaseId // \"\"" 2>/dev/null || echo "")
+      --event workflow_dispatch \
+      --limit 1 \
+      --json databaseId \
+      -q ".[0].databaseId // \"\"" 2>/dev/null || echo "")
     if [ -n "$run_id" ]; then echo "$run_id"; return 0; fi
     sleep 5
   done
@@ -271,36 +303,30 @@ find_run() {
   return 0
 }
 
-# 等待两个 workflow 都启动（即使要取消的也要先找到 run id 才能 cancel）
-echo "→ 等待 publish-ellamaka workflow 启动..."
-RUN_CLI="$(find_run publish-ellamaka.yml)"
-
-echo "→ 等待 publish-ellamaka-desktop workflow 启动..."
+RUN_CLI=""
 RUN_DESKTOP=""
-if [ "$DESKTOP_WF_EXISTS" = true ]; then
-  RUN_DESKTOP="$(find_run publish-ellamaka-desktop.yml)"
+
+if [ "$DO_WATCH_CLI" = true ]; then
+  dispatch_workflow publish-ellamaka.yml "CLI"
+  echo "→ 等待 CLI workflow run 启动..."
+  RUN_CLI="$(find_dispatched_run publish-ellamaka.yml)"
+  if [ -z "$RUN_CLI" ]; then
+    echo "⚠️  60 秒内未找到 CLI workflow run。"
+    exit 0
+  fi
+  echo "  CLI run id: $RUN_CLI"
 fi
 
-# 取消不需要的 workflow run
-if [ "$DO_WATCH_CLI" = false ] && [ -n "$RUN_CLI" ]; then
-  echo "→ 取消 CLI workflow run: $RUN_CLI（--desktop 模式）"
-  gh run cancel "$RUN_CLI" -R wopal-cn/ellamaka 2>/dev/null || true
-  RUN_CLI=""
-fi
-if [ "$DO_WATCH_DESKTOP" = false ] && [ -n "$RUN_DESKTOP" ]; then
-  echo "→ 取消 Desktop workflow run: $RUN_DESKTOP（--cli 模式）"
-  gh run cancel "$RUN_DESKTOP" -R wopal-cn/ellamaka 2>/dev/null || true
-  RUN_DESKTOP=""
-fi
-
-# 检查需要 watch 的 run 是否找到
-if [ "$DO_WATCH_CLI" = true ] && [ -z "$RUN_CLI" ]; then
-  echo "⚠️  60 秒内未找到 CLI workflow run。"
-  exit 0
-fi
-if [ "$DO_WATCH_DESKTOP" = true ] && [ -z "$RUN_DESKTOP" ]; then
-  echo "⚠️  60 秒内未找到 Desktop workflow run。"
-  DO_WATCH_DESKTOP=false
+if [ "$DO_WATCH_DESKTOP" = true ]; then
+  dispatch_workflow publish-ellamaka-desktop.yml "Desktop"
+  echo "→ 等待 Desktop workflow run 启动..."
+  RUN_DESKTOP="$(find_dispatched_run publish-ellamaka-desktop.yml)"
+  if [ -z "$RUN_DESKTOP" ]; then
+    echo "⚠️  60 秒内未找到 Desktop workflow run。"
+    DO_WATCH_DESKTOP=false
+  else
+    echo "  Desktop run id: $RUN_DESKTOP"
+  fi
 fi
 
 poll_run() {
@@ -354,7 +380,7 @@ while true; do
   sleep $POLL_INTERVAL
 done
 
-# 4. 输出发布 URL
+# 5. 输出发布 URL
 echo ""
 echo "✅ Release complete"
 echo "   Release:     https://github.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"

@@ -12,6 +12,19 @@ function count(text: string, needle: string) {
 }
 
 describe("publish-ellamaka workflow", () => {
+  test("triggers only by manual dispatch, not by tag push", () => {
+    // tag-release.sh owns trigger authority; workflows must not listen to
+    // push:tags, otherwise --desktop still fires CLI run (wasted runner quota
+    // + user confusion). Cancel-after-trigger is the anti-pattern we removed.
+    // The trigger block lives under `on:` at top level — match it precisely,
+    // not explanatory comments that mention the old push design.
+    expect(workflow).toContain("workflow_dispatch:")
+    expect(workflow).not.toMatch(/^on:\s*\n\s*push:\s*\n\s*tags:/m)
+    expect(workflow).not.toMatch(/\n  push:\s*\n\s*tags:\s*\n\s*-\s*"v\*"/)
+    expect(workflow).not.toContain('github.event_name == "push"')
+    expect(workflow).not.toContain("${GITHUB_REF_NAME#v}")
+  })
+
   test("builds release binaries with release channel and archives the 4 P1 artifacts", () => {
     expect(workflow).toContain("OPENCODE_RELEASE: ${{ needs.version.outputs.release }}")
     expect(workflow).toContain("bash scripts/build.sh cli --arch primary --web-ui \"${WEB_UI}\"")
