@@ -10,6 +10,7 @@ import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { mainWindowChrome } from "./window-chrome"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -43,6 +44,7 @@ let relaunchHandler = () => {
   app.exit(0)
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
+const titlebarOverlayWindows = new WeakSet<BrowserWindow>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
 const titlebarHeight = 40
 const maxZoomLevel = 10
@@ -93,7 +95,7 @@ export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = 
 }
 
 export function updateTitlebar(win: BrowserWindow) {
-  if (process.platform !== "win32") return
+  if (process.platform !== "win32" || !titlebarOverlayWindows.has(win)) return
   win.setTitleBarOverlay(overlay(titlebarThemes.get(win), win.webContents.getZoomFactor()))
 }
 
@@ -123,30 +125,16 @@ export function createMainWindow() {
     defaultHeight: 800,
   })
 
-  const mode = tone()
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
     width: state.width,
     height: state.height,
     show: false,
-    autoHideMenuBar: process.platform !== "win32",
     title: "Ellamaka",
     icon: iconPath(),
     backgroundColor: backgroundColor ?? defaultBackgroundColor(),
-    ...(process.platform === "darwin"
-      ? {
-          titleBarStyle: "hidden" as const,
-          trafficLightPosition: { x: 12, y: 14 },
-        }
-      : {}),
-    ...(process.platform === "win32"
-      ? {
-          frame: false,
-          titleBarStyle: "hidden" as const,
-          titleBarOverlay: overlay({ mode }),
-        }
-      : {}),
+    ...mainWindowChrome(process.platform),
     webPreferences: {
       preload: join(root, "../preload/index.js"),
       contextIsolation: true,
@@ -207,6 +195,7 @@ export function createLoadingWindow() {
       sandbox: true,
     },
   })
+  if (process.platform === "win32") titlebarOverlayWindows.add(win)
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "loading")
