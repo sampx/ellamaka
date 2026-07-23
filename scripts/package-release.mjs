@@ -58,10 +58,13 @@ export function parseArgs(argv) {
 //   os ∈ {darwin, linux, windows}, arch ∈ {arm64, x64}, ext ∈ {tar.gz, zip}
 // Desktop artifact naming: ellamaka-desktop-<os>-<arch>.<ext>
 //   os ∈ {darwin, win32, linux} (win32 normalized to windows),
-//   arch ∈ {arm64, x64}, ext ∈ {dmg, zip, exe, AppImage, deb, rpm}
+//   arch ∈ {arm64, x64} — but electron-builder uses platform-specific
+//   arch names for linux: amd64 (deb), x86_64 (AppImage, rpm). Both are
+//   normalized to x64 in the manifest.
 const CLI_ARCHIVE_RE = /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/
-const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-([^-]+)-(arm64|x64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
+const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-([^-]+)-(arm64|x64|amd64|x86_64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
 const DESKTOP_OS_MAP = { darwin: "darwin", win32: "windows", linux: "linux" }
+const DESKTOP_ARCH_MAP = { arm64: "arm64", x64: "x64", amd64: "x64", x86_64: "x64" }
 const ARCHIVE_EXT_RE = /\.(tar\.gz|zip|dmg|exe|AppImage|deb|rpm)$/
 
 export function parseArchiveName(filename) {
@@ -69,7 +72,7 @@ export function parseArchiveName(filename) {
   if (desktopMatch) {
     return {
       os: DESKTOP_OS_MAP[desktopMatch[1]] ?? desktopMatch[1],
-      arch: desktopMatch[2],
+      arch: DESKTOP_ARCH_MAP[desktopMatch[2]] ?? desktopMatch[2],
       variant: null,
       ext: desktopMatch[3],
       product: "desktop",

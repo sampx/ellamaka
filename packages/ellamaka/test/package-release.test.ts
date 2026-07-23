@@ -102,6 +102,32 @@ describe("package-release.mjs", () => {
     })
   })
 
+  test("normalizes electron-builder arch names to x64", () => {
+    // electron-builder uses platform-specific arch names for linux:
+    // amd64 (deb), x86_64 (AppImage, rpm). Both must normalize to x64.
+    expect(script.parseArchiveName("ellamaka-desktop-linux-amd64.deb")).toEqual({
+      os: "linux",
+      arch: "x64",
+      variant: null,
+      ext: "deb",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-linux-x86_64.AppImage")).toEqual({
+      os: "linux",
+      arch: "x64",
+      variant: null,
+      ext: "AppImage",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-linux-x86_64.rpm")).toEqual({
+      os: "linux",
+      arch: "x64",
+      variant: null,
+      ext: "rpm",
+      product: "desktop",
+    })
+  })
+
   test("generates manifest.json with R2 URLs", () => {
     const outputDir = resolve(makeTempdir(), "output")
     generate(outputDir)
