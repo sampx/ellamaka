@@ -2,9 +2,9 @@ import { Component, Show, createMemo, createResource, onMount, type JSX } from "
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { NumberStepper } from "@opencode-ai/ui/number-stepper"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -527,21 +527,13 @@ export const SettingsGeneral: Component = () => {
           title={language.t("settings.general.row.fontSize.title")}
           description={language.t("settings.general.row.fontSize.description")}
         >
-          <div class="w-full sm:w-[220px]">
-            <TextField
-              data-action="settings-font-size"
-              label={language.t("settings.general.row.fontSize.title")}
-              hideLabel
-              type="number"
-              value={String(settings.appearance.fontSize())}
-              onChange={(value) => {
-                const parsed = parseInt(value, 10)
-                if (!isNaN(parsed) && parsed >= 10 && parsed <= 24) {
-                  settings.appearance.setFontSize(parsed)
-                }
-              }}
-              placeholder="15"
-              class="text-12-regular"
+          <div data-action="settings-font-size" class="w-full sm:w-[220px]">
+            <NumberStepper
+              value={settings.appearance.fontSize()}
+              range={{ min: 10, max: 24, step: 1 }}
+              onChange={(next) => settings.appearance.setFontSize(next)}
+              decreaseLabel={language.t("settings.general.row.fontSize.decrease")}
+              increaseLabel={language.t("settings.general.row.fontSize.increase")}
             />
           </div>
         </SettingsRow>

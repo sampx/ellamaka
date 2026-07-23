@@ -1,0 +1,33 @@
+[data-component="number-stepper"] {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+
+  [data-component="button"] {
+    flex: 0 0 auto;
+    min-width: 36px;
+    padding: 0 8px;
+  }
+
+  [data-slot="number-stepper-value"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    background-color: var(--button-secondary-base);
+    box-shadow: var(--shadow-xs-border-base);
+    border-radius: var(--radius-md);
+    color: var(--text-strong);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+}
