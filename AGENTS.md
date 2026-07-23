@@ -114,8 +114,8 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 ### Desktop Release Contract
 
 - `main` is for local `build.sh desktop --channel main` verification only. Release workflows accept only `beta` and `prod`.
-- Windows release packages are built on native Windows CI. macOS builds do not replace Windows runtime validation.
-- Windows uses a visible native menu row below the titlebar. The titlebar owns only native caption controls.
+- Windows Desktop UI changes require native Windows CI and runtime validation. macOS builds are insufficient.
+- Release workflows use only Node 24-native official JavaScript actions. Before adding or upgrading an action, inspect its `action.yml`; `runs.using` must be `node24`. `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` is a compatibility guard, never a substitute for the upgrade. Release workflow tests lock the approved action baseline.
 - Beta versions use `X.Y.Z-beta.N` and publish to `ellamaka-desktop/beta/`. Prod publishes to `ellamaka-desktop/`.
 - Sidecar, Electron Main/Renderer, icons, and electron-builder share the same channel/version environment variables.
 - Public macOS packages use ad-hoc signing. This guarantees bundle signature integrity, but users must still accept Gatekeeper risk manually.
