@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shouldConfirmQuit } from "./quit-guard"
+import { shouldConfirmQuit, stopSidecarThenQuit } from "./quit-guard"
 import type { SidecarRuntimeState } from "../preload/types"
 
 function makeState(status: SidecarRuntimeState["status"]): SidecarRuntimeState {
@@ -62,6 +62,21 @@ describe("quit guard", () => {
     test("interceptWindowClose is a function", async () => {
       const mod = await import("./quit-guard")
       expect(typeof mod.interceptWindowClose).toBe("function")
+    })
+
+    test("stops the sidecar before allowing Electron to quit", async () => {
+      const events: string[] = []
+
+      await stopSidecarThenQuit(
+        async () => {
+          events.push("stop:start")
+          await Promise.resolve()
+          events.push("stop:done")
+        },
+        () => events.push("quit"),
+      )
+
+      expect(events).toEqual(["stop:start", "stop:done", "quit"])
     })
   })
 

@@ -36,6 +36,7 @@ import {
 import { migrate } from "./migrate"
 import { needsJsonMigration } from "./migration-check"
 import { enableQuitGuard, interceptWindowClose } from "./quit-guard"
+import { getReleaseInfo } from "./release-info"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
@@ -195,6 +196,7 @@ const main = Effect.gen(function* () {
   enableQuitGuard({
     getMainWindow: () => mainWindow,
     getSidecarState: () => supervisor?.getState(),
+    stopSidecar: killSidecar,
   })
 
   app.on("child-process-gone", (_event, details) => {
@@ -306,7 +308,7 @@ const main = Effect.gen(function* () {
       },
       (e) => Effect.runPromise(e),
     ),
-    getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED }),
+    getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED, version: getReleaseInfo().displayVersion }),
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),

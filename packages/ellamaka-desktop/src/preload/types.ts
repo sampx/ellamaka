@@ -29,6 +29,7 @@ export type TitlebarTheme = {
 }
 export type WindowConfig = {
   updaterEnabled: boolean
+  version: string
 }
 
 export type FatalRendererError = {

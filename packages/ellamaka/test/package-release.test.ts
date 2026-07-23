@@ -151,6 +151,7 @@ describe("package-release.mjs", () => {
     const manifest = JSON.parse(readFileSync(join(outputDir, "manifest.json"), "utf8"))
 
     expect(manifest.version).toBe("0.1.0-test")
+    expect(manifest.build).toBeUndefined()
     expect(manifest.artifacts).toHaveLength(4)
     expect(manifest.checksumsUrl).toBe(`${defaultBaseUrl}/v0.1.0-test/checksums.txt`)
 
@@ -161,6 +162,19 @@ describe("package-release.mjs", () => {
       expect(artifact.size).toBeGreaterThan(0)
       expect(artifact.variant).toBeNull()
     }
+  })
+
+  test("records the immutable source build for a retagged release", () => {
+    const outputDir = resolve(makeTempdir(), "output")
+    const { manifest } = script.manifestCommand({
+      archivesDir: fixturesDir,
+      version: "0.1.0-test",
+      outputDir,
+      tag: "v0.1.0-test",
+      build: "91a7db1f22a2007588ee2a62e5d738b7d8e80291",
+    })
+
+    expect(manifest.build).toBe("91a7db1f22a2007588ee2a62e5d738b7d8e80291")
   })
 
   test("generates manifest with desktop products", () => {

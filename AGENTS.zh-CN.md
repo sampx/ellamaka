@@ -116,6 +116,8 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 - `main` 只用于 `build.sh desktop --channel main` 本地构建验证。发布 workflow 只接受 `beta` 和 `prod`。
 - Windows Desktop UI 变更必须经原生 Windows CI 和运行时验证。macOS 构建不足以替代该验证。
 - 发布 workflow 只使用原生支持 Node 24 的官方 JavaScript action。新增或升级 action 前必须检查其 `action.yml`，确认 `runs.using` 为 `node24`。`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` 只作兼容保护，不能替代升级。发布 workflow 测试锁定已批准的 action 基线。
+- 同版本 retag 保留语义版本，并在包元数据与发布 manifest 中记录 tag 指向的 commit。用户验证以该构建身份为准，而非只比较版本号。
+- Windows 退出会等待 SidecarSupervisor 停止，再终止 Electron。
 - beta 版本使用 `X.Y.Z-beta.N`，发布到 `ellamaka-desktop/beta/`。prod 发布到 `ellamaka-desktop/`。
 - sidecar、Electron Main/Renderer、图标和 electron-builder 共用同一组 channel/version 环境变量。
 - macOS 公共包使用 ad-hoc 签名。它保证 bundle 签名结构完整，但用户仍需主动接受 Gatekeeper 风险。

@@ -4,6 +4,7 @@ import { getStore } from "./store"
 
 let forceQuit = false
 let confirmShowing = false
+let shutdownInProgress = false
 
 /**
  * Returns true when the sidecar is actively running, meaning a quit
@@ -82,6 +83,11 @@ export async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
   }
 }
 
+export async function stopSidecarThenQuit(stopSidecar: () => Promise<void>, quit: () => void) {
+  await stopSidecar()
+  quit()
+}
+
 /**
  * Installs a `before-quit` guard that conditionally prompts the user
  * for confirmation when the sidecar is actively running.
@@ -94,8 +100,9 @@ export async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
 export function enableQuitGuard(deps: {
   getMainWindow: () => BrowserWindow | null
   getSidecarState: () => SidecarRuntimeState | undefined
+  stopSidecar: () => Promise<void>
 }) {
-  const { getMainWindow, getSidecarState } = deps
+  const { getMainWindow, getSidecarState, stopSidecar } = deps
 
   // macOS: prevent quit when all windows are closed (keep Dock alive)
   app.on("window-all-closed", () => {
@@ -117,19 +124,27 @@ export function enableQuitGuard(deps: {
 
   // Guard quit with confirmation when sidecar is active
   app.on("before-quit", (e) => {
-    if (forceQuit || confirmShowing) return
-
-    const state = getSidecarState()
-    if (!shouldConfirmQuit(state)) return
-
+    if (forceQuit) return
     e.preventDefault()
-    const win = getMainWindow()
-    void confirmQuit(win).then((confirmed) => {
-      if (confirmed) {
-        forceQuit = true
-        app.quit()
+    if (shutdownInProgress) return
+
+    shutdownInProgress = true
+    void (async () => {
+      try {
+        const state = getSidecarState()
+        if (shouldConfirmQuit(state)) {
+          const confirmed = await confirmQuit(getMainWindow())
+          if (!confirmed) return
+        }
+
+        await stopSidecarThenQuit(stopSidecar, () => {
+          forceQuit = true
+          app.quit()
+        })
+      } finally {
+        if (!forceQuit) shutdownInProgress = false
       }
-    })
+    })()
   })
 }
 
@@ -156,4 +171,5 @@ export function interceptWindowClose(win: BrowserWindow) {
 export function resetQuitGuard() {
   forceQuit = false
   confirmShowing = false
+  shutdownInProgress = false
 }

@@ -105,12 +105,14 @@ jobs:
         if: needs.version.outputs.release != ''
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ github.sha }}
         run: |
           node scripts/package-release.mjs manifest \
             --archives-dir dist \
             --version "$VERSION" \
             --output-dir release-output \
-            --tag v"$VERSION"
+            --tag v"$VERSION" \
+            --build "$BUILD"
 
       - name: Upload binaries and metadata to Cloudflare R2
         if: needs.version.outputs.release != ''

@@ -72,7 +72,7 @@ const listenForDeepLinks = () => {
   return window.api.onDeepLink((urls) => emitDeepLinks(urls))
 }
 
-const createPlatform = (): Platform => {
+const createPlatform = (releaseVersion: () => string): Platform => {
   const os = (() => {
     const ua = navigator.userAgent
     if (ua.includes("Mac")) return "macos"
@@ -127,7 +127,9 @@ const createPlatform = (): Platform => {
   return {
     platform: "desktop",
     os,
-    version: pkg.version,
+    get version() {
+      return releaseVersion()
+    },
 
     async openDirectoryPickerDialog(opts) {
       const result = await window.api.openDirectoryPicker({
@@ -255,9 +257,9 @@ window.api.onMenuCommand((id) => {
 listenForDeepLinks()
 
   render(() => {
-    const platform = createPlatform()
+    const [windowConfig] = createResource(() => window.api.getWindowConfig().catch(() => ({ updaterEnabled: false, version: pkg.version })))
+    const platform = createPlatform(() => windowConfig()?.version ?? pkg.version)
     document.documentElement.dataset.platform = platform.os ? `desktop-${platform.os}` : "desktop"
-    const [windowConfig] = createResource(() => window.api.getWindowConfig().catch(() => ({ updaterEnabled: false })))
     const loadLocale = async () => {
     const current = await platform.storage?.("ellamaka.global.dat").getItem("language")
     const legacy = current ? undefined : await platform.storage?.().getItem("language.v1")

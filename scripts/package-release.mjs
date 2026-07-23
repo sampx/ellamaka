@@ -50,6 +50,7 @@ export function parseArgs(argv) {
       outputDir: flags.outputDir,
       tag: flags.tag,
       baseUrl: flags.baseUrl || "https://download.coursedao.com/ellamaka",
+      build: flags.build,
     },
   }
 }
@@ -170,6 +171,7 @@ export function manifestCommand(flags) {
 
   const manifest = {
     version: flags.version,
+    ...(flags.build ? { build: flags.build } : {}),
     artifacts,
     checksumsUrl,
   }

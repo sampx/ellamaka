@@ -10,6 +10,7 @@ import {
 
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { getReleaseInfo } from "./release-info"
 
 export type MenuDeps = {
   trigger: (id: string) => void
@@ -26,6 +27,16 @@ export function createMenu(deps: MenuDeps) {
   if (!platform) return
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(platform, deps)))
+  if (platform === "windows") showWindowsMenuBar(BrowserWindow.getAllWindows())
+}
+
+export function showWindowsMenuBar(
+  windows: Iterable<Pick<BrowserWindow, "setAutoHideMenuBar" | "setMenuBarVisibility">>,
+) {
+  for (const win of windows) {
+    win.setAutoHideMenuBar(false)
+    win.setMenuBarVisibility(true)
+  }
 }
 
 export function buildMenuTemplate(platform: DesktopMenuPlatform, deps: MenuDeps): MenuItemConstructorOptions[] {
@@ -38,7 +49,7 @@ export function buildMenuTemplate(platform: DesktopMenuPlatform, deps: MenuDeps)
   })
 }
 
-export function aboutOptions(name: string = app.getName(), version: string = app.getVersion()) {
+export function aboutOptions(name: string = app.getName(), version: string = getReleaseInfo().displayVersion) {
   return {
     type: "info" as const,
     title: `About ${name}`,

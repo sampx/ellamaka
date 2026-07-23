@@ -3,7 +3,7 @@ import type { MenuDeps } from "./menu"
 
 mock.module("./desktop-menu-actions", () => ({ runDesktopMenuAction: () => {} }))
 
-const { aboutOptions, buildMenuTemplate } = await import("./menu")
+const { aboutOptions, buildMenuTemplate, showWindowsMenuBar } = await import("./menu")
 
 const deps: MenuDeps = {
   trigger: () => {},
@@ -50,5 +50,18 @@ describe("desktop native menu", () => {
       message: "Ellamaka Beta",
       detail: "Version 1.15.13-beta.3",
     })
+  })
+
+  test("forces the Windows menu bar visible after registering the native menu", () => {
+    const events: string[] = []
+
+    showWindowsMenuBar([
+      {
+        setAutoHideMenuBar: (value) => events.push(`auto-hide:${value}`),
+        setMenuBarVisibility: (value) => events.push(`visible:${value}`),
+      },
+    ])
+
+    expect(events).toEqual(["auto-hide:false", "visible:true"])
   })
 })

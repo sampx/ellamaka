@@ -47,6 +47,7 @@ describe("desktop release repair", () => {
     expect(config).toContain('identity: "-"')
     expect(config).toContain("extraMetadata")
     expect(config).toContain("OPENCODE_VERSION")
+    expect(config).toContain("OPENCODE_BUILD_ID")
     expect(config).toContain("ellamaka-desktop/beta/latest")
   })
 
@@ -98,5 +99,16 @@ describe("desktop release repair", () => {
     expect(desktop).toContain("actions/download-artifact@v8")
     expect(desktop).not.toContain("actions/upload-artifact@v5")
     expect(desktop).not.toContain("actions/download-artifact@v5")
+  })
+
+  test("carries a retagged build identity into desktop packages and manifests", async () => {
+    const desktop = await source(".github/workflows/publish-ellamaka-desktop.yml")
+    const cli = await source(".github/workflows/publish-ellamaka.yml")
+
+    expect(desktop).toContain("OPENCODE_BUILD_ID: ${{ github.sha }}")
+    expect(desktop).toContain("BUILD: ${{ github.sha }}")
+    expect(desktop).toContain('--build "$BUILD"')
+    expect(cli).toContain("BUILD: ${{ github.sha }}")
+    expect(cli).toContain('--build "$BUILD"')
   })
 })
