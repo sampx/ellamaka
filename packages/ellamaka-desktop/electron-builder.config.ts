@@ -17,7 +17,11 @@ function getPublishUrl(): string | undefined {
 const getBase = (): Configuration => ({
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
   copyright: "Copyright © 2025 Ellamaka",
-  extraMetadata: version || build ? { ...(version ? { version } : {}), ...(build ? { ellamakaBuild: build } : {}) } : undefined,
+  extraMetadata: {
+    name: "ellamaka",
+    ...(version ? { version } : {}),
+    ...(build ? { ellamakaBuild: build } : {}),
+  },
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -53,6 +57,7 @@ const getBase = (): Configuration => ({
     icon: "resources/icons/icon.ico",
     target: ["nsis"],
     verifyUpdateCodeSignature: false,
+    executableName: "ellamaka",
   },
   nsis: {
     oneClick: true,
@@ -65,9 +70,6 @@ const getBase = (): Configuration => ({
     category: "Development",
     target: ["AppImage", "deb", "rpm"],
     artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
-    // AppImage 文件名从 package.json name (@opencode-ai/ellamaka-desktop) 推导，
-    // 含 @ 的路径字符非法。显式指定可执行文件名避免该问题。
-    // 仅 Linux 需要 — macOS .app 用 productName，Windows nsis 用 productName。
     executableName: "ellamaka",
   },
 })
