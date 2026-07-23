@@ -9,12 +9,18 @@ description: Ellamaka Web UI built with SolidJS, Vite, and Tailwind CSS
 
 - Project design: `../../docs/DESIGN.md`
 - Workbench design: `../../docs/WORKBENCH.md`
+- Desktop design: `../../docs/DESKTOP.md` — authoritative for Electron hosting and the shared sidecar/PTY lifecycle.
 - Parent rules: `../../AGENTS.md`
 - Backend rules: `../opencode/AGENTS.md`
+- Desktop package rules: `../ellamaka-desktop/AGENTS.md` — required before a coordinated renderer/shell change.
 
 ## 2. Architecture and Directories
 
 Execution chain: Vite dev server → SolidJS SPA → `@opencode-ai/sdk` → backend (`packages/opencode`) HTTP/WS API.
+
+### Desktop Integration Boundary
+
+`ellamaka-app` serves both browser Workbench and the `/workbench` renderer hosted by `ellamaka-desktop`. Electron owns the native window, preload API, and local sidecar lifetime; this package owns the shared Workbench layout, interaction, and PTY client lifecycle. Treat changes to platform integration, desktop startup/routing, macOS window chrome, sidecar readiness, or PTY create/probe/reconnect/release semantics as cross-package work: read `../../docs/DESKTOP.md` and `../ellamaka-desktop/AGENTS.md` before changing either side, and preserve the same PTY ownership contract in Web and Desktop.
 
 | Directory | Responsibility |
 |---|---|
@@ -184,6 +190,7 @@ The following constraints are derived from the Workbench design document (`../..
 - **Errors must not throw to ErrorBoundary**: local non-blocking errors (e.g. `locations` API fetch failure) must not throw to the Panel ErrorBoundary and cause unmount. Errors enter the diagnostics queue uniformly, displayed at the status bar center with retry/dismiss entry points.
 - **PTY resource key**: a PTY is uniquely identified by `spacePath + panelId + resourceKind` (`tui` / `term` / `split`). PTY IDs are persisted as reconnect hints, but process liveness truth belongs to the sidecar PTY Session Registry. The frontend must probe before use.
 - **Single-tab mutual exclusion**: `WorkbenchSingletonGuard` acquires an exclusive lock via the Web Locks API. A second tab opening the workbench sees a notice page and does not initialize. The lock is released automatically by the browser when the tab closes.
+- **Chat focus ownership**: only the active Chat Panel in the current Space Tab may programmatically focus or restore the Prompt. Hidden, keep-alive, or inactive Panels must relinquish shared-input focus restoration through a generic callback. Panel activation must not clear a user's message-text selection, terminal focus, or an already placed editor caret.
 
 ### 5.9 Tests and Acceptance Evidence
 
