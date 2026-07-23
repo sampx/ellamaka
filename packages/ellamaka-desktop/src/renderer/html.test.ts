@@ -102,11 +102,3 @@ describe("desktop initial route", () => {
   })
 })
 
-describe("Windows workbench titlebar safe-area", () => {
-  test("reserves native titlebar region for toolbar on desktop-windows", async () => {
-    const styles = await Bun.file(join(dir, "styles.css")).text()
-
-    expect(styles).toContain('html[data-platform="desktop-windows"] .workbench-titlebar-toolbar')
-    expect(styles).toContain("env(titlebar-area-width, calc(100vw - 138px))")
-  })
-})

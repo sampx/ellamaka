@@ -6,8 +6,3 @@ html[data-platform="desktop-macos"] .workbench-macos-window-chrome {
   display: block;
   height: 28px;
 }
-
-html[data-platform="desktop-windows"] .workbench-titlebar-toolbar {
-  width: env(titlebar-area-width, calc(100vw - 138px));
-  max-width: env(titlebar-area-width, calc(100vw - 138px));
-}
