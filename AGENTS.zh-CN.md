@@ -115,6 +115,7 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 
 - `main` 只用于 `build.sh desktop --channel main` 本地构建验证。发布 workflow 只接受 `beta` 和 `prod`。
 - Windows 发布包由原生 Windows CI 构建。macOS 构建不能替代 Windows 运行时验证。
+- Windows 使用位于标题栏下方的可见原生菜单栏。标题栏只承载原生窗口控制按钮。
 - beta 版本使用 `X.Y.Z-beta.N`，发布到 `ellamaka-desktop/beta/`。prod 发布到 `ellamaka-desktop/`。
 - sidecar、Electron Main/Renderer、图标和 electron-builder 共用同一组 channel/version 环境变量。
 - macOS 公共包使用 ad-hoc 签名。它保证 bundle 签名结构完整，但用户仍需主动接受 Gatekeeper 风险。

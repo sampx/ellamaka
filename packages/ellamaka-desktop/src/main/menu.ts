@@ -1,16 +1,17 @@
-import { BrowserWindow, Menu, shell } from "electron"
+import { app, BrowserWindow, dialog, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import {
   DESKTOP_MENU,
   desktopMenuVisible,
   type DesktopMenuEntry,
+  type DesktopMenuPlatform,
   type DesktopMenuRole,
 } from "@opencode-ai/ellamaka-app/desktop-menu"
 
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 
-type Deps = {
+export type MenuDeps = {
   trigger: (id: string) => void
   checkForUpdates: () => void
   relaunch: () => void
@@ -20,30 +21,46 @@ type Deps = {
   isDebugLogging: () => boolean
 }
 
-export function createMenu(deps: Deps) {
-  if (process.platform !== "darwin") return
+export function createMenu(deps: MenuDeps) {
+  const platform = menuPlatform(process.platform)
+  if (!platform) return
 
-  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "macos")).map((menu) => {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(platform, deps)))
+}
+
+export function buildMenuTemplate(platform: DesktopMenuPlatform, deps: MenuDeps): MenuItemConstructorOptions[] {
+  return DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, platform)).map((menu) => {
     if (menu.role) return { role: nativeRole(menu.role) }
     return {
       label: menu.label,
-      submenu: menu.items
-        ?.filter((entry) => desktopMenuVisible(entry, "macos"))
-        .map((entry) => nativeItem(entry, deps)),
+      submenu: menu.items?.filter((entry) => desktopMenuVisible(entry, platform)).map((entry) => nativeItem(entry, platform, deps)),
     }
   })
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOptions {
+export function aboutOptions(name: string = app.getName(), version: string = app.getVersion()) {
+  return {
+    type: "info" as const,
+    title: `About ${name}`,
+    message: name,
+    detail: `Version ${version}`,
+  }
+}
+
+function menuPlatform(platform: NodeJS.Platform): DesktopMenuPlatform | undefined {
+  if (platform === "darwin") return "macos"
+  if (platform === "win32") return "windows"
+}
+
+function nativeItem(entry: DesktopMenuEntry, platform: DesktopMenuPlatform, deps: MenuDeps): MenuItemConstructorOptions {
   if (entry.type === "separator") return { type: "separator" }
-  if (entry.role) return { role: nativeRole(entry.role) }
+  if (entry.role) return { label: entry.label, role: nativeRole(entry.role) }
 
   const item: MenuItemConstructorOptions = {
     label: entry.label,
-    accelerator: entry.accelerator?.macos,
+    accelerator: entry.accelerator?.[platform],
     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
+    submenu: entry.items?.filter((child) => desktopMenuVisible(child, platform)).map((child) => nativeItem(child, platform, deps)),
   }
 
   if (entry.action === "app.toggleDebugLogging") {
@@ -57,7 +74,12 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
   }
   if (entry.action) {
     const action = entry.action
-    item.click = (menuItem) =>
+    item.click = (menuItem) => {
+      if (action === "app.showAbout") {
+        void dialog.showMessageBox(aboutOptions())
+        return
+      }
+
       runDesktopMenuAction(BrowserWindow.getFocusedWindow(), action, {
         checkForUpdates: deps.checkForUpdates,
         relaunch: deps.relaunch,
@@ -68,6 +90,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
           if (menuItem) menuItem.checked = deps.isDebugLogging()
         },
       })
+    }
   }
   if (entry.href) {
     const href = entry.href

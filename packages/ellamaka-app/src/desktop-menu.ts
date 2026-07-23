@@ -2,6 +2,7 @@ export type DesktopMenuPlatform = "macos" | "windows"
 
 export type DesktopMenuAction =
   | "app.checkForUpdates"
+  | "app.showAbout"
   | "app.relaunch"
   | "app.restartSidecar"
   | "app.toggleDebugLogging"
@@ -46,6 +47,7 @@ export type DesktopMenuRole =
 export type DesktopMenuItem = {
   type: "item"
   label?: string
+  items?: DesktopMenuEntry[]
   command?: string
   action?: DesktopMenuAction
   role?: DesktopMenuRole
@@ -71,6 +73,16 @@ export type DesktopMenu = {
 }
 
 export const DESKTOP_MENU: DesktopMenu[] = [
+  {
+    id: "file",
+    label: "File",
+    platforms: ["windows"],
+    items: [
+      { type: "item", label: "Settings...", command: "settings.open", accelerator: { windows: "Ctrl+," } },
+      { type: "separator" },
+      { type: "item", label: "Exit", role: "quit" },
+    ],
+  },
   {
     id: "app",
     label: "Ellamaka",
@@ -141,7 +153,12 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "view",
     label: "View",
     items: [
-      { type: "item", label: "Toggle Sidebar", command: "sidebar.toggle", accelerator: { macos: "Cmd+B" } },
+      {
+        type: "item",
+        label: "Toggle Sidebar",
+        command: "sidebar.toggle",
+        accelerator: { macos: "Cmd+B", windows: "Ctrl+B" },
+      },
       { type: "separator" },
       { type: "item", label: "Reload", action: "view.reload", role: "reload" },
       { type: "item", label: "Toggle Developer Tools", action: "view.toggleDevTools", role: "toggleDevTools" },
@@ -179,18 +196,39 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", label: "Maximize", action: "window.toggleMaximize" },
       { type: "separator" },
       { type: "item", label: "Close Tab", command: "tab.close", accelerator: { macos: "Cmd+W", windows: "Ctrl+W" } },
+      { type: "item", label: "Close Window", action: "window.close", platforms: ["windows"] },
     ],
   },
   {
     id: "help",
     label: "Help",
     items: [
+      {
+        type: "item",
+        label: "Check for Updates...",
+        action: "app.checkForUpdates",
+        enabled: "updater",
+        platforms: ["windows"],
+      },
+      { type: "separator", platforms: ["windows"] },
       { type: "item", label: "Ellamaka Documentation", href: "https://wopal.cn/docs" },
       { type: "item", label: "Report Issue / Share Feedback", href: "https://github.com/sampx/wopal-space/issues" },
       { type: "separator" },
-      { type: "item", label: "Enable Debug Logging", action: "app.toggleDebugLogging" },
-      { type: "item", label: "Restart Sidecar Service", action: "app.restartSidecar" },
-      { type: "item", label: "Export Diagnostic Logs...", action: "app.exportLogs" },
+      { type: "item", label: "Enable Debug Logging", action: "app.toggleDebugLogging", platforms: ["macos"] },
+      { type: "item", label: "Restart Sidecar Service", action: "app.restartSidecar", platforms: ["macos"] },
+      { type: "item", label: "Export Diagnostic Logs...", action: "app.exportLogs", platforms: ["macos"] },
+      {
+        type: "item",
+        label: "Diagnostics",
+        platforms: ["windows"],
+        items: [
+          { type: "item", label: "Restart Local Server", action: "app.restartSidecar" },
+          { type: "item", label: "Export Diagnostic Logs...", action: "app.exportLogs" },
+          { type: "item", label: "Enable Debug Logging", action: "app.toggleDebugLogging" },
+        ],
+      },
+      { type: "separator", platforms: ["windows"] },
+      { type: "item", label: "About Ellamaka", action: "app.showAbout", platforms: ["windows"] },
     ],
   },
 ]

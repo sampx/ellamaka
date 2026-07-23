@@ -130,7 +130,7 @@ export function createMainWindow() {
     width: state.width,
     height: state.height,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: process.platform !== "win32",
     title: "Ellamaka",
     icon: iconPath(),
     backgroundColor: backgroundColor ?? defaultBackgroundColor(),
