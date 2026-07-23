@@ -71,12 +71,32 @@ describe("desktop release repair", () => {
     expect(script).toContain("gh workflow run")
     expect(script).toContain("--ref")
     expect(script).toContain("-f \"version=$plain_version\"")
-    expect(script).toContain("workflow_dispatch")
     expect(script).toContain("dispatch_workflow")
+    expect(script).toContain("actions/runs/([0-9]+)")
+    expect(script).toContain('RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"')
+    expect(script).toContain("dispatch 未返回 workflow run ID")
+    expect(script).not.toContain("find_dispatched_run")
+    expect(script).not.toContain("--limit 1")
 
     // Anti-patterns we removed:
     expect(script).not.toContain("gh run cancel")
     expect(script).not.toContain("--event push")
     expect(script).not.toContain("PUSHED_AT")
+  })
+
+  test("pins release workflows to Node 24-native official actions", async () => {
+    const cli = await source(".github/workflows/publish-ellamaka.yml")
+    const desktop = await source(".github/workflows/publish-ellamaka-desktop.yml")
+
+    expect(cli).toContain("actions/checkout@v6")
+    expect(cli).toContain("actions/cache@v5")
+
+    expect(desktop).toContain("actions/checkout@v6")
+    expect(desktop).toContain("actions/setup-node@v6")
+    expect(desktop).toContain("actions/cache@v5")
+    expect(desktop).toContain("actions/upload-artifact@v7")
+    expect(desktop).toContain("actions/download-artifact@v8")
+    expect(desktop).not.toContain("actions/upload-artifact@v5")
+    expect(desktop).not.toContain("actions/download-artifact@v5")
   })
 })

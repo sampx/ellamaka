@@ -256,10 +256,10 @@ if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
   DO_WATCH_DESKTOP=true
 fi
 
-# dispatch_workflow: 触发指定 workflow 并返回 run id
+# dispatch_workflow: 触发指定 workflow 并返回本次 dispatch 的 run id
 #   $1 = workflow 文件名（如 publish-ellamaka.yml）
 #   $2 = run 名称标签（如 "CLI" / "Desktop"）
-#   stdout = run id（失败时为空）
+#   stdout = run id
 # 通过 --ref 指向刚推送的 tag，让 workflow checkout 到对应 commit；
 # 通过 -f version=... 传入版本号（workflow 内 inputs.version 优先）。
 dispatch_workflow() {
@@ -272,61 +272,44 @@ dispatch_workflow() {
     channel_arg="-f channel=$CHANNEL"
   fi
 
-  echo "→ dispatch $label workflow: $wf (ref=$RESOLVED_TAG, version=$plain_version${channel_arg:+, channel=$CHANNEL})"
+  local output
+  echo "→ dispatch $label workflow: $wf (ref=$RESOLVED_TAG, version=$plain_version${channel_arg:+, channel=$CHANNEL})" >&2
   # shellcheck disable=SC2086
-  gh workflow run "$wf" -R wopal-cn/ellamaka \
+  if ! output=$(gh workflow run "$wf" -R wopal-cn/ellamaka \
     --ref "$RESOLVED_TAG" \
     -f "version=$plain_version" \
-    $channel_arg 2>&1 || true
-}
+    $channel_arg 2>&1); then
+    echo "$output" >&2
+    return 1
+  fi
+  echo "$output" >&2
 
-# find_dispatched_run: 轮询查找刚 dispatch 的 workflow run
-#   $1 = workflow 文件名
-#   stdout = run id（60 秒内未找到则为空）
-# dispatch 到 run 启动之间有延迟，需轮询。通过 event=workflow_dispatch +
-# branch=tag 过滤；为排除历史 run，仅取最新一条（dispatch 是顺序的）。
-find_dispatched_run() {
-  local wf="$1"
-  local run_id=""
-  for _ in $(seq 1 12); do
-    run_id=$(gh run list -R wopal-cn/ellamaka \
-      --workflow "$wf" \
-      --branch "$RESOLVED_TAG" \
-      --event workflow_dispatch \
-      --limit 1 \
-      --json databaseId \
-      -q ".[0].databaseId // \"\"" 2>/dev/null || echo "")
-    if [ -n "$run_id" ]; then echo "$run_id"; return 0; fi
-    sleep 5
-  done
-  echo ""
-  return 0
+  if [[ "$output" =~ actions/runs/([0-9]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  echo "错误: dispatch 未返回 workflow run ID，已停止监控以避免匹配历史 run。" >&2
+  return 1
 }
 
 RUN_CLI=""
 RUN_DESKTOP=""
 
 if [ "$DO_WATCH_CLI" = true ]; then
-  dispatch_workflow publish-ellamaka.yml "CLI"
-  echo "→ 等待 CLI workflow run 启动..."
-  RUN_CLI="$(find_dispatched_run publish-ellamaka.yml)"
-  if [ -z "$RUN_CLI" ]; then
-    echo "⚠️  60 秒内未找到 CLI workflow run。"
-    exit 0
+  if ! RUN_CLI="$(dispatch_workflow publish-ellamaka.yml "CLI")"; then
+    echo "错误: 无法确定本次 CLI workflow run。"
+    exit 1
   fi
   echo "  CLI run id: $RUN_CLI"
 fi
 
 if [ "$DO_WATCH_DESKTOP" = true ]; then
-  dispatch_workflow publish-ellamaka-desktop.yml "Desktop"
-  echo "→ 等待 Desktop workflow run 启动..."
-  RUN_DESKTOP="$(find_dispatched_run publish-ellamaka-desktop.yml)"
-  if [ -z "$RUN_DESKTOP" ]; then
-    echo "⚠️  60 秒内未找到 Desktop workflow run。"
-    DO_WATCH_DESKTOP=false
-  else
-    echo "  Desktop run id: $RUN_DESKTOP"
+  if ! RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"; then
+    echo "错误: 无法确定本次 Desktop workflow run。"
+    exit 1
   fi
+  echo "  Desktop run id: $RUN_DESKTOP"
 fi
 
 poll_run() {
