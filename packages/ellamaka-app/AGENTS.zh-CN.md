@@ -9,12 +9,18 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 
 - 项目设计：`../../docs/DESIGN.md`
 - Workbench 设计：`../../docs/WORKBENCH.md`
+- Desktop 设计：`../../docs/DESKTOP.md` —— Electron 承载方式与共享 sidecar/PTY 生命周期的权威来源。
 - 父级规则：`../../AGENTS.md`
 - 后端规则：`../opencode/AGENTS.md`
+- Desktop 包规则：`../ellamaka-desktop/AGENTS.md` —— 协同修改 renderer 与桌面壳层前必须阅读。
 
 ## 2. 架构与目录
 
 执行链：Vite dev server → SolidJS SPA → `@opencode-ai/sdk` → backend（`packages/opencode`）HTTP/WS API。
+
+### Desktop 集成边界
+
+`ellamaka-app` 同时服务浏览器 Workbench 与由 `ellamaka-desktop` 承载的 `/workbench` renderer。Electron 负责原生窗口、preload API 和本地 sidecar 生命周期；本包负责共享的 Workbench 布局、交互与 PTY 客户端生命周期。平台集成、Desktop 启动/路由、macOS 窗口壳层、sidecar 就绪状态，或 PTY 创建/探测/重连/释放语义的变更都属于跨包工作：修改任一侧前必须阅读 `../../docs/DESKTOP.md` 和 `../ellamaka-desktop/AGENTS.md`，并保持 Web 与 Desktop 相同的 PTY 所有权契约。
 
 | 目录 | 职责 |
 |---|---|
