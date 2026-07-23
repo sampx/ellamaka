@@ -160,6 +160,12 @@ jobs:
           for f in dist/ellamaka-desktop-*; do
             [ -f "$f" ] || continue
             name="$(basename "$f")"
+            # Skip electron-builder internal files (blockmap, etc.) —
+            # only upload real distributable artifacts.
+            case "$name" in
+              *.dmg|*.zip|*.exe|*.AppImage|*.deb|*.rpm) ;;
+              *) continue ;;
+            esac
             content_type="application/octet-stream"
             case "$name" in
               *.dmg) content_type="application/x-apple-diskimage" ;;
@@ -254,6 +260,12 @@ jobs:
           for f in dist/ellamaka-desktop-*; do
             [ -f "$f" ] || continue
             name="$(basename "$f")"
+            # Skip electron-builder internal files (blockmap, etc.) —
+            # only verify real distributable artifacts.
+            case "$name" in
+              *.dmg|*.zip|*.exe|*.AppImage|*.deb|*.rpm) ;;
+              *) continue ;;
+            esac
             aws s3api get-object \
               --bucket wopal-release \
               --key "ellamaka-desktop/v${VERSION}/${name}" \
