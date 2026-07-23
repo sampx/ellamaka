@@ -5,6 +5,7 @@ import { useWorkbenchState } from "./view-store"
 import { reportWorkbenchError } from "./workbench-error"
 import { useWorkbenchRuntime } from "./workbench-runtime"
 import { canUseSpaceControl } from "./cli-health"
+import { normalizeSpacePath } from "./workbench-scope"
 
 export type WopalSpace = {
   name: string
@@ -20,6 +21,7 @@ export async function fetchSpaces(
   return raw.map((s) => ({
     ...s,
     name: s.name.replace(/[\s+*]+$/, "").trim() || s.name,
+    path: normalizeSpacePath(s.path),
   }))
 }
 

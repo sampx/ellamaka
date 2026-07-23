@@ -38,4 +38,16 @@ describe("SessionProjection", () => {
 
     expect(Object.keys(projection.reader).sort()).toEqual(["getSession", "refreshKey", "sessions", "spaceSessions"])
   })
+
+  test("indexes and retrieves sessions using normalized Windows backslash spacePath", () => {
+    const projection = createSessionProjection()
+    const winPath = "C:\\Users\\Sam\\Project"
+    const normPath = "C:/Users/Sam/Project"
+
+    projection.writer.upsert(serverSession({ spacePath: winPath }))
+
+    expect(projection.reader.spaceSessions(winPath)).toHaveLength(1)
+    expect(projection.reader.spaceSessions(normPath)).toHaveLength(1)
+    expect(projection.reader.getSession("session-a")?.spacePath).toBe(normPath)
+  })
 })

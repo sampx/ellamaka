@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
-import { GENERAL_SCOPE_NAME } from "../workbench-scope"
+import { GENERAL_SCOPE_NAME, normalizeSpacePath } from "../workbench-scope"
 import { WorkbenchSettingsButton } from "./workbench-settings"
 import { SessionTree } from "./session-tree"
 import { ChatIcon } from "./session-tree-space"
@@ -122,8 +122,8 @@ export function SpaceRail() {
     if (!session) return
     const isBound = wb.isSessionBound(sessionId)
     const boundPanelId = wb.boundPanelIdForSession(sessionId)
-    const sessionSpacePath = session.spacePath ?? session.spaceName
-    const tab = wb.tabs.find((tab) => tab.path === sessionSpacePath)
+    const sessionSpacePath = session.spacePath ? normalizeSpacePath(session.spacePath) : session.spaceName
+    const tab = wb.tabs.find((tab) => normalizeSpacePath(tab.path) === sessionSpacePath || tab.path === sessionSpacePath)
     if (tab) {
       wb.openTab(tab)
       if (isBound && boundPanelId) {
@@ -143,8 +143,8 @@ export function SpaceRail() {
       { name: GENERAL_SCOPE_NAME, path: "", type: "general" },
       ...store.spaces(),
     ]
-    const currentPath = wb.activeTabPath
-    const filtered = allSpaces.filter((space) => space.path === currentPath)
+    const currentPath = normalizeSpacePath(wb.activeTabPath)
+    const filtered = allSpaces.filter((space) => normalizeSpacePath(space.path) === currentPath)
     return filtered.length > 0 ? filtered : [allSpaces[0]]
   })
 

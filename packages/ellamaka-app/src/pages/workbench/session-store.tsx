@@ -1,6 +1,7 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createMemo, createSignal } from "solid-js"
 import { createStore, produce } from "solid-js/store"
+import { normalizeSpacePath } from "./workbench-scope"
 
 export type SessionType = "tui" | "chat"
 export type DirectoryHealth = "healthy" | "missing" | "unavailable"
@@ -75,9 +76,11 @@ export function createSessionProjection() {
 
   const upsert = (input: SessionProjectionInput) => {
     const existing = find(input.id)
-    const spaceKey = input.spacePath ?? input.spaceName
+    const normalizedPath = input.spacePath ? normalizeSpacePath(input.spacePath) : undefined
+    const spaceKey = normalizedPath ?? input.spaceName
+    const normalizedInput = normalizedPath ? { ...input, spacePath: normalizedPath } : input
     if (existing?.spaceName === spaceKey) {
-      setStore("spaces", spaceKey, existing.index, { ...input })
+      setStore("spaces", spaceKey, existing.index, { ...normalizedInput })
       return
     }
     if (existing) {
@@ -85,7 +88,7 @@ export function createSessionProjection() {
       idToSpace.delete(input.id)
     }
     if (!store.spaces[spaceKey]) setStore("spaces", spaceKey, [])
-    setStore("spaces", spaceKey, (sessions) => limitSessions([...sessions, { ...input }]))
+    setStore("spaces", spaceKey, (sessions) => limitSessions([...sessions, { ...normalizedInput }]))
     // limitSessions may have dropped the new entry; only index if it actually landed.
     if (store.spaces[spaceKey].some((session) => session.id === input.id)) {
       idToSpace.set(input.id, spaceKey)
@@ -97,14 +100,17 @@ export function createSessionProjection() {
   const patch = (id: string, updates: SessionProjectionPatch) => {
     const existing = find(id)
     if (!existing) return false
+    const normUpdates = updates.spacePath !== undefined
+      ? { ...updates, spacePath: normalizeSpacePath(updates.spacePath) }
+      : updates
     setStore("spaces", existing.spaceName, existing.index, produce((session) => {
-      if (updates.title !== undefined) session.title = updates.title
-      if (updates.type !== undefined) session.type = updates.type
-      if (updates.spacePath !== undefined) session.spacePath = updates.spacePath
-      if (updates.projectPath !== undefined) session.projectPath = updates.projectPath
-      if (updates.directoryHealth !== undefined) session.directoryHealth = updates.directoryHealth
-      if (Object.hasOwn(updates, "timeArchived")) session.timeArchived = updates.timeArchived
-      if (updates.lastActiveAt !== undefined) session.lastActiveAt = updates.lastActiveAt
+      if (normUpdates.title !== undefined) session.title = normUpdates.title
+      if (normUpdates.type !== undefined) session.type = normUpdates.type
+      if (normUpdates.spacePath !== undefined) session.spacePath = normUpdates.spacePath
+      if (normUpdates.projectPath !== undefined) session.projectPath = normUpdates.projectPath
+      if (normUpdates.directoryHealth !== undefined) session.directoryHealth = normUpdates.directoryHealth
+      if (Object.hasOwn(normUpdates, "timeArchived")) session.timeArchived = normUpdates.timeArchived
+      if (normUpdates.lastActiveAt !== undefined) session.lastActiveAt = normUpdates.lastActiveAt
     }))
     return true
   }
@@ -120,7 +126,7 @@ export function createSessionProjection() {
   return {
     reader: {
       sessions: createMemo(() => store.spaces),
-      spaceSessions: (spaceName: string) => store.spaces[spaceName] ?? [],
+      spaceSessions: (spaceName: string) => store.spaces[normalizeSpacePath(spaceName)] ?? store.spaces[spaceName] ?? [],
       getSession,
       refreshKey,
     },

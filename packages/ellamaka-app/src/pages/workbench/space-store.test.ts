@@ -60,4 +60,15 @@ describe("fetchSpaces", () => {
 
     expect(result).toEqual([])
   })
+
+  test("normalizes Windows backslash paths returned by SDK", async () => {
+    const rawSpaces: WopalSpace[] = [
+      { name: "Win Space", path: "C:\\Users\\Sam\\Project", type: "space" },
+    ]
+    const sdk = mockSdk(rawSpaces)
+
+    const result = await fetchSpaces(sdk)
+
+    expect(result[0].path).toBe("C:/Users/Sam/Project")
+  })
 })
