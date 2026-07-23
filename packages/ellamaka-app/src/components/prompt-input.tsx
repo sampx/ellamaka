@@ -83,6 +83,7 @@ interface PromptInputProps {
   class?: string
   variant?: "dock" | "new-session"
   ref?: (el: HTMLDivElement) => void
+  canRestoreFocus?: () => boolean
   newSessionWorktree?: string
   onNewSessionWorktreeReset?: () => void
   edit?: { id: string; prompt: Prompt; context: FollowupDraft["context"] }
@@ -537,6 +538,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const restoreFocus = () => {
+    if (props.canRestoreFocus && !props.canRestoreFocus()) return
     // If the user has an active text selection outside the prompt editor
     // (e.g. selecting assistant message content to copy), do not steal focus
     // or clear the selection. setCursorPosition calls removeAllRanges() on
@@ -550,6 +552,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
     requestAnimationFrame(() => {
+      if (props.canRestoreFocus && !props.canRestoreFocus()) return
       const cursor = prompt.cursor() ?? promptLength(prompt.current())
       editorRef?.focus()
       if (editorRef) setCursorPosition(editorRef, cursor)

@@ -36,6 +36,8 @@ export type PanelViewCtx = {
   sdk: WorkbenchViewSdk
   spaceName: string
   spacePath: string
+  onPromptReady?: (editor: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
 }
 
 export type PanelViewDef = {
@@ -227,7 +229,17 @@ export function registerDefaultViews(registry: ViewRegistry) {
           </div>
         )
       }
-      return <PanelChat panel={ctx.panel} session={ctx.session} directory={ctx.directory} spacePath={ctx.spacePath} spaceName={ctx.spaceName} />
+      return (
+        <PanelChat
+          panel={ctx.panel}
+          session={ctx.session}
+          directory={ctx.directory}
+          spacePath={ctx.spacePath}
+          spaceName={ctx.spaceName}
+          onPromptReady={ctx.onPromptReady}
+          canRestorePromptFocus={ctx.canRestorePromptFocus}
+        />
+      )
     },
   })
 

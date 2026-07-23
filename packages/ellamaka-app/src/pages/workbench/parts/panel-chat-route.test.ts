@@ -14,9 +14,17 @@ describe("panelChatRoute", () => {
 
   test("keeps the routed PanelChat boundary required by bound sessions", async () => {
     const source = await Bun.file(new URL("./panel-chat.tsx", import.meta.url)).text()
+    const registry = await Bun.file(new URL("../view-registry.tsx", import.meta.url)).text()
+    const panel = await Bun.file(new URL("./panel.tsx", import.meta.url)).text()
 
     expect(source).toContain('import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"')
     expect(source).toContain('path="/:dir/session/:id"')
     expect(source).toContain("panelChatRoute(props.directory, props.session.id)")
+    expect(source).toContain("props.onPromptReady?.(el)")
+    expect(source).toContain("canRestorePromptFocus={props.canRestorePromptFocus}")
+    expect(registry).toContain("onPromptReady={ctx.onPromptReady}")
+    expect(registry).toContain("canRestorePromptFocus={ctx.canRestorePromptFocus}")
+    expect(panel).toContain("onPromptReady: handlePromptReady")
+    expect(panel).toContain("canRestorePromptFocus: () =>")
   })
 })

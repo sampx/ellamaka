@@ -43,6 +43,8 @@ function PanelChatInner(props: {
   directory: string
   spacePath: string
   spaceName: string
+  onPromptReady?: (editor: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
 }) {
   const sync = useSync()
   const sdk = useSDK()
@@ -352,7 +354,11 @@ function PanelChatInner(props: {
         state={composer}
         ready={messagesReady()}
         directory={props.directory}
-        inputRef={(el) => { inputRef = el }}
+        canRestorePromptFocus={props.canRestorePromptFocus}
+        inputRef={(el) => {
+          inputRef = el
+          props.onPromptReady?.(el)
+        }}
         setPromptDockRef={() => {}}
         onSubmit={resumeScroll}
         onResponseSubmit={resumeScroll}
@@ -373,6 +379,8 @@ function PanelChatRoute(props: {
   directory: string
   spacePath: string
   spaceName: string
+  onPromptReady?: (editor: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
 }) {
   return (
     <PanelChatDataProvider session={props.session} directory={props.directory}>
@@ -387,6 +395,8 @@ function PanelChatRoute(props: {
                   directory={props.directory}
                   spacePath={props.spacePath}
                   spaceName={props.spaceName}
+                  onPromptReady={props.onPromptReady}
+                  canRestorePromptFocus={props.canRestorePromptFocus}
                 />
               </EmbeddedSessionSurfaceProvider>
             </CommentsProvider>
@@ -403,6 +413,8 @@ export function PanelChat(props: {
   directory: string
   spacePath: string
   spaceName: string
+  onPromptReady?: (editor: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
 }) {
   const route = createMemo(() => panelChatRoute(props.directory, props.session.id))
 
@@ -422,6 +434,8 @@ export function PanelChat(props: {
                   directory={props.directory}
                   spacePath={props.spacePath}
                   spaceName={props.spaceName}
+                  onPromptReady={props.onPromptReady}
+                  canRestorePromptFocus={props.canRestorePromptFocus}
                 />
               )}
             />

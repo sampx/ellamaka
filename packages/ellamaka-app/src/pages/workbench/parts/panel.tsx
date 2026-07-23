@@ -19,6 +19,13 @@ import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel, DialogCrossSpaceWarning } from "./session-tree-dialogs"
 import { handlePanelDrop, startSplitResize } from "./panel-services"
 import { PanelHeader } from "./panel-header"
+import {
+  focusPanelPromptEditor,
+  focusPromptEditor,
+  shouldPreservePanelPointerFocus,
+  shouldSkipPanelPromptFocusForActivation,
+  startPanelPromptFocus,
+} from "./panel-prompt-focus"
 import type { WorkbenchPanel, PanelMode } from "../view-store"
 
 export function isInteractiveInputElement(target: EventTarget | null): boolean {
@@ -95,111 +102,72 @@ export function Panel(props: {
     ),
   )
 
-  // Locate this panel's visible prompt editor. Hidden (display:none)
-  // editors from other lazily-mounted views must never be focused.
-  const findEditor = (): HTMLElement | undefined => {
-    const root = panelContainerRef
-    if (!root) return undefined
-    const candidates = root.querySelectorAll<HTMLElement>(
-      '[data-component="session-prompt-dock"] [contenteditable="true"]',
-    )
-    for (const el of candidates) {
-      if (el.isConnected && el.getClientRects().length > 0) return el
-    }
-    return undefined
+  let panelContainerRef: HTMLDivElement | undefined
+  let isPanelPointerDown = false
+  let lastPreservedPointerAt = 0
+
+  const endPanelPointer = () => {
+    isPanelPointerDown = false
+    window.removeEventListener("mouseup", endPanelPointer)
+    window.removeEventListener("blur", endPanelPointer)
   }
+  onCleanup(endPanelPointer)
 
   const focusEditor = (): boolean => {
     if (props.panel.viewMode !== "chat" || props.panel.slotState === "empty") return false
-    const editor = findEditor()
-    if (!editor) return false
+    if (!panelContainerRef) return false
+    return focusPanelPromptEditor(panelContainerRef)
+  }
 
-    editor.focus()
-    try {
-      const sel = window.getSelection()
-      if (sel) {
-        const range = document.createRange()
-        range.selectNodeContents(editor)
-        range.collapse(false)
-        sel.removeAllRanges()
-        sel.addRange(range)
-      }
-    } catch {
-      // Ignore range setup errors
-    }
-    return document.activeElement === editor
+  const canRestorePromptFocus = () =>
+    props.isActive &&
+    wb.activeTabPath === props.spacePath &&
+    props.panel.viewMode === "chat" &&
+    props.panel.slotState !== "empty"
+
+  const handlePromptReady = (editor: HTMLDivElement) => {
+    if (Date.now() - lastPreservedPointerAt < 1_000) return
+    requestAnimationFrame(() => {
+      if (!editor.isConnected) return
+      if (!props.isActive || wb.activeTabPath !== props.spacePath) return
+      if (props.panel.viewMode !== "chat" || props.panel.slotState === "empty") return
+      if (isPanelPointerDown || Date.now() - lastPreservedPointerAt < 1_000) return
+
+      const selection = window.getSelection()
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) return
+
+      const panel = editor.closest("[data-panel-id]")
+      const active = document.activeElement
+      if (active instanceof Element && panel?.contains(active) && shouldPreservePanelPointerFocus(active)) return
+      focusPromptEditor(editor)
+    })
   }
 
   createEffect(
     on(
       () =>
         [
-          props.isActive && wb.activeTabPath === props.spacePath,
+          props.isActive,
+          wb.activeTabPath === props.spacePath,
           props.panel.viewMode,
           props.panel.boundSessionId,
           props.panel.slotState,
         ] as const,
-      ([isActive, viewMode]) => {
-        if (!isActive || viewMode !== "chat") return
-
-        let cancelled = false
-        let timer: number | undefined
-        let frame: number | undefined
-
-        const tryFocus = (): boolean => {
-          if (cancelled) return true
-
-          // If the panel was just activated by clicking directly into the
-          // prompt editor, leave caret alone.
-          if (Date.now() - lastEditorPointerAt < 600) return true
-
-          // 1. Never destroy an active text selection anywhere in the document
-          const selection = window.getSelection()
-          if (selection && selection.rangeCount > 0 && !selection.isCollapsed) return true
-
-          // 2. Do not steal focus if activeElement is currently inside THIS PANEL's
-          //    terminal or editable elements
-          const activeEl = document.activeElement
-          if (activeEl instanceof HTMLElement) {
-            const isInsideThisPanel =
-              panelContainerRef?.contains(activeEl) ||
-              activeEl.closest('[data-panel-id]')?.getAttribute("data-panel-id") === props.panel.id
-            if (isInsideThisPanel) {
-              if (activeEl.closest('[data-split-terminal], .xterm, [data-component="terminal"]')) return true
-              if (activeEl.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName)) return true
-            }
-          }
-
-          // 3. Focus editor
-          return focusEditor()
-        }
-
-        // Progressive retry with backoff while the composer mounts after async
-        // session restore. The effect also re-runs when slotState flips to
-        // "bound" and when this space's tab becomes active, covering slow
-        // restores and tab activation.
-        const delays = [50, 100, 200, 400, 800, 1200]
-        let attempt = -1
-        const step = () => {
-          if (cancelled) return
-          if (tryFocus()) {
-            cancelled = true
-            return
-          }
-          attempt += 1
-          if (attempt >= delays.length) {
-            cancelled = true
-            return
-          }
-          timer = window.setTimeout(step, delays[attempt])
-        }
-        frame = requestAnimationFrame(step)
-
-        onCleanup(() => {
-          cancelled = true
-          if (timer !== undefined) window.clearTimeout(timer)
-          if (frame !== undefined) cancelAnimationFrame(frame)
-        })
+      ([panelActive, tabActive, viewMode], previous) => {
+        if (!panelActive || !tabActive || viewMode !== "chat") return
+        if (shouldSkipPanelPromptFocusForActivation({
+          previousPanelActive: previous?.[0],
+          panelActive,
+          tabActive,
+          lastPreservedPointerAt,
+          now: Date.now(),
+        })) return
+        onCleanup(startPanelPromptFocus({
+          root: () => panelContainerRef,
+          shouldFocus: () =>
+            canRestorePromptFocus(),
+          isPointerDown: () => isPanelPointerDown,
+        }))
       },
     ),
   )
@@ -333,12 +301,6 @@ export function Panel(props: {
     })
   }
 
-  let panelContainerRef: HTMLDivElement | undefined
-  // Timestamp of the most recent pointerdown that landed inside this panel's
-  // prompt editor. Used by the auto-focus effect to avoid stealing/moving the
-  // caret when the panel was activated by clicking directly into the input.
-  let lastEditorPointerAt = 0
-
   const splitHeight = () => props.panel.splitHeight ?? 180
 
   const handleSplitResizeStart = (e: MouseEvent) => {
@@ -355,13 +317,12 @@ export function Panel(props: {
       class="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-v2-border-border-base opacity-100 transition-[flex] duration-200"
       style={{ flex: props.panel.width }}
       onMouseDown={(e: MouseEvent) => {
-        const target = e.target
-        if (
-          target instanceof HTMLElement &&
-          target.closest('[data-component="prompt-input"], [data-component="session-prompt-dock"]')
-        ) {
-          lastEditorPointerAt = Date.now()
+        if (!props.isActive && shouldPreservePanelPointerFocus(e.target)) {
+          lastPreservedPointerAt = Date.now()
         }
+        isPanelPointerDown = true
+        window.addEventListener("mouseup", endPanelPointer, { once: true })
+        window.addEventListener("blur", endPanelPointer, { once: true })
         if (!props.isActive) {
           props.onActivate()
         }
@@ -375,8 +336,12 @@ export function Panel(props: {
           if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
             return
           }
-          if (!isInteractiveInputElement(e.target)) {
-            focusEditor()
+          if (!isInteractiveInputElement(e.target) && !shouldPreservePanelPointerFocus(e.target)) {
+            window.setTimeout(() => {
+              const nextSelection = window.getSelection()
+              if (nextSelection && nextSelection.rangeCount > 0 && !nextSelection.isCollapsed) return
+              focusEditor()
+            }, 0)
           }
         }
       }}
@@ -445,6 +410,8 @@ export function Panel(props: {
                           sdk,
                           spaceName: props.spaceName,
                           spacePath: props.spacePath,
+                          onPromptReady: handlePromptReady,
+                          canRestorePromptFocus: () => canRestorePromptFocus(),
                         })
                       }
                       return (
@@ -464,6 +431,8 @@ export function Panel(props: {
                             sdk,
                             spaceName: props.spaceName,
                             spacePath: props.spacePath,
+                            onPromptReady: handlePromptReady,
+                            canRestorePromptFocus: () => canRestorePromptFocus(),
                           })}
                         </Show>
                       )

@@ -188,6 +188,7 @@ Workbench Chat 的模型选择按 Session 隔离。用户显式选择是当前 S
 - **Canvas 网格缝隙补偿**：Ghostty 在分数 WebView 缩放下逐行、逐格填充会暴露透明像素缝。补偿必须集中在 `terminal-scrollbar.ts` 的 Renderer adapter 中，仅向右/下覆盖一个物理像素；禁止用全局背景纹理、Panel CSS 或写死 DPR 掩盖。
 - **终端 IME 预编辑**：Ghostty 的隐藏 textarea 只负责接收输入和定位候选窗；composition 期间的拼音等 preedit 文本必须由 `<Terminal>` 的光标锚定 overlay 显示，并在 `compositionend` / `blur` 清除。不得解除 textarea 的裁切后直接把它当可见编辑器。
 - **单 Tab 互斥**：`WorkbenchSingletonGuard` 通过 Web Locks API 获取独占锁，第二个 Tab 打开时显示提示页不初始化。Tab 关闭时浏览器自动释放锁。
+- **Chat 焦点所有权**：只有当前 Space Tab 的活动 Chat Panel 可以自动聚焦或恢复 Prompt 焦点。隐藏、keep-alive 或非活动 Panel 必须通过通用 callback 放弃共享输入组件的焦点恢复；Panel 切换不得清除消息文本选择、终端焦点或用户已放置的编辑器光标。
 
 ### 5.9 测试与验收证据
 

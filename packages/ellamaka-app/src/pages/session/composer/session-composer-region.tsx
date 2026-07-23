@@ -24,6 +24,7 @@ export function SessionComposerRegion(props: {
   centered: boolean
   placement?: "dock" | "inline"
   inputRef: (el: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
   newSessionWorktree: string
   onNewSessionWorktreeReset: () => void
   onSubmit: () => void
@@ -263,6 +264,7 @@ export function SessionComposerRegion(props: {
                     <PromptInput
                       variant={props.placement === "inline" ? "new-session" : props.placement === "dock" ? "dock" : undefined}
                       ref={props.inputRef}
+                      canRestoreFocus={props.canRestorePromptFocus}
                       newSessionWorktree={props.newSessionWorktree}
                       onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
                       edit={props.followup?.edit}

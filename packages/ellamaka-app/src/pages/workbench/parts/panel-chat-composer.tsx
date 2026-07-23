@@ -13,6 +13,7 @@ export function PanelChatComposer(props: {
   ready: boolean
   directory: string
   inputRef: (el: HTMLDivElement) => void
+  canRestorePromptFocus?: () => boolean
   setPromptDockRef: (el: HTMLDivElement) => void
   onSubmit: () => void
   onResponseSubmit: () => void
@@ -31,6 +32,7 @@ export function PanelChatComposer(props: {
         centered={false}
         placement="dock"
         inputRef={props.inputRef}
+        canRestorePromptFocus={props.canRestorePromptFocus}
         newSessionWorktree={props.directory}
         onNewSessionWorktreeReset={() => {}}
         onSubmit={props.onSubmit}
