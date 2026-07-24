@@ -11,8 +11,11 @@ describe("Database.getChannelPath", () => {
   it.effect("returns database path for the current channel", () =>
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
-      const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
-      const expected = ["latest", "beta", "prod"].includes(InstallationChannel)
+      // beta shares the main channel database so it never collides with the
+      // production sidecar that uses ellamaka.db.
+      const dbChannel = InstallationChannel === "beta" ? "main" : InstallationChannel
+      const safe = dbChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
+      const expected = ["latest", "prod"].includes(InstallationChannel)
         ? path.join(Global.Path.data, "ellamaka.db")
         : path.join(Global.Path.data, `ellamaka-${safe}.db`)
 
@@ -20,7 +23,7 @@ describe("Database.getChannelPath", () => {
     }).pipe(Effect.provide(RuntimeFlags.layer())),
   )
 
-  it.effect("uses the shared database path when channel databases are disabled", () =>
+  it.effect("uses the shared ellamaka.db when channel databases are disabled", () =>
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
 

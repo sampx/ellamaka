@@ -29,9 +29,14 @@ const readRuntimeFlags = () =>
   Effect.runSync(RuntimeFlags.Service.useSync((flags) => flags).pipe(Effect.provide(RuntimeFlags.defaultLayer)))
 
 export function getChannelPath(flags: Pick<DatabaseFlags, "disableChannelDb"> = readRuntimeFlags()) {
-  if (["latest", "beta", "prod"].includes(InstallationChannel) || flags.disableChannelDb)
+  if (flags.disableChannelDb) return path.join(Global.Path.data, "ellamaka.db")
+  // beta shares the main channel database so a beta sidecar never collides
+  // with a concurrently running production sidecar (both would otherwise open
+  // ellamaka.db). prod/latest keep the unqualified ellamaka.db.
+  if (["latest", "prod"].includes(InstallationChannel))
     return path.join(Global.Path.data, "ellamaka.db")
-  const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
+  const dbChannel = InstallationChannel === "beta" ? "main" : InstallationChannel
+  const safe = dbChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
   return path.join(Global.Path.data, `ellamaka-${safe}.db`)
 }
 
