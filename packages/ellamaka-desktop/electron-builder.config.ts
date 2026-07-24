@@ -7,6 +7,7 @@ const channel = (() => {
 })()
 const version = process.env.OPENCODE_VERSION?.trim()
 const build = process.env.OPENCODE_BUILD_ID?.trim()
+const electronDist = process.env.ELECTRON_DIST?.trim()
 
 function getPublishUrl(): string | undefined {
   if (channel === "beta") return "https://download.coursedao.com/ellamaka-desktop/beta/latest"
@@ -21,6 +22,7 @@ const packageName = (() => {
 })()
 
 const getBase = (): Configuration => ({
+  ...(electronDist ? { electronDist } : {}),
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
   copyright: "Copyright © 2025 Ellamaka",
   extraMetadata: {
