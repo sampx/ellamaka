@@ -340,13 +340,21 @@ export const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const discovered = yield* InstanceState.make(
       Effect.fn("Skill.discovery")(function* (ctx) {
+        // RuntimeFlags reads WOPAL_SPACE env at layer init time, but the
+        // Desktop sidecar sets that env only inside config-layer detection
+        // (loadWopalSpaceSettingsFiles) — which can run AFTER RuntimeFlags
+        // has already snapshotted false. Config.isWopalSpace() is the
+        // runtime-authoritative check, so honor it as an additional
+        // disable trigger for .claude/ skills. .agents/ stays enabled (it
+        // is an industry-standard dir loaded in all modes).
+        const isWopalSpace = yield* config.isWopalSpace()
         return yield* discoverSkills(
           config,
           discovery,
           fsys,
           global,
           flags.disableExternalSkills,
-          flags.disableClaudeCodeSkills,
+          flags.disableClaudeCodeSkills || isWopalSpace,
           flags.disableAgentsSkills,
           ctx.directory,
           ctx.worktree,
