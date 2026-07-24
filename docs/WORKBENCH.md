@@ -212,7 +212,9 @@ Workbench 不再把布局、服务端会话和运行时资源塞进一个控制�
 - **Directory SDK/sync**：插件、MCP、LSP 和配置按规范化 directory 缓存，不持久化。Panel 使用该 Panel 的 directory；TopBar 与 StatusPopover 通过活动 `SpaceScope` 和活动 Panel selector 获得同一 directory。
 - **Space Store** (`space-store.tsx`)：读取可打开 Space 的目录列表，用于校验和展示；已打开 Tab 及其布局归 WorkbenchStore 所有。
 
-`SpaceScope` 在领域边界明确表示 General 或 Space；General 不能依赖空字符串真假判断。General 的 Panel directory 可以是后端生成的 General task 目录，但能力组成仍只来自全局配置。Space 的能力是全局能力与该 Space 定义能力的并集；验收必须核对完整来源路径，而非数量。
+`SpaceScope` 在领域边界明确表示 General 或 Space。General 空间的规范路径固定为空字符串 `""`，但在逻辑识别上必须使用 Tagged Union 类型 `scope.kind === "general"`，严禁依赖空字符串真假判断（如 `if (spacePath)` 或 `path || fallback`）来区分空间。General 的 Panel directory 可以是后端生成的 General task 目录或空字符串，但能力组成仍只来自全局配置。Space 的能力是全局能力与该 Space 定义能力的并集；验收必须核对完整来源路径，而非数量。
+
+会话树（Session Tree）双击与会话装载交互必须经由 `WorkbenchActions` 暴露的单事务 API（如 `replaceSession` / `loadSessionIntoPanel`）统一处理。严禁在组件层或零散 Helper 中编写自定义异步流程直接修改 Store 或跨层调用 SDK，以保证目标面板决议、替换、冲突确认与投影更新的原子性与确定性。
 
 PTY ID（`tuiPtyId`、`splitPtyId`、`termPtyId`）作为**重连提示**随 Workbench 布局持久化。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。刷新后 PTY Manager 先探测旧 ID：存活则重连，已回收则清除旧 ID 并按需创建新 PTY。浏览器 Tab 关闭后没有新连接，sidecar 在断连宽限期结束时终止对应 PTY；下次打开时持久化的旧 ID 会在探测阶段自然失效。
 

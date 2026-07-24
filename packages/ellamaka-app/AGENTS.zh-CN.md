@@ -93,6 +93,7 @@ type SpaceScope =
 ```
 
 - 禁止用 `if (spacePath)`、`if (!spacePath)` 或 `path || fallback` 判断 General 与 Space。
+- 为 General 作用域构建会话或面板载荷时，禁止求值路径假值降级表达式（如 `path || fallback` 或 `sessionDirectory || spacePath`）。General 的规范路径固定为 `""`，但作用域辨识必须始终检查 `scope.kind === "general"`。
 - 禁止把 `spaceName`、`panel.directory` 或 falsy 字符串当作 Space 主键。
 - `SpaceScope` 决定会话归属和插件组合；`panel.directory` 决定 Panel 内 SDK、文件、终端和会话请求的工作目录，两者不能互换。
 - General 只加载全局插件、全局 MCP 和全局配置，不得继承最近访问 Space 的目录状态。
@@ -226,7 +227,8 @@ bun run typecheck
 
 以下模式出现即视为阻断问题：
 
-- 用字符串真假判断 General 或 Space。
+- 用字符串真假或假值降级表达式（`path || fallback`、`if (spacePath)`）判断 General 或 Space。
+- 在 UI 组件或独立 helper 中自行拼装多步会话树加载或面板替换流程，而非调用统一的 `WorkbenchActions` 事务入口。
 - Workbench 共享操作同时写多个 Store。
 - 组件直接编排 `Store + SDK + PtyManager`。
 - Store 内包含网络、PTY、router、Dialog 或 Toast 副作用。

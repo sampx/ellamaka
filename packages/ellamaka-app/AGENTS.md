@@ -93,6 +93,7 @@ type SpaceScope =
 ```
 
 - Do not use `if (spacePath)`, `if (!spacePath)`, or `path || fallback` to distinguish General from a Space.
+- Do not evaluate falsy string fallback expressions (e.g. `path || fallback` or `sessionDirectory || spacePath`) when constructing session or panel payloads for General scope. General path is canonically `""`, but scope recognition must always check `scope.kind === "general"`.
 - Do not use `spaceName`, `panel.directory`, or a falsy string as the Space key.
 - `SpaceScope` determines Session ownership and plugin composition; `panel.directory` determines the working directory for Panel SDK, file, terminal, and Session requests. They are not interchangeable.
 - General loads only global plugins, global MCP servers, and global configuration; it must not inherit the most recently visited Space context.
@@ -222,7 +223,8 @@ bun run typecheck
 
 The following patterns are blocking issues:
 
-- Using string truthiness to distinguish General from a Space.
+- Using string truthiness or falsy fallback expressions (`path || fallback`, `if (spacePath)`) to distinguish General from a Space.
+- Composing multi-step session tree loading or panel replacement in UI components or detached helpers instead of delegating to a single `WorkbenchActions` transaction entry point.
 - A shared Workbench operation writing multiple Stores.
 - A component composing `Store + SDK + PtyManager` directly.
 - Network, PTY, router, Dialog, or Toast side effects inside a Store.
