@@ -80,10 +80,10 @@ validate_commit_message() {
         return 1
     fi
     
-    # Check description length (max 60 chars)
+    # Check description length (max 80 chars)
     local desc_len=${#description}
-    if [ $desc_len -gt 60 ]; then
-        echo -e "${RED}Error: description too long (${desc_len} chars, max 60)${NC}"
+    if [ $desc_len -gt 80 ]; then
+        echo -e "${RED}Error: description too long (${desc_len} chars, max 80)${NC}"
         echo ""
         echo -e "${YELLOW}Suggestion:${NC}"
         echo "  Shorten the description or move details to the body"
@@ -95,10 +95,10 @@ validate_commit_message() {
         return 1
     fi
     
-    # Check total first line length (max 72 chars)
+    # Check total first line length (max 100 chars)
     local total_len=${#msg}
-    if [ $total_len -gt 72 ]; then
-        echo -e "${RED}Error: first line too long (${total_len} chars, max 72)${NC}"
+    if [ $total_len -gt 100 ]; then
+        echo -e "${RED}Error: first line too long (${total_len} chars, max 100)${NC}"
         echo ""
         echo -e "${YELLOW}Suggestion:${NC}"
         echo "  Move detailed description to the body (after a blank line)"

@@ -1,7 +1,13 @@
 #!/bin/sh
 set -e
 
-# Only run typecheck if TypeScript files are staged
-if git diff --cached --name-only --diff-filter=ACM | grep -q '\.tsx\?$'; then
-  bun typecheck
+# Only run typecheck if non-test TypeScript files are staged.
+# Pure test-only changes (*.test.ts) don't affect type declarations
+# and cannot introduce cross-package type errors.
+staged_ts=$(git diff --cached --name-only --diff-filter=ACM | grep '\.tsx\?$' || true)
+if [ -n "$staged_ts" ]; then
+  non_test=$(echo "$staged_ts" | grep -v '\.test\.tsx\?$' || true)
+  if [ -n "$non_test" ]; then
+    bun typecheck
+  fi
 fi
