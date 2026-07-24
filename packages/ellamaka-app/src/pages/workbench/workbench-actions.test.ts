@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createComputed, createMemo, createRoot } from "solid-js"
 import { createWorkbenchActions, type WorkbenchActionPanel, type WorkbenchActionSession, type WorkbenchActionStorePort } from "./workbench-actions"
 import { scopePath, spaceScope } from "./workbench-scope"
 
@@ -795,6 +796,22 @@ describe("WorkbenchActions store port delegation", () => {
     expect(actions.canExecuteActivePanelAction("test.act")).toBe(true)
     actions.unregisterPanelAction(scope, "panel-1", "test.act")
     expect(actions.canExecuteActivePanelAction("test.act")).toBe(false)
+  })
+
+  test("canExecuteActivePanelAction is reactive: a memo depending on it re-runs after registerPanelAction", () => {
+    const { store } = spyStore()
+    const actions = createWorkbenchActions({ store, pty: noopPty, session: noopSession })
+    const captured: boolean[] = []
+    createRoot((dispose) => {
+      const memo = createMemo(() => actions.canExecuteActivePanelAction("test.act"))
+      createComputed(() => captured.push(memo()))
+      expect(captured).toEqual([false])
+      actions.registerPanelAction(scope, "panel-1", { id: "test.act", execute: () => {} })
+      expect(captured).toEqual([false, true])
+      actions.unregisterPanelAction(scope, "panel-1", "test.act")
+      expect(captured).toEqual([false, true, false])
+      dispose()
+    })
   })
 
   test("cancelPanel increments generation so subsequent operations become stale", async () => {

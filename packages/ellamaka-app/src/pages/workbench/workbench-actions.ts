@@ -1,4 +1,4 @@
-import { batch } from "solid-js"
+import { batch, createSignal } from "solid-js"
 import { scopeKey, scopePath, type SpaceScope } from "./workbench-scope"
 import type { WorkbenchPanel } from "./workbench-store"
 
@@ -160,6 +160,12 @@ export function createWorkbenchActions(input: {
   const runtime = input.runtime ?? { canWrite: () => true }
   const generations = new Map<string, number>()
   const panelActions = new Map<string, Map<string, WorkbenchPanelAction>>()
+  // panelActions is a plain Map, so mutations are invisible to SolidJS
+  // reactivity. panelActionsRevision is bumped on every register/unregister;
+  // canExecuteActivePanelAction reads it inside reactive contexts (e.g. the
+  // command catalog memo) so dependents re-run when panel action availability
+  // changes.
+  const [panelActionsRevision, bumpPanelActionsRevision] = createSignal(0)
   const disposingPanels = new Map<string, number>()
   const panelKey = (scope: SpaceScope, panelID: string) => `${scopeKey(scope)}\n${panelID}`
   const nextGeneration = (scope: SpaceScope, panelID: string) => {
@@ -223,6 +229,7 @@ export function createWorkbenchActions(input: {
       const actions = panelActions.get(key)
       if (actions) actions.set(action.id, action)
       else panelActions.set(key, new Map([[action.id, action]]))
+      bumpPanelActionsRevision((n) => n + 1)
     },
     unregisterPanelAction(scope: SpaceScope, panelID: string, actionID: string) {
       const key = panelKey(scope, panelID)
@@ -230,8 +237,13 @@ export function createWorkbenchActions(input: {
       if (!actions) return
       actions.delete(actionID)
       if (actions.size === 0) panelActions.delete(key)
+      bumpPanelActionsRevision((n) => n + 1)
     },
     canExecuteActivePanelAction(actionID: string) {
+      // Read the revision so this function tracks panel action mutations in
+      // SolidJS reactive contexts (e.g. the command catalog memo that feeds
+      // the slash-command popover).
+      panelActionsRevision()
       const active = input.store.active()
       if (!active) return false
       const action = panelActions.get(panelKey(active.scope, active.panelID))?.get(actionID)
