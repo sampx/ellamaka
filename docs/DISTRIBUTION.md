@@ -1,14 +1,17 @@
 # Ellamaka — Distribution
 
 > **状态**: Active
-> **更新时间**: 2026-07-18
-> **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
+> **更新时间**: 2026-07-24
+> **上级架构**:
+> - `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
+> - `../../../docs/products/wopal-space/DESIGN-onboarding.md`（P2 统一入口设计）
 > **项目设计**: `./DESIGN.md`
 
 ## 0. Change Log
 
 | Date | Type | Summary |
 |---|---|---|
+| 2026-07-24 | Updated | P2 收尾：缓存策略对齐（versioned 30 天、latest 60 秒 + 主动 purge）；Desktop 自动更新 P2 完成项（增量更新验证、跨 channel 隔离）；ellamaka CLI 降级为 Desktop 依赖；修正 `wopal ellamaka install` 已切 R2 的过时说明。 |
 | 2026-07-18 | Updated | 修正 §3.2/§3.4/§5：`--arch primary` 实际产出 7 个目标（含 3 baseline 变体），与 R2 生产 manifest 一致；重写 §9 Desktop Distribution：基于实际代码（build-node.ts sidecar + electron-builder），明确 sidecar 为 Node.js runtime 无 AVX2 二分，补充 wopal-site 安装入口，厘清 electron-updater P1 行为（检测通知、非自动安装）；新增 §3.6 Re-release Versioning：semver prerelease 后缀方案解决同版本重复发布问题，`tag-release.sh` 自动递增 `-N` 后缀 |
 | 2026-07-16 | Updated | 新增 §9 Desktop Distribution：明确桌面端为独立发布单元，定义 artifact contract、CI matrix、R2 独立路径、electron-updater feed 与签名公证分阶段方案；原 §9/§10 顺延为 §10/§11。 |
 | 2026-06-08 | Updated | 切换为 R2 CDN 主分发；GitHub/Gitee Release 只保留 markdown 索引；macOS 归档格式对齐为 `.tar.gz`。 |
@@ -46,11 +49,12 @@ P1 的 canonical release source：
 - `wopal-cn/wopal-space-ontology` GitHub Releases — 同上
 - `wopal-cn/wopal-space-ontology` Gitee Releases — 同上
 
-P1 的 canonical consumer：
+P2 的 canonical consumer：
 
-1. `wopal ellamaka install`（稍后切换为 R2 下载 URL）
+1. `wopal ellamaka install`（已切换为 R2 下载，参见 `projects/wopal-cli/src/lib/engine.ts:11`）
 2. `wopal setup`（通过 `wopal ellamaka install`）
-3. 人工从 GitHub/Gitee Release 页面点击 R2 链接下载
+3. **Desktop onboarding**（P2 阶段新主路径：Desktop 通过 `engine.ts` 的 R2 下载逻辑在 onboarding step 3 安装 ellamaka CLI）
+4. 人工从 GitHub/Gitee Release 页面点击 R2 链接下载
 
 ---
 
@@ -326,9 +330,9 @@ Cloudflare R2 是 ellamaka P1 的唯一 binary 分发源。R2 bucket `wopal-rele
 
 ```
 s3://wopal-release/
-├── wopal-cli/                 ← wopal-cli（已实施）
+├── wopal-cli/                            ← wopal-cli
 │   └── ...
-├── ellamaka/                 ← CLI 二进制（已实施）
+├── ellamaka/                             ← ellamaka CLI 二进制
 │   ├── v0.1.0/
 │   │   ├── ellamaka-darwin-arm64.tar.gz
 │   │   ├── ellamaka-darwin-x64.tar.gz
@@ -344,7 +348,7 @@ s3://wopal-release/
 │   │   └── ...
 │   └── latest/
 │       └── manifest.json
-└── ellamaka-desktop/         ← 桌面安装包（见 §9）
+└── ellamaka-desktop/                     ← 桌面安装包（见 §9）
     ├── v0.1.0/
     │   ├── ellamaka-desktop-mac-arm64.dmg
     │   ├── ellamaka-desktop-mac-arm64.zip
@@ -362,12 +366,12 @@ s3://wopal-release/
     │   └── release-notes.md
     ├── v0.2.0/
     │   └── ...
-    ├── latest/               ← prod updater payload、blockmap 与 latest-*.yml
-        ├── latest-mac.yml
-        ├── latest.yml
-        ├── latest-linux.yml
-        └── ellamaka-desktop-*
-    └── beta/                 ← beta 版本目录与独立 latest
+    ├── latest/                           ← prod updater payload、blockmap 与 latest-*.yml
+    │   ├── latest-mac.yml
+    │   ├── latest.yml
+    │   ├── latest-linux.yml
+    │   └── ellamaka-desktop-*
+    └── beta/                             ← beta channel（见 §9.5）
 ```
 
 ### URL 结构
@@ -379,23 +383,29 @@ CLI：
 
 Desktop：
 
-- 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
-- Latest 别名（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Prod 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
+- Prod Latest（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
 - Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
 - Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
 
-### 缓存策略
+### 缓存策略（P2 对齐）
 
 | 路径 | Cache-Control | 含义 |
 |------|---------------|------|
-| `v$VERSION/*` | `public, max-age=604800` | 1 周、覆盖后最多 1 周生效 |
-| `latest/*` | `public, max-age=300` | 5 分钟、新版本发布后最多 5 分钟生效 |
+| `v$VERSION/*` | `public, max-age=2592000` | 30 天，文件不可变 |
+| `latest/*` | `public, max-age=60` | 60 秒，发版时主动 purge |
 
-缓存策略对 CLI 与 Desktop 一致。Desktop 的 `latest/*` 同时承载 `manifest.json` 与 `latest-*.yml` 自动更新 feed，TTL 同为 5 分钟。
+缓存策略对 CLI 与 Desktop 一致。Desktop 的 `latest/*` 同时承载 `manifest.json` 与 `latest-*.yml` 自动更新 feed，TTL 一致。
+
+**实现契约**（所有 release workflow 必须遵守）：
+
+1. 上传前先 `delete-object` 清掉旧内容（R2 自定义域名不主动 invalidate）—— `publish-ellamaka.yml:142-144` 和 `publish-ellamaka-desktop.yml:195-196` 已实现
+2. `put-object` 时显式设置 `--cache-control` —— `publish-ellamaka.yml:160` 和 `publish-ellamaka-desktop.yml:210` 已实现
+3. 发版完成后主动 purge `latest/*` 路径（Cloudflare API 或 cache-buster 请求）
 
 ### Desktop 独立路径
 
-`ellamaka-desktop/` 与 `ellamaka/` 并列，共享同一 bucket、同一自定义域名与缓存策略，但为独立发布单元：版本化目录、latest 别名和去重原则均独立。差异在于顶层产品目录与产物形态（安装包 + updater feed，而非 CLI 二进制归档）。详见 §9。
+`ellamaka-desktop/` 与 `ellamaka/` 并列，共享同一 bucket、同一自定义域名与缓存策略，但为独立发布单元：版本化目录、latest 别名、beta channel 和去重原则均独立。差异在于顶层产品目录与产物形态（安装包 + updater feed，而非 CLI 二进制归档）。详见 §9。
 
 ### 与 wopal-cli 的一致性
 
@@ -474,11 +484,31 @@ R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT �
 见 §8 存储结构：`s3://wopal-release/ellamaka-desktop/v$VERSION/` 与 `.../latest/`。
 
 - Prod 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
-- Prod Latest：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Prod Latest（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
+- Prod Latest（manifest，给下载页用）：`https://download.coursedao.com/ellamaka-desktop/latest/manifest.json`
 - Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
 - Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
 
-缓存策略与 CLI 一致（`v$` 1 周、`latest` 5 分钟）。
+缓存策略与 CLI 一致（`v$` 30 天、`latest` 60 秒）。
+
+### 9.5.1 latest 目录下的两类消费者
+
+`ellamaka-desktop/latest/` 目录服务两类不同消费者：
+
+| 消费者 | 读取文件 | 用途 |
+|--------|---------|------|
+| electron-updater（应用内） | `latest-mac.yml` / `latest.yml` / `latest-linux.yml` | 启动时检测更新、增量下载、签名校验 |
+| wopal-site 下载页（人工） | `manifest.json` | 渲染下载卡片、获取 macOS/Windows/Linux 平台 URL |
+
+**两者职责独立、格式不同**：
+- yml 是 electron-updater 的硬契约（sha512、相对路径、平台分文件）
+- manifest.json 是下载页/CLI 的下载入口（sha256、绝对 URL、单文件含全平台）
+
+**当前缺口（P2 收尾项）**：`publish-ellamaka-desktop.yml` 上传 `v$VERSION/manifest.json` 后**没有**把它复制/重新上传到 `latest/manifest.json`。下载页因此无法用 manifest 模式获取 Desktop 最新版本，fallback 只能写死 URL。修复方法：workflow 加 1 行：
+
+```yaml
+put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
+```
 
 ### 9.6 安装入口
 
@@ -496,13 +526,76 @@ P1 安装入口为 **wopal-site 下载页面**，链接指向 `download.courseda
 
 beta 与 prod 启用 electron-updater。prod 使用稳定 latest feed；beta 使用独立 beta latest feed并允许 prerelease。main 本地构建不启用 updater。macOS ZIP、Windows NSIS EXE、AppImage 及对应 blockmap 位于 updater latest 路径，普通下载表只展示用户安装产物。
 
+#### 9.7.1 Channel 隔离（P2 明确）
+
+不同 channel 是**独立应用**（`electron-builder.config.ts:88-117` 分配不同 appId）：
+
+| Channel | appId |
+|---------|-------|
+| main | `ai.ellamaka.desktop.main` |
+| beta | `ai.ellamaka.desktop.beta` |
+| prod | `ai.ellamaka.desktop` |
+
+**不允许跨 channel 升级**：
+- prod 用户**不能直接升到 beta**——macOS/Windows 视为不同应用，必须卸载后重装
+- beta 用户**不能直接切到 prod**——同上
+- `autoUpdater.allowDowngrade = true`（`src/main/updater.ts:17`）只在**同一 channel 内**生效
+
+**理由**：
+- beta 是测试渠道，prod 用户主动切到 beta 意味着接受不稳定
+- 强隔离防止 beta bug 污染 prod 用户群
+- 切换 channel 是显式操作（卸载重装），不应该是自动行为
+
+#### 9.7.2 P1→P2 更新功能验证
+
+`src/main/updater.ts` 当前实现：
+- `autoUpdater.channel = "latest"`
+- `autoUpdater.allowPrerelease = CHANNEL === "beta"`
+- `autoUpdater.allowDowngrade = true`
+- `autoUpdater.autoDownload = false`（手动下载）
+- `autoUpdater.autoInstallOnAppQuit = false`（手动安装）
+
+| 功能 | P1 状态 | P2 目标 |
+|------|---------|---------|
+| 检测新版本 | ✅ 可用 | 三平台验证（macOS arm64/x64、Windows x64、Linux x64） |
+| 手动下载 | ✅ `autoDownload=false` | 验证三平台增量更新 |
+| 增量更新（NSIS/ZIP/AppImage） | 未验证 | 开启后验证 blockmap 生成和增量下载 |
+| DMG 全量更新 | N/A（DMG 不支持增量） | 确认全量下载正常工作 |
+| 用户确认后安装 | ✅ `quitAndInstall` | 验证三平台重启流程 |
+| 跨 channel 升级 | 不支持 | 不实现（见 §9.7.1） |
+
+#### 9.7.3 增量更新机制
+
+electron-updater 的增量更新基于 blockmap：
+- **macOS ZIP** + **Windows NSIS** + **Linux AppImage** 支持增量
+- **macOS DMG** 不支持（必须全量下载）
+- blockmap 在 `publish-ellamaka-desktop.yml` 中由 electron-builder 自动生成
+
+增量更新生效条件：
+1. electron-builder 生成的 `latest-mac.yml` / `latest.yml` / `latest-linux.yml` 包含 `packages[].path` 和 `sha2` 字段
+2. R2 上传时包含对应 `.blockmap` 文件
+3. 客户端版本号必须**严格小于** feed 中版本号
+
+P2 验证步骤：
+1. 在 prod channel 发版 v1.0.0 → 安装
+2. 发版 v1.0.1 → 启动 Desktop，验证检测到更新
+3. 确认下载 → 验证只下载差异块（不是全量）
+4. 确认安装 → 验证成功升级到 v1.0.1
+
+#### 9.7.4 macOS 特殊处理
+
+macOS 上 ad-hoc 签名的 app 升级时，electron-updater 的 `autoUpdater.quitAndInstall` 可能因 quarantine 导致启动失败。处理：
+- 安装前 `xattr -d com.apple.quarantine` 新版本（如果可能）
+- 引导用户在新版本首次启动时执行"右键 → 打开"操作
+- P2 阶段不解决代码签名问题（见 §9.8）
+
 ### 9.8 代码签名
 
 P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过 `codesign --verify --deep --strict`，不提供开发者身份认证或 Apple notarization。
 
 未签名的用户体验约束：
 
-- macOS：首次打开需右键 → 打开，或在“隐私与安全性”中选择“仍要打开”
+- macOS：首次打开需右键 → 打开，或在"隐私与安全性"中选择"仍要打开"
 - Windows：SmartScreen 警告，需"仍要运行"
 - Linux：AppImage 需 `chmod +x`
 
@@ -518,8 +611,9 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 
 | 阶段 | 范围 | 退出标准 |
 |------|------|----------|
-| 阶段 1（最小可用） | CI matrix + R2 + channel feed + updater 资产 + wopal-site 下载页 + GH/Gitee 索引；macOS ad-hoc 签名 | 三平台安装包可从 R2 下载；macOS 用户可主动接受风险后运行 |
-| 阶段 2（签名公证） | mac/win 签名 + 公证；electron-updater 切换为自动下载安装 | 无 Gatekeeper / SmartScreen 拦截，应用内自动更新可用 |
+| P1（已完成） | CI matrix + R2 + channel feed + updater 资产 + wopal-site 下载页 + GH/Gitee 索引；macOS ad-hoc 签名 | 三平台安装包可从 R2 下载；macOS 用户可主动接受风险后运行；electron-updater 检测+手动下载已可用 |
+| P2（收尾中） | 三平台更新检测验证；NSIS/ZIP/AppImage 增量更新验证（DMG 全量）；用户确认后安装流程验证；缓存策略对齐；ellamaka CLI 降级为 Desktop 依赖；**Desktop workflow 补 `latest/manifest.json` 上传**（见 §9.5.1） | 三平台增量更新全流程通过；缓存 TTL 对齐（versioned 30 天、latest 60 秒）；`latest/manifest.json` 可被下载页 fetch |
+| P2 之后 | mac/win 签名 + 公证；electron-updater 切换为自动下载安装 | 无 Gatekeeper / SmartScreen 拦截，应用内自动更新可用 |
 
 ### 9.10 验证清单
 
@@ -535,7 +629,7 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 
 ---
 
-## 10. Out of Scope for P1
+## 10. Out of Scope
 
 以下适用于 Engine。Desktop 的 out of scope 见 §9.9。
 
@@ -545,7 +639,7 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 4. R2 以外的镜像/分发渠道
 5. 在分发阶段替代 wopal-space mode 的配置融合与 runtime loading
 6. 独立 ellamaka installer 脚本
-7. `engine.ts` 下载 URL 切换为 R2（wopal-cli 侧，稍后实施）
+7. **P1 已移除**：`engine.ts` 下载 URL 切换为 R2——`projects/wopal-cli/src/lib/engine.ts:11` 已定义 `R2_BASE_URL = "https://download.coursedao.com/ellamaka"`，R2 切换早已完成
 
 ---
 
@@ -556,6 +650,7 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 | `./DESKTOP.md` | ellamaka-desktop 架构、状态所有权、PTY 生命周期与验证契约 |
 | `./BRANDING.md` | ellamaka 品牌注入点清单与桌面分发身份（§17） |
 | `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | 产品级 setup integration flow 与系统分层 |
+| `../../../docs/products/wopal-space/DESIGN-onboarding.md` | P2 统一入口设计：Desktop onboarding、缓存策略对齐、Desktop auto-update |
 | `../../wopal-cli/docs/DESIGN.md` | CLI 的 setup / engine / space orchestration 边界 |
 | `../../wopal-cli/docs/DISTRIBUTION.md` | CLI 对 ellamaka release 的消费契约 |
 | `../../../.wopal/docs/DESIGN.md` | ontology 的 template、command 与 runtime maintenance 设计 |
