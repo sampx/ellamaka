@@ -143,8 +143,8 @@ jobs:
             --recursive \
             --endpoint-url "$R2_URL"
 
-          # Cache-Control: versioned paths immutable (1 week), latest alias
-          # short TTL (5 min). CDN purge on release ensures latest is fresh.
+          # Cache-Control: versioned paths immutable (30 day), latest alias
+          # short TTL (60 second). CDN purge on release ensures latest is fresh.
           put_with_cache() {
             local file="$1" key="$2" cache="$3" ct="$4"
             aws s3api delete-object \
@@ -170,21 +170,21 @@ jobs:
             done
           }
 
-          # Binary archives (immutable, 1-week cache)
+          # Binary archives (immutable, 30-day cache)
           for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
             name="$(basename "$f")"
             ct="application/octet-stream"
             case "$name" in *.tar.gz) ct="application/x-tar";; *.zip) ct="application/zip";; esac
-            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=604800" "$ct"
+            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000" "$ct"
           done
 
-          # Metadata (1-week cache)
-          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=604800" "application/json"
-          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=604800" "text/plain"
-          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=604800" "text/markdown"
+          # Metadata (30-day cache)
+          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000" "application/json"
+          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000" "text/plain"
+          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000" "text/markdown"
 
-          # Latest alias: manifest only (short TTL)
-          put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=300" "application/json"
+          # Latest alias: manifest only (60-second TTL)
+          put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=60" "application/json"
 
           # Verify: head-object for size first (fast), full download only if
           # size mismatches. R2 single PUT can silently truncate; size check

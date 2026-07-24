@@ -53,6 +53,11 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).toContain("ellamaka/latest/manifest.json")
     expect(workflow).not.toContain("ellamaka/latest/checksums.txt")
     expect(workflow).not.toContain("ellamaka/latest/release-notes.md")
+    // TTL: versioned paths use 30-day cache, latest uses 60-second cache
+    expect(workflow).toContain("max-age=2592000")
+    expect(workflow).toContain("max-age=60")
+    expect(workflow).not.toContain("max-age=604800")
+    expect(workflow).not.toContain("max-age=300")
   })
 
   test("deletes R2 object before put-object to avoid stale truncated residue", () => {
