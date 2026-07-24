@@ -39,6 +39,15 @@ describe("desktop release repair", () => {
     expect(workflow).toContain("old-release-urls")
     expect(workflow).toContain(".zip.blockmap")
     expect(workflow).toContain(".exe.blockmap")
+    // Latest manifest upload
+    expect(workflow).toContain('${LATEST_PREFIX}/manifest.json')
+    // TTL: versioned 30-day, latest 60-second, no legacy values
+    expect(workflow).toContain("max-age=2592000")
+    expect(workflow).toContain("max-age=60")
+    expect(workflow).not.toContain("max-age=604800")
+    expect(workflow).not.toContain("max-age=300")
+    // Purge URL includes latest manifest
+    expect(workflow).toContain('${LATEST_BASE}/manifest.json')
   })
 
   test("injects release version and ad-hoc signs macOS", async () => {
