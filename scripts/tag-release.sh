@@ -146,15 +146,24 @@ fi
 
 # --- Pre-flight checks ---
 check_workspace_clean() {
+  local dirty=0
   if ! git -C "$REPO_ROOT" diff --quiet HEAD -- . 2>/dev/null; then
-    echo "工作区有未提交变更:"
+    echo "⚠️  工作区有未提交变更:"
     git -C "$REPO_ROOT" status --short
-    die "请先提交或 stash"
+    dirty=1
   fi
   if ! git -C "$REPO_ROOT" diff --cached --quiet HEAD -- . 2>/dev/null; then
-    echo "暂存区有未提交变更:"
+    echo "⚠️  暂存区有未提交变更:"
     git -C "$REPO_ROOT" diff --cached --stat
-    die "请先提交"
+    dirty=1
+  fi
+  if [ "$dirty" -eq 1 ]; then
+    echo ""
+    read -r -p "工作区不干净，未提交变更不会进入本次 release。继续发布？ [y/N] " answer
+    case "$answer" in
+      y|Y|yes|YES) echo "  继续发布..." ;;
+      *) die "已取消" ;;
+    esac
   fi
 }
 
