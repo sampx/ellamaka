@@ -403,6 +403,8 @@ slashName: Flag.WOPAL_SPACE ? undefined : "help",
 | `disableClaudeCodePrompt` | 空间模式下自动禁用 Claude Code prompt（避免注入 opencode 生态提示词） |
 | `disableClaudeCodeSkills` | 空间模式下自动禁用 `.claude/skills/` 扫描（技能由 Wopal 生态管理） |
 
+`.agents/skills/` 不受 `WOPAL_SPACE` 禁用。`.agents/` 已成为行业事实标准目录，所有 agent 工具都应读取此目录下的技能；空间模式下 `.agents/skills/` 仍参与扫描，与 Wopal 生态能力共存。
+
 ### 实现逻辑
 
 `RuntimeFlags` 是 Effect Config 层，`disableClaudeCodePrompt` 和 `disableClaudeCodeSkills` 由三个来源取或：通用禁用环境变量 + 专属禁用环境变量 + `WOPAL_SPACE`。这意味着：
@@ -411,9 +413,30 @@ slashName: Flag.WOPAL_SPACE ? undefined : "help",
 
 `Flag.WOPAL_SPACE` 是同步 getter，供 config 加载等需要立即判断的场景使用（如 `tryLoadWopalSpaceConfig` 的入口 guard）。
 
+### WOPAL_SPACE 环境变量的设置点
+
+`WOPAL_SPACE` / `WOPAL_SPACE_ROOT` 在两个入口设置，确保所有启动路径都能让 RuntimeFlags 读到空间模式状态：
+
+| 入口 | 设置位置 | 机制 |
+|------|---------|------|
+| CLI（`ellamaka serve` 等） | `index.ts` yargs middleware | `detectWopalSpace(process.cwd())` 成功后设 env |
+| Desktop sidecar | `wopal-space-settings.ts` `loadWopalSpaceSettingsFiles` | `detectWopalSpace(ctx.directory)` 成功后设 env |
+
+Desktop sidecar 直接 import server 模块，不经 CLI yargs middleware，故在配置加载层补设 env。两处设置逻辑等价：检测到空间根后设 `WOPAL_SPACE=1` 和 `WOPAL_SPACE_ROOT=<root>`。
+
 ### Skill 加载中的消费
 
-`skill/index.ts` 的 `discoverSkills()` 接收 `disableClaudeCodeSkills` 和 `disableAgentsSkills` 参数，在扫描外部技能目录（`.claude/`、`.agents/`）时根据标志跳过。空间模式下 Claude Code 技能目录自动被跳过。
+`skill/index.ts` 的 `discoverSkills()` 接收 `disableClaudeCodeSkills` 和 `disableAgentsSkills` 参数，在扫描外部技能目录时根据标志跳过。空间模式下 `.claude/skills/` 自动被跳过；`.agents/skills/` 仍参与扫描。
+
+### Skill 优先级：空间目录显式优先
+
+空间模式下，`<spaceRoot>/.wopal/skills/` 下的同名技能**显式优先**于其他来源（`~/.wopal/skills/`、`.agents/skills/`、配置 paths、urls）。这不是靠扫描顺序的副作用，而是 `loadSkills()` 的显式裁决：
+
+- `discoverSkills()` 通过 `config.isWopalSpace()` 识别空间模式，从 `config.directories()` 中识别出空间目录（`spaceDir`）。
+- `loadSkills()` 对同名技能组，在空间模式下优先选择 location 在 `spaceDir` 下的条目作为 winner，其余条目丢弃。
+- 非空间模式下保持"后扫描者覆盖"的语义不变。
+
+这保证无论扫描顺序如何，空间目录内的技能最终胜出，符合"空间内技能优先级最高"的设计。
 
 ---
 

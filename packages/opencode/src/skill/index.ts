@@ -87,6 +87,7 @@ type State = {
 type DiscoveryState = {
   matches: string[]
   dirs: string[]
+  spaceDir: string | undefined
 }
 
 type ScanState = {
@@ -152,24 +153,56 @@ const parseSkill = Effect.fnUntraced(function* (match: string, bus: Bus.Interfac
   }
 })
 
-const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
+const loadSkills = Effect.fnUntraced(function* (
+  state: State,
+  discovered: DiscoveryState,
+  bus: Bus.Interface,
+  spaceDir: string | undefined,
+) {
   const parsed = yield* Effect.forEach(discovered.matches, (match) => parseSkill(match, bus), {
     concurrency: "unbounded",
   })
 
+  // Group duplicates per skill name so we emit one structured summary line
+  // instead of N flood-style WARN entries. Within each group, the winner is:
+  //   - in wopal-space mode: the entry whose location is under spaceDir
+  //   - otherwise: the last-scanned entry (preserves legacy override order)
+  // Non-winner duplicates are dropped after being recorded in the summary.
+  const byName = new Map<string, Info[]>()
   for (const info of parsed) {
     if (!info) continue
-    if (state.skills[info.name]) {
-      log.warn("duplicate skill name", {
-        name: info.name,
-        existing: state.skills[info.name].location,
-        duplicate: info.location,
-      })
-    }
     state.dirs.add(path.dirname(info.location))
-    state.skills[info.name] = info
+    const list = byName.get(info.name)
+    if (list) list.push(info)
+    else byName.set(info.name, [info])
   }
 
+  const duplicates: Array<{ name: string; winner: string; dropped: string[] }> = []
+  for (const infos of byName.values()) {
+    let winner: Info
+    if (spaceDir && infos.length > 1) {
+      const spaceIdx = infos.findIndex((i) => i.location.startsWith(spaceDir + path.sep))
+      winner = spaceIdx >= 0 ? infos[spaceIdx] : infos[infos.length - 1]
+    } else {
+      winner = infos[infos.length - 1]
+    }
+    state.skills[winner.name] = winner
+    if (infos.length > 1) {
+      duplicates.push({
+        name: winner.name,
+        winner: winner.location,
+        dropped: infos.filter((i) => i !== winner).map((i) => i.location),
+      })
+    }
+  }
+
+  if (duplicates.length > 0) {
+    log.warn("duplicate skills resolved", {
+      spaceDir: spaceDir ?? "(none)",
+      count: duplicates.length,
+      details: duplicates,
+    })
+  }
   log.info("init", { count: Object.keys(state.skills).length })
 })
 
@@ -250,6 +283,24 @@ const discoverSkills = Effect.fnUntraced(function* (
     yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
   }
 
+  // Determine the space directory so loadSkills can enforce "space skills win"
+  // as an explicit priority, not a scan-order side effect. Only meaningful in
+  // wopal-space mode (isWopalSpace=true); spaceDir is the <spaceRoot>/.wopal
+  // member of configDirs, identified as the configDir that is NOT under
+  // Global.Path.wopalHome and NOT Global.Path.config.
+  let spaceDir: string | undefined
+  const isWopalSpace = yield* config.isWopalSpace()
+  if (isWopalSpace) {
+    for (const dir of configDirs) {
+      const underHomeWopal = dir === global.wopalHome || dir.startsWith(global.wopalHome + path.sep)
+      const isConfig = dir === global.config
+      if (!underHomeWopal && !isConfig) {
+        spaceDir = dir
+        break
+      }
+    }
+  }
+
   const cfg = yield* config.get()
   for (const item of cfg.skills?.paths ?? []) {
     const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
@@ -272,6 +323,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   return {
     matches: Array.from(state.matches),
     dirs: Array.from(state.dirs),
+    spaceDir,
   }
 })
 
@@ -312,7 +364,7 @@ export const layer = Layer.effect(
           location: "<built-in>",
           content: CUSTOMIZE_OPENCODE_SKILL_BODY,
         }
-        yield* loadSkills(s, yield* InstanceState.get(discovered), bus)
+        yield* loadSkills(s, yield* InstanceState.get(discovered), bus, (yield* InstanceState.get(discovered)).spaceDir)
         return s
       }),
     )

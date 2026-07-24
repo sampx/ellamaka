@@ -41,10 +41,29 @@ export function loadWopalSpaceSettingsFiles(deps: WopalSpaceSettingsDeps, ctx: {
       return undefined
     }
 
-    const detection = detectWopalSpace(ctx.directory)
+    // Resolve the space root. Two sources, in priority order:
+    //   1. detectWopalSpace(cwd) — walks up looking for `.wopal/.git` worktree marker.
+    //      Authoritative for CLI entry and any cwd inside a real space checkout.
+    //   2. WOPAL_SPACE + WOPAL_SPACE_ROOT env — explicit override set by callers
+    //      that already know the space root (sidecar, tests). detectWopalSpace can
+    //      miss in those contexts because cwd may not sit under a space checkout
+    //      or the marker may be absent in synthetic test fixtures.
+    let detection = detectWopalSpace(ctx.directory)
+    if (!detection && process.env.WOPAL_SPACE === "1" && process.env.WOPAL_SPACE_ROOT) {
+      const root = process.env.WOPAL_SPACE_ROOT
+      detection = { root, wopalDir: path.join(root, ".wopal") }
+    }
     if (!detection) {
       return undefined
     }
+
+    // CLI entry sets WOPAL_SPACE env in its yargs middleware (index.ts), but the
+    // Desktop sidecar imports the server directly and bypasses that middleware.
+    // Set the env here so RuntimeFlags (disableClaudeCodeSkills, wopalSpace, ...)
+    // — which read WOPAL_SPACE via Config.boolean — pick up wopal-space mode
+    // regardless of entry point. Mirrors index.ts:117-119.
+    process.env.WOPAL_SPACE = "1"
+    process.env.WOPAL_SPACE_ROOT = detection.root
 
     const spaceRoot = detection.root
     const localWopalDirs = [path.join(spaceRoot, ".wopal")]
