@@ -176,6 +176,15 @@ function build_desktop() {
 
   export OPENCODE_CHANNEL="$CHANNEL"
 
+  # Inject build hash so the packaged app shows which commit it was built from
+  export OPENCODE_BUILD_ID="${OPENCODE_BUILD_ID:-$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)}"
+
+  # Use the already-installed electron from node_modules instead of re-downloading
+  local electron_dist="$PROJECT_ROOT/node_modules/electron/dist"
+  if [[ -d "$electron_dist" ]]; then
+    export ELECTRON_DIST="$electron_dist"
+  fi
+
   case "$CHANNEL" in
     main) APP_NAME="Ellamaka Main" ;;
     beta) APP_NAME="Ellamaka Beta" ;;
@@ -191,8 +200,9 @@ function build_desktop() {
     fi
   fi
 
+  local build_label="${OPENCODE_BUILD_ID:+${OPENCODE_BUILD_ID:0:12}}"
   echo ""
-  echo "🖥  Building Desktop (channel: $CHANNEL, app: $APP_NAME)..."
+  echo "🖥  Building Desktop (channel: $CHANNEL, app: $APP_NAME, build: ${build_label:-none})..."
 
   cd "$DESKTOP_DIR"
   bun run build
