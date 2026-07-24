@@ -21,6 +21,7 @@ await Log.init({
   print: process.argv.includes("--print-logs"),
   dev: Installation.isLocal(),
   devFile: "ellamaka-dev-tui.log",
+  role: "tui",
   level: (process.env.OPENCODE_LOG_LEVEL as Level) ?? (Installation.isLocal() ? "DEBUG" : "INFO"),
 })
 

@@ -2,6 +2,8 @@ export type SidecarRuntimeStatus = "starting" | "ready" | "lost" | "restarting" 
 
 export type SidecarTerminalReason = "user" | "update" | "quit"
 
+export type SidecarLogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
+
 export type SidecarRuntimeState = {
   generation: number
   status: SidecarRuntimeStatus
@@ -12,7 +14,7 @@ export type SidecarRuntimeState = {
 }
 
 export type SidecarSpawnResult = {
-  listener: { stop: () => Promise<void> }
+  listener: { stop: () => Promise<void>; setLogLevel: (level: SidecarLogLevel) => void }
   health: { wait: Promise<void> }
 }
 
@@ -136,6 +138,10 @@ export class SidecarSupervisor {
 
   stop(reason: SidecarTerminalReason): Promise<void> {
     return this.enqueue(() => this.doStop(reason))
+  }
+
+  setLogLevel(level: SidecarLogLevel): void {
+    this.currentSpawn?.listener.setLogLevel(level)
   }
 
   waitForReady(): Promise<SidecarRuntimeState> {

@@ -1,7 +1,7 @@
 // Dev-only JSONL event trace for direct interactive mode.
 //
 // Enable with OPENCODE_DIRECT_TRACE=1. Writes one JSON line per event to
-// ~/.local/share/opencode/log/direct/<timestamp>-<pid>.jsonl. Also writes
+// $WOPAL_HOME/logs/direct/<timestamp>-<pid>.jsonl. Also writes
 // a latest.json pointer so you can quickly find the most recent trace.
 //
 // The trace captures the full closed loop: outbound prompts, inbound SDK
@@ -22,10 +22,9 @@ export type Trace = {
 let state: Trace | false | undefined
 
 function stamp() {
-  return new Date()
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d+Z$/, "Z")
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
 
 function file() {

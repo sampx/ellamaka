@@ -108,3 +108,54 @@ it.live("configured local dev log is not truncated twice for the same run", () =
     )
   }),
 )
+
+it.live("non-dev init with role produces role-prefixed filename", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    yield* Effect.addFinalizer(() => Effect.sync(() => (Global.Path.log = log)))
+    const dir = yield* tmpdirScoped()
+    Global.Path.log = dir
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: false, role: "serve" }))
+
+    const file = Log.file()
+    expect(file).toMatch(/serve-\d{4}-\d{2}-\d{2}T\d{6}\.log$/)
+  }),
+)
+
+it.live("non-dev init without role produces local timestamp filename", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    yield* Effect.addFinalizer(() => Effect.sync(() => (Global.Path.log = log)))
+    const dir = yield* tmpdirScoped()
+    Global.Path.log = dir
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: false }))
+
+    const file = Log.file()
+    expect(file).toMatch(/\d{4}-\d{2}-\d{2}T\d{6}\.log$/)
+  }),
+)
+
+it.live("cleanup matches role-prefixed files", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    yield* Effect.addFinalizer(() => Effect.sync(() => (Global.Path.log = log)))
+    const dir = yield* tmpdirScoped()
+    Global.Path.log = dir
+
+    const list = Array.from(
+      { length: 12 },
+      (_, i) => `serve-2000-01-${String(i + 1).padStart(2, "0")}T000000.log`,
+    )
+
+    yield* Effect.all(list.map((file) => Effect.promise(() => fs.writeFile(path.join(dir, file), file))))
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: false, role: "serve" }))
+
+    const next = yield* files(dir)
+
+    expect(next).not.toContain(list[0]!)
+    expect(next).toContain(list.at(-1)!)
+  }),
+)

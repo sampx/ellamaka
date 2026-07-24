@@ -16,7 +16,8 @@ declare module "virtual:opencode-server" {
     export type Info = import("../../../opencode/dist/types/src/node").Config.Info
   }
   export namespace Log {
-    export const init: typeof import("../../../opencode/dist/types/src/node").Log.init
+    export const init: typeof import("@opencode-ai/core/util/log").Log.init
+    export const setLevel: typeof import("@opencode-ai/core/util/log").Log.setLevel
   }
   export namespace Database {
     export const getPath: typeof import("../../../opencode/dist/types/src/node").Database.getPath

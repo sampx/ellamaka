@@ -1,12 +1,18 @@
 import yargs from "yargs"
 import { TuiThreadCommand } from "./cli/cmd/tui/thread"
+import { Installation } from "@/installation"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { hideBin } from "yargs/helpers"
 import { Log } from "./node"
+import type { Level } from "@opencode-ai/core/util/log"
 import { BINARY_NAME } from "../../ellamaka/branding"
 
 Log.init({
-  print: false,
+  print: process.argv.includes("--print-logs"),
+  dev: Installation.isLocal(),
+  devFile: "ellamaka-dev-tui.log",
+  role: "tui",
+  level: (process.env.OPENCODE_LOG_LEVEL as Level) ?? (Installation.isLocal() ? "DEBUG" : "INFO"),
 })
 
 const cli = yargs(hideBin(process.argv))

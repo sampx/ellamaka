@@ -110,6 +110,7 @@ const cli = yargs(args)
     }
 
     const command = typeof opts._?.[0] === "string" ? opts._[0] : ""
+    const role: "serve" | "tui" = SERVER_COMMANDS.has(command) ? "serve" : "tui"
     const detection = detectWopalSpace(process.cwd())
     if (Installation.isLocal() && detection) {
       process.env.WOPAL_DEBUG_LOG_DIR = path.join(detection.root, ".wopal-space", "logs")
@@ -126,6 +127,7 @@ const cli = yargs(args)
       print: process.argv.includes("--print-logs"),
       dev: Installation.isLocal(),
       devFile: "ellamaka-dev-tui.log",
+      role,
       level: (() => {
         if (opts.logLevel) return opts.logLevel as Log.Level
         if (Installation.isLocal()) return "DEBUG"

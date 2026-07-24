@@ -47,7 +47,8 @@ type StartCommand = {
 }
 
 type StopCommand = { type: "stop" }
-type SidecarCommand = StartCommand | StopCommand
+type SetLogLevelCommand = { type: "setLogLevel"; level: "DEBUG" | "INFO" | "WARN" | "ERROR" }
+type SidecarCommand = StartCommand | StopCommand | SetLogLevelCommand
 
 type SidecarMessage =
   | { type: "sqlite"; progress: { type: "InProgress"; value: number } | { type: "Done" } }
@@ -74,6 +75,10 @@ parentPort.on("message", (event) => {
     void stop()
     return
   }
+  if (command.type === "setLogLevel") {
+    void setLogLevel(command.level)
+    return
+  }
   void start(command)
 })
 
@@ -94,7 +99,7 @@ async function start(command: StartCommand) {
       | "INFO"
       | "WARN"
       | "ERROR"
-    await Log.init({ level: sidecarLogLevel, dev: sidecarDev, devFile: "ellamaka-dev-sidecar.log" })
+    await Log.init({ level: sidecarLogLevel, dev: sidecarDev, devFile: "ellamaka-dev-sidecar.log", role: "sidecar" })
 
     if (command.needsMigration) {
       await JsonMigration.run(drizzle({ client: Database.Client().$client }), {
@@ -133,6 +138,11 @@ async function stop() {
     parentPort.postMessage({ type: "stopped" })
     setImmediate(() => process.exit(0))
   }
+}
+
+async function setLogLevel(level: "DEBUG" | "INFO" | "WARN" | "ERROR") {
+  const { Log } = await import("virtual:opencode-server")
+  Log.setLevel(level)
 }
 
 function prepareSidecarEnv(password: string) {
@@ -183,8 +193,14 @@ function useEnvProxy() {
 
 function parseCommand(value: unknown): SidecarCommand | undefined {
   if (!value || typeof value !== "object") return
-  const command = value as Partial<StartCommand | StopCommand>
+  const command = value as Partial<StartCommand | StopCommand | SetLogLevelCommand>
   if (command.type === "stop") return { type: "stop" }
+  if (command.type === "setLogLevel") {
+    if (command.level === "DEBUG" || command.level === "INFO" || command.level === "WARN" || command.level === "ERROR") {
+      return { type: "setLogLevel", level: command.level }
+    }
+    return
+  }
   if (command.type !== "start") return
   if (typeof command.hostname !== "string") return
   if (typeof command.port !== "number") return

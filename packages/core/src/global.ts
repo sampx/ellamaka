@@ -25,7 +25,7 @@ const paths = {
   wopalHome: wopalRoot,
   data,
   bin: path.join(cache, "bin"),
-  log: path.join(data, "log"),
+  log: path.join(wopalRoot, "logs"),
   repos: path.join(data, "repos"),
   cache,
   config,

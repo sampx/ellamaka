@@ -24,6 +24,10 @@ const initializedRunID = "OPENCODE_LOG_INITIALIZED_RUN_ID"
 
 let level: Level = "INFO"
 
+export function setLevel(next: Level) {
+  level = next
+}
+
 function shouldLog(input: Level): boolean {
   return levelPriority[input] >= levelPriority[level]
 }
@@ -53,6 +57,7 @@ export interface Options {
   dev?: boolean
   devFile?: string
   level?: Level
+  role?: "serve" | "tui" | "sidecar"
 }
 
 let logpath = ""
@@ -62,6 +67,12 @@ export function file() {
 let write = (msg: any) => {
   process.stderr.write(msg)
   return msg.length
+}
+
+function localStamp() {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
 
 function dir(options: Options) {
@@ -80,7 +91,9 @@ export async function init(options: Options) {
   void cleanup(logdir)
   logpath = path.join(
     logdir,
-    options.dev ? (options.devFile ?? "dev.log") : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
+    options.dev
+      ? options.devFile ?? "dev.log"
+      : (options.role ? `${options.role}-${localStamp()}.log` : `${localStamp()}.log`),
   )
   const runID = process.env.OPENCODE_RUN_ID
   const shouldTruncate = !options.dev || !runID || process.env[initializedRunID] !== runID
@@ -103,7 +116,7 @@ export async function init(options: Options) {
 
 async function cleanup(dir: string) {
   const files = (
-    await Glob.scan("????-??-??T??????.log", {
+    await Glob.scan("*????-??-??T??????.log", {
       cwd: dir,
       absolute: false,
       include: "file",

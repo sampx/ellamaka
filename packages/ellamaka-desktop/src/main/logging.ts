@@ -18,6 +18,11 @@ let root = ""
 let run = ""
 let netLogPath: string | undefined
 let debugMode = false
+let sidecarLogLevel: ((level: "DEBUG" | "WARN") => void) | undefined
+
+export function setSidecarLogLevelHandler(fn: (level: "DEBUG" | "WARN") => void) {
+  sidecarLogLevel = fn
+}
 
 let logger: MainLogger
 export const getLogger = () => logger
@@ -33,6 +38,7 @@ export function setDebugLogging(enabled: boolean) {
   } catch {}
   log.transports.file.level = enabled ? "debug" : "warn"
   log.transports.console.level = enabled ? "debug" : "warn"
+  sidecarLogLevel?.(enabled ? "DEBUG" : "WARN")
   write("main", `log level set to ${enabled ? "debug" : "warn"}`)
 }
 
@@ -179,8 +185,8 @@ function manifest() {
 }
 
 function serverLogRoots() {
-  const xdgData = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  return [...new Set([join(xdgData, "ellamaka", "log"), join(app.getPath("userData"), "ellamaka", "log")])]
+  const wopalHome = process.env.WOPAL_HOME || join(homedir(), ".wopal")
+  return [join(wopalHome, "logs")]
 }
 
 type Entry = { name: string; path?: string; data?: Buffer }

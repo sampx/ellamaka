@@ -18,7 +18,12 @@ type SidecarMessage =
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
-export type SidecarListener = { stop: () => Promise<void> }
+export type SidecarLogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
+
+export type SidecarListener = {
+  stop(): Promise<void>
+  setLogLevel(level: SidecarLogLevel): void
+}
 
 const SIDECAR_SERVICE_NAME = "ellamaka server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
@@ -194,6 +199,9 @@ export async function spawnLocalServer(
           }),
         ])
         return stopping
+      },
+      setLogLevel: (level: SidecarLogLevel) => {
+        if (!exited) child.postMessage({ type: "setLogLevel", level })
       },
     },
     health: { wait },

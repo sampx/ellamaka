@@ -15,7 +15,7 @@ import type { InitStep, SidecarRuntimeState, SqliteMigrationProgress } from "../
 import { checkAppExists } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { broadcastSidecarState, registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
-import { exportDebugLogs, initCrashReporter, initLogging, isDebugLogging, startNetLog, toggleDebugLogging, write as writeLog } from "./logging"
+import { exportDebugLogs, initCrashReporter, initLogging, isDebugLogging, setSidecarLogLevelHandler, startNetLog, toggleDebugLogging, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
@@ -280,6 +280,8 @@ const main = Effect.gen(function* () {
     onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
     onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
   })
+
+  setSidecarLogLevelHandler((level) => supervisor?.setLogLevel(level))
 
   // Subscribe to state changes and broadcast to all windows
   supervisor.subscribe((state: SidecarRuntimeState) => {

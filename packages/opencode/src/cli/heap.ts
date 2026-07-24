@@ -28,9 +28,12 @@ export function start() {
 
     lock = true
     armed = false
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${now.getDate()}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
     const file = path.join(
       Global.Path.log,
-      `heap-${process.pid}-${new Date().toISOString().replace(/[:.]/g, "")}.heapsnapshot`,
+      `heap-${process.pid}-${stamp}.heapsnapshot`,
     )
     log.warn("heap usage exceeded limit", {
       rss: stat.rss,
