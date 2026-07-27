@@ -193,8 +193,8 @@ describe("applyDirectoryEvent", () => {
 
     expect(store.session.map((x) => x.id)).toEqual(["ses_2"])
     expect(store.sessionTotal).toBe(1)
-    expect(store.message.ses_1).toBeUndefined()
-    expect(store.part[message.id]).toBeUndefined()
+    expect(store.message.ses_1).toEqual([message])
+    expect(store.part[message.id]).toEqual([textPart("prt_1", "ses_1", message.id)])
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.todo.ses_1).toBeUndefined()
     expect(store.permission.ses_1).toBeUndefined()
@@ -239,8 +239,8 @@ describe("applyDirectoryEvent", () => {
 
       expect(store.session.find((x) => x.id === item.info.id)).toBeUndefined()
       expect(store.sessionTotal).toBe(item.expectedTotal)
-      expect(store.message[item.info.id]).toBeUndefined()
-      expect(store.part[message.id]).toBeUndefined()
+      expect(store.message[item.info.id]).toEqual([message])
+      expect(store.part[message.id]).toEqual([textPart("prt_1", item.info.id, message.id)])
       expect(store.session_diff[item.info.id]).toBeUndefined()
       expect(store.todo[item.info.id]).toBeUndefined()
       expect(store.permission[item.info.id]).toBeUndefined()
@@ -249,7 +249,7 @@ describe("applyDirectoryEvent", () => {
     }
   })
 
-  test("cleans caches for trimmed sessions on session.created", () => {
+  test("cleans caches for trimmed sessions on session.created but preserves message history", () => {
     const dropped = rootSession({ id: "ses_b" })
     const kept = rootSession({ id: "ses_a" })
     const message = userMessage("msg_1", dropped.id)
@@ -282,8 +282,8 @@ describe("applyDirectoryEvent", () => {
     })
 
     expect(store.session.map((x) => x.id)).toEqual([kept.id])
-    expect(store.message[dropped.id]).toBeUndefined()
-    expect(store.part[message.id]).toBeUndefined()
+    expect(store.message[dropped.id]).toEqual([message])
+    expect(store.part[message.id]).toEqual([textPart("prt_1", dropped.id, message.id)])
     expect(store.session_diff[dropped.id]).toBeUndefined()
     expect(store.todo[dropped.id]).toBeUndefined()
     expect(store.permission[dropped.id]).toBeUndefined()
@@ -292,7 +292,7 @@ describe("applyDirectoryEvent", () => {
     expect(todos).toEqual([dropped.id])
   })
 
-  test("cleanupDroppedSessionCaches clears part-only orphan state", () => {
+  test("cleanupDroppedSessionCaches preserves part-only state and message history", () => {
     const [store, setStore] = createStore(
       baseState({
         session: [rootSession({ id: "ses_keep" })],
@@ -302,7 +302,7 @@ describe("applyDirectoryEvent", () => {
 
     cleanupDroppedSessionCaches(store, setStore, store.session)
 
-    expect(store.part.msg_1).toBeUndefined()
+    expect(store.part.msg_1).toEqual([textPart("prt_1", "ses_drop", "msg_1")])
   })
 
   test("upserts and removes messages while clearing orphaned parts", () => {

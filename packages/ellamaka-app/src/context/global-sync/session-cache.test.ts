@@ -54,8 +54,8 @@ describe("app session cache", () => {
     dropSessionCaches(store, ["ses_1"])
 
     expect(store.message.ses_1).toBeUndefined()
-    expect(store.part.msg_1).toBeUndefined()
-    expect(store.part_text_accum_delta.prt_1).toBeUndefined()
+    expect(store.part.msg_1).toEqual([part("prt_1", "ses_1", "msg_1")])
+    expect(store.part_text_accum_delta.prt_1).toBe("streamed text")
     expect(store.todo.ses_1).toBeUndefined()
     expect(store.session_diff.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
@@ -87,8 +87,8 @@ describe("app session cache", () => {
 
     dropSessionCaches(store, ["ses_1"])
 
-    expect(store.message.ses_1).toBeUndefined()
-    expect(store.part[m.id]).toBeUndefined()
+    expect(store.message.ses_1).toEqual([m])
+    expect(store.part[m.id]).toEqual([part("prt_1", "ses_1", m.id)])
   })
 
   test("pickSessionCacheEvictions preserves requested sessions", () => {
