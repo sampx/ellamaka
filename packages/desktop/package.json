@@ -14,7 +14,7 @@
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
-    "build": "electron-vite build",
+    "build": "electron-vite build --logLevel warn",
     "preview": "electron-vite preview",
     "package": "electron-builder --config electron-builder.config.ts",
     "package:mac": "electron-builder --mac --config electron-builder.config.ts",

@@ -2,6 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
+import semver from "semver"
 import type { OnboardingStepResult } from "../preload/types"
 
 export interface RunSetupOperationOptions {
@@ -102,14 +103,10 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
       if (versionResult.stdout) {
         const actual = versionResult.stdout.toString().trim().replace(/^v/, "")
         const minVersion = process.env.MIN_WOPAL_CLI_VERSION || "0.3.4"
-        const pa = actual.split('.').map(Number)
-        const pb = minVersion.split('.').map(Number)
-        let isGte = true
-        for (let i = 0; i < 3; i++) {
-          if ((pa[i] || 0) > (pb[i] || 0)) break
-          if ((pa[i] || 0) < (pb[i] || 0)) { isGte = false; break }
-        }
-        if (!isGte) {
+        const normalizedActual = semver.valid(actual) || semver.valid(semver.coerce(actual)?.version || "")
+        const normalizedMin = semver.valid(minVersion) || semver.valid(semver.coerce(minVersion)?.version || "")
+
+        if (normalizedActual && normalizedMin && semver.lt(normalizedActual, normalizedMin)) {
           return {
             status: "failed",
             error: {

@@ -7,6 +7,7 @@ const channel = (() => {
 })()
 const version = process.env.OPENCODE_VERSION?.trim()
 const build = process.env.OPENCODE_BUILD_ID?.trim()
+const buildVersion = build ? build.slice(0, 12) : undefined
 const electronDist = process.env.ELECTRON_DIST?.trim()
 
 function getPublishUrl(): string | undefined {
@@ -23,6 +24,7 @@ const packageName = (() => {
 
 const getBase = (): Configuration => ({
   ...(electronDist ? { electronDist } : {}),
+  ...(buildVersion ? { buildVersion } : {}),
   artifactName: "ellamaka-desktop-${os}-${arch}.${ext}",
   copyright: "Copyright © 2025 Ellamaka",
   extraMetadata: {

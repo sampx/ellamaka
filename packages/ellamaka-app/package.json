@@ -13,7 +13,7 @@
     "typecheck": "tsgo -b",
     "start": "vite",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build --logLevel warn",
     "serve": "vite preview",
     "check:workbench-boundaries": "bun ./script/check-workbench-boundaries.ts",
     "lint:workbench": "cd ../.. && find packages/ellamaka-app/src/pages/workbench -type f \\( -name '*.ts' -o -name '*.tsx' \\) -print0 | xargs -0 oxlint --deny-warnings",

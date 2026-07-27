@@ -18,6 +18,7 @@ Targets:
   desktop    Build Desktop app
 
 CLI options:
+  --version <ver>         Override build version (e.g. "1.15.14-dev")
   --platform <mac|linux|win>
                           Target platform (comma-separated, e.g. "mac,linux")
   --arch <arm64|x64>      Target architecture (comma-separated)
@@ -29,6 +30,7 @@ CLI options:
 Desktop options:
   --channel <main|beta|prod>
                           Channel (default: main). Controls bundle ID, app name, icons.
+  --version <ver>         Override build version (e.g. "1.15.13-main.202607271834")
   --install               Install .app to /Applications
 EOF
   exit 0
@@ -42,12 +44,21 @@ shift 2>/dev/null || true
 function build_cli() {
   MODE="single"
   INSTALL=false
+  CUSTOM_VERSION=""
   BUILD_ARGS=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
         show_help
+        ;;
+      --version)
+        if [[ $# -lt 2 || "$2" == --* ]]; then
+          echo "❌ --version requires a version string value"
+          exit 1
+        fi
+        CUSTOM_VERSION="$2"
+        shift 2
         ;;
       --all)
         MODE="all"
@@ -107,11 +118,33 @@ function build_cli() {
       ;;
   esac
 
-  if [[ -z "${OPENCODE_VERSION:-}" ]]; then
-    VERSION=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null)
-    VERSION="${VERSION#v}"
-    if [[ -n "$VERSION" ]]; then
-      export OPENCODE_VERSION="$VERSION"
+  if [[ -n "${CUSTOM_VERSION:-}" ]]; then
+    export OPENCODE_VERSION="$CUSTOM_VERSION"
+  elif [[ -z "${OPENCODE_VERSION:-}" ]]; then
+    EXACT_TAG=$(git -C "$PROJECT_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
+    EXACT_TAG="${EXACT_TAG#v}"
+    if [[ -n "$EXACT_TAG" ]]; then
+      export OPENCODE_VERSION="$EXACT_TAG"
+    else
+      LATEST_TAG=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+      LATEST_TAG="${LATEST_TAG#v}"
+      BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+      SUFFIX="${BRANCH}"
+      [[ "$SUFFIX" == "HEAD" ]] && SUFFIX="dev"
+
+      if [[ -n "$LATEST_TAG" ]]; then
+        VERSION_TAG=$(node -p "
+          (() => {
+            const match = '$LATEST_TAG'.match(/^(\d+\.\d+\.\d+)/);
+            return match ? match[1] : '$LATEST_TAG';
+          })()
+        " 2>/dev/null || echo "$LATEST_TAG")
+        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+        export OPENCODE_VERSION="${VERSION_TAG}-${SUFFIX}.${TIMESTAMP}"
+      else
+        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+        export OPENCODE_VERSION="0.0.0-${SUFFIX}.${TIMESTAMP}"
+      fi
     fi
   fi
   BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka/build.ts" "${BUILD_ARGS[@]}"
@@ -146,6 +179,7 @@ function build_cli() {
 function build_desktop() {
   INSTALL=false
   CHANNEL="main"
+  CUSTOM_VERSION=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -163,6 +197,14 @@ function build_desktop() {
         esac
         shift 2
         ;;
+      --version)
+        if [[ $# -lt 2 || "$2" == --* ]]; then
+          echo "❌ --version requires a version string value"
+          exit 1
+        fi
+        CUSTOM_VERSION="$2"
+        shift 2
+        ;;
       --install)
         INSTALL=true
         shift
@@ -175,6 +217,34 @@ function build_desktop() {
   done
 
   export OPENCODE_CHANNEL="$CHANNEL"
+
+  if [[ -n "${CUSTOM_VERSION:-}" ]]; then
+    export OPENCODE_VERSION="$CUSTOM_VERSION"
+  elif [[ -z "${OPENCODE_VERSION:-}" ]]; then
+    EXACT_TAG=$(git -C "$PROJECT_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
+    EXACT_TAG="${EXACT_TAG#v}"
+    if [[ -n "$EXACT_TAG" ]]; then
+      export OPENCODE_VERSION="$EXACT_TAG"
+    else
+      LATEST_TAG=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+      LATEST_TAG="${LATEST_TAG#v}"
+      SUFFIX="${CHANNEL}"
+
+      if [[ -n "$LATEST_TAG" ]]; then
+        VERSION_TAG=$(node -p "
+          (() => {
+            const match = '$LATEST_TAG'.match(/^(\d+\.\d+\.\d+)/);
+            return match ? match[1] : '$LATEST_TAG';
+          })()
+        " 2>/dev/null || echo "$LATEST_TAG")
+        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+        export OPENCODE_VERSION="${VERSION_TAG}-${SUFFIX}.${TIMESTAMP}"
+      else
+        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+        export OPENCODE_VERSION="0.0.0-${SUFFIX}.${TIMESTAMP}"
+      fi
+    fi
+  fi
 
   # Inject build hash so the packaged app shows which commit it was built from
   export OPENCODE_BUILD_ID="${OPENCODE_BUILD_ID:-$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || true)}"

@@ -370,4 +370,57 @@ describe("setup-machine-client", () => {
     expect(res.status).toBe("failed")
     expect(res.error?.code).toBe("SETUP_RESPONSE_INVALID")
   })
+
+  test("runSetupOperation version check accepts dev pre-release version 0.3.8-dev", async () => {
+    // Override binary script to output 0.3.8-dev for --version
+    writeFileSync(binPath, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"0.3.8-dev\"; exit 0; fi", { mode: 0o755 })
+
+    const fakeEnvelope = {
+      apiVersion: "wopal.capability/v1",
+      capability: "setup.operation",
+      ok: true,
+      data: {
+        operation: "inspect",
+        status: "created",
+        result: { verdict: "ready" },
+      },
+    }
+
+    const fakeSpawn = () => {
+      return {
+        stdin: { write: () => {}, end: () => {} },
+        stdout: {
+          on: (event: string, cb: any) => {
+            if (event === "data") cb(JSON.stringify(fakeEnvelope))
+          },
+        },
+        stderr: { on: () => {} },
+        on: (event: string, cb: any) => {
+          if (event === "exit") cb(0)
+        },
+      } as any
+    }
+
+    const res = await runSetupOperation({
+      binaryPath: binPath,
+      operation: "inspect",
+      spawnFn: fakeSpawn,
+    })
+
+    expect(res.status).toBe("completed")
+  })
+
+  test("runSetupOperation version check fails when version is lower than minimum requirement", async () => {
+    // Override binary script to output 0.3.3 for --version
+    writeFileSync(binPath, "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"0.3.3\"; exit 0; fi", { mode: 0o755 })
+
+    const res = await runSetupOperation({
+      binaryPath: binPath,
+      operation: "inspect",
+    })
+
+    expect(res.status).toBe("failed")
+    expect(res.error?.code).toBe("WOPAL_CLI_INCOMPATIBLE")
+    expect(res.error?.message).toContain("Wopal CLI version too low (0.3.3)")
+  })
 })
