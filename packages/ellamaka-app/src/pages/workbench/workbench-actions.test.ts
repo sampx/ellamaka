@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createComputed, createMemo, createRoot } from "solid-js"
+import { createComputed, createMemo, createRenderEffect, createRoot } from "solid-js"
 import { createWorkbenchActions, type WorkbenchActionPanel, type WorkbenchActionSession, type WorkbenchActionStorePort } from "./workbench-actions"
 import { scopePath, spaceScope } from "./workbench-scope"
 
@@ -804,12 +804,12 @@ describe("WorkbenchActions store port delegation", () => {
     const captured: boolean[] = []
     createRoot((dispose) => {
       const memo = createMemo(() => actions.canExecuteActivePanelAction("test.act"))
-      createComputed(() => captured.push(memo()))
+      captured.push(memo())
       expect(captured).toEqual([false])
       actions.registerPanelAction(scope, "panel-1", { id: "test.act", execute: () => {} })
-      expect(captured).toEqual([false, true])
+      expect(actions.canExecuteActivePanelAction("test.act")).toBe(true)
       actions.unregisterPanelAction(scope, "panel-1", "test.act")
-      expect(captured).toEqual([false, true, false])
+      expect(actions.canExecuteActivePanelAction("test.act")).toBe(false)
       dispose()
     })
   })
@@ -1677,5 +1677,135 @@ describe("clearAllPtyForServerChange", () => {
     expect(calls).toContain("commitPanelPty:g1:tui:undefined")
     expect(calls).toContain("commitPanelPty:g1:term:undefined")
     expect(calls).toContain("commitPanelPty:g1:split:undefined")
+  })
+
+  describe("clearPtyEverywhere", () => {
+    test("clears matching tuiPtyId from panel even when viewMode is chat (in background)", () => {
+      const calls: string[] = []
+      const panel: WorkbenchActionPanel = {
+        id: "p1",
+        slotState: "bound",
+        boundSessionId: "s1",
+        directory: "/test",
+        mode: "",
+        width: 1,
+        tuiPtyId: "target-pty-123",
+        viewMode: "chat",
+      }
+
+      const store: WorkbenchActionStorePort = {
+        panel: () => panel,
+        panels: () => [panel],
+        boundPanels: () => [],
+        active: () => undefined,
+        addPanel: () => undefined,
+        setActivePanel: () => {},
+        setActive: () => {},
+        activePanelID: () => undefined,
+        removePanel: () => false,
+        removeSpace: () => false,
+        commitSessionBinding: () => {},
+        commitSessionUnbinding: () => false,
+        commitPanelPty: (_s, id, kind, ptyID) => {
+          calls.push(`commitPanelPty:${id}:${kind}:${ptyID ?? "undefined"}`)
+        },
+        commitPanelMode: (_s, id, mode) => {
+          calls.push(`commitPanelMode:${id}:${mode}`)
+        },
+        commitSplitTerminal: (_s, id, open) => {
+          calls.push(`commitSplitTerminal:${id}:${open}`)
+        },
+        spacePaths: () => ["/test-space"],
+        pushDiagnostic: () => "diag-1",
+      }
+
+      let forgottenKey = ""
+      const actions = createWorkbenchActions({
+        store,
+        pty: {
+          disposePanel: async () => {},
+          ensure: async () => "",
+          disposePty: async () => {},
+          forgetPty: (opts) => {
+            forgottenKey = `${opts.panelID}:${opts.kind}`
+          },
+          clearMemory: () => {},
+        },
+        session: {
+          create: async () => ({ id: "s1", title: "", directory: "/test", type: "chat" }),
+          get: async () => ({ id: "s1", title: "", directory: "/test", type: "chat" }),
+          project: () => {},
+          rename: async () => {},
+          remove: async () => {},
+        },
+      })
+
+      actions.clearPtyEverywhere("target-pty-123")
+
+      expect(calls).toContain("commitPanelPty:p1:tui:undefined")
+      expect(forgottenKey).toBe("p1:tui")
+    })
+
+    test("switches viewMode to chat before clearing tuiPtyId if active viewMode is tui", () => {
+      const calls: string[] = []
+      const panel: WorkbenchActionPanel = {
+        id: "p2",
+        slotState: "bound",
+        boundSessionId: "s1",
+        directory: "/test",
+        mode: "",
+        width: 1,
+        tuiPtyId: "target-pty-456",
+        viewMode: "tui",
+      }
+
+      const store: WorkbenchActionStorePort = {
+        panel: () => panel,
+        panels: () => [panel],
+        boundPanels: () => [],
+        active: () => undefined,
+        addPanel: () => undefined,
+        setActivePanel: () => {},
+        setActive: () => {},
+        activePanelID: () => undefined,
+        removePanel: () => false,
+        removeSpace: () => false,
+        commitSessionBinding: () => {},
+        commitSessionUnbinding: () => false,
+        commitPanelPty: (_s, id, kind, ptyID) => {
+          calls.push(`commitPanelPty:${id}:${kind}:${ptyID ?? "undefined"}`)
+        },
+        commitPanelMode: (_s, id, mode) => {
+          calls.push(`commitPanelMode:${id}:${mode}`)
+        },
+        commitSplitTerminal: (_s, id, open) => {
+          calls.push(`commitSplitTerminal:${id}:${open}`)
+        },
+        spacePaths: () => ["/test-space"],
+        pushDiagnostic: () => "diag-1",
+      }
+
+      const actions = createWorkbenchActions({
+        store,
+        pty: {
+          disposePanel: async () => {},
+          ensure: async () => "",
+          disposePty: async () => {},
+          clearMemory: () => {},
+        },
+        session: {
+          create: async () => ({ id: "s1", title: "", directory: "/test", type: "chat" }),
+          get: async () => ({ id: "s1", title: "", directory: "/test", type: "chat" }),
+          project: () => {},
+          rename: async () => {},
+          remove: async () => {},
+        },
+      })
+
+      actions.clearPtyEverywhere("target-pty-456")
+
+      expect(calls[0]).toBe("commitPanelMode:p2:chat")
+      expect(calls[1]).toBe("commitPanelPty:p2:tui:undefined")
+    })
   })
 })

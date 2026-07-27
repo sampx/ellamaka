@@ -225,19 +225,23 @@ export function createWorkbenchActions(input: {
       return input.store.addPanel(scope)
     },
     registerPanelAction(scope: SpaceScope, panelID: string, action: WorkbenchPanelAction) {
-      const key = panelKey(scope, panelID)
-      const actions = panelActions.get(key)
-      if (actions) actions.set(action.id, action)
-      else panelActions.set(key, new Map([[action.id, action]]))
-      bumpPanelActionsRevision((n) => n + 1)
+      batch(() => {
+        const key = panelKey(scope, panelID)
+        const actions = panelActions.get(key)
+        if (actions) actions.set(action.id, action)
+        else panelActions.set(key, new Map([[action.id, action]]))
+        bumpPanelActionsRevision((n) => n + 1)
+      })
     },
     unregisterPanelAction(scope: SpaceScope, panelID: string, actionID: string) {
-      const key = panelKey(scope, panelID)
-      const actions = panelActions.get(key)
-      if (!actions) return
-      actions.delete(actionID)
-      if (actions.size === 0) panelActions.delete(key)
-      bumpPanelActionsRevision((n) => n + 1)
+      batch(() => {
+        const key = panelKey(scope, panelID)
+        const actions = panelActions.get(key)
+        if (!actions) return
+        actions.delete(actionID)
+        if (actions.size === 0) panelActions.delete(key)
+        bumpPanelActionsRevision((n) => n + 1)
+      })
     },
     canExecuteActivePanelAction(actionID: string) {
       // Read the revision so this function tracks panel action mutations in
@@ -709,6 +713,40 @@ export function createWorkbenchActions(input: {
         input.pty.clearMemory?.()
         // Add diagnostic hint
         input.store.pushDiagnostic?.("info", "Sidecar restarted — PTY sessions have been reset. Re-open TUI/Terminal as needed.", { id: "sidecar-restart-pty-reset", autoDismiss: true })
+      })
+    },
+    clearPtyEverywhere(ptyID: string) {
+      if (!ptyID) return
+      const paths = input.store.spacePaths()
+      const scopes: SpaceScope[] = [
+        ...paths.map((path) => ({ kind: "space" as const, name: path, path })),
+        { kind: "general" as const },
+      ]
+
+      batch(() => {
+        for (const scope of scopes) {
+          const panels = input.store.panels(scope)
+          for (const panel of panels) {
+            if (panel.tuiPtyId === ptyID) {
+              if (panel.viewMode === "tui") {
+                input.store.commitPanelMode?.(scope, panel.id, "chat")
+              }
+              input.store.commitPanelPty(scope, panel.id, "tui", undefined)
+              input.pty.forgetPty?.({ scope, panelID: panel.id, kind: "tui" })
+            }
+            if (panel.termPtyId === ptyID) {
+              input.store.commitPanelPty(scope, panel.id, "term", undefined)
+              input.pty.forgetPty?.({ scope, panelID: panel.id, kind: "term" })
+            }
+            if (panel.splitPtyId === ptyID) {
+              if (panel.splitTerminal) {
+                input.store.commitSplitTerminal?.(scope, panel.id, false)
+              }
+              input.store.commitPanelPty(scope, panel.id, "split", undefined)
+              input.pty.forgetPty?.({ scope, panelID: panel.id, kind: "split" })
+            }
+          }
+        }
       })
     },
   }

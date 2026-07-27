@@ -117,6 +117,18 @@ export function registerDefaultViews(registry: ViewRegistry) {
 
       createEffect(() => {
         if (ctx.panel.slotState !== "bound") return
+
+        // Maintain local ptyId signal synchronized with store tuiPtyId regardless of viewMode.
+        // This keeps the <Terminal> component mounted in hidden DOM state (display: none) when
+        // the user switches to chat, holding the WebSocket alive and preventing PTY grace reaper eviction.
+        if (ctx.panel.tuiPtyId) {
+          if (ptyId() !== ctx.panel.tuiPtyId) setPtyId(ctx.panel.tuiPtyId)
+          return
+        }
+        if (!ctx.panel.tuiPtyId && ptyId()) {
+          setPtyId(undefined)
+        }
+
         if (ctx.panel.viewMode !== "tui") return
 
         const sessionId = ctx.session?.id

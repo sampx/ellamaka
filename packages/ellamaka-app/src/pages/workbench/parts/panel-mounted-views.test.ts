@@ -46,4 +46,28 @@ describe("reconcileMountedViews", () => {
 
     expect([...next]).toEqual(["chat", "tui"])
   })
+
+  test("maintains mounted TUI view when switching from tui mode to chat mode while hasTuiPtyId is true", () => {
+    const next = reconcileMountedViews(new Set(["tui"]), {
+      prevBoundSessionId: "ses-1",
+      nextBoundSessionId: "ses-1",
+      slotState: "bound",
+      viewMode: "chat",
+      hasTuiPtyId: true,
+    })
+
+    expect([...next]).toEqual(["tui", "chat"])
+  })
+
+  test("drops TUI view when hasTuiPtyId becomes false and viewMode is chat", () => {
+    const next = reconcileMountedViews(new Set(["chat", "tui"]), {
+      prevBoundSessionId: "ses-1",
+      nextBoundSessionId: "ses-1",
+      slotState: "bound",
+      viewMode: "chat",
+      hasTuiPtyId: false,
+    })
+
+    expect([...next]).toEqual(["chat"])
+  })
 })

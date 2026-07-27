@@ -19,6 +19,8 @@ export function reconcileMountedViews(prev: Set<string>, input: ReconcileMounted
 
   if (input.slotState !== "empty" && input.hasTuiPtyId) {
     next.add("tui")
+  } else if (!input.hasTuiPtyId && input.viewMode !== "tui") {
+    next.delete("tui")
   }
 
   if (prev.size === next.size && [...prev].every((item) => next.has(item))) {

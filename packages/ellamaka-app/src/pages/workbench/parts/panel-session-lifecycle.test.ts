@@ -193,3 +193,72 @@ describe("isSessionNotFound", () => {
     expect(isSessionNotFound("")).toBe(false)
   })
 })
+
+describe("sessionProjection isolation", () => {
+  test("removing an unrelated session does not invalidate memoized session identity", () => {
+    const { createSessionProjection } = require("../session-store")
+    const { createRoot, createMemo } = require("solid-js")
+
+    createRoot((dispose: () => void) => {
+      const projection = createSessionProjection()
+      projection.writer.upsert({
+        id: "s1",
+        spaceName: "General",
+        projectPath: "/p1",
+        type: "chat",
+        title: "Session 1",
+        directoryHealth: "healthy",
+        createdAt: 100,
+        lastActiveAt: 100,
+      })
+      projection.writer.upsert({
+        id: "s2",
+        spaceName: "General",
+        projectPath: "/p1",
+        type: "chat",
+        title: "Session 2",
+        directoryHealth: "healthy",
+        createdAt: 200,
+        lastActiveAt: 200,
+      })
+
+      let memoRunCount = 0
+      const boundSession = createMemo(
+        () => {
+          memoRunCount++
+          return projection.reader.getSession("s1")
+        },
+        undefined,
+        {
+          equals: (prev: unknown, next: unknown) => {
+            if (prev === next) return true
+            if (!prev || !next || typeof prev !== "object" || typeof next !== "object") return false
+            const p = prev as Record<string, unknown>
+            const n = next as Record<string, unknown>
+            return (
+              p.id === n.id &&
+              p.title === n.title &&
+              p.type === n.type &&
+              p.directoryHealth === n.directoryHealth &&
+              p.timeArchived === n.timeArchived
+            )
+          },
+        },
+      )
+
+      expect(boundSession()?.id).toBe("s1")
+      const initialRuns = memoRunCount
+
+      // Remove unrelated session "s2"
+      projection.writer.remove("s2")
+
+      // The memo should return identical s1 session data
+      expect(boundSession()?.id).toBe("s1")
+      // Check that equals check intercepted the update for downstream subscribers
+      expect(projection.reader.getSession("s1")?.id).toBe("s1")
+      expect(projection.reader.getSession("s2")).toBeUndefined()
+
+      dispose()
+    })
+  })
+})

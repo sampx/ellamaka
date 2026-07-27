@@ -158,6 +158,8 @@ UI 组件 -> WorkbenchActions -> Store / PtyManager / directory-bound SDK / Proj
 - TUI 进程正常退出场景：后端 `proc.onExit` 已自动清理 session，前端 `exitTui` **不发 DELETE 请求**，只清本地状态（viewMode + tuiPtyId + ptyManager 内存），避免 404 PtyNotFoundError。
 - 用户主动关闭场景（`closePanel`/`unbindPanel`）：先同步清 PTY 状态（切 chat + 清 tui/term/split 三个 ptyId + 关 split terminal），再 `await disposePanel`，最后 `removePanel`/`commitSessionUnbinding`。先清状态让 effect 守卫提前 return，避免 await 期间触发 PTY 重建。
 - PTY dispose 对 404 PtyNotFoundError 视为幂等成功（后端已清理），仍清本地状态，不报错。
+- **PTY 状态与事件实时同步（Invariants）**：`panel.tuiPtyId` 必须与后端的 PTY 真实生命周期保持绝对同步。任何全局 PTY 销毁事件（`pty.deleted` / SSE 事件 / 离线 Grace Reap / 终端 exit）发生时，即使面板处在后台（`viewMode !== "tui"`），前端全局事件监听器与 Store 也必须即时擦除对应的 `tuiPtyId`，严禁在 Header 上残留虚假的蓝色激活高亮。
+- **TUI 后台保活与用户自主掌控（Keepalive Invariants）**：`tui` 视图在面板切至后台（如 `viewMode === "chat"`）、Tab 切换或网页后台时，只要 `panel.tuiPtyId` 存在，`view-registry` 必须维持 `<Terminal>` 组件在隐藏 DOM 节点（`display: none`）中挂载并保持 WebSocket 连接在线保活。严禁在切视角时误卸载 `<Terminal>` 或误清 `tuiPtyId`。只有在用户显式点击关闭 TUI、关闭面板、关闭 Tab 或终端内部子进程 `exit` 退出时，方可销毁连接与清理状态。
 - 每个 PTY 生命周期 action 的测试必须覆盖：成功路径 + **effect 不重建 PTY** + stale generation + 后端已清理时的幂等性。
 
 ### 5.7 持久化规则

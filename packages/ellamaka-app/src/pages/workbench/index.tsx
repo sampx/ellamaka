@@ -109,6 +109,10 @@ function WorkbenchShell() {
       if (session.type === "session.created") {
         projection.invalidate()
       }
+      if (e.details?.type === "pty.deleted" && typeof e.details?.properties?.id === "string") {
+        actions.clearPtyEverywhere(e.details.properties.id)
+        return
+      }
       if (shouldSyncSessionTitle({ type: session.type, sessionId: session.sessionId, title: session.title, localTitle: spaceStore.getSession(session.sessionId ?? "")?.title })) {
         projection.patch(session.sessionId!, { title: session.title! })
       }

@@ -1,6 +1,6 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Show, createEffect, For, createSignal, on, onCleanup } from "solid-js"
+import { Show, createEffect, For, createSignal, createMemo, on, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useNotification } from "@/context/notification"
@@ -9,7 +9,7 @@ import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
-import { getView } from "../view-registry"
+import { getView, type PanelViewDef } from "../view-registry"
 import { PanelLoader } from "./panel-loader"
 import { reconcileMountedViews } from "./panel-mounted-views"
 import { reconcileSplitTerminalState, splitTerminalTitle } from "./panel-split-terminal"
@@ -398,45 +398,18 @@ export function Panel(props: {
                       visibility: props.panel.slotState !== "empty" && props.panel.viewMode === vm ? "visible" : "hidden",
                     }}
                   >
-                    {(() => {
-                      if (!viewDef) return null
-                      const session = () => props.panel.boundSessionId
-                        ? sessionStore.getSession(props.panel.boundSessionId)
-                        : undefined
-                      if (!viewDef.requiresSession) {
-                        return viewDef.render({
-                          panel: props.panel,
-                          directory: props.panel.directory,
-                          sdk,
-                          spaceName: props.spaceName,
-                          spacePath: props.spacePath,
-                          onPromptReady: handlePromptReady,
-                          canRestorePromptFocus: () => canRestorePromptFocus(),
-                        })
-                      }
-                      return (
-                        <Show
-                          when={session()}
-                          fallback={
-                            <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
-                              <div class="workbench-spinner rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
-                              <span class="text-12-regular">正在恢复会话…</span>
-                            </div>
-                          }
-                        >
-                          {viewDef.render({
-                            panel: props.panel,
-                            session: session()!,
-                            directory: props.panel.directory,
-                            sdk,
-                            spaceName: props.spaceName,
-                            spacePath: props.spacePath,
-                            onPromptReady: handlePromptReady,
-                            canRestorePromptFocus: () => canRestorePromptFocus(),
-                          })}
-                        </Show>
-                      )
-                    })()}
+                    <Show when={viewDef}>
+                      {(def) => (
+                        <PanelViewContainer
+                          viewDef={def()}
+                          panel={props.panel}
+                          spaceName={props.spaceName}
+                          spacePath={props.spacePath}
+                          onPromptReady={handlePromptReady}
+                          canRestorePromptFocus={() => canRestorePromptFocus()}
+                        />
+                      )}
+                    </Show>
                   </div>
                 </Show>
               )
@@ -564,5 +537,76 @@ export function Panel(props: {
         `}
       </style>
     </div>
+  )
+}
+
+function PanelViewContainer(props: {
+  viewDef: PanelViewDef
+  panel: WorkbenchPanel
+  spaceName: string
+  spacePath: string
+  onPromptReady: (editor: HTMLDivElement) => void
+  canRestorePromptFocus: () => boolean
+}) {
+  const sdk = useSDK()
+  const sessionStore = useSessionStore()
+  const handlePromptReady = props.onPromptReady
+
+  const session = createMemo(
+    () => {
+      const boundId = props.panel.boundSessionId
+      return boundId ? sessionStore.getSession(boundId) : undefined
+    },
+    undefined,
+    {
+      equals: (prev, next) => {
+        if (prev === next) return true
+        if (!prev || !next) return false
+        return (
+          prev.id === next.id &&
+          prev.title === next.title &&
+          prev.type === next.type &&
+          prev.directoryHealth === next.directoryHealth &&
+          prev.timeArchived === next.timeArchived
+        )
+      },
+    },
+  )
+
+  if (!props.viewDef.requiresSession) {
+    return props.viewDef.render({
+      panel: props.panel,
+      directory: props.panel.directory,
+      sdk,
+      spaceName: props.spaceName,
+      spacePath: props.spacePath,
+      onPromptReady: handlePromptReady,
+      canRestorePromptFocus: () => props.canRestorePromptFocus(),
+    })
+  }
+
+  return (
+    <Show
+      when={session()}
+      fallback={
+        <div class="flex flex-col items-center justify-center h-full gap-2 text-v2-text-text-muted bg-v2-background-bg-base">
+          <div class="workbench-spinner rounded-full h-4 w-4 border-2 border-v2-text-text-muted border-t-transparent" />
+          <span class="text-12-regular">正在恢复会话…</span>
+        </div>
+      }
+    >
+      {(s) =>
+        props.viewDef.render({
+          panel: props.panel,
+          session: s(),
+          directory: props.panel.directory,
+          sdk,
+          spaceName: props.spaceName,
+          spacePath: props.spacePath,
+          onPromptReady: handlePromptReady,
+          canRestorePromptFocus: () => props.canRestorePromptFocus(),
+        })
+      }
+    </Show>
   )
 }
