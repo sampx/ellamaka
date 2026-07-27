@@ -107,7 +107,9 @@ const make = Effect.gen(function* () {
     )
   }
 
-  const [cachedInspect, invalidateInspect] = yield* Effect.cachedInvalidateWithTTL(inspectNow(), Duration.seconds(5))
+  // 启动时仅检测一次 CLI 状态并永久复用缓存，避免定时轮询反复 spawn 子进程
+  // 当运行 CLI 修复 (repair) 成功后触发 invalidateInspect 作废缓存并重新检测
+  const [cachedInspect, invalidateInspect] = yield* Effect.cachedInvalidateWithTTL(inspectNow(), Duration.infinity)
   const inspect = (): Effect.Effect<CliHealth> => cachedInspect
 
   const install = () => {
