@@ -122,8 +122,8 @@ export function SpaceRail() {
     if (!session) return
     const isBound = wb.isSessionBound(sessionId)
     const boundPanelId = wb.boundPanelIdForSession(sessionId)
-    const sessionSpacePath = session.spacePath ? normalizeSpacePath(session.spacePath) : session.spaceName
-    const tab = wb.tabs.find((tab) => normalizeSpacePath(tab.path) === sessionSpacePath || tab.path === sessionSpacePath)
+    const sessionSpacePath = session.spacePath ? normalizeSpacePath(session.spacePath) : ""
+    const tab = wb.tabs.find((tab) => normalizeSpacePath(tab.path) === sessionSpacePath)
     if (tab) {
       wb.openTab(tab)
       if (isBound && boundPanelId) {
@@ -131,7 +131,7 @@ export function SpaceRail() {
       }
       return
     }
-    if (sessionSpacePath && sessionSpacePath !== "") {
+    if (sessionSpacePath !== "") {
       wb.openTab({ name: session.spaceName ?? sessionSpacePath, path: sessionSpacePath, type: "space" })
       wb.ensureSpace(sessionSpacePath)
     }

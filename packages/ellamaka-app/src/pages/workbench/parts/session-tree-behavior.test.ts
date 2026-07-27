@@ -4,6 +4,7 @@ import {
   fetchSessionTree,
   createSessionGroupsLoader,
   resolveTargetPanel,
+  openSessionInPanel,
   getPanelBadge,
   mergeTree,
   getSessionMarker,
@@ -705,6 +706,41 @@ describe("getSessionMarker", () => {
       type: "dot",
       colorClass: "text-amber-500",
       text: "!",
+    })
+  })
+})
+
+// ── openSessionInPanel ──────────────────────────────────────────────────────
+
+describe("openSessionInPanel", () => {
+  test("invokes actions.loadSessionIntoPanel with correct scope and directory for General space", async () => {
+    const loadedCalls: Array<{ scope: any; panelID: string; sessionID: string; directory: string }> = []
+    const actions = {
+      addPanel: () => undefined,
+      loadSessionIntoPanel: async (options: any) => {
+        loadedCalls.push(options)
+        return { status: "committed", panelID: options.panelID }
+      },
+    }
+
+    const wb = wbWithPanels("", [panel({ id: "p-empty", slotState: "empty" })])
+
+    await openSessionInPanel({
+      session: { id: "s-100", title: "General Session" },
+      sessionDirectory: "/workspace/proj-a",
+      targetSpace: { name: "General", path: "" },
+      wb,
+      actions,
+      t: (key) => key,
+      showOverwriteDialog: () => {},
+    })
+
+    expect(loadedCalls.length).toBe(1)
+    expect(loadedCalls[0]).toEqual({
+      scope: { kind: "general" },
+      panelID: "p-empty",
+      sessionID: "s-100",
+      directory: "/workspace/proj-a",
     })
   })
 })

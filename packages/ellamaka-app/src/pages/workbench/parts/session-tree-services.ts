@@ -59,10 +59,11 @@ export interface OpenSessionWB {
 
 export interface OpenSessionActions {
   addPanel(scope: SpaceScope): string | undefined
-  replaceSession(options: {
+  loadSessionIntoPanel(options: {
     scope: SpaceScope
     panelID: string
-    session: { id: string; title: string; directory: string; type: string }
+    sessionID: string
+    directory: string
   }): Promise<{ status: string; panelID: string }>
 }
 
@@ -373,15 +374,11 @@ export async function openSessionInPanel(params: {
   const scope = scopeFromTab(targetSpace)
 
   const loadSessionIntoPanel = async (panel: WorkbenchPanel) => {
-    await params.actions.replaceSession({
+    await params.actions.loadSessionIntoPanel({
       scope,
       panelID: panel.id,
-      session: {
-        id: params.session.id,
-        title: params.session.title,
-        directory: params.sessionDirectory || targetSpacePath,
-        type: "chat",
-      },
+      sessionID: params.session.id,
+      directory: params.sessionDirectory || targetSpacePath,
     })
     const newBadge = getPanelBadge(params.wb, params.session.id)
     params.wb.setStatusMessage(
