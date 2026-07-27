@@ -416,3 +416,82 @@ Desktop 的选择键保持稳定别名 `sidecar`，不能用于判断 sidecar �
 ### 16.4 不自动恢复
 
 PTY 清理后不自动创建 Session 或 PTY 伪装恢复。用户点击 TUI/Terminal 后按正常 Action 创建新 PTY。Session 绑定和草稿保留。
+
+## 17. Onboarding 模式启动行为
+
+### 17.1 模式判定
+
+Desktop Main Process 在 `app.whenReady()` 之后，创建窗口之前，必须完成模式判定：
+
+```
+读 $WOPAL_HOME/ellamaka/state/onboarding.json
+  ├── 文件不存在 或 completed !== true → Onboarding 模式
+  │     ├── 跳过 SidecarSupervisor 启动
+  │     ├── 跳过 migrate()
+  │     ├── 创建 Onboarding 窗口（OnboardingRoot）
+  │     └── 等待用户完成 8 步流程
+  │
+  └── completed === true → Workbench 模式
+        ├── 执行版本兼容检查（§17.7）
+        │     ├── 通过 → 继续
+        │     └── 阻断 → 展示兼容错误页面 / 触发升级流程
+        ├── 正常启动 SidecarSupervisor
+        ├── 执行 migrate()
+        ├── 创建 Workbench 窗口
+        └── 加载 ellamaka-app Workbench
+```
+
+### 17.2 与正常启动的关键差异
+
+| 行为 | Workbench 模式 | Onboarding 模式 |
+|------|---------------|----------------|
+| Sidecar 启动 | 立即启动 | 不启动 |
+| migrate() | 执行 | 跳过 |
+| 窗口类型 | Workbench 窗口 | Onboarding 窗口（无 sidecar 依赖） |
+| PTY 连接 | 建立 sidecar PTY | 无 PTY |
+| 完成后 | — | 写入 `onboarding.json` 的 `completed: true`，relaunch |
+| 重启策略 | SidecarSupervisor 退避重试 | 不适用（无 sidecar） |
+
+### 17.3 开发模式快速跳过
+
+`WOPAL_DEV=1` + `WOPAL_DEV_SKIP_ONBOARDING=1` 时，即使 onboarding 未完成，也跳过 Onboarding 模式直接进入 Workbench。
+
+### 17.4 Onboarding 完成后的 relaunch
+
+Onboarding 最后一步 `done` 的行为：
+
+1. Desktop Main 写 `onboarding.json`：`{ completed: true, completedAt: <ISO timestamp> }`
+2. Desktop Main 调用 `app.relaunch()`
+3. Desktop Main 调用 `app.quit()`
+4. 新进程启动 → 读 `onboarding.json` → `completed === true` → Workbench 模式
+
+relaunch 必须成功；若失败（如 `app.relaunch()` 不可用），须提示用户手动重启应用并提供清晰指引。
+
+### 17.5 失败回退
+
+Onboarding 过程中若 Desktop 意外退出（崩溃或被 kill），下次启动仍读 `onboarding.json`，`completed !== true` 则重新进入 Onboarding 模式。已完成步骤不丢失（状态文件独立持久化），但当前步骤执行中产生的副作用不保证回滚。
+
+### 17.6 相关文档
+
+- 完整 Onboarding 架构与步骤行为：`DESIGN-onboarding.md`（产品层）
+- 错误处理矩阵与组件 props：`DESKTOP-ONBOARDING.md`（本目录）
+- Machine capability 契约：`DESIGN-onboarding.md` §3.2
+
+### 17.7 启动时版本兼容检查
+
+Workbench 模式下，Desktop 在 sidecar 启动前须执行版本兼容检查。检查基于本地已安装组件版本，不需要网络请求。（详细逻辑见 `DESIGN-onboarding.md` §7.3。）
+
+**检查流程**：
+
+1. 执行 `ellamaka --version`、`wopal --version`
+2. 提取 ellamaka CLI 版本 `X.Y.Z` 前缀 → 与 Desktop 自身版本号 `X.Y.Z` 前缀精确匹配
+3. wopal-cli 版本 → 与 ellamaka binary 内置的 `MIN_WOPAL_CLI_VERSION`（构建注入）做 semver 比较
+
+**失败处理**：
+
+| 严重度 | 行为 |
+|--------|------|
+| 🔴 阻断（基线不一致） | 不启动 sidecar。从 R2 manifest 读取本基线最新完整版本号，调用 `wopal ellamaka install --version <完整版本号>`。安装后 relaunch |
+| 🔴 阻断（wopal-cli 版本过低） | 弹窗提示升级指引，提供"立即升级"按钮 |
+
+**与自动更新的协作**：自动更新检测到新版本后，在下载应用前先执行 `DESIGN-onboarding.md` §7.4 的更新前兼容检查。检查通过才下载和安装。

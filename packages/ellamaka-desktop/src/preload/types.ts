@@ -40,7 +40,38 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type OnboardingProgress = {
+  step: string
+  phase?: string
+  percent?: number
+  message?: string
+  suggestion?: string
+  details?: string
+}
+
+export type OnboardingStepResult = {
+  status: "completed" | "reused" | "skipped" | "failed"
+  result?: Record<string, unknown>
+  error?: {
+    code?: string
+    message?: string
+    suggestion?: string
+    details?: string
+  }
+}
+
 export type ElectronAPI = {
+  getOnboardingMode: () => Promise<{ mode: "onboarding" | "workbench" }>
+  onboardingGetState: () => Promise<import("../main/onboarding-state").OnboardingState | null>
+  onboardingExecuteStep: (
+    step: import("../shared/onboarding-constants").OnboardingStepName,
+    input?: unknown,
+  ) => Promise<OnboardingStepResult>
+  onboardingComplete: () => Promise<OnboardingStepResult>
+  onboardingTransitionToWorkbench: () => Promise<{ status: "ok" } | { status: "error"; message: string }>
+  onboardingProbe: (kind: string) => Promise<Record<string, unknown>>
+  onOnboardingProgress: (cb: (progress: OnboardingProgress) => void) => () => void
+
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>

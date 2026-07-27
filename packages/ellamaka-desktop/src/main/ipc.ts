@@ -42,9 +42,31 @@ type Deps = {
   getSidecarState: () => SidecarRuntimeState
   restartSidecar: () => Promise<void> | void
   subscribeToSidecarState: (listener: (state: SidecarRuntimeState) => void) => () => void
+  homePath?: string
 }
 
+import { createOnboardingIpcHandlers } from "./onboarding-ipc"
+import { IPC_HANDLE_CHANNELS, IPC_EVENT_CHANNELS } from "./ipc-channels"
+
 export function registerIpcHandlers(deps: Deps) {
+  const onboardingHandlers = createOnboardingIpcHandlers({
+    homePath: deps.homePath,
+    broadcastProgress: (progress) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send("onboarding-progress", progress)
+      }
+    }
+  })
+  ipcMain.handle("get-onboarding-mode", () => onboardingHandlers["get-onboarding-mode"]())
+  ipcMain.handle("onboarding-get-state", () => onboardingHandlers["onboarding-get-state"]())
+  ipcMain.handle("onboarding-execute-step", (event, step, input) =>
+    onboardingHandlers["onboarding-execute-step"](event, step, input),
+  )
+  ipcMain.handle("onboarding-complete", () => onboardingHandlers["onboarding-complete"]())
+  ipcMain.handle("onboarding-probe", (_event, kind: string) =>
+    onboardingHandlers["onboarding-probe"](_event, kind),
+  )
+
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
     const send = (step: InitStep) => event.sender.send("init-step", step)
@@ -220,6 +242,27 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action)
   })
+}
+
+// All channels registered by registerIpcHandlers live in ./ipc-channels.ts
+// (electron-free so tests can import them without the electron mock). See
+// that file for the contract and the lockstep invariant with this function.
+
+// Exported for structural tests (re-exported from the channel registry).
+export { IPC_HANDLE_CHANNELS as __IPC_HANDLE_CHANNELS, IPC_EVENT_CHANNELS as __IPC_EVENT_CHANNELS } from "./ipc-channels"
+
+// Remove every channel registered by registerIpcHandlers. Idempotent —
+// removeHandler/removeAllListeners are no-ops for unknown channels. Called
+// during in-process onboarding→workbench transition so real sidecar handlers
+// can replace the onboarding-mode stubs without Electron throwing
+// "attempted to register a second handler".
+export function unregisterIpcHandlers() {
+  for (const ch of IPC_HANDLE_CHANNELS) {
+    ipcMain.removeHandler(ch)
+  }
+  for (const ch of IPC_EVENT_CHANNELS) {
+    ipcMain.removeAllListeners(ch)
+  }
 }
 
 export function sendSqliteMigrationProgress(win: BrowserWindow, progress: SqliteMigrationProgress) {

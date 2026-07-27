@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
-import { getUserShell, loadShellEnv } from "./shell-env"
+import { getUserShell, loadShellEnv, mergeShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
 import type { SidecarSpawnFactory } from "./sidecar-supervisor"
@@ -61,9 +61,11 @@ export function setWslConfig(config: WslConfig) {
 }
 
 export function preferAppEnv() {
+  const appEnv = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
   const shell = process.platform === "win32" ? null : getUserShell()
-  Object.assign(process.env, {
-    ...(shell ? loadShellEnv(shell) : null),
+  Object.assign(process.env, mergeShellEnv(shell ? loadShellEnv(shell) : null, appEnv), {
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "ellamaka-desktop",

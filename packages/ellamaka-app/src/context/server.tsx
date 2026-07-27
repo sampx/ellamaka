@@ -40,7 +40,7 @@ export function resolveServerList(input: {
     input.props?.map((v) => [ServerConnection.key(v), v]) ?? [],
   )
 
-  for (const value of input.stored) {
+  for (const value of input.stored ?? []) {
     const conn: ServerConnection.Http =
       typeof value === "string"
         ? {
@@ -142,7 +142,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
 
     const allServers = createMemo((): Array<ServerConnection.Any> => {
-      return resolveServerList({ stored: store.list, props: props.servers })
+      return resolveServerList({ stored: store.list ?? [], props: props.servers })
     })
 
     const [state, setState] = createStore({

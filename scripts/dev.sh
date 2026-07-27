@@ -13,8 +13,27 @@ resolve() {
   echo "$src"
 }
 
+find_space_root() {
+  local curr="$1"
+  while [ "$curr" != "/" ] && [ -n "$curr" ]; do
+    if [ -d "$curr/.wopal-space" ]; then
+      echo "$curr"
+      return 0
+    fi
+    if [[ "$curr" == *"/.worktrees/"* ]] || [[ "$curr" == *"/.worktrees"* ]]; then
+      local base="${curr%%/.worktrees*}"
+      if [ -n "$base" ] && [ -d "$base/.wopal-space" ]; then
+        echo "$base"
+        return 0
+      fi
+    fi
+    curr="$(dirname "$curr")"
+  done
+  echo "$(cd "$1/../.." 2>/dev/null && pwd || echo "$1")"
+}
+
 root="$(cd "$(dirname "$(resolve "$0")")/.." && pwd)"
-space="$(cd "$root/../.." && pwd)"
+space="$(find_space_root "$root")"
 opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
@@ -355,16 +374,27 @@ stop_service() {
 start_process() {
   local service="$1" port="$2" log="$3" dir="$4"
   shift 4
+  mkdir -p "$(dirname "$log")"
   (
     cd "$dir" || exit 1
     exec perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' nohup "$@"
   ) < /dev/null > "$log" 2>&1 &
-  local pid=$! pgid
-  sleep 0.1
-  pgid="$(pgid_of "$pid")"
+  local pid=$! pgid attempt
+  for attempt in $(seq 1 10); do
+    pgid="$(pgid_of "$pid")"
+    if [ -n "$pgid" ] && [ "$pgid" = "$pid" ]; then
+      break
+    fi
+    sleep 0.1
+  done
+
   if [ "$pgid" != "$pid" ]; then
-    echo "failed to isolate $service process" >&2
-    kill -TERM "$pid" 2>/dev/null || true
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "failed to start $service process (process died immediately); see $log" >&2
+    else
+      echo "failed to isolate $service process" >&2
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
     return 1
   fi
   write_record "$service" "$port" "$pid" "$pgid"
@@ -674,21 +704,43 @@ cmd_desktop() {
 
   mkdir -p "$LOGDIR"
   local plugin_modules=""
-  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR")
+  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts")
+  if [ -n "$WOPAL_HOME" ]; then
+    desktop_env+=(WOPAL_HOME="$WOPAL_HOME")
+    echo "📌 Using Custom WOPAL_HOME: ${WOPAL_HOME}"
+  elif [ -n "$ELLAMAKA_TEST_ONBOARDING" ] || [ -n "$OPENCODE_TEST_ONBOARDING" ]; then
+    export WOPAL_HOME="/tmp/wopal-onboarding-sandbox"
+    desktop_env+=(WOPAL_HOME="/tmp/wopal-onboarding-sandbox" ELLAMAKA_TEST_ONBOARDING=1)
+    mkdir -p "/tmp/wopal-onboarding-sandbox"
+    echo "🧪 Onboarding Sandbox Active: WOPAL_HOME=/tmp/wopal-onboarding-sandbox"
+  fi
   if $debug; then
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
     desktop_env+=(WOPAL_PLUGIN_LOG_LEVEL=debug WOPAL_PLUGIN_LOG_FILE="$PLUGIN_DEBUG_LOG" WOPAL_PLUGIN_LOG_MODULES="$plugin_modules")
     echo "debug: modules=$debug_modules"
   fi
 
+  local electron_vite_bin=""
+  if [ -f "$DESKTOP_DIR/node_modules/.bin/electron-vite" ]; then
+    electron_vite_bin="./node_modules/.bin/electron-vite"
+  elif [ -f "$root/node_modules/.bin/electron-vite" ]; then
+    electron_vite_bin="$root/node_modules/.bin/electron-vite"
+  elif [ -f "$space/node_modules/.bin/electron-vite" ]; then
+    electron_vite_bin="$space/node_modules/.bin/electron-vite"
+  fi
+
   echo "==> Starting Electron (background)..."
-  start_process desktop - "$DESKTOP_LOG" "$DESKTOP_DIR" env "${desktop_env[@]}" ./node_modules/.bin/electron-vite dev || return 1
+  if [ -n "$electron_vite_bin" ]; then
+    start_process desktop - "$DESKTOP_LOG" "$DESKTOP_DIR" env "${desktop_env[@]}" "$electron_vite_bin" dev || return 1
+  else
+    start_process desktop - "$DESKTOP_LOG" "$DESKTOP_DIR" env "${desktop_env[@]}" bun run dev || return 1
+  fi
   read_record desktop
   local desktop_pid="$RECORD_PID" elapsed=0 sidecar_url sidecar_port
   printf "  waiting for Electron to start"
   while [ "$elapsed" -lt 300 ]; do
     service_running desktop || { echo ""; echo "Electron exited unexpectedly; see $DESKTOP_LOG"; remove_service_records desktop; return 1; }
-    if grep -q "server ready" "$DESKTOP_LOG" 2>/dev/null; then break; fi
+    if grep -qE "server ready|dev server running|starting electron app" "$DESKTOP_LOG" 2>/dev/null; then break; fi
     printf "."
     sleep 1
     elapsed=$((elapsed + 1))
@@ -702,7 +754,9 @@ cmd_desktop() {
 
   sidecar_url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+' "$DESKTOP_LOG" 2>/dev/null | head -1)"
   sidecar_port="${sidecar_url##*:}"
-  [[ "$sidecar_port" =~ ^[1-9][0-9]*$ ]] || { echo "⚠  Electron started but sidecar port not found in log (still running)"; echo "  Check logs: $DESKTOP_LOG / $SIDECAR_LOG"; return 1; }
+  if [[ ! "$sidecar_port" =~ ^[1-9][0-9]*$ ]]; then
+    sidecar_port="5173"
+  fi
   write_record desktop "$sidecar_port,5173,9222" "$desktop_pid" "$RECORD_PGID"
   record_listener desktop-sidecar "$sidecar_port" || true
   record_listener desktop-vite 5173 || true

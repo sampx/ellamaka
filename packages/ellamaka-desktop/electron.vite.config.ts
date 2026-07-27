@@ -2,6 +2,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/ellamaka-app/vite"
 import * as fs from "node:fs/promises"
+import * as fsSync from "node:fs"
 
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
 
@@ -54,12 +55,24 @@ export default defineConfig({
         name: "opencode:virtual-server-module",
         enforce: "pre",
         resolveId(id) {
-          if (id === "virtual:opencode-server") return this.resolve(`${OPENCODE_SERVER_DIST}/node.js`)
+          if (id === "virtual:opencode-server") {
+            const target = `${OPENCODE_SERVER_DIST}/node.js`
+            if (fsSync.existsSync(target)) {
+              return this.resolve(target)
+            }
+            return "\0virtual:opencode-server"
+          }
+        },
+        load(id) {
+          if (id === "\0virtual:opencode-server") {
+            return "export default {}; export const Server = {};"
+          }
         },
       },
       {
         name: "opencode:copy-server-assets",
         async writeBundle() {
+          if (!fsSync.existsSync(OPENCODE_SERVER_DIST)) return
           for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
             if (!l.endsWith(".wasm")) continue
             await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))

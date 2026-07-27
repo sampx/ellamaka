@@ -5,8 +5,7 @@ import { Context, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Global } from "@opencode-ai/core/global"
-
-export const MIN_WOPAL_CLI_VERSION = "0.3.4"
+export const MIN_WOPAL_CLI_VERSION = process.env.MIN_WOPAL_CLI_VERSION || "0.3.4"
 
 export const CliHealthSchema = Schema.Struct({
   state: Schema.Union([

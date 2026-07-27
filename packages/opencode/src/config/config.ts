@@ -40,7 +40,7 @@ import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
-import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, writeInstallManifest, cleanPluginDepArtifacts, type InstallDependency } from "./wopal-space"
+import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, writeInstallManifest, cleanPluginDepArtifacts, withPluginDepInstallLock, type InstallDependency } from "./wopal-space"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { ConfigExperimental } from "@opencode-ai/core/config/experimental"
 
@@ -579,59 +579,48 @@ export const layer = Layer.effect(
 
         const wopalResult = yield* tryLoadWopalSpaceConfig({
           installPluginDeps: (dir, add) =>
-            npmSvc
-              .install(dir, {
-                add: [
-                  {
-                    name: "@opencode-ai/plugin",
-                    version: InstallationLocal ? undefined : InstallationVersion,
-                  },
-                  ...add,
-                ],
-              })
-              .pipe(
-                Effect.exit,
-                Effect.tap((exit) =>
-                  Exit.isFailure(exit)
-                    ? Effect.sync(() => {
-                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                      })
-                    : Effect.void,
-                ),
-                Effect.asVoid,
-                Effect.forkDetach,
-              ),
+            Effect.promise(() =>
+              withPluginDepInstallLock(dir, async () => {
+                const exit = await Effect.runPromiseExit(
+                  npmSvc.install(dir, {
+                    add: [
+                      {
+                        name: "@opencode-ai/plugin",
+                        version: InstallationLocal ? undefined : InstallationVersion,
+                      },
+                      ...add,
+                    ],
+                  }),
+                )
+                if (Exit.isFailure(exit)) {
+                  log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                }
+              }),
+            ).pipe(Effect.forkDetach),
           installPluginDepsWithFingerprint: (dir, add, fingerprint, plugins) =>
-            npmSvc
-              .install(dir, {
-                add: [
-                  {
-                    name: "@opencode-ai/plugin",
-                    version: InstallationLocal ? undefined : InstallationVersion,
-                  },
-                  ...add,
-                ],
-              })
-              .pipe(
-                Effect.exit,
-                Effect.tap((exit) =>
-                  Exit.isFailure(exit)
-                    ? Effect.sync(() => {
-                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                      })
-                    : Effect.void,
-                ),
-                Effect.asVoid,
-                Effect.tap(() =>
-                  Effect.promise(() =>
-                    Promise.all([
-                      writeDirDepFingerprint(dir, fingerprint, plugins),
-                      writeInstallManifest(dir, add, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
-                    ]),
-                  ),
-                ),
-                Effect.forkDetach,
-              ),
+            Effect.promise(() =>
+              withPluginDepInstallLock(dir, async () => {
+                const exit = await Effect.runPromiseExit(
+                  npmSvc.install(dir, {
+                    add: [
+                      {
+                        name: "@opencode-ai/plugin",
+                        version: InstallationLocal ? undefined : InstallationVersion,
+                      },
+                      ...add,
+                    ],
+                  }),
+                )
+                if (Exit.isFailure(exit)) {
+                  log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                  return
+                }
+                await Promise.all([
+                  writeDirDepFingerprint(dir, fingerprint, plugins),
+                  writeInstallManifest(dir, add, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
+                ])
+              }),
+            ).pipe(Effect.forkDetach),
           readConfigFile,
           loadConfig,
           getGlobal,
@@ -746,35 +735,38 @@ export const layer = Layer.effect(
           }
 
           if (!skipInstall) {
-            const dep = yield* npmSvc
-              .install(dir, {
-                add: [
-                  {
-                    name: "@opencode-ai/plugin",
-                    version: InstallationLocal ? undefined : InstallationVersion,
-                  },
-                  ...pluginDeps,
-                ],
-              })
-              .pipe(
-                Effect.exit,
-                Effect.tap((exit) =>
-                  Exit.isFailure(exit)
-                    ? Effect.sync(() => {
-                        log.warn("background dependency install failed", { dir, error: String(exit.cause) })
-                      })
-                    : depFingerprint
-                      ? Effect.promise(() =>
-                          Promise.all([
-                            writeDirDepFingerprint(dir, depFingerprint, depPlugins!),
-                            writeInstallManifest(dir, pluginDeps, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
-                          ]),
-                        )
-                      : Effect.void,
-                ),
-                Effect.asVoid,
-                Effect.forkDetach,
-              )
+            // Wrap install + fingerprint write in a per-directory lock so
+            // concurrent instances loading the same WOPAL_HOME (or the same
+            // space's .wopal) coalesce into a single install. The lock
+            // guarantees install runs at most once per dir per process, and
+            // the fingerprint is only written on install success — a failed
+            // install leaves the old (or absent) fingerprint so the next
+            // startup retries, instead of silently marking deps installed.
+            const dep = yield* Effect.promise(() =>
+              withPluginDepInstallLock(dir, async () => {
+                const exit = await Effect.runPromiseExit(
+                  npmSvc.install(dir, {
+                    add: [
+                      {
+                        name: "@opencode-ai/plugin",
+                        version: InstallationLocal ? undefined : InstallationVersion,
+                      },
+                      ...pluginDeps,
+                    ],
+                  }),
+                )
+                if (Exit.isFailure(exit)) {
+                  log.warn("background dependency install failed", { dir, error: String(exit.cause) })
+                  return
+                }
+                if (depFingerprint) {
+                  await Promise.all([
+                    writeDirDepFingerprint(dir, depFingerprint, depPlugins!),
+                    writeInstallManifest(dir, pluginDeps, [{ name: "@opencode-ai/plugin", version: InstallationLocal ? undefined : InstallationVersion }]),
+                  ])
+                }
+              }),
+            ).pipe(Effect.forkDetach)
             deps.push(dep)
           }
 

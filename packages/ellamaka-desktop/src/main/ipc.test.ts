@@ -8,6 +8,7 @@
  */
 import { describe, expect, test, beforeEach } from "bun:test"
 import { SidecarSupervisor, type SidecarRuntimeState, type SidecarSpawnResult, type SidecarSpawnFactory } from "./sidecar-supervisor"
+import { IPC_HANDLE_CHANNELS, IPC_EVENT_CHANNELS } from "./ipc-channels"
 
 // ── Test Helpers ──────────────────────────────────────────────────────────
 
@@ -149,5 +150,90 @@ describe("IPC Deps contract (integration with SidecarSupervisor)", () => {
       expect(supervisor.getState().status).toBe("failed")
       await expect(awaitInitialization()).rejects.toThrow()
     })
+  })
+})
+
+// Channel name lists exported from ipc.ts. registerIpcHandlers registers
+// every channel by literal name; unregisterIpcHandlers must clear the exact
+// same set so the in-process onboarding→workbench transition can re-register
+// handlers without Electron throwing "attempted to register a second handler".
+// This test keeps the two lists in lockstep with the actual registrations.
+describe("IPC channel registry (unregister coverage)", () => {
+  // Every ipcMain.handle(...) channel registered in ipc.ts. Sourced by grep
+  // over the file; must stay a superset of __IPC_HANDLE_CHANNELS.
+  const EXPECTED_HANDLE_CHANNELS = new Set([
+    "get-onboarding-mode",
+    "onboarding-get-state",
+    "onboarding-execute-step",
+    "onboarding-complete",
+    "onboarding-probe",
+    "kill-sidecar",
+    "await-initialization",
+    "get-window-config",
+    "consume-initial-deep-links",
+    "get-default-server-url",
+    "set-default-server-url",
+    "get-display-backend",
+    "set-display-backend",
+    "parse-markdown",
+    "check-app-exists",
+    "run-updater",
+    "check-update",
+    "install-update",
+    "set-background-color",
+    "export-debug-logs",
+    "record-fatal-renderer-error",
+    "get-sidecar-state",
+    "restart-sidecar",
+    "store-get",
+    "store-set",
+    "store-delete",
+    "store-clear",
+    "store-keys",
+    "store-length",
+    "open-directory-picker",
+    "open-file-picker",
+    "save-file-picker",
+    "open-path",
+    "read-clipboard-image",
+    "get-window-count",
+    "get-window-focused",
+    "set-window-focus",
+    "show-window",
+    "get-zoom-factor",
+    "set-zoom-factor",
+    "get-pinch-zoom-enabled",
+    "set-pinch-zoom-enabled",
+    "set-titlebar",
+    "run-desktop-menu-action",
+  ])
+
+  const EXPECTED_EVENT_CHANNELS = new Set([
+    "loading-window-complete",
+    "open-link",
+    "show-notification",
+    "relaunch",
+  ])
+
+  test("IPC_HANDLE_CHANNELS covers every handle channel registered in ipc.ts", () => {
+    const actual = new Set(IPC_HANDLE_CHANNELS as readonly string[])
+    for (const ch of EXPECTED_HANDLE_CHANNELS) {
+      expect(actual.has(ch), `missing in IPC_HANDLE_CHANNELS: ${ch}`).toBe(true)
+    }
+    // No phantom channels in the list (would silently no-op in unregister but
+    // signals drift from the source of truth)
+    for (const ch of actual) {
+      expect(EXPECTED_HANDLE_CHANNELS.has(ch), `phantom channel in IPC_HANDLE_CHANNELS: ${ch}`).toBe(true)
+    }
+  })
+
+  test("IPC_EVENT_CHANNELS covers every event channel registered in ipc.ts", () => {
+    const actual = new Set(IPC_EVENT_CHANNELS as readonly string[])
+    for (const ch of EXPECTED_EVENT_CHANNELS) {
+      expect(actual.has(ch), `missing in IPC_EVENT_CHANNELS: ${ch}`).toBe(true)
+    }
+    for (const ch of actual) {
+      expect(EXPECTED_EVENT_CHANNELS.has(ch), `phantom channel in IPC_EVENT_CHANNELS: ${ch}`).toBe(true)
+    }
   })
 })

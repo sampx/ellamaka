@@ -6,10 +6,6 @@ let forceQuit = false
 let confirmShowing = false
 let shutdownInProgress = false
 
-/**
- * Returns true when the sidecar is actively running, meaning a quit
- * would terminate backend processes and PTY sessions.
- */
 export function shouldConfirmQuit(state: SidecarRuntimeState | undefined): boolean {
   if (!state) return false
   return state.status === "ready" || state.status === "starting" || state.status === "restarting"
@@ -56,10 +52,6 @@ function getLocaleText() {
   }
 }
 
-/**
- * Shows a native confirmation dialog before quitting.
- * Returns true if the user confirmed, false if cancelled.
- */
 export async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
   if (confirmShowing) return false
   confirmShowing = true
@@ -84,19 +76,18 @@ export async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
 }
 
 export async function stopSidecarThenQuit(stopSidecar: () => Promise<void>, quit: () => void) {
-  await stopSidecar()
-  quit()
+  try {
+    await Promise.race([
+      stopSidecar(),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ])
+  } catch {
+    // Ignore sidecar cleanup errors on exit
+  } finally {
+    quit()
+  }
 }
 
-/**
- * Installs a `before-quit` guard that conditionally prompts the user
- * for confirmation when the sidecar is actively running.
- *
- * On macOS, also:
- * - Prevents `window-all-closed` from quitting the app.
- * - Re-shows the main window on `activate` (Dock click).
- * - Intercepts `close` on the main window, hiding instead of destroying.
- */
 export function enableQuitGuard(deps: {
   getMainWindow: () => BrowserWindow | null
   getSidecarState: () => SidecarRuntimeState | undefined
@@ -104,16 +95,12 @@ export function enableQuitGuard(deps: {
 }) {
   const { getMainWindow, getSidecarState, stopSidecar } = deps
 
-  // macOS: prevent quit when all windows are closed (keep Dock alive)
   app.on("window-all-closed", () => {
-    if (process.platform === "darwin") {
-      // Do nothing — app stays in Dock
+    if (process.platform === "darwin" && !forceQuit) {
       return
     }
-    // On other platforms, default behavior (quit) applies automatically
   })
 
-  // macOS: re-show hidden window when Dock icon is clicked
   app.on("activate", () => {
     const win = getMainWindow()
     if (win && !win.isDestroyed()) {
@@ -122,9 +109,9 @@ export function enableQuitGuard(deps: {
     }
   })
 
-  // Guard quit with confirmation when sidecar is active
   app.on("before-quit", (e) => {
     if (forceQuit) return
+
     e.preventDefault()
     if (shutdownInProgress) return
 
@@ -134,15 +121,36 @@ export function enableQuitGuard(deps: {
         const state = getSidecarState()
         if (shouldConfirmQuit(state)) {
           const confirmed = await confirmQuit(getMainWindow())
-          if (!confirmed) return
+          if (!confirmed) {
+            shutdownInProgress = false
+            return
+          }
         }
 
-        await stopSidecarThenQuit(stopSidecar, () => {
-          forceQuit = true
-          app.quit()
-        })
-      } finally {
-        if (!forceQuit) shutdownInProgress = false
+        forceQuit = true
+
+        try {
+          await Promise.race([
+            stopSidecar(),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ])
+        } catch {
+          // ignore
+        }
+
+        const win = getMainWindow()
+        if (win && !win.isDestroyed()) {
+          win.destroy()
+        }
+
+        app.quit()
+
+        setTimeout(() => {
+          process.exit(0)
+        }, 500)
+      } catch {
+        forceQuit = true
+        process.exit(0)
       }
     })()
   })
@@ -153,12 +161,6 @@ export type WindowCloseDeps = {
   stopSidecar?: () => Promise<void>
 }
 
-/**
- * Intercepts the `close` event on a BrowserWindow:
- * - On macOS: hides the window rather than destroying it, keeping app alive in Dock.
- * - On Windows & Linux: intercepts close while window is still valid, prompts for confirmation
- *   if Sidecar is active, gracefully shuts down Sidecar, and quits the application cleanly.
- */
 export function interceptWindowClose(win: BrowserWindow, deps?: WindowCloseDeps) {
   win.on("close", (e) => {
     if (forceQuit) return
@@ -169,7 +171,6 @@ export function interceptWindowClose(win: BrowserWindow, deps?: WindowCloseDeps)
       return
     }
 
-    // Non-macOS (Windows/Linux): prompt for confirmation and stop sidecar before window dies
     e.preventDefault()
     if (shutdownInProgress) return
 
@@ -180,23 +181,40 @@ export function interceptWindowClose(win: BrowserWindow, deps?: WindowCloseDeps)
         if (shouldConfirmQuit(state)) {
           const targetWin = win.isDestroyed() ? null : win
           const confirmed = await confirmQuit(targetWin)
-          if (!confirmed) return
+          if (!confirmed) {
+            shutdownInProgress = false
+            return
+          }
         }
 
-        await stopSidecarThenQuit(deps?.stopSidecar ?? (async () => {}), () => {
-          forceQuit = true
-          app.quit()
-        })
-      } finally {
-        if (!forceQuit) shutdownInProgress = false
+        forceQuit = true
+
+        try {
+          await Promise.race([
+            (deps?.stopSidecar ?? (async () => {}))(),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ])
+        } catch {
+          // ignore
+        }
+
+        if (!win.isDestroyed()) {
+          win.destroy()
+        }
+
+        app.quit()
+
+        setTimeout(() => {
+          process.exit(0)
+        }, 500)
+      } catch {
+        forceQuit = true
+        process.exit(0)
       }
     })()
   })
 }
 
-/**
- * Resets the force-quit flag. Used in tests.
- */
 export function resetQuitGuard() {
   forceQuit = false
   confirmShowing = false

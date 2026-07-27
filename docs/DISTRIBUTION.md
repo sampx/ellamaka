@@ -281,8 +281,6 @@ Contract：
 
 ## 6. Install Contract
 
-P1 使用固定安装路径。
-
 所有用户级路径都解析到 `WOPAL_HOME`。默认值：macOS / Linux 为 `~/.wopal`，Windows 为 `%USERPROFILE%\.wopal`。
 
 | Platform | Binary path | Runtime roots |
@@ -290,15 +288,29 @@ P1 使用固定安装路径。
 | macOS / Linux | `$WOPAL_HOME/bin/ellamaka` | `$WOPAL_HOME/ellamaka/{config,data,cache,state}` |
 | Windows | `$WOPAL_HOME/bin/ellamaka.exe` | `$WOPAL_HOME/ellamaka/{config,data,cache,state}` |
 
-Install contract：
+### 分发渠道
 
-1. `wopal ellamaka install` 是 P1 唯一的自动安装入口。
-2. 不指定版本时，consumer 安装 stable release 的 latest 版本。
-3. 显式指定版本时，consumer 安装对应 `v<version>` release。
-4. consumer 根据 OS / arch / libc 与稳定 artifact naming 计算目标文件名。
-5. consumer 在放置 binary 前必须校验 SHA-256。
-6. 安装成功的标志是 `ellamaka --version` 正常输出。
-7. P1 使用固定安装路径；自定义目录、后台更新和二级包管理器适配属于后续阶段。
+ellamaka CLI 通过以下渠道分发到用户本地：
+
+- **主路径**：Desktop onboarding（step 3），Desktop 自行从 R2 下载并放置到固定路径。
+- **辅助入口**：`wopal ellamaka install`，供终端用户和 `wopal setup` 编排使用。
+- **手动下载**：用户从 GitHub/Gitee Release 页面点击 R2 链接下载。
+
+### 安装契约
+
+consumer（wopal-cli 或 Desktop）在安装 ellamaka 时须遵循以下契约：
+
+- 从 R2 读取 manifest（`https://download.coursedao.com/ellamaka/latest/manifest.json`），不深入其内部构建。
+- 默认安装 stable release 的 latest 版本；显式传参允许指定版本。
+- 根据平台和稳定 artifact naming 计算目标文件名，不依赖 GitHub API 解析 release 页面。
+- 安装目标固定为上述 binary path。
+- 放置前必须校验 SHA-256。
+- 安装后执行 `ellamaka --version` 作为健康验证。
+
+### 职责边界
+
+- consumer 负责下载、校验、放置和状态报告；ellamaka 的运行目录（`$WOPAL_HOME/ellamaka/`）由 ellamaka 自身管理。
+- `ellamaka-main` 保持本地开发语义，走手动 build/rebuild 路径。
 
 ---
 
@@ -324,92 +336,20 @@ ellamaka 安装完成后，运行时加载链路按 WopalSpace mode 工作：
 
 ## 8. R2 CDN Distribution
 
-Cloudflare R2 是 ellamaka P1 的唯一 binary 分发源。R2 bucket `wopal-release` 与 wopal-cli 共享，通过 Cloudflare 自定义域名 `download.coursedao.com` 暴露给公网，由 Cloudflare 全球 CDN（含中国大陆节点）提供低延迟下载。
+> R2 bucket 结构、URL 格式、缓存策略、安全配置和 Release 索引策略的完整定义见 `DESIGN-distribution.md` §2-§5。
+>
+> ellamaka 的 R2 路径为 `ellamaka/v$VERSION/`（版本化）和 `ellamaka/latest/`（latest 别名）。Desktop 的 R2 路径为 `ellamaka-desktop/v$VERSION/`、`ellamaka-desktop/latest/`（prod）和 `ellamaka-desktop/beta/`（beta channel）。
 
-### 存储结构
+ellamaka 与 wopal-cli 共享同一 R2 bucket、同一自定义域名与缓存策略，差异仅在于产品级顶层目录和 tag 命名格式（`v0.1.0` vs `cli-v0.3.0`）。
 
-```
-s3://wopal-release/
-├── wopal-cli/                            ← wopal-cli
-│   └── ...
-├── ellamaka/                             ← ellamaka CLI 二进制
-│   ├── v0.1.0/
-│   │   ├── ellamaka-darwin-arm64.tar.gz
-│   │   ├── ellamaka-darwin-x64.tar.gz
-│   │   ├── ellamaka-darwin-x64-baseline.tar.gz
-│   │   ├── ellamaka-linux-x64.tar.gz
-│   │   ├── ellamaka-linux-x64-baseline.tar.gz
-│   │   ├── ellamaka-windows-x64.zip
-│   │   ├── ellamaka-windows-x64-baseline.zip
-│   │   ├── manifest.json
-│   │   ├── checksums.txt
-│   │   └── release-notes.md
-│   ├── v0.2.0/
-│   │   └── ...
-│   └── latest/
-│       └── manifest.json
-└── ellamaka-desktop/                     ← 桌面安装包（见 §9）
-    ├── v0.1.0/
-    │   ├── ellamaka-desktop-mac-arm64.dmg
-    │   ├── ellamaka-desktop-mac-arm64.zip
-    │   ├── ellamaka-desktop-mac-x64.dmg
-    │   ├── ellamaka-desktop-mac-x64.zip
-    │   ├── ellamaka-desktop-win-x64.exe
-    │   ├── ellamaka-desktop-linux-x64.AppImage
-    │   ├── ellamaka-desktop-linux-x64.deb
-    │   ├── ellamaka-desktop-linux-x64.rpm
-    │   ├── manifest.json
-    │   ├── latest-mac.yml
-    │   ├── latest.yml
-    │   ├── latest-linux.yml
-    │   ├── checksums.txt
-    │   └── release-notes.md
-    ├── v0.2.0/
-    │   └── ...
-    ├── latest/                           ← prod updater payload、blockmap 与 latest-*.yml
-    │   ├── latest-mac.yml
-    │   ├── latest.yml
-    │   ├── latest-linux.yml
-    │   └── ellamaka-desktop-*
-    └── beta/                             ← beta channel（见 §9.5）
-```
+Desktop 的 `latest/` 目录服务两类消费者：
 
-### URL 结构
+| 消费者 | 读取文件 | 用途 |
+|--------|---------|------|
+| electron-updater（应用内） | `latest-mac.yml` / `latest.yml` / `latest-linux.yml` | 启动时检测更新、增量下载、签名校验 |
+| wopal-site 下载页（人工） | `manifest.json` | 渲染下载卡片、获取各平台 URL |
 
-CLI：
-
-- 版本化：`https://download.coursedao.com/ellamaka/v$VERSION/<file>`
-- Latest 别名：`https://download.coursedao.com/ellamaka/latest/manifest.json`
-
-Desktop：
-
-- Prod 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
-- Prod Latest（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
-- Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
-- Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
-
-### 缓存策略（P2 对齐）
-
-| 路径 | Cache-Control | 含义 |
-|------|---------------|------|
-| `v$VERSION/*` | `public, max-age=2592000` | 30 天，文件不可变 |
-| `latest/*` | `public, max-age=60` | 60 秒，发版时主动 purge |
-
-缓存策略对 CLI 与 Desktop 一致。Desktop 的 `latest/*` 同时承载 `manifest.json` 与 `latest-*.yml` 自动更新 feed，TTL 一致。
-
-**实现契约**（所有 release workflow 必须遵守）：
-
-1. 上传前先 `delete-object` 清掉旧内容（R2 自定义域名不主动 invalidate）—— `publish-ellamaka.yml:142-144` 和 `publish-ellamaka-desktop.yml:195-196` 已实现
-2. `put-object` 时显式设置 `--cache-control` —— `publish-ellamaka.yml:160` 和 `publish-ellamaka-desktop.yml:210` 已实现
-3. 发版完成后主动 purge `latest/*` 路径（Cloudflare API 或 cache-buster 请求）
-
-### Desktop 独立路径
-
-`ellamaka-desktop/` 与 `ellamaka/` 并列，共享同一 bucket、同一自定义域名与缓存策略，但为独立发布单元：版本化目录、latest 别名、beta channel 和去重原则均独立。差异在于顶层产品目录与产物形态（安装包 + updater feed，而非 CLI 二进制归档）。详见 §9。
-
-### 与 wopal-cli 的一致性
-
-ellamaka 与 wopal-cli 共享同一套 R2 bucket `wopal-release`、同一个自定义域名 `download.coursedao.com`，以及相同的缓存策略、latest 别名设计和去重原则。差异仅在于产品级顶层目录（`ellamaka/` vs `wopal-cli/`）和 tag 命名格式（`v0.1.0` vs `cli-v0.3.0`）。
+**当前缺口（P2 收尾项）**：`publish-ellamaka-desktop.yml` 上传 `v$VERSION/manifest.json` 后没有复制到 `latest/manifest.json`。下载页因此无法用 manifest 模式获取 Desktop 最新版本。修复方法：workflow 加 1 行 `put_with_cache` 将 manifest 同步到 latest 路径。
 
 ---
 
@@ -481,34 +421,7 @@ R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制（单 PUT �
 
 ### 9.5 R2 存储与 URL
 
-见 §8 存储结构：`s3://wopal-release/ellamaka-desktop/v$VERSION/` 与 `.../latest/`。
-
-- Prod 版本化：`https://download.coursedao.com/ellamaka-desktop/v$VERSION/<file>`
-- Prod Latest（updater feed）：`https://download.coursedao.com/ellamaka-desktop/latest/<feed>`
-- Prod Latest（manifest，给下载页用）：`https://download.coursedao.com/ellamaka-desktop/latest/manifest.json`
-- Beta 版本化：`https://download.coursedao.com/ellamaka-desktop/beta/v$VERSION/<file>`
-- Beta Latest：`https://download.coursedao.com/ellamaka-desktop/beta/latest/<feed>`
-
-缓存策略与 CLI 一致（`v$` 30 天、`latest` 60 秒）。
-
-### 9.5.1 latest 目录下的两类消费者
-
-`ellamaka-desktop/latest/` 目录服务两类不同消费者：
-
-| 消费者 | 读取文件 | 用途 |
-|--------|---------|------|
-| electron-updater（应用内） | `latest-mac.yml` / `latest.yml` / `latest-linux.yml` | 启动时检测更新、增量下载、签名校验 |
-| wopal-site 下载页（人工） | `manifest.json` | 渲染下载卡片、获取 macOS/Windows/Linux 平台 URL |
-
-**两者职责独立、格式不同**：
-- yml 是 electron-updater 的硬契约（sha512、相对路径、平台分文件）
-- manifest.json 是下载页/CLI 的下载入口（sha256、绝对 URL、单文件含全平台）
-
-**当前缺口（P2 收尾项）**：`publish-ellamaka-desktop.yml` 上传 `v$VERSION/manifest.json` 后**没有**把它复制/重新上传到 `latest/manifest.json`。下载页因此无法用 manifest 模式获取 Desktop 最新版本，fallback 只能写死 URL。修复方法：workflow 加 1 行：
-
-```yaml
-put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
-```
+见 §8 和 `DESIGN-distribution.md` §2。Desktop prod/beta 的 URL 结构与缓存策略已统一定义。
 
 ### 9.6 安装入口
 
@@ -629,28 +542,15 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 
 ---
 
-## 10. Out of Scope
-
-以下适用于 Engine。Desktop 的 out of scope 见 §9.9。
-
-1. 自定义安装目录
-2. npm / brew / winget / choco 等多渠道适配
-3. 自动后台更新（Engine；Desktop 已通过 electron-updater 提供检测通知）
-4. R2 以外的镜像/分发渠道
-5. 在分发阶段替代 wopal-space mode 的配置融合与 runtime loading
-6. 独立 ellamaka installer 脚本
-7. **P1 已移除**：`engine.ts` 下载 URL 切换为 R2——`projects/wopal-cli/src/lib/engine.ts:11` 已定义 `R2_BASE_URL = "https://download.coursedao.com/ellamaka"`，R2 切换早已完成
-
----
-
-## 11. Related Documents
+## 10. Related Documents
 
 | 文档 | 说明 |
 |---|---|
 | `./DESKTOP.md` | ellamaka-desktop 架构、状态所有权、PTY 生命周期与验证契约 |
 | `./BRANDING.md` | ellamaka 品牌注入点清单与桌面分发身份（§17） |
-| `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | 产品级 setup integration flow 与系统分层 |
-| `../../../docs/products/wopal-space/DESIGN-onboarding.md` | P2 统一入口设计：Desktop onboarding、缓存策略对齐、Desktop auto-update |
+| `../../../docs/products/wopal-space/DESIGN-distribution.md` | 产品级分发总设计：R2 架构、缓存策略、完整性模型、Release 索引策略 |
+| `../../../docs/products/wopal-space/DESIGN-wopalspace.md` | 产品级架构与版本体系 |
+| `../../../docs/products/wopal-space/DESIGN-onboarding.md` | Onboarding 架构、setup 完整流程、版本兼容矩阵维护 |
 | `../../wopal-cli/docs/DESIGN.md` | CLI 的 setup / engine / space orchestration 边界 |
 | `../../wopal-cli/docs/DISTRIBUTION.md` | CLI 对 ellamaka release 的消费契约 |
 | `../../../.wopal/docs/DESIGN.md` | ontology 的 template、command 与 runtime maintenance 设计 |

@@ -26,6 +26,7 @@ import { useTheme } from "@opencode-ai/ui/theme"
 import { DesktopRouter } from "./desktop-router"
 import type { SidecarRuntimeState } from "../preload/types"
 import { mapSidecarStateToAction, resolveSidecarServer } from "./sidecar-adapter"
+import { OnboardingRoot } from "./onboarding/onboarding-root"
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
@@ -274,8 +275,16 @@ listenForDeepLinks()
 
   const [windowCount] = createResource(() => window.api.getWindowCount())
 
-  // Fetch sidecar credentials (available immediately, before health check)
-  const [sidecar] = createResource(() => window.api.awaitInitialization(() => undefined))
+  const [onboardingMode] = createResource(async () => {
+    const res = await window.api.getOnboardingMode().catch(() => ({ mode: "workbench" as const }))
+    return res.mode
+  })
+
+  // Fetch sidecar credentials only when in workbench mode
+  const [sidecar] = createResource(
+    () => onboardingMode() === "workbench",
+    () => window.api.awaitInitialization(() => undefined),
+  )
 
   // Live sidecar state from Supervisor (for generation changes / restarts)
   const [sidecarState, setSidecarState] = createSignal<SidecarRuntimeState | undefined>()
@@ -289,10 +298,12 @@ listenForDeepLinks()
     onCleanup(unsub)
   })
 
-  const [defaultServer] = createResource(() =>
-    platform.getDefaultServer?.().then((url) => {
-      if (url) return ServerConnection.key({ type: "http", http: { url } })
-    }),
+  const [defaultServer] = createResource(
+    () => onboardingMode() === "workbench",
+    () =>
+      platform.getDefaultServer?.().then((url) => {
+        if (url) return ServerConnection.key({ type: "http", http: { url } })
+      }),
   )
   const [locale] = createResource(loadLocale)
 
@@ -362,29 +373,38 @@ listenForDeepLinks()
     })
   })
 
+
+
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders locale={locale.latest}>
-        <Show
-          when={
-            !defaultServer.loading &&
-            !sidecar.loading &&
-            !windowConfig.loading &&
-            !windowCount.loading &&
-            !locale.loading
-          }
-        >
-          {(_) => {
-            return (
-              <AppInterface
-                defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
-                servers={servers()}
-                router={DesktopRouter}
-              >
-                <Inner />
-              </AppInterface>
-            )
-          }}
+        <Show when={!onboardingMode.loading}>
+          <Show
+            when={onboardingMode() === "workbench"}
+            fallback={<OnboardingRoot />}
+          >
+            <Show
+              when={
+                !defaultServer.loading &&
+                !sidecar.loading &&
+                !windowConfig.loading &&
+                !windowCount.loading &&
+                !locale.loading
+              }
+            >
+              {(_) => {
+                return (
+                  <AppInterface
+                    defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
+                    servers={servers()}
+                    router={DesktopRouter}
+                  >
+                    <Inner />
+                  </AppInterface>
+                )
+              }}
+            </Show>
+          </Show>
         </Show>
       </AppBaseProviders>
     </PlatformProvider>

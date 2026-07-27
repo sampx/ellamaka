@@ -37,6 +37,8 @@ mock.module("electron", () => ({
   ipcMain: {
     handle: () => {},
     on: () => {},
+    removeHandler: () => {},
+    removeAllListeners: () => {},
   },
   session: {
     defaultSession: {
