@@ -177,7 +177,19 @@ export const Terminal = (props: TerminalProps) => {
   const password = auth?.password ?? ""
   const sameOrigin = new URL(url, location.href).origin === location.origin
   let container!: HTMLDivElement
-  const [local, others] = splitProps(props, ["pty", "class", "classList", "autoFocus", "onConnect", "onConnectError", "onClose", "onTitleChange", "noPadding", "isTui"])
+  const [local, others] = splitProps(props, [
+    "pty",
+    "class",
+    "classList",
+    "autoFocus",
+    "onConnect",
+    "onConnectError",
+    "onClose",
+    "onTitleChange",
+    "noPadding",
+    "isTui",
+    "onCleanup",
+  ])
   const id = local.pty.id
   const restore = typeof local.pty.buffer === "string" ? local.pty.buffer : ""
   const restoreSize =
@@ -227,9 +239,19 @@ export const Terminal = (props: TerminalProps) => {
 
   const pushSize = (cols: number, rows: number) => {
     return client.pty
-      .update({
-        ptyID: id,
-        size: { cols, rows },
+      .update(
+        {
+          ptyID: id,
+          size: { cols, rows },
+        },
+        { throwOnError: false },
+      )
+      .then((res) => {
+        if (res && (res.response.status === 404 || res.response.status === 405)) {
+          local.onConnectError?.(new Error("PTY session not found"))
+          local.onCleanup?.({ id })
+        }
+        return res
       })
       .catch((err) => {
         debugTerminal("failed to sync terminal size", err)
@@ -754,7 +776,10 @@ export const Terminal = (props: TerminalProps) => {
           })
         if (!result) return
         if (result.response.status === 200 && result.data?.ticket) return result.data.ticket
-        if (result.response.status === 404 || result.response.status === 405) return
+        if (result.response.status === 404 || result.response.status === 405) {
+          fail(new Error("PTY session not found"))
+          return
+        }
         if (result.response.status === 403)
           throw new Error("PTY connect ticket rejected by origin or CSRF checks. Check the server CORS config.")
         throw new Error(`PTY connect ticket failed with ${result.response.status}`)
