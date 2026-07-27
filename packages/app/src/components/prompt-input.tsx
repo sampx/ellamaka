@@ -520,13 +520,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const focusEditorEnd = () => {
     requestAnimationFrame(() => {
+      if (!editorRef || !editorRef.isConnected) return
       editorRef.focus()
       const range = document.createRange()
       const selection = window.getSelection()
       range.selectNodeContents(editorRef)
       range.collapse(false)
       selection?.removeAllRanges()
-      selection?.addRange(range)
+      try {
+        selection?.addRange(range)
+      } catch {}
     })
   }
 

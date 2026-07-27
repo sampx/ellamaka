@@ -703,9 +703,10 @@ export const layer: Layer.Layer<
       const ctx = yield* InstanceState.context
       const original = yield* get(input.sessionID)
       const title = getForkedTitle(original.title)
+      const directory = original.directory || ctx.directory
       const session = yield* createNext({
-        directory: ctx.directory,
-        path: sessionPath(ctx.worktree, ctx.directory),
+        directory,
+        path: sessionPath(ctx.worktree, directory),
         workspaceID: original.workspaceID,
         title,
         metadata: structuredClone(original.metadata),

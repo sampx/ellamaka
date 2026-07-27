@@ -391,13 +391,15 @@ export function createWorkbenchActions(input: {
       scope: SpaceScope
       sourcePanelID: string
       sessionID: string
+      directory?: string
     }): Promise<WorkbenchActionResult> {
       const sourcePanel = panelOrThrow(options.scope, options.sourcePanelID)
       const generation = nextGeneration(options.scope, options.sourcePanelID)
+      const directory = options.directory || sourcePanel.directory
       const session = await input.session.get({
         scope: options.scope,
         sessionID: options.sessionID,
-        directory: sourcePanel.directory,
+        directory,
       })
       if (!isCurrent(options.scope, options.sourcePanelID, generation)) {
         return { status: "stale", panelID: options.sourcePanelID }

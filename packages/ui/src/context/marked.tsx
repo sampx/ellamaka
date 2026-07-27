@@ -386,6 +386,7 @@ function renderMathInText(text: string): string {
       return katex.renderToString(math, {
         displayMode: true,
         throwOnError: false,
+        strict: false,
       })
     } catch {
       return `$$${math}$$`
@@ -399,6 +400,7 @@ function renderMathInText(text: string): string {
       return katex.renderToString(math, {
         displayMode: false,
         throwOnError: false,
+        strict: false,
       })
     } catch {
       return `$${math}$`
@@ -480,6 +482,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       markedKatex({
         throwOnError: false,
         nonStandard: true,
+        strict: false,
       }),
       markedShiki({
         async highlight(code, lang) {

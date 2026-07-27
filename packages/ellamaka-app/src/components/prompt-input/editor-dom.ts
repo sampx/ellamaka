@@ -53,9 +53,11 @@ export function getCursorPosition(parent: HTMLElement): number {
   return getTextLength(preCaretRange.cloneContents())
 }
 
-export function setCursorPosition(parent: HTMLElement, position: number) {
-  let remaining = position
+export function setCursorPosition(parent: HTMLElement, offset: number) {
+  if (!parent.isConnected) return
+  let remaining = offset
   let node = parent.firstChild
+
   while (node) {
     const length = getNodeLength(node)
     const isText = node.nodeType === Node.TEXT_NODE
@@ -70,7 +72,9 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
       range.setStart(node, remaining)
       range.collapse(true)
       selection?.removeAllRanges()
-      selection?.addRange(range)
+      try {
+        selection?.addRange(range)
+      } catch {}
       return
     }
 
@@ -94,7 +98,9 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
       }
       range.collapse(true)
       selection?.removeAllRanges()
-      selection?.addRange(range)
+      try {
+        selection?.addRange(range)
+      } catch {}
       return
     }
 
@@ -114,7 +120,9 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
   }
   fallbackRange.collapse(false)
   fallbackSelection?.removeAllRanges()
-  fallbackSelection?.addRange(fallbackRange)
+  try {
+    fallbackSelection?.addRange(fallbackRange)
+  } catch {}
 }
 
 export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | "end", offset: number) {

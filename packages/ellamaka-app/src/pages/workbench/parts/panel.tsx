@@ -398,16 +398,20 @@ export function Panel(props: {
                       visibility: props.panel.slotState !== "empty" && props.panel.viewMode === vm ? "visible" : "hidden",
                     }}
                   >
-                    <Show when={viewDef}>
-                      {(def) => (
-                        <PanelViewContainer
-                          viewDef={def()}
-                          panel={props.panel}
-                          spaceName={props.spaceName}
-                          spacePath={props.spacePath}
-                          onPromptReady={handlePromptReady}
-                          canRestorePromptFocus={() => canRestorePromptFocus()}
-                        />
+                    <Show when={props.panel.boundSessionId} keyed>
+                      {(sessionId) => (
+                        <Show when={viewDef}>
+                          {(def) => (
+                            <PanelViewContainer
+                              viewDef={def()}
+                              panel={props.panel}
+                              spaceName={props.spaceName}
+                              spacePath={props.spacePath}
+                              onPromptReady={handlePromptReady}
+                              canRestorePromptFocus={() => canRestorePromptFocus()}
+                            />
+                          )}
+                        </Show>
                       )}
                     </Show>
                   </div>

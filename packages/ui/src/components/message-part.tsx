@@ -34,6 +34,7 @@ import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
+import { DropdownMenu } from "./dropdown-menu"
 import { BasicTool, GenericTool } from "./basic-tool"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -164,9 +165,10 @@ export interface MessageProps {
 }
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
+export type SessionForkAction = (input: { sessionID: string; messageID: string; target: "current" | "split" }) => Promise<void> | void
 
 export type UserActions = {
-  fork?: SessionAction
+  fork?: SessionForkAction | SessionAction
   revert?: SessionAction
 }
 
@@ -1116,6 +1118,21 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
       .finally(() => setState("busy", false))
   }
 
+  const handleFork = (target: "current" | "split") => {
+    const act = props.actions?.fork
+    if (!act || busy()) return
+    setState("busy", true)
+    void Promise.resolve()
+      .then(() =>
+        act({
+          sessionID: props.message.sessionID,
+          messageID: props.message.id,
+          target,
+        }),
+      )
+      .finally(() => setState("busy", false))
+  }
+
   return (
     <div data-component="user-message" data-timeline-part-id={textPart()?.id}>
       <Show when={attachments().length > 0}>
@@ -1179,6 +1196,29 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
                 </Show>
               </span>
             </Show>
+            <Show when={props.actions?.fork}>
+              <DropdownMenu>
+                <DropdownMenu.Trigger
+                  as={IconButton}
+                  icon="fork"
+                  size="normal"
+                  variant="ghost"
+                  disabled={!!busy()}
+                  onMouseDown={(e: MouseEvent) => e.preventDefault()}
+                  aria-label={i18n.t("ui.message.forkMessage")}
+                />
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content>
+                    <DropdownMenu.Item onSelect={() => handleFork("split")}>
+                      <DropdownMenu.ItemLabel>{i18n.t("ui.message.forkSplit")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onSelect={() => handleFork("current")}>
+                      <DropdownMenu.ItemLabel>{i18n.t("ui.message.forkCurrent")}</DropdownMenu.ItemLabel>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
+            </Show>
             <Show when={props.actions?.revert}>
               <Tooltip value={i18n.t("ui.message.revertMessage")} placement="top" gutter={4}>
                 <IconButton
@@ -1186,7 +1226,7 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
                   size="normal"
                   variant="ghost"
                   disabled={!!busy()}
-                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseDown={(e: MouseEvent) => e.preventDefault()}
                   onClick={(event) => {
                     event.stopPropagation()
                     revert()

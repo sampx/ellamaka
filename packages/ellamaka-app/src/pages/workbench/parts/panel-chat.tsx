@@ -311,6 +311,34 @@ function PanelChatInner(props: {
     return revertMutation.mutateAsync(input)
   }
 
+  const forkMessage = async (input: { sessionID: string; messageID: string; target: "current" | "split" }) => {
+    try {
+      const res = await sdk.client.session.fork({
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+      })
+      if (!res.data) return
+      const targetDirectory = res.data.directory || props.panel.directory
+      if (input.target === "current") {
+        await actions.loadSessionIntoPanel({
+          scope: scope(),
+          panelID: props.panel.id,
+          sessionID: res.data.id,
+          directory: targetDirectory,
+        })
+      } else {
+        await actions.bindForkedSession({
+          scope: scope(),
+          sourcePanelID: props.panel.id,
+          sessionID: res.data.id,
+          directory: targetDirectory,
+        })
+      }
+    } catch (error) {
+      reportWorkbenchError("fork session from message action", error)
+    }
+  }
+
   const restore = (id: string) => {
     if (!props.session.id || reverting()) return undefined
     return restoreMutation.mutateAsync(id)
@@ -346,7 +374,7 @@ function PanelChatInner(props: {
             userMessages={historyLoader.userMessages()}
             anchor={() => "#"}
             setRevealMessage={() => {}}
-            actions={{ revert }}
+            actions={{ revert, fork: forkMessage }}
           />
         </Show>
       </div>

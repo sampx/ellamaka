@@ -36,6 +36,11 @@ export function handlePanelDrop(
 ) {
   e.preventDefault()
   e.stopPropagation()
+
+  if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur()
+  }
+
   const sessionId = e.dataTransfer?.getData("text/sessionId") ?? ""
   const rawDragSpacePath = e.dataTransfer?.getData("text/spacePath")
   const rawDragSpaceName = e.dataTransfer?.getData("text/spaceName")
@@ -51,9 +56,10 @@ export function handlePanelDrop(
 
   const spacePath = ctx.spacePath
 
+  const normPath = (p?: string) => (p ? p.trim().replace(/[/\\]+$/, "") : "")
   const sameSpace =
-    dragSpacePath !== undefined
-      ? dragSpacePath === ctx.spacePath
+    dragSpacePath !== undefined && ctx.spacePath !== undefined
+      ? normPath(dragSpacePath) === normPath(ctx.spacePath)
       : dragSpaceName === ctx.spaceName
   if (!sameSpace) {
     showCrossSpaceWarning(dragSpaceName || dragSpacePath || "", ctx.spaceName)
