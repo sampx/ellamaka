@@ -27,6 +27,7 @@ import { same } from "@/utils/same"
 import { PanelChatComposer } from "./panel-chat-composer"
 import { EmbeddedSessionSurfaceProvider } from "@/pages/session/session-surface-context"
 import type { WorkbenchPanel } from "../view-store"
+import { useWorkbenchState } from "../view-store"
 import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
@@ -51,8 +52,15 @@ function PanelChatInner(props: {
   const prompt = usePrompt()
   const language = useLanguage()
   const actions = useWorkbenchActions()
+  const wb = useWorkbenchState()
   const local = useLocal()
   const scope = createMemo(() => scopeFromTab({ name: props.spaceName, path: props.spacePath }))
+
+  const panels = () => wb.spaceState(props.spacePath)?.panels ?? []
+  const canSplit = createMemo(() => {
+    const list = panels()
+    return list.length < 3 || list.some((p) => p.slotState === "empty")
+  })
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
@@ -334,6 +342,7 @@ function PanelChatInner(props: {
           directory: targetDirectory,
         })
       }
+      void sync.session.sync(res.data.id, { force: true })
     } catch (error) {
       reportWorkbenchError("fork session from message action", error)
     }
@@ -374,7 +383,7 @@ function PanelChatInner(props: {
             userMessages={historyLoader.userMessages()}
             anchor={() => "#"}
             setRevealMessage={() => {}}
-            actions={{ revert, fork: forkMessage }}
+            actions={{ revert, fork: forkMessage, canSplit: canSplit() }}
           />
         </Show>
       </div>

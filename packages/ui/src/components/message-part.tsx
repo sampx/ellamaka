@@ -169,6 +169,7 @@ export type SessionForkAction = (input: { sessionID: string; messageID: string; 
 
 export type UserActions = {
   fork?: SessionForkAction | SessionAction
+  canSplit?: boolean
   revert?: SessionAction
 }
 
@@ -1118,15 +1119,17 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
     const act = props.actions?.fork
     if (!act || busy()) return
     setState("busy", true)
-    void Promise.resolve()
-      .then(() =>
-        act({
-          sessionID: props.message.sessionID,
-          messageID: props.message.id,
-          target,
-        }),
-      )
-      .finally(() => setState("busy", false))
+    setTimeout(() => {
+      void Promise.resolve()
+        .then(() =>
+          act({
+            sessionID: props.message.sessionID,
+            messageID: props.message.id,
+            target,
+          }),
+        )
+        .finally(() => setState("busy", false))
+    }, 0)
   }
 
   return (
@@ -1205,7 +1208,7 @@ export function UserMessageDisplay(props: { message: UserMessage; parts: PartTyp
                 />
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content>
-                    <DropdownMenu.Item onSelect={() => handleFork("split")}>
+                    <DropdownMenu.Item disabled={props.actions?.canSplit === false} onSelect={() => handleFork("split")}>
                       <DropdownMenu.ItemLabel>{i18n.t("ui.message.forkSplit")}</DropdownMenu.ItemLabel>
                     </DropdownMenu.Item>
                     <DropdownMenu.Item onSelect={() => handleFork("current")}>

@@ -406,7 +406,9 @@ export function createWorkbenchActions(input: {
       }
 
       input.session.project({ scope: options.scope, session })
-      const targetPanelID = input.store.addPanel(options.scope)
+      const panels = input.store.panels(options.scope)
+      const emptyPanel = panels.find((p) => p.slotState === "empty")
+      const targetPanelID = emptyPanel?.id ?? input.store.addPanel(options.scope)
       if (targetPanelID) {
         input.store.commitSessionBinding(options.scope, targetPanelID, session)
         input.store.setActivePanel(options.scope, targetPanelID)
