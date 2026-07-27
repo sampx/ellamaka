@@ -53,7 +53,12 @@ export const useWorkbenchCommands = () => {
       slash: "new",
       onSelect: () => {
         const active = actions.activeTarget()
-        if (active) actions.addPanel(active.scope)
+        if (active) {
+          void actions.createSession({
+            scope: active.scope,
+            panelID: active.panelID,
+          })
+        }
       },
     }),
     sessionCommand({

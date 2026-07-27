@@ -904,6 +904,28 @@ describe("WorkbenchActions General vs Space scope", () => {
     expect(scopes).toEqual([{ kind: "space", name: "Space A" }])
   })
 
+  test("createSession disposes old panel resources before committing new session", async () => {
+    const { store } = createScopeStore()
+    const disposed: string[] = []
+    const actions = createWorkbenchActions({
+      store,
+      pty: {
+        disposePanel: async ({ panel }) => { disposed.push(panel.id) },
+        ensure: async ({ create }) => create(),
+        disposePty: async () => {},
+      },
+      session: {
+        create: async () => ({ id: "s-new", title: "New", directory: "", type: "chat" }),
+        get: async () => ({ id: "s-new", title: "New", directory: "", type: "chat" }),
+        project: () => {},
+        rename: async () => {},
+        remove: async () => {},
+      },
+    })
+    await actions.createSession({ scope: general, panelID: "panel-g" })
+    expect(disposed).toEqual(["panel-g"])
+  })
+
   test("closeSpace returns unchanged for General scope", async () => {
     const { store } = createScopeStore()
     const actions = createWorkbenchActions({

@@ -302,12 +302,18 @@ export function createWorkbenchActions(input: {
       if (!runtime.canWrite()) return { status: "offline", panelID: options.panelID }
       const panel = panelOrThrow(options.scope, options.panelID)
       const generation = nextGeneration(options.scope, options.panelID)
+      const panelSnap = snapshotPanel(panel)
       const session = await input.session.create({ scope: options.scope, panel, initialView: options.initialView })
       if (!isCurrent(options.scope, options.panelID, generation)) {
         await input.session.remove({ scope: options.scope, session })
         return { status: "stale", panelID: options.panelID }
       }
       try {
+        await disposePanel(options.scope, panelSnap)
+        if (!isCurrent(options.scope, options.panelID, generation)) {
+          await input.session.remove({ scope: options.scope, session })
+          return { status: "stale", panelID: options.panelID }
+        }
         input.session.project({ scope: options.scope, session })
         input.store.commitSessionBinding(options.scope, options.panelID, session)
         input.store.setActivePanel(options.scope, options.panelID)
