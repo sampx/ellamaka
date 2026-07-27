@@ -61,9 +61,9 @@
 |---------|------|-------------|-------------|
 | ontology 未准备 | 步骤 6 尚未成功 | `SETUP_ONTOLOGY_NOT_PREPARED` | 返回步骤 6，完成 ontology 准备后重试 |
 | settings 写入失败 | ontology 配置缺失、目标不可写或磁盘满 | `SETUP_RUNTIME_PREPARE_FAILED` | 保留步骤 7，展示 settings 诊断与重试按钮 |
-| scripts 同步失败 | ontology scripts 缺失或链接/复制失败 | `SETUP_RUNTIME_PREPARE_FAILED` | 保留步骤 7，展示缺失脚本与重试按钮 |
+| scripts 同步失败 | ontology scripts 缺失或链接/复制失败 | warning（非阻断） | 保留步骤 7，展示缺失脚本为警告，允许继续 |
 | 能力物化失败 | agents/skills/commands/rules/plugins/prompts 任一源缺失或目标不可写 | `SETUP_RUNTIME_PREPARE_FAILED` | 保留步骤 7，展示失败能力与重试按钮 |
-| 成功 | 三类全局运行时动作全部 ready | `created` / `reused` | 展示 settings、scripts、能力摘要，用户主动继续 |
+| 成功 | settings 与能力物化全部 ready | `created` / `reused` | 展示 settings、scripts（含警告）、能力摘要，用户主动继续 |
 
 ### 1.6 initialize-space（步骤 8）
 
@@ -81,9 +81,11 @@
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
+| 配置不完整 | 启用记忆但缺少 LLM endpoint/key 或 Embedding endpoint/model | `SETUP_MEMORY_CONFIG_INCOMPLETE` | 保留步骤 9，展示缺失字段与重试按钮，不写入半成品配置 |
 | 文件写入失败 | 无写权限或磁盘满 | `ok: false` | 展示"配置保存失败，请检查磁盘空间和权限后重试" + 重试按钮 |
-| enabled 未传 | Desktop 漏传必填字段 `enabled` | `ok: false` | 实现层错误——Desktop 的 `onboardingExecuteStep` 必须确保 `enabled: true/false` |
-| 用户跳过 | 点击"跳过"或只勾选 `enabled` | 仅传 `{ enabled: true }`（不传可选 LLM/Embedding 字段） | 标记步骤为 `skipped`，进入步骤 10 |
+| enabled 未传 | Desktop 漏传必填字段 `enabled` | `ok: false` | 实现层错误——Desktop 的 `onboardingExecuteStep` 须确保 `enabled: true/false` |
+| 用户暂不启用 | 点击"暂不启用长期记忆" | `enabled: false`，持久化两个记忆开关为 `false` | 标记步骤为 `skipped`，已有模型凭证保留，进入步骤 10 |
+| 保存成功 | 配置完整且验证通过 | `created` / `updated` / `reused` | 复检并展示全局作用域、启用状态、endpoint/model、密钥状态与 env path |
 
 ### 1.8 star（步骤 10）
 
@@ -200,13 +202,17 @@ interface AiProviderProps extends StepProps {
 ```typescript
 interface OntologySetupProps extends StepProps {
   // 组件内部状态：
-  // - mode: "fork" | "clone"
+  // - sourceType: "official" | "custom"    本体来源（官方默认源或自定义 GitHub URL）
+  // - customUrl: string                     自定义来源时填写的 GitHub URL
+  // - mode: "fork" | "clone"                获取模式
   // - hasGithubAuth: boolean
   // - existingMode: "fork" | "clone" | null
   //
   // 有有效 GitHub 认证且无既有本体时默认 Fork，否则默认 Clone。
-  // 用户只选择本体模式。成功提交：
-  // onComplete({ stepId: "ontology-setup", input: { mode } })。
+  // 用户选择本体来源与获取模式。自定义 URL 适用于 fork 或 clone。
+  // 已安装 ontology 保持当前来源与拓扑，不允许切换模式。
+  // 成功提交：
+  // onComplete({ stepId: "ontology-setup", input: { mode, source } })。
   // machine result 中 availableTypes 仅展示准备结果，类型选择由步骤 8 所有。
 }
 ```
@@ -245,17 +251,24 @@ interface CreateSpaceProps extends StepProps {
 ```typescript
 interface MemoryConfigProps extends StepProps {
   // 组件内部状态：
-  // - enabled: boolean              是否启用记忆
-  // - llmEndpoint: string           自定义 LLM 端点（enabled=true 时可选）
-  // - llmKey: string                自定义 LLM Key（enabled=true 时可选）
-  // - llmModel: string              自定义 LLM Model（enabled=true 时可选）
-  // - embeddingEndpoint: string     自定义 Embedding 端点（enabled=true 时可选）
-  // - embeddingKey: string          自定义 Embedding Key（enabled=true 时可选）
-  // - embeddingModel: string        自定义 Embedding Model（enabled=true 时可选）
-  // - showAdvanced: boolean         是否展开高级配置
-  // - showSkip: true                此步骤可跳过
+  // - enabled: boolean                  是否启用记忆
+  // - probeState: "unconfigured" | "disabled" | "ready"
+  // - llmEndpoint: string               LLM 端点
+  // - llmKey: string                    LLM Key（空表示保留已有密钥）
+  // - llmModel: string                  LLM Model
+  // - embeddingEndpoint: string         Embedding 端点
+  // - embeddingKey: string              Embedding Key（空表示保留已有密钥）
+  // - embeddingModel: string            Embedding Model
+  // - embeddingSameAsLlm: boolean       Embedding 复用同一 endpoint 与 key
+  // - showSkip: true                    此步骤可跳过
   //
-  // 默认只展示 enabled checkbox。enabled=true 时展开高级选项。
+  // 进入步骤时先只读探测已有配置。probe 完成 after展示表单。
+  // unconfigured → 默认启用，展示 LLM 与 Embedding 两段真实配置表单。
+  // ready → 回填 endpoint/model，密钥显示"已保存"，空密钥输入表示保留。
+  // disabled → 开关关闭，展示关闭影响与重新启用入口。
+  // 选择"Embedding 使用同一服务" → endpoint 与 key 复用 LLM 值，只单独填写 Embedding model。
+  // 启用记忆时最终生效配置须满足 LLM endpoint/key 与 Embedding endpoint/model。
+  // "暂不启用长期记忆" → 调用 configure-memory(enabled=false) 后以 skipped 语义推进。
   // 完成后调用 onComplete({ stepId: "memory-config",
   //   input: { enabled, ...optionalLLMFields } })。
 }
@@ -280,11 +293,13 @@ interface StarGuideProps extends StepProps {
 interface DoneViewProps {
   state: OnboardingState;         // 完整的 onboarding 状态
   nonFatalFailures: StepError[];  // 非致命步骤的失败信息（须展示给用户）
-  onRelaunch: () => void;         // 触发 relaunch
+  onEnterWorkbench: () => void;   // 触发进程内转换进入 Workbench
 }
 ```
 
-`onboardingComplete()` 在写入完成态前调用 machine `inspect`。只有 `verdict === "healthy"` 才允许 relaunch。门禁失败返回结构化错误，Renderer 保留在 done 页面并展示缺失维度。
+`onboardingComplete()` 在写入完成态前调用 machine `inspect`。只有 `verdict === "healthy"` 才允许进入 Workbench。门禁失败返回结构化错误，Renderer 保留在 done 页面并展示缺失维度。
+
+进程内转换在当前进程内启动 sidecar 并将窗口切换到 Workbench，不重启进程。转换失败时提供"重试启动 / 重新配置"入口。
 
 ---
 
@@ -299,7 +314,7 @@ interface OnboardingIpcDeps {
   readOnboardingState: () => OnboardingState;    // 读 onboarding.json
   writeOnboardingState: (state: Partial<OnboardingState>) => void;  // 写 onboarding.json（原子替换）
   broadcastProgress: (stepId: string, status: StepStatus) => void;  // 通知 renderer 进度
-  relaunchApp: () => void;                       // 重启应用
+  transitionToWorkbench: () => Promise<{ status: "ok" } | { status: "error"; message: string }>;  // 进程内转换
   downloadFile: (url: string, dest: string) => Promise<boolean>;  // 下载 CLI binary
   checkSystem: () => SystemCheckResult;          // 本地系统检查
 }
@@ -315,9 +330,9 @@ Machine client 将 capability success envelope 的 `data` 解释为 `SetupOperat
 |---------|------|------|
 | `onboarding:read-state` | Renderer → Main | 读取当前 onboarding.json |
 | `onboarding:execute-step` | Renderer → Main | 执行一个步骤（调 machine 或本地操作） |
-| `onboarding:probe` | Renderer → Main | 只读探测 GitHub、Provider 或 setup 环境，不改变步骤状态 |
+| `onboarding:probe` | Renderer → Main | 只读探测 GitHub、Provider、Runtime、Memory 或 setup 环境，不改变步骤状态 |
 | `onboarding:progress` | Main → Renderer | 推送步骤执行进度（broadcastProgress） |
-| `onboarding:relaunch` | Renderer → Main | 完成 onboarding 后重启 |
+| `onboarding:transition-to-workbench` | Renderer → Main | 完成后进程内转换进入 Workbench |
 | `onboarding:get-system-info` | Renderer → Main | 获取系统信息（步骤 1） |
 
 ---
