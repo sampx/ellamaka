@@ -278,21 +278,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       { key: "file-view", legacy: "file", version: "v1" },
     ] as const
 
-    const dropSessionState = (keys: string[]) => {
-      for (const key of keys) {
-        const parts = key.split("/")
-        const dir = parts[0]
-        const session = parts[1]
-        if (!dir) continue
-
-        for (const entry of SESSION_STATE_KEYS) {
-          const target = session ? Persist.session(dir, session, entry.key) : Persist.workspace(dir, entry.key)
-          void removePersisted(target, platform)
-
-          const legacyKey = `${dir}/${entry.legacy}${session ? "/" + session : ""}.${entry.version}`
-          void removePersisted({ key: legacyKey }, platform)
-        }
-      }
+    const dropSessionState = (_keys: string[]) => {
+      // Intentionally no-op: persisted localStorage keys (prompt drafts, terminal and file views)
+      // must NEVER be deleted when session keys are pruned from in-memory layout state.
     }
 
     function prune(keep?: string) {

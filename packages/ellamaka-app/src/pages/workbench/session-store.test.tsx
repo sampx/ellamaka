@@ -50,4 +50,13 @@ describe("SessionProjection", () => {
     expect(projection.reader.spaceSessions(normPath)).toHaveLength(1)
     expect(projection.reader.getSession("session-a")?.spacePath).toBe(normPath)
   })
+
+  test("retains all sessions without truncating to 50 when count exceeds limit", () => {
+    const projection = createSessionProjection()
+    for (let i = 1; i <= 60; i++) {
+      projection.writer.upsert(serverSession({ id: `session-${i}`, lastActiveAt: i }))
+    }
+
+    expect(projection.reader.spaceSessions("Space A")).toHaveLength(60)
+  })
 })

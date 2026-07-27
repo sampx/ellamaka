@@ -29,13 +29,8 @@ type SessionProjectionState = {
   spaces: Record<string, Session[]>
 }
 
-const MAX_SESSIONS = 50
-
 function limitSessions(sessions: Session[]): Session[] {
-  if (sessions.length <= MAX_SESSIONS) return sessions
-  return [...sessions]
-    .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-    .slice(0, MAX_SESSIONS)
+  return sessions
 }
 
 export function createSessionProjection() {
