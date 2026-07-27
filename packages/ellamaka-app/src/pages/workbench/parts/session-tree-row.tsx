@@ -121,6 +121,7 @@ export function SessionTreeRow(props: {
       if (targetSpace) wb.openTab(targetSpace)
       wb.setActivePanel(binding.spacePath, binding.panelID)
     } else {
+      wb.setStatusMessage(t("workbench.status.sessionReadyHint"))
       const targetSpace = wb.tabs.find((tab) => tab.path === props.spacePath)
       if (targetSpace) {
         wb.openTab(targetSpace)

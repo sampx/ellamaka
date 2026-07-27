@@ -151,22 +151,6 @@ export function SessionTree(props: {
     setExpandedSpaces((previous) => previous.has(path) ? previous : new Set([...previous, path]))
   })
 
-  createEffect(() => {
-    const active = selectedSessionID()
-    if (!active) {
-      wb.setPersistentHint("")
-      return
-    }
-    const binding = wb.findSessionBinding(active)
-    if (binding) {
-      wb.setPersistentHint(t("workbench.status.panelActivated", { badge: getPanelBadge(wb, active) ?? "" }))
-      return
-    }
-    const selected = tree().scopes.flatMap((scope) => sessionsForPath(scope.path)).find((session) => session.id === active)
-    wb.setPersistentHint(selected?.directoryHealth === "healthy" || !selected
-      ? t("workbench.status.sessionReadyHint")
-      : t("workbench.status.dirHealthWarning"))
-  })
 
   createEffect(() => {
     try {

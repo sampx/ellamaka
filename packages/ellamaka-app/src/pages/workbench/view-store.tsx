@@ -190,7 +190,7 @@ export function initWorkbenchState() {
         removeDiagnostic(diagId)
         return
       }
-      pushDiagnostic("info", message, { id: diagId, autoDismiss: false })
+      pushDiagnostic("info", message, { id: diagId, autoDismiss: true })
     }
 
     const setPersistentHint = (message: string) => {

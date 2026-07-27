@@ -17,7 +17,7 @@ export function StatusBarDiagnosticsCenter() {
   const wb = useWorkbenchState()
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
-  const [showDefaultHint] = createSignal(true)
+  const [showDefaultHint] = createSignal(false)
   const [retryingID, setRetryingID] = createSignal<string>()
 
   const list = createMemo(() => wb.diagnostics)

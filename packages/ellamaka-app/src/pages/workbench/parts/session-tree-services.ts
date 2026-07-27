@@ -380,10 +380,6 @@ export async function openSessionInPanel(params: {
       sessionID: params.session.id,
       directory: params.sessionDirectory || targetSpacePath,
     })
-    const newBadge = getPanelBadge(params.wb, params.session.id)
-    params.wb.setStatusMessage(
-      params.t("workbench.status.sessionLoaded", { badge: newBadge ?? "" }),
-    )
   }
 
   params.wb.openTab(targetSpace)
