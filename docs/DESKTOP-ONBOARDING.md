@@ -1,347 +1,433 @@
 # Desktop Onboarding — 实现规范
 
 > **状态**: Active
-> **更新时间**: 2026-07-26
+> **更新时间**: 2026-07-28
 > **上级文档**:
-> - `../../../docs/products/wopal-space/DESIGN-onboarding.md` — Onboarding 架构、步骤行为、通用约束
+> - `../../../docs/products/wopal-space/DESIGN-onboarding.md` — Onboarding 架构、Machine Capability 契约、通用约束
 > - `./DESKTOP.md` — Desktop 架构与启动行为
 > **Machine 契约**: `../../../projects/wopal-cli/src/lib/setup-machine.ts`（代码真相源）
 > **Machine 实现**: `../../../projects/wopal-cli/src/lib/setup-operations.ts`
 
-本文档补充产品层 `DESIGN-onboarding.md`，提供 Desktop 实现所需的错误处理矩阵与 renderer 组件接口契约。
+本文档定义 Desktop Onboarding 的**阶段化 UI 展现策略、步骤行为规范、导航契约与组件接口**。产品层架构约束与 Machine Capability 契约定义在上级文档 `DESIGN-onboarding.md`。
 
 ---
 
-## 1. 错误处理矩阵
+## 1. 核心设计理念
+
+Onboarding 向导遵循三条原则：
+
+1. **用户掌控推进**：步骤不会自动跳转。每个步骤完成后，系统展示检查结果，由用户点击"下一步"决定何时推进。用户也可以用"上一步"回看已完成的步骤，用"重试"重新执行当前步骤，用"停止"中止正在执行的长时间操作。
+2. **进入即检查**：步骤进入后自动执行只读探测（probe）或预检查，向用户展示当前状态（已就绪 / 需要操作 / 已失败），降低"不知道该做什么"的认知负担。对于纯执行类步骤（如安装 CLI），进入后显示等待提示，用户点击导航栏的"下一步"触发执行。
+3. **结果可见**：每个步骤执行完毕后，展示结构化的检查结果（版本、路径、状态、可用类型等），让用户确认后再推进。日志区实时显示执行过程的进度与诊断信息。
+
+---
+
+## 2. 阶段化展现策略（Phase Grouping）
+
+### 2.1 设计原则
+
+底层 `onboarding.json` 协议与 `wopal setup --machine` 的 10 步契约保持 **100% 不变**。UI 展现层将 10 步压缩为 **4 个直观阶段**，降低用户认知负荷。
+
+```
+阶段 1: 引擎准备        →  阶段 2: 能力与模型       →  阶段 3: 空间与记忆       →  阶段 4: 启动
+(Step 1, 2, 3)           (Step 4+6 整合, Step 5)     (Step 7, 8, 9)              (Step 10+Done 合并)
+```
+
+### 2.2 阶段定义
+
+| 阶段 | UI 标题 | 涵盖步骤 | 用户需要做的事 |
+|:---:|---------|---------|---------------|
+| 1 | 引擎准备 | `system-check` → `install-wopal-cli` → `install-ellamaka-cli` | 确认 `WOPAL_HOME`；CLI/引擎安装由用户点击"下一步"触发 |
+| 2 | 能力与模型 | `ontology-setup`（整合 `github-auth`）、`ai-provider` | 选择 Ontology 模式（高级用户可填 Token）、填写 API Key |
+| 3 | 空间与记忆 | `runtime-setup`、`create-space`、`memory-config` | 物化运行时能力、选择 Space 路径、可选配置记忆 |
+| 4 | 启动 | `star-guide`（嵌入 done 页面）、`done` | 一键启动 Workbench |
+
+### 2.3 阶段跟踪器
+
+顶部进度条展示 **4 个阶段药丸按钮**。阶段遵循渐进解锁规则：
+
+- 未解锁的阶段显示 `🔒`，不可点击。
+- 已完成的阶段显示 `✓`，可点击回看。
+- 当前阶段高亮。
+- 用户只能跳转到已解锁的阶段首步。
+
+### 2.4 步骤顺序
+
+底层 `ONBOARDING_STEPS` 定义真实导航顺序，与阶段定义一致：
+
+```
+system-check → install-wopal-cli → install-ellamaka-cli → github-auth → ontology-setup → ai-provider → runtime-setup → create-space → memory-config → star-guide
+```
+
+`github-auth` 和 `star-guide` 在 UI 中不作为独立页面展示，分别整合进 `ontology-setup` 和 `done`。导航控制器在 `next()` 时自动跳过这两个步骤的独立页面。
+
+### 2.5 GitHub Auth 整合到 Ontology 步骤
+
+`github-auth`（Step 4）整合到 `ontology-setup`（Step 6）的交互流中：
+
+- 默认选项"标准官方能力库"走 Clone 模式，无需 GitHub Token，跳过 Step 4。
+- 高级选项"开发者自定义扩展"展开后，若用户选择 Fork 模式且未检测到 Token，则在当前页面内嵌 Token 输入区域。
+- Token 输入 + Ontology 准备在同一页面依次完成，先执行 `github-auth` 再执行 `ontology-setup`。
+- 底层 `onboarding.json` 中 `github-auth` 步骤仍正常记录状态（`done`/`skipped`），保持协议兼容。
+
+### 2.6 Star Guide 合并到 Done 页面
+
+`star-guide`（Step 10）嵌入到 Done 完成页面的社区支持卡片中：
+
+- Done 页面展示社区支持卡片：Star 按钮 + 文档链接 + 社区入口。
+- 有 GitHub Token 时提供"一键 Star"按钮。
+- 无 Token 时提供"浏览器打开仓库页"链接。
+- Star 操作不阻塞"启动 Workbench"按钮。
+- 底层 `onboarding.json` 中 `star-guide` 步骤仍正常记录状态。
+
+---
+
+## 3. 导航契约
+
+### 3.1 固定底部导航栏
+
+每个步骤卡片底部固定显示导航栏，包含三个按钮，状态由当前步骤的执行状态驱动：
+
+| 按钮 | 显示条件 | 禁用条件 | 行为 |
+|------|---------|---------|------|
+| **上一步** | 始终显示（除第一步外） | 正在执行中 | 回到上一个步骤，重置步骤状态 |
+| **停止** | 正在执行中 | — | 中止当前操作（通过 `AbortController`） |
+| **重试** | 步骤执行失败 | 正在执行中 | 重新触发当前步骤的 form submit |
+| **跳过本步骤** | 当前步骤为可选步骤且未成功 | 正在执行中或已成功 | 调用 `executeStep(skip: true)` 并推进 |
+| **下一步** | 当前步骤非自动推进且非 done | 正在执行中 | 未成功时触发 `form.requestSubmit()`；已成功时直接推进到下一步 |
+
+### 3.2 按钮文案
+
+"下一步"按钮的文案根据步骤类型和状态动态变化：
+
+- 未执行时：显示步骤特定的动作文案（如"开始检查"、"安装 Wopal CLI"、"准备能力库"、"保存配置"、"创建工作空间"）。
+- 已成功时：显示"下一步"。
+- `done` 步骤：不显示"下一步"（启动按钮在卡片内部）。
+
+### 3.3 步骤状态驱动
+
+导航栏按钮的启用/禁用由 root 组件的三个信号驱动：
+
+- `working`：步骤正在执行中（`onStatusChange("working")`）。
+- `stepResult`：步骤执行结果（`null` = 未执行，`{success: true}` = 成功，`{success: false}` = 失败）。
+- `errorInfo`：步骤错误信息。
+
+步骤组件通过 `onStatusChange` 和 `onError` 回调更新这些信号，不直接调 `onComplete` 推进——推进完全由用户点击"下一步"触发。
+
+### 3.4 取消支持
+
+正在执行的步骤可以通过"停止"按钮中止。IPC 层为每个步骤创建 `AbortController`，`onboarding-cancel-step` channel 触发 `abort()`，子进程被 kill，步骤返回 `ABORTED` 状态。前端重置为可重试状态。
+
+---
+
+## 4. 步骤行为规范
+
+> 每个步骤分三层描述：**目标**（用户价值）、**行为规则**（系统约束）、**UI 展现**（进入时、执行中、完成后的界面状态）。
+
+### 4.1 system-check（阶段 1，不可跳过）
+
+**目标**：向用户确认/选择 `WOPAL_HOME` 工作目录，并确认系统满足最低运行条件。
+
+**行为规则**：
+- 进入时从 `process.env.WOPAL_HOME` 或 `~/.wopal` 获取初始路径，填入目录输入框。
+- 用户可修改路径，修改后 300ms 防抖更新 `process.env.WOPAL_HOME`。
+- 用户点击"下一步"（文案"开始检查"）触发 `system-check` 执行，检查：Git CLI 可用、`WOPAL_HOME` 可写、网络可达发布 CDN、磁盘 > 500MB。
+- 检查通过后展示系统信息（平台、架构、Node 版本、Git 版本、网络状态）。
+- 在 `done` 步骤完成时，将 `WOPAL_HOME` 写入用户持久化环境变量（跨平台兼容）。
+
+**UI 展现**：
+- 进入时：显示 `WOPAL_HOME` 目录输入框 + "更改目录"按钮。
+- 执行中：显示进度指示"正在检查系统环境与目录可写性…"。
+- 完成后：显示"✓ 系统环境与目录可写性检查通过"。
+
+### 4.2 install-wopal-cli（阶段 1，不可跳过）
+
+**目标**：确保 CLI 二进制存在且可执行。
+
+**行为规则**：
+- 进入时不自动执行，显示等待提示。
+- 用户点击"下一步"（文案"安装 Wopal CLI"）触发下载并执行 `install.sh` 安装脚本。
+- 已存在二进制：验证可执行并检测新版本，返回 `reused`。
+- 缺失或有新版本：下载并执行安装，返回 `completed`。
+- 不通过 machine capability（CLI 可能尚未就绪）。
+- 支持取消（`AbortController` kill 子进程）。
+
+**UI 展现**：
+- 进入时：显示"点击「安装 Wopal CLI」开始"。
+- 执行中：进度显示"检查 Wopal CLI 版本…"，日志区实时显示安装脚本输出。
+- 完成后：显示版本号、最新版本、二进制路径。
+
+### 4.3 install-ellamaka-cli（阶段 1，不可跳过）
+
+**目标**：确保引擎二进制存在且可执行。
+
+**行为规则**：
+- 进入时不自动执行，显示等待提示。
+- 用户点击"下一步"（文案"安装 Ellamaka"）触发 machine `install-engine`。
+- 已安装且未强制 → `reused`；缺失或强制 → `created`。
+- 支持取消。
+
+**UI 展现**：
+- 进入时：显示"点击「安装 Ellamaka」开始"。
+- 执行中：进度显示"正在安装 Ellamaka 引擎…"，日志区实时显示引擎下载/解压进度。
+- 完成后：显示版本号、Channel、二进制路径。
+
+### 4.4 ontology-setup + github-auth（阶段 2 首步，不可跳过）
+
+**目标**：准备 ontology 本地仓库（含可选的 GitHub Token 配置）。
+
+**行为规则**：
+- 进入时 probe GitHub 认证状态与 ontology 已有配置。
+- 默认模式"标准官方能力库"走 Clone 模式，无需 Token。
+- 高级模式展开后选择 Fork：无 Token 时内嵌 Token 输入区域，提交后先执行 `github-auth` 再执行 `ontology-setup`；已有 Token 时直接执行。
+- form id 必须为 `onboarding-step-ontology-setup`（与 `currentStep` 匹配，否则导航栏的 `requestSubmit` 会找不到 form）。
+
+**UI 展现**：
+- 进入时：显示来源选择（官方/自定义）、存储方式（Clone/Fork）对比卡片。
+- 执行中：进度显示"正在准备能力模板库…"。
+- 完成后：显示来源、方式、存储位置、可用类型数量。
+
+### 4.5 ai-provider（阶段 2 第二步，可跳过）
+
+**目标**：配置 OpenCode Go AI 提供商 API Key。
+
+**行为规则**：
+- 进入时检测已配置 key，命中则预填展示。
+- 仅当提供 key 时调用 machine `configure-provider`（`providerId: "opencode"`）。
+- 暂时仅支持 OpenCode Go。
+- 跳过按钮文案"跳过本步骤"。
+
+**UI 展现**：
+- 进入时：显示套餐信息 + "前往注册并订阅"按钮 + API Key 输入框。
+- 完成后：显示套餐名称、API Key 可用状态。
+
+### 4.6 runtime-setup（阶段 3，不可跳过）
+
+**目标**：把 ontology 运行时配置与能力物化到 `$WOPAL_HOME`。
+
+**行为规则**：
+- 进入时不自动执行，显示等待提示。
+- 用户点击"下一步"（文案"配置运行时"）触发执行流程：先 probe runtime 状态，再调 `prepare-runtime`，最后复检。
+- 如果 ontology 未准备，显示友好错误"能力模板库尚未准备，请先完成「能力与模型」阶段"。
+- 支持取消。
+
+**UI 展现**：
+- 进入时：显示"点击「配置运行时」开始"。
+- 执行中：进度显示当前阶段（检查 / 物化 / 复检）。
+- 完成后：显示"✓ 运行时已就绪"。
+
+### 4.7 create-space（阶段 3，不可跳过）
+
+**目标**：创建或复用工作空间。
+
+**行为规则**：
+- 进入时 probe 环境与已注册空间列表。
+- 已存在空间：显示已有空间列表 + "跳过创建（复用已有）"按钮（组件内部跳过逻辑，不走 root 的可选步骤跳过）。
+- 全新环境：不提供跳过，用户指定目录路径与能力类型。
+- 调用 machine `initialize-space` 时必填 `path`，默认 `~/WopalSpace`，类型 `common`。
+
+**UI 展现**：
+- 进入时：显示已有空间列表（如有）+ 目录选择器 + 类型下拉框。
+- 完成后：显示空间名称、路径、类型、创建/复用状态。
+
+### 4.8 memory-config（阶段 3 第三步，可跳过）
+
+**目标**：配置长期记忆系统。
+
+**行为规则**：
+- 进入时 probe 已有配置。
+- 调用 machine `configure-memory`，`enabled` 必填。
+- 跳过 = `enabled: false`，已有凭证保留。
+
+**UI 展现**：
+- 进入时：显示启用开关（默认关闭）+ 简化表单（启用后展开）。
+- 完成后：显示启用状态、作用域、endpoint/model、密钥状态、env path。
+
+### 4.9 done + star-guide（阶段 4）
+
+**目标**：确认就绪并引导进入 Workbench。
+
+**行为规则**：
+- 进入时自动静默执行 `star-guide`（有 Token 自动 Star，无 Token 跳过）。
+- 用户点击卡片内的"🚀 启动工作台"按钮触发流程：先调 `onboardingComplete`（machine `inspect` 门禁，`verdict === "healthy"` 才允许），再 `onboardingTransitionToWorkbench`。
+- 底部导航栏对 `done` 步骤只显示"上一步"，不显示"下一步"。
+
+**UI 展现**：
+- 居中展示"🎉 设置完成！"与配置摘要。
+- 社区支持卡片（Star 按钮）。
+- "🚀 启动工作台"主按钮。
+- 非致命警告以可折叠列表展示。
+
+---
+
+## 5. 错误处理矩阵
 
 每个 machine operation 可能的失败模式及 Desktop 应如何响应。
 
-### 1.1 install-engine（步骤 3）
+### 5.1 install-engine（步骤 3）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
 | 网络不可达 | R2 域名 DNS 解析失败 / 连接超时 | `ok: false` | 展示"网络连接失败，请检查网络后重试" + 重试按钮 |
 | 下载超时 | 文件过大或网络过慢（300s 超时） | `ok: false` | 展示"下载超时，请检查网络后重试" + 重试按钮 |
-| SHA-256 校验失败 | 文件损坏或被篡改 | `ok: false` | 展示"文件校验失败，请重试" + 重试按钮（不要提示用户手动下载） |
+| SHA-256 校验失败 | 文件损坏或被篡改 | `ok: false` | 展示"文件校验失败，请重试" + 重试按钮 |
 | 磁盘空间不足 | 写入 binary 时磁盘满 | `ok: false` | 展示"磁盘空间不足（需 >500MB），请清理后重试" + 重试按钮 |
-| `ellamaka --version` 不匹配 | 下载的 binary 版本不符 | `ok: false` | 展示"安装验证失败，引擎版本不匹配" + 重试按钮 |
-| CLI 未安装 | Desktop 未完成步骤 2 就执行步骤 3 | N/A（Desktop 应在步骤 2 失败时不进入步骤 3） | 不应出现此状态。步骤 2 失败时阻塞后续步骤 |
+| 用户取消 | 点击"停止"按钮 | `INSTALLATION_ABORTED` | 重置为可重试状态，不显示错误 |
 
-### 1.2 configure-github（步骤 4）
+### 5.2 configure-github（步骤 4）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
 | token 格式无效 | token 为空或不符合 GitHub PAT 格式 | `ok: false` | 展示"Token 格式无效，请输入有效的 GitHub Personal Access Token" |
 | 文件写入失败 | 无写权限或磁盘满 | `ok: false` | 展示"配置保存失败，请检查磁盘空间和权限后重试" + 重试按钮 |
-| 用户跳过 | 点击"跳过"（步骤 4 可选） | 不调用 machine | 标记步骤为 `skipped`，进入步骤 5 |
+| 用户跳过 | 使用默认 Clone 模式（不填 Token） | 不调用 machine | 标记步骤为 `skipped`，继续 Ontology 准备 |
 
-### 1.3 configure-provider（步骤 5）
+### 5.3 configure-provider（步骤 5）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
-| providerId 未知 | 传入不支持的 provider | `ok: false` | 展示"不支持的 AI Provider" + 不提供重试（返回选择 provider 界面） |
-| apiKey 为空 | 用户未填写 API Key | Desktop 不应发送请求（本地校验） | 提示"请输入 API Key"（红色输入框边框） |
+| providerId 未知 | 传入不支持的 provider | `ok: false` | 展示"不支持的 AI Provider" + 不提供重试 |
+| apiKey 为空 | 用户未填写 API Key | Desktop 本地校验 | 提示"请输入 API Key" |
 | 文件写入失败 | 无写权限或磁盘满 | `ok: false` | 展示"配置保存失败，请检查磁盘空间和权限后重试" + 重试按钮 |
-| 用户跳过 | 点击"跳过"（步骤 5 可选） | 不调用 machine | 标记步骤为 `skipped`，进入步骤 6 |
-| checkOnly 检测 | Desktop 本地探测已有 provider（不调 machine） | N/A | 本地读 auth.json，已有配置则预填 providerId 并展示"检测到已有配置"提示 |
+| 用户跳过 | 点击"跳过本步骤" | 不调用 machine | 标记步骤为 `skipped`，进入阶段 3 |
 
-### 1.4 prepare-ontology（步骤 6）
-
-| 错误类型 | 原因 | machine 返回 | Desktop 响应 |
-|---------|------|-------------|-------------|
-| GitHub 认证缺失 | 用户选择 Fork，但没有可用 token/gh 认证 | `ok: false` | 展示认证前提和返回步骤 4 的入口，保留 Clone 选项 |
-| 已有模式冲突 | 已安装 ontology 的实际拓扑与用户选择不同 | `ok: false` | 展示当前拓扑并允许按当前模式重试 |
-| 网络或 Git 失败 | clone/fork/fetch 失败 | `ok: false` | 保留步骤 6，展示诊断信息与重试按钮 |
-| 类型分支物化失败 | 远端 `type/*` 未完整落为本地分支 | `ok: false` | 保留步骤 6，不允许进入 Space 类型选择 |
-| 成功 | 本地 `main` 与全部 `type/*` 已准备 | `created` / `reused` | 展示本体路径与类型数量，用户主动继续 |
-
-### 1.5 prepare-runtime（步骤 7）
+### 5.4 prepare-ontology（步骤 6）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
-| ontology 未准备 | 步骤 6 尚未成功 | `SETUP_ONTOLOGY_NOT_PREPARED` | 返回步骤 6，完成 ontology 准备后重试 |
-| settings 写入失败 | ontology 配置缺失、目标不可写或磁盘满 | `SETUP_RUNTIME_PREPARE_FAILED` | 保留步骤 7，展示 settings 诊断与重试按钮 |
-| scripts 同步失败 | ontology scripts 缺失或链接/复制失败 | warning（非阻断） | 保留步骤 7，展示缺失脚本为警告，允许继续 |
-| 能力物化失败 | agents/skills/commands/rules/plugins/prompts 任一源缺失或目标不可写 | `SETUP_RUNTIME_PREPARE_FAILED` | 保留步骤 7，展示失败能力与重试按钮 |
-| 成功 | settings 与能力物化全部 ready | `created` / `reused` | 展示 settings、scripts（含警告）、能力摘要，用户主动继续 |
+| GitHub 认证缺失 | 用户选择 Fork，但没有可用 token | `ok: false` | 在 Ontology 页面内展示 Token 输入区域 |
+| 已有模式冲突 | 已安装 ontology 的拓扑与用户选择不同 | `ok: false` | 展示当前拓扑并允许按当前模式重试 |
+| 网络或 Git 失败 | clone/fork/fetch 失败 | `ok: false` | 保留当前页面，展示诊断信息与重试按钮 |
+| 用户取消 | 点击"停止"按钮 | `ABORTED` | 重置为可重试状态 |
 
-### 1.6 initialize-space（步骤 8）
-
-| 错误类型 | 原因 | machine 返回 | Desktop 响应 |
-|---------|------|-------------|-------------|
-| ontology 未准备 | 步骤 6 尚未成功 | `ok: false` | 展示"Ontology 尚未准备，请先完成上一步"，返回步骤 6 |
-| 磁盘空间不足 | worktree 创建失败 | `ok: false` | 展示"磁盘空间不足（需 >500MB），请清理后重试" + 重试按钮 |
-| worktree 冲突 | space 名已存在 | `ok: false` | 展示"空间名称已被使用，请更换名称" + 回到命名界面 |
-| type 分支不存在 | 指定本地 type ref 未找到 | `ok: false` | 展示"所选类型分支未准备完成"并留在类型选择界面 |
-| 路径无效 | path 不存在或不可写 | `ok: false` | 展示"所选目录无效或不可写，请选择其他目录" + 回到路径选择界面 |
-| 已有 Space | 路径已包含可恢复 Space 或已注册 | `reused` | 展示关联/复用结果并进入步骤 9 |
-| 用户跳过 | 环境已有至少一个注册 Space | Desktop 明确写入 `skipped` | 进入步骤 9；全新环境不展示跳过入口 |
-
-### 1.7 configure-memory（步骤 9）
+### 5.5 prepare-runtime（步骤 7）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
-| 配置不完整 | 启用记忆但缺少 LLM endpoint/key 或 Embedding endpoint/model | `SETUP_MEMORY_CONFIG_INCOMPLETE` | 保留步骤 9，展示缺失字段与重试按钮，不写入半成品配置 |
-| 文件写入失败 | 无写权限或磁盘满 | `ok: false` | 展示"配置保存失败，请检查磁盘空间和权限后重试" + 重试按钮 |
-| enabled 未传 | Desktop 漏传必填字段 `enabled` | `ok: false` | 实现层错误——Desktop 的 `onboardingExecuteStep` 须确保 `enabled: true/false` |
-| 用户暂不启用 | 点击"暂不启用长期记忆" | `enabled: false`，持久化两个记忆开关为 `false` | 标记步骤为 `skipped`，已有模型凭证保留，进入步骤 10 |
-| 保存成功 | 配置完整且验证通过 | `created` / `updated` / `reused` | 复检并展示全局作用域、启用状态、endpoint/model、密钥状态与 env path |
+| ontology 未准备 | 步骤 6 尚未成功 | `SETUP_ONTOLOGY_NOT_PREPARED` | 展示"能力模板库尚未准备，请先完成「能力与模型」阶段" |
+| settings 写入失败 | ontology 配置缺失或目标不可写 | `SETUP_RUNTIME_PREPARE_FAILED` | 停留，展示诊断与重试按钮 |
+| 能力物化失败 | agents/skills/commands 等源缺失 | `SETUP_RUNTIME_PREPARE_FAILED` | 停留，展示失败能力与重试按钮 |
+| 用户取消 | 点击"停止"按钮 | `ABORTED` | 重置为可重试状态 |
 
-### 1.8 star（步骤 10）
+### 5.6 initialize-space（步骤 8）
 
 | 错误类型 | 原因 | machine 返回 | Desktop 响应 |
 |---------|------|-------------|-------------|
-| API rate limit | GitHub API 频率限制 | `ok: false` | 不阻塞进入 done。在 done 页面以提示形式展示"Star 操作暂时不可用（API 限流），可稍后在仓库页面手动 Star" |
-| 网络不可达 | GitHub API 不可达 | `ok: false` | 同上，非阻塞 |
-| 用户跳过 | 点击"跳过"、`accepted: false` 或无 token 无 fallback | `skipped` / `skipped-no-github` | 标记为 `skipped`，正常进入 done |
-| 浏览器无法打开 | `browserFallback` 启用但 `shell.openExternal` 失败 | `skipped` | 展示"无法打开浏览器，请手动访问仓库页面" + 展示仓库 URL |
+| ontology 未准备 | 步骤 6 尚未成功 | `ok: false` | 展示"Ontology 尚未准备，请先完成上一步" |
+| 磁盘空间不足 | worktree 创建失败 | `ok: false` | 展示"磁盘空间不足" + 重试按钮 |
+| worktree 冲突 | space 名已存在 | `ok: false` | 展示"空间名称已被使用" |
+| 路径无效 | path 不存在或不可写 | `ok: false` | 展示"所选目录无效或不可写" |
+
+### 5.7 configure-memory（步骤 9）
+
+| 错误类型 | 原因 | machine 返回 | Desktop 响应 |
+|---------|------|-------------|-------------|
+| 配置不完整 | 启用记忆但缺少必要字段 | `SETUP_MEMORY_CONFIG_INCOMPLETE` | 保留当前页面，展示缺失字段 |
+| 文件写入失败 | 无写权限或磁盘满 | `ok: false` | 展示"配置保存失败" + 重试按钮 |
+| 用户跳过 | 点击"跳过本步骤" | `enabled: false` | 标记步骤为 `skipped`，已有凭证保留 |
 
 ---
 
-## 2. Renderer 组件接口契约
+## 6. Renderer 组件接口契约
 
-### 2.1 通用 Step 组件 Props
+### 6.1 步骤组件通用 Props
 
-所有步骤组件共享的基础接口：
+所有步骤组件共享基础接口：
 
 ```typescript
 interface StepProps {
-  currentStep: number;           // 当前步骤索引 (1-based)
-  totalSteps: number;            // 总步骤数
-  state: OnboardingState;        // 当前 onboarding 状态
-  onComplete: (result: StepResult) => void;   // 步骤成功完成
-  onError: (error: StepError) => void;         // 步骤失败
-  onSkip: () => void;                          // 用户主动跳过
+  onComplete: () => void;                                    // 步骤成功完成（推进由 root 导航栏触发）
+  onError: (err: string | { code?: string; message: string; details?: string } | null) => void;
+  onStatusChange?: (status: "working" | "success" | "error") => void;
 }
 ```
 
-### 2.2 StepResult（通用）
+步骤组件**不直接调 `onComplete` 推进**。推进由 root 组件的 `handleNextClick` 在用户点击"下一步"时触发。步骤组件只通过 `onStatusChange` 和 `onError` 上报状态。
+
+### 6.2 Root 组件状态
 
 ```typescript
-interface StepResult {
-  stepId: string;                // 步骤标识（如 "system-check"）
-  input: Record<string, unknown>; // 步骤收集的用户输入（传给 machine 或记录）
-}
+// Root 组件持有以下信号，驱动导航栏按钮状态：
+currentStep: Signal<OnboardingStepName | "done">  // 当前步骤
+working: Signal<boolean>                          // 正在执行中
+stepResult: Signal<{ success: boolean } | null>   // 步骤执行结果
+errorInfo: Signal<{ code?: string; message: string; details?: string } | null>
+maxUnlockedPhase: Signal<number>                   // 最大已解锁阶段
+hasExistingSpaces: Signal<boolean>                 // 是否有已有空间
 ```
 
-### 2.3 StepError（通用）
+### 6.3 导航控制器
 
 ```typescript
-interface StepError {
-  stepId: string;
-  code: string;                  // 错误码，对应 §1 表格中的错误类型
-  message: string;               // 用户可读的错误信息
-  details?: string;              // 技术细节（可选，用于日志，不展示给用户）
-  retryable: boolean;            // 用户是否可以重试
+interface StepController {
+  getCurrentStep(): OnboardingStepName | "done"
+  setCurrentStep(step): void
+  next(): void      // 按 ONBOARDING_STEPS 顺序推进，跳过 github-auth 和 star-guide 独立页面
+  prev(): void      // 回退，同样跳过 github-auth 和 star-guide
 }
 ```
 
-### 2.4 system-check（步骤 1，无 machine 调用）
+### 6.4 阶段配置
 
 ```typescript
-interface SystemCheckProps extends StepProps {
-  // 无额外 props。
-  // 组件本地执行：git 版本检查、WOPAL_HOME 可写性、磁盘空间 (>500MB)、网络连通性。
-  // 完成后直接调用 onComplete({ stepId: "system-check", input: {} })。
+interface PhaseConfig {
+  phase: 1 | 2 | 3 | 4
+  title: string
+  steps: (OnboardingStepName | "done")[]
 }
 ```
 
-### 2.5 install-wopal-cli（步骤 2，无 machine 调用）
-
-```typescript
-interface InstallWopalCliProps extends StepProps {
-  // 无额外 props。
-  // Desktop 自行下载安装 wopal-cli binary 到 $WOPAL_HOME/bin/wopal。
-  // 进度展示：下载百分比 + 解压中 + 验证中。
-  // 完成后调用 onComplete({ stepId: "install-wopal-cli", input: { cliPath: "<path>" } })。
-}
-```
-
-### 2.6 install-ellamaka-cli（步骤 3）
-
-```typescript
-interface InstallEllamakaCliProps extends StepProps {
-  // 无额外用户输入字段。machine 自动处理。
-  // 进度展示：下载百分比 + 校验中 + 安装中 + 验证中。
-  // 完成后调用 onComplete({ stepId: "install-ellamaka-cli",
-  //   input: { version: "<ver>", binaryPath: "<path>" } })。
-}
-```
-
-### 2.7 github-auth（步骤 4，可选）
-
-```typescript
-interface GithubAuthProps extends StepProps {
-  // 组件内部状态：
-  // - token: string        用户输入的 GitHub PAT
-  // - valid: boolean       格式校验结果
-  // - detected: boolean    是否检测到已有 token（从 env 读取）
-  // - showSkip: true       此步骤可跳过
-  //
-  // 完成后调用 onComplete({ stepId: "github-auth", input: { token: "<token>" } })。
-}
-```
-
-### 2.8 ai-provider（步骤 5，可选）
-
-```typescript
-interface AiProviderProps extends StepProps {
-  // 组件内部状态：
-  // - providerId: string   用户选择的 provider（如 "openai"、"anthropic"）
-  // - apiKey: string        用户输入的 API Key
-  // - detected: boolean    是否检测到已有配置（从 auth.json 读取）
-  // - showSkip: true       此步骤可跳过
-  //
-  // 完成后调用 onComplete({ stepId: "ai-provider",
-  //   input: { providerId: "<id>", apiKey: "<key>" } })。
-}
-```
-
-### 2.9 ontology-setup（步骤 6）
-
-```typescript
-interface OntologySetupProps extends StepProps {
-  // 组件内部状态：
-  // - sourceType: "official" | "custom"    本体来源（官方默认源或自定义 GitHub URL）
-  // - customUrl: string                     自定义来源时填写的 GitHub URL
-  // - mode: "fork" | "clone"                获取模式
-  // - hasGithubAuth: boolean
-  // - existingMode: "fork" | "clone" | null
-  //
-  // 有有效 GitHub 认证且无既有本体时默认 Fork，否则默认 Clone。
-  // 用户选择本体来源与获取模式。自定义 URL 适用于 fork 或 clone。
-  // 已安装 ontology 保持当前来源与拓扑，不允许切换模式。
-  // 成功提交：
-  // onComplete({ stepId: "ontology-setup", input: { mode, source } })。
-  // machine result 中 availableTypes 仅展示准备结果，类型选择由步骤 8 所有。
-}
-```
-
-### 2.10 runtime-setup（步骤 7）
-
-```typescript
-interface RuntimeSetupProps extends StepProps {
-  // 无用户输入。调用 machine prepare-runtime。
-  // 展示 settingsPath、scripts 同步数量与六类基础能力状态。
-  // 三类动作全部 ready 后调用 onComplete。
-}
-```
-
-### 2.11 create-space（步骤 8）
-
-```typescript
-interface CreateSpaceProps extends StepProps {
-  // 组件内部状态：
-  // - spacePath: string      空间路径（可编辑的目录路径）
-  // - type: string           选择的类型（如 "common"、"coding"）
-  // - availableTypes: Array<{ type: string, branch: string }>
-  // - existingSpaces: Array<{ name: string, path: string, type: string | null }>
-  //
-  // 步骤开始时通过只读 probe 调用 machine `inspect`。
-  // availableTypes 来自步骤 6 已准备的本地 ontology 分支。
-  // 选择已有 Space 会填入其路径和锁定类型；全新路径执行创建。
-  // 环境已有注册 Space 时可明确跳过创建。
-  // 完成后调用 onComplete({ stepId: "create-space",
-  //   input: { path, type } })。
-}
-```
-
-### 2.12 memory-config（步骤 9，可选）
-
-```typescript
-interface MemoryConfigProps extends StepProps {
-  // 组件内部状态：
-  // - enabled: boolean                  是否启用记忆
-  // - probeState: "unconfigured" | "disabled" | "ready"
-  // - llmEndpoint: string               LLM 端点
-  // - llmKey: string                    LLM Key（空表示保留已有密钥）
-  // - llmModel: string                  LLM Model
-  // - embeddingEndpoint: string         Embedding 端点
-  // - embeddingKey: string              Embedding Key（空表示保留已有密钥）
-  // - embeddingModel: string            Embedding Model
-  // - embeddingSameAsLlm: boolean       Embedding 复用同一 endpoint 与 key
-  // - showSkip: true                    此步骤可跳过
-  //
-  // 进入步骤时先只读探测已有配置。probe 完成 after展示表单。
-  // unconfigured → 默认启用，展示 LLM 与 Embedding 两段真实配置表单。
-  // ready → 回填 endpoint/model，密钥显示"已保存"，空密钥输入表示保留。
-  // disabled → 开关关闭，展示关闭影响与重新启用入口。
-  // 选择"Embedding 使用同一服务" → endpoint 与 key 复用 LLM 值，只单独填写 Embedding model。
-  // 启用记忆时最终生效配置须满足 LLM endpoint/key 与 Embedding endpoint/model。
-  // "暂不启用长期记忆" → 调用 configure-memory(enabled=false) 后以 skipped 语义推进。
-  // 完成后调用 onComplete({ stepId: "memory-config",
-  //   input: { enabled, ...optionalLLMFields } })。
-}
-```
-
-### 2.13 star-guide（步骤 10，可选）
-
-```typescript
-interface StarGuideProps extends StepProps {
-  // 组件内部状态：
-  // - showSkip: true             此步骤可跳过
-  //
-  // accepted: true 时触发 machine `star`。
-  // 完成后调用 onComplete({ stepId: "star-guide",
-  //   input: { accepted: boolean } })。
-}
-```
-
-### 2.14 done（终态，非步骤组件）
-
-```typescript
-interface DoneViewProps {
-  state: OnboardingState;         // 完整的 onboarding 状态
-  nonFatalFailures: StepError[];  // 非致命步骤的失败信息（须展示给用户）
-  onEnterWorkbench: () => void;   // 触发进程内转换进入 Workbench
-}
-```
-
-`onboardingComplete()` 在写入完成态前调用 machine `inspect`。只有 `verdict === "healthy"` 才允许进入 Workbench。门禁失败返回结构化错误，Renderer 保留在 done 页面并展示缺失维度。
-
-进程内转换在当前进程内启动 sidecar 并将窗口切换到 Workbench，不重启进程。转换失败时提供"重试启动 / 重新配置"入口。
+`PHASE_CONFIGS` 定义 4 个阶段，与 `ONBOARDING_STEPS` 顺序一致。
 
 ---
 
-## 3. IPC Handler 接口
+## 7. IPC Handler 接口
 
-### 3.1 OnboardingIpcHandlers 依赖
-
-```typescript
-interface OnboardingIpcDeps {
-  getWopalHome: () => string;                    // 解析 WOPAL_HOME
-  executeMachineOperation: (op: MachineOperation) => Promise<MachineResponse>;  // 调用 wopal setup --machine
-  readOnboardingState: () => OnboardingState;    // 读 onboarding.json
-  writeOnboardingState: (state: Partial<OnboardingState>) => void;  // 写 onboarding.json（原子替换）
-  broadcastProgress: (stepId: string, status: StepStatus) => void;  // 通知 renderer 进度
-  transitionToWorkbench: () => Promise<{ status: "ok" } | { status: "error"; message: string }>;  // 进程内转换
-  downloadFile: (url: string, dest: string) => Promise<boolean>;  // 下载 CLI binary
-  checkSystem: () => SystemCheckResult;          // 本地系统检查
-}
-```
-
-步骤执行与只读探测使用独立通道。`onboarding:execute-step` 是唯一推动步骤状态的入口。认证检测、provider 检测和 machine `inspect` 走 `onboarding:probe`，不写 `in-progress`、`done` 或 `currentStep`。
-
-Machine client 将 capability success envelope 的 `data` 解释为 `SetupOperationResult`。`created`、`reused`、`skipped` 分别映射为 Renderer 的 `completed`、`reused`、`skipped`，业务结果取自 `data.result`。这一适配保证 UI 读取扁平业务字段，并保留用户跳过与真实复用语义。
-
-### 3.2 IPC Channel 清单
+### 7.1 IPC Channel 清单
 
 | Channel | 方向 | 用途 |
 |---------|------|------|
-| `onboarding:read-state` | Renderer → Main | 读取当前 onboarding.json |
-| `onboarding:execute-step` | Renderer → Main | 执行一个步骤（调 machine 或本地操作） |
-| `onboarding:probe` | Renderer → Main | 只读探测 GitHub、Provider、Runtime、Memory 或 setup 环境，不改变步骤状态 |
-| `onboarding:progress` | Main → Renderer | 推送步骤执行进度（broadcastProgress） |
-| `onboarding:transition-to-workbench` | Renderer → Main | 完成后进程内转换进入 Workbench |
-| `onboarding:get-system-info` | Renderer → Main | 获取系统信息（步骤 1） |
+| `get-onboarding-mode` | Renderer → Main | 解析 onboarding vs workbench 模式 |
+| `onboarding-get-state` | Renderer → Main | 读取 onboarding.json |
+| `onboarding-execute-step` | Renderer → Main | 执行一个步骤（调 machine 或本地操作），创建 AbortController |
+| `onboarding-cancel-step` | Renderer → Main | 取消当前正在执行的步骤 |
+| `onboarding-probe` | Renderer → Main | 只读探测（github-auth / ai-provider / runtime / environment / memory），不改变步骤状态 |
+| `onboarding-complete` | Renderer → Main | 完成门禁检查，写入 completed 状态 |
+| `onboarding-set-wopal-home` | Renderer → Main | 更新 WOPAL_HOME 路径 |
+| `onboarding-transition-to-workbench` | Renderer → Main | 进程内转换进入 Workbench |
+| `onboarding-progress` | Main → Renderer | 推送步骤执行进度（broadcastProgress） |
+
+### 7.2 执行与取消
+
+`onboarding-execute-step` 每次执行时创建 `AbortController`，传递 `abortSignal` 给底层 `installWopalCli` 和 `runSetupOperation`。`onboarding-cancel-step` 触发 `abort()`，子进程被 kill，步骤返回 `ABORTED` 错误码。
+
+### 7.3 进度转发
+
+`runSetupOperation` 同时转发 stdout 和 stderr 的非 JSON 行到 `onProgress`，使 engine 安装等操作的进度可见。JSON envelope 行（以 `{` 或 `}` 开头）不转发，保留用于最终结果解析。
+
+### 7.4 Handler 注册保护
+
+`registerIpcHandlers` 注册前先 `ipcMain.removeHandler` 清理所有 onboarding channel，防止 dev HMR 重载时重复注册报错。
 
 ---
 
-## 4. 相关文档
+## 8. 日志
+
+### 8.1 持久化日志
+
+IPC 层通过 `getOnboardingLogger` 写入 `$WOPAL_HOME/logs/onboarding.log`，记录步骤执行、成功、失败、诊断信息。日志超过 1MB 时轮转为 `onboarding.log.1`。
+
+### 8.2 UI 日志区
+
+Renderer 底部显示可折叠的日志抽屉，实时显示 IPC `onboarding-progress` 通道推送的进度消息和错误信息。日志区自动滚动到底部，保留最近 200 条。
+
+---
+
+## 9. 相关文档
 
 | 文档 | 说明 |
 |------|------|
-| `../../../docs/products/wopal-space/DESIGN-onboarding.md` | Onboarding 架构、步骤行为规范、通用约束 |
+| `../../../docs/products/wopal-space/DESIGN-onboarding.md` | Onboarding 架构、步骤序列、Machine Capability 契约、通用约束 |
 | `./DESKTOP.md` | Desktop 系统架构、启动行为 |
 | `./DISTRIBUTION.md` | ellamaka 分发 |
 | `../../../projects/wopal-cli/src/lib/setup-machine.ts` | Machine operation 精确类型定义 |
