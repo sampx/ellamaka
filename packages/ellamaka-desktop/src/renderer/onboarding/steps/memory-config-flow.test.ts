@@ -136,7 +136,7 @@ describe("memory-config-flow | buildInitialForm", () => {
       embeddingKeyConfigured: false,
     }
     const form = buildInitialForm(probe)
-    expect(form.enabled).toBe(true)
+    expect(form.enabled).toBe(false)
     expect(form.llmModel).toBe("gpt-4o-mini")
     expect(form.llmEndpoint).toBe("")
     expect(form.llmKey).toBe("")

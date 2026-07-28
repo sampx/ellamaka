@@ -8,6 +8,8 @@ const api: ElectronAPI = {
   onboardingComplete: () => ipcRenderer.invoke("onboarding-complete"),
   onboardingTransitionToWorkbench: () => ipcRenderer.invoke("onboarding-transition-to-workbench"),
   onboardingProbe: (kind) => ipcRenderer.invoke("onboarding-probe", kind),
+  onboardingSetWopalHome: (path) => ipcRenderer.invoke("onboarding-set-wopal-home", path),
+  onboardingCancelStep: () => ipcRenderer.invoke("onboarding-cancel-step"),
   onOnboardingProgress: (cb) => {
     const handler = (_: unknown, progress: any) => cb(progress)
     ipcRenderer.on("onboarding-progress", handler)

@@ -188,7 +188,19 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
     }
 
     child.stdout?.on("data", (chunk: any) => {
-      stdoutData += chunk.toString()
+      const str = chunk.toString()
+      stdoutData += str
+      // Forward non-JSON progress lines to onProgress.
+      // The JSON envelope is a single multi-line object written at the end;
+      // progress lines (e.g. "  ellamaka v1.2.3", "  Downloading...") are
+      // plain text and won't interfere with envelope extraction.
+      const lines = str.split("\n")
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed && !trimmed.startsWith("{") && !trimmed.startsWith("}")) {
+          onProgress?.({ phase: operation, message: trimmed })
+        }
+      }
     })
 
     child.stderr?.on("data", (chunk: any) => {

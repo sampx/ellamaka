@@ -252,7 +252,7 @@ describe("onboarding-ipc", () => {
 
     const state = readOnboardingState(testHome)
     expect(state?.steps["ontology-setup"]).toBe("done")
-    expect(state?.currentStep).toBe("runtime-setup")
+    expect(state?.currentStep).toBe("ai-provider")
   })
 
   test("onboardingExecuteStep ontology-setup failed stays on ontology-setup", async () => {

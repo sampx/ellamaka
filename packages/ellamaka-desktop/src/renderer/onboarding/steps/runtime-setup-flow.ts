@@ -67,7 +67,12 @@ export async function runRuntimeSetupFlow(input: {
   input.onPhase("configuring", before)
   const response = await input.reconcile()
   if (response.status !== "completed" && response.status !== "reused") {
-    throw new Error(response.error?.message ?? "本体能力安装配置失败。")
+    const msg = response.error?.message ?? "本体能力安装配置失败。"
+    // Provide actionable guidance when ontology was not prepared
+    if (msg.includes("SETUP_ONTOLOGY_NOT_PREPARED") || msg.includes("prepare-ontology")) {
+      throw new Error("能力模板库尚未准备，请先完成「能力与模型」阶段的能力模板库步骤，再回到本步骤。")
+    }
+    throw new Error(msg)
   }
 
   input.onPhase("verifying")

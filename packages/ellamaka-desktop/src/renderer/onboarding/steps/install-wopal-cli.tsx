@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { ProgressDisplay } from "../components/ProgressDisplay"
 
 export interface StepProps {
@@ -8,8 +8,9 @@ export interface StepProps {
 }
 
 export function InstallWopalCliStep(props: StepProps) {
-  const [isExecuting, setIsExecuting] = createSignal<boolean>(true)
+  const [isExecuting, setIsExecuting] = createSignal<boolean>(false)
   const [isPassed, setIsPassed] = createSignal<boolean>(false)
+  const [hasAttempted, setHasAttempted] = createSignal<boolean>(false)
   const [versionInfo, setVersionInfo] = createSignal<{ local?: string; latest?: string; binaryPath?: string }>({})
   const [progress, setProgress] = createSignal<{ phase?: string; percent?: number }>({})
 
@@ -18,6 +19,7 @@ export function InstallWopalCliStep(props: StepProps) {
     props.onStatusChange?.("working")
     setIsExecuting(true)
     setIsPassed(false)
+    setHasAttempted(true)
     setProgress({ phase: "检查 Wopal CLI 版本…" })
     try {
       const res = await window.api.onboardingExecuteStep("install-wopal-cli", { forceUpgrade })
@@ -44,10 +46,6 @@ export function InstallWopalCliStep(props: StepProps) {
     }
   }
 
-  onMount(() => {
-    void runInstall()
-  })
-
   return (
     <form
       id="onboarding-step-install-wopal-cli"
@@ -58,7 +56,7 @@ export function InstallWopalCliStep(props: StepProps) {
           props.onComplete()
           return
         }
-        void runInstall(true)
+        void runInstall(false)
       }}
     >
       <Show when={isExecuting()}>
@@ -91,7 +89,14 @@ export function InstallWopalCliStep(props: StepProps) {
         </div>
       </Show>
 
-      <Show when={!isExecuting() && !isPassed()}>
+      <Show when={!isExecuting() && !isPassed() && !hasAttempted()}>
+        <div class="ob-result-summary">
+          <div class="ob-result-title">点击「安装 Wopal CLI」开始</div>
+          <div class="ob-result-subtitle">将从官方源下载并安装 Wopal CLI 到 WOPAL_HOME/bin</div>
+        </div>
+      </Show>
+
+      <Show when={!isExecuting() && !isPassed() && hasAttempted()}>
         <div class="ob-result-summary">
           <div class="ob-result-icon ob-result-error">✗</div>
           <div class="ob-result-title">安装未完成</div>

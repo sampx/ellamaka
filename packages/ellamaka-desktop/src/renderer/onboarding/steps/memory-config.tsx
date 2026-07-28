@@ -306,69 +306,6 @@ export function MemoryConfigStep(props: StepProps) {
             </Show>
           </div>
         </Show>
-
-        <div class="ob-credential-actions">
-          <button type="submit" class="ob-button" disabled={submitting()}>
-            {submitting() ? t.saving : t.saveButton}
-          </button>
-        </div>
-      </Show>
-
-      <Show when={resultSummary()}>
-        <div class="ob-result-summary">
-          <div class="ob-result-icon">✓</div>
-          <div class="ob-result-title">{t.resultTitle}</div>
-          <div class="ob-result-details">
-            <div class="ob-result-row">
-              <span class="ob-result-label">{t.resultStatus}</span>
-              <span class="ob-result-value ob-result-accent">
-                {resultSummary()!.enabled ? t.resultEnabled : t.resultDisabled}
-              </span>
-            </div>
-            <div class="ob-result-row">
-              <span class="ob-result-label">{t.resultScopeLabel}</span>
-              <span class="ob-result-value">{t.resultScope}</span>
-            </div>
-            <div class="ob-result-row">
-              <span class="ob-result-label">{t.resultOutcome}</span>
-              <span class="ob-result-value">{outcomeLabel(resultSummary()!.outcome)}</span>
-            </div>
-            <Show when={resultSummary()!.enabled}>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultLlmEndpoint}</span>
-                <span class="ob-result-value ob-result-mono">{resultSummary()!.llmEndpoint}</span>
-              </div>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultLlmModel}</span>
-                <span class="ob-result-value">{resultSummary()!.llmModel}</span>
-              </div>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultLlmKeySaved}</span>
-                <span class="ob-result-value ob-result-accent">
-                  {resultSummary()!.llmKeySaved ? t.llmKeySaved : t.notConfigured}
-                </span>
-              </div>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultEmbeddingEndpoint}</span>
-                <span class="ob-result-value ob-result-mono">{resultSummary()!.embeddingEndpoint}</span>
-              </div>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultEmbeddingModel}</span>
-                <span class="ob-result-value">{resultSummary()!.embeddingModel}</span>
-              </div>
-              <div class="ob-result-row">
-                <span class="ob-result-label">{t.resultEmbeddingKeySaved}</span>
-                <span class="ob-result-value ob-result-accent">
-                  {resultSummary()!.embeddingKeySaved ? t.embeddingKeySaved : t.notConfigured}
-                </span>
-              </div>
-            </Show>
-            <div class="ob-result-row">
-              <span class="ob-result-label">{t.resultEnvPath}</span>
-              <span class="ob-result-value ob-result-mono">{resultSummary()!.envPath}</span>
-            </div>
-          </div>
-        </div>
       </Show>
     </form>
   )

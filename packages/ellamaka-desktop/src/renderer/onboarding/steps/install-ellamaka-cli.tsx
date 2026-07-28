@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js"
+import { createSignal, Show } from "solid-js"
 import { ProgressDisplay } from "../components/ProgressDisplay"
 
 export interface StepProps {
@@ -8,8 +8,9 @@ export interface StepProps {
 }
 
 export function InstallEllamakaCliStep(props: StepProps) {
-  const [isExecuting, setIsExecuting] = createSignal<boolean>(true)
+  const [isExecuting, setIsExecuting] = createSignal<boolean>(false)
   const [isPassed, setIsPassed] = createSignal<boolean>(false)
+  const [hasAttempted, setHasAttempted] = createSignal<boolean>(false)
   const [info, setInfo] = createSignal<{ version?: string; binaryPath?: string; channel?: string }>({})
   const [progress, setProgress] = createSignal<{ phase?: string; percent?: number }>({})
 
@@ -18,6 +19,7 @@ export function InstallEllamakaCliStep(props: StepProps) {
     props.onStatusChange?.("working")
     setIsExecuting(true)
     setIsPassed(false)
+    setHasAttempted(true)
     setProgress({ phase: "正在安装 Ellamaka 引擎…" })
     try {
       const res = await window.api.onboardingExecuteStep("install-ellamaka-cli", { forceUpgrade })
@@ -42,17 +44,17 @@ export function InstallEllamakaCliStep(props: StepProps) {
     }
   }
 
-  onMount(() => {
-    void runInstall()
-  })
-
   return (
     <form
       id="onboarding-step-install-ellamaka-cli"
       class="ob-step-content"
       onSubmit={(event) => {
         event.preventDefault()
-        void runInstall(true)
+        if (isPassed()) {
+          props.onComplete()
+          return
+        }
+        void runInstall(false)
       }}
     >
       <Show when={isExecuting()}>
@@ -88,7 +90,14 @@ export function InstallEllamakaCliStep(props: StepProps) {
         </div>
       </Show>
 
-      <Show when={!isExecuting() && !isPassed()}>
+      <Show when={!isExecuting() && !isPassed() && !hasAttempted()}>
+        <div class="ob-result-summary">
+          <div class="ob-result-title">点击「安装 Ellamaka」开始</div>
+          <div class="ob-result-subtitle">将下载并安装 Ellamaka 引擎到 WOPAL_HOME</div>
+        </div>
+      </Show>
+
+      <Show when={!isExecuting() && !isPassed() && hasAttempted()}>
         <div class="ob-result-summary">
           <div class="ob-result-icon ob-result-error">✗</div>
           <div class="ob-result-title">安装未完成</div>

@@ -47,6 +47,7 @@ export interface InstallWopalCliOptions {
   spawnFn?: (command: string, args: string[], options: any) => ChildProcess
   fetchInstallerScript?: (platform: string) => Promise<string>
   fetchLatestVersion?: () => Promise<string | null>
+  abortSignal?: AbortSignal
 }
 
 export async function installWopalCli(options: InstallWopalCliOptions = {}): Promise<OnboardingStepResult> {
@@ -164,102 +165,132 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
   }
 
   return new Promise((resolve) => {
-    try {
-      const child = spawnImpl(cmd, args, { env, stdio: "pipe" })
-      let stdoutLog = ""
-      let stderrLog = ""
+    let child: ChildProcess
+    let isSettled = false
 
-      child.stdout?.on("data", (chunk: any) => {
-        const str = chunk.toString()
-        // Strip ANSI escape codes before logging
-        const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
-        stdoutLog += clean
-        if (clean.trim()) {
-          options.onProgress?.({ phase: "installing", message: clean.trim() })
-        }
-      })
-
-      child.stderr?.on("data", (chunk: any) => {
-        const str = chunk.toString()
-        // Strip ANSI escape codes before logging
-        const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
-        stderrLog += clean
-        if (clean.trim()) {
-          options.onProgress?.({ phase: "installing", message: clean.trim() })
-        }
-      })
-
-      child.on("exit", (code: number | null) => {
-        const fullLog = (stdoutLog + stderrLog).trim()
-        // Only check WOPAL_HOME/bin as per design contract
-        const expectedPath = join(homePath, "bin", binName)
-        const binDirExists = existsSync(join(homePath, "bin"))
-        const binExists = existsSync(expectedPath)
-
-        // Log diagnostic info
-        options.onProgress?.({
-          phase: "verifying",
-          message: `检查安装路径: ${expectedPath}, 目录存在: ${binDirExists}, 二进制存在: ${binExists}, exit code: ${code}`,
-        })
-
-        let foundPath: string | null = null
-        if (binExists) {
-          try {
-            const check = spawnSync(expectedPath, ["--version"])
-            if (check.status === 0) {
-              foundPath = expectedPath
-            } else {
-              options.onProgress?.({
-                phase: "verifying",
-                message: `wopal --version 执行失败 (exit ${check.status}): ${check.stderr?.toString().trim()}`,
-              })
-            }
-          } catch (err) {
-            options.onProgress?.({
-              phase: "verifying",
-              message: `执行 wopal --version 异常: ${err instanceof Error ? err.message : String(err)}`,
-            })
-          }
-        }
-
-        if (foundPath) {
-          // Re-read version after install to get actual installed version
-          let installedVersion = localVersion
-          try {
-            const verCheck = spawnSync(foundPath, ["--version"])
-            if (verCheck.status === 0) {
-              installedVersion = verCheck.stdout.toString().trim()
-            }
-          } catch {
-            // keep previous version
-          }
-          resolve({
-            status: "completed",
-            result: { binaryPath: foundPath, version: installedVersion },
-          })
-        } else {
-          const errorDetail = fullLog || `exit code ${code}, binary not found at ${expectedPath}`
-          resolve({
-            status: "failed",
-            error: {
-              code: "INSTALLATION_FAILED",
-              message: `安装程序执行失败 (exit ${code}): ${errorDetail}`,
-            },
-          })
-        }
-      })
-
-      child.on("error", (err: Error) => {
-        resolve({
-          status: "failed",
-          error: { code: "SPAWN_ERROR", message: err.message },
-        })
-      })
-    } catch (err) {
+    const abortHandler = () => {
+      if (isSettled) return
+      isSettled = true
+      try { child.kill("SIGTERM") } catch {}
       resolve({
+        status: "failed",
+        error: {
+          code: "INSTALLATION_ABORTED",
+          message: "Wopal CLI 安装已被用户取消。",
+        },
+      })
+    }
+
+    if (options.abortSignal) {
+      if (options.abortSignal.aborted) {
+        return resolve({
+          status: "failed",
+          error: { code: "INSTALLATION_ABORTED", message: "Wopal CLI 安装已被用户取消。" },
+        })
+      }
+      options.abortSignal.addEventListener("abort", abortHandler)
+    }
+
+    try {
+      child = spawnImpl(cmd, args, { env, stdio: "pipe" })
+    } catch (err) {
+      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
+      return resolve({
         status: "failed",
         error: { code: "SPAWN_EXCEPTION", message: err instanceof Error ? err.message : String(err) },
       })
     }
+
+    let stdoutLog = ""
+    let stderrLog = ""
+
+    child.stdout?.on("data", (chunk: any) => {
+      const str = chunk.toString()
+      const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
+      stdoutLog += clean
+      if (clean.trim()) {
+        options.onProgress?.({ phase: "installing", message: clean.trim() })
+      }
+    })
+
+    child.stderr?.on("data", (chunk: any) => {
+      const str = chunk.toString()
+      const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
+      stderrLog += clean
+      if (clean.trim()) {
+        options.onProgress?.({ phase: "installing", message: clean.trim() })
+      }
+    })
+
+    child.on("exit", (code: number | null) => {
+      if (isSettled) return
+      isSettled = true
+      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
+
+      const fullLog = (stdoutLog + stderrLog).trim()
+      const expectedPath = join(homePath, "bin", binName)
+      const binDirExists = existsSync(join(homePath, "bin"))
+      const binExists = existsSync(expectedPath)
+
+      options.onProgress?.({
+        phase: "verifying",
+        message: `检查安装路径: ${expectedPath}, 目录存在: ${binDirExists}, 二进制存在: ${binExists}, exit code: ${code}`,
+      })
+
+      let foundPath: string | null = null
+      if (binExists) {
+        try {
+          const check = spawnSync(expectedPath, ["--version"])
+          if (check.status === 0) {
+            foundPath = expectedPath
+          } else {
+            options.onProgress?.({
+              phase: "verifying",
+              message: `wopal --version 执行失败 (exit ${check.status}): ${check.stderr?.toString().trim()}`,
+            })
+          }
+        } catch (err) {
+          options.onProgress?.({
+            phase: "verifying",
+            message: `执行 wopal --version 异常: ${err instanceof Error ? err.message : String(err)}`,
+          })
+        }
+      }
+
+      if (foundPath) {
+        let installedVersion = localVersion
+        try {
+          const verCheck = spawnSync(foundPath, ["--version"])
+          if (verCheck.status === 0) {
+            installedVersion = verCheck.stdout.toString().trim()
+          }
+        } catch {
+          // keep previous version
+        }
+        resolve({
+          status: "completed",
+          result: { binaryPath: foundPath, version: installedVersion },
+        })
+      } else {
+        const errorDetail = fullLog || `exit code ${code}, binary not found at ${expectedPath}`
+        resolve({
+          status: "failed",
+          error: {
+            code: "INSTALLATION_FAILED",
+            message: `安装程序执行失败 (exit ${code}): ${errorDetail}`,
+          },
+        })
+      }
+    })
+
+    child.on("error", (err: Error) => {
+      if (isSettled) return
+      isSettled = true
+      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
+      resolve({
+        status: "failed",
+        error: { code: "SPAWN_ERROR", message: err.message },
+      })
+    })
   })
 }

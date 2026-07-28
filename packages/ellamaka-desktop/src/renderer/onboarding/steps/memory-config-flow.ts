@@ -121,7 +121,7 @@ export function buildInitialForm(probe: MemoryProbeResult): MemoryFormState {
   )
 
   return {
-    enabled: isFresh ? true : probe.enabled,
+    enabled: isFresh ? false : probe.enabled,
     llmEndpoint,
     llmModel,
     llmKey: "",

@@ -10,8 +10,64 @@ export const OPTIONAL_STEPS: Set<OnboardingStepName> = new Set([
   "star-guide",
 ])
 
-export function isOptionalStep(step: OnboardingStepName): boolean {
+export interface StepContext {
+  hasExistingSpaces?: boolean
+}
+
+export function isOptionalStep(step: OnboardingStepName, context?: StepContext): boolean {
+  if (step === "create-space") {
+    return Boolean(context?.hasExistingSpaces)
+  }
   return OPTIONAL_STEPS.has(step)
+}
+
+export interface PhaseConfig {
+  phase: 1 | 2 | 3 | 4
+  title: string
+  steps: (OnboardingStepName | "done")[]
+  autoAdvanceSteps: Set<OnboardingStepName>
+}
+
+export const PHASE_CONFIGS: PhaseConfig[] = [
+  {
+    phase: 1,
+    title: "引擎准备",
+    steps: ["system-check", "install-wopal-cli", "install-ellamaka-cli"],
+    autoAdvanceSteps: new Set(["system-check", "install-wopal-cli", "install-ellamaka-cli"]),
+  },
+  {
+    phase: 2,
+    title: "能力与模型",
+    steps: ["ontology-setup", "ai-provider"], // github-auth is integrated into ontology-setup
+    autoAdvanceSteps: new Set([]),
+  },
+  {
+    phase: 3,
+    title: "空间与记忆",
+    steps: ["runtime-setup", "create-space", "memory-config"],
+    autoAdvanceSteps: new Set(["runtime-setup"]),
+  },
+  {
+    phase: 4,
+    title: "启动",
+    steps: ["done"], // star-guide is silent on done page entry
+    autoAdvanceSteps: new Set([]),
+  },
+]
+
+export function getPhaseForStep(step: OnboardingStepName | "done"): PhaseConfig {
+  if (step === "github-auth") {
+    return PHASE_CONFIGS[1] // Phase 2 (integrated with ontology-setup)
+  }
+  if (step === "star-guide") {
+    return PHASE_CONFIGS[3] // Phase 4 (integrated with done)
+  }
+  for (const config of PHASE_CONFIGS) {
+    if (config.steps.includes(step)) {
+      return config
+    }
+  }
+  return PHASE_CONFIGS[0]
 }
 
 export interface StepMetadata {
@@ -99,7 +155,6 @@ export function getStepContent(step: OnboardingStepName | "done"): StepContent |
 }
 
 export type ForwardMode = "submit" | "advance" | "disabled"
-
 export type FeedbackMode = "idle" | "working" | "error" | "hidden"
 
 const EXPLICIT_ACTION_STEPS = new Set<OnboardingStepName>([
@@ -148,34 +203,55 @@ export function createStepController(initialStep: OnboardingStepName | "done" = 
     },
     getProgressPercent: () => {
       if (currentStep === "done") return 100
-      const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
-      if (idx === -1) return 0
-      return Math.round(((idx + 1) / ONBOARDING_STEPS.length) * 100)
+      const phase = getPhaseForStep(currentStep)
+      return Math.round((phase.phase / 4) * 100)
     },
     next: () => {
       if (currentStep === "done") return
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx !== -1 && idx < ONBOARDING_STEPS.length - 1) {
-        currentStep = ONBOARDING_STEPS[idx + 1]
+        let nextStep = ONBOARDING_STEPS[idx + 1]
+        // Skip github-auth as standalone step because it's merged into ontology-setup
+        if (nextStep === "github-auth") {
+          nextStep = "ontology-setup"
+        }
+        // Skip star-guide as standalone step because it's merged into done
+        if (nextStep === "star-guide") {
+          currentStep = "done"
+          return
+        }
+        currentStep = nextStep
       } else {
         currentStep = "done"
       }
     },
     prev: () => {
       if (currentStep === "done") {
-        currentStep = ONBOARDING_STEPS[ONBOARDING_STEPS.length - 1]
+        currentStep = "memory-config" // Skip star-guide standalone page
         return
       }
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx > 0) {
-        currentStep = ONBOARDING_STEPS[idx - 1]
+        let prevStep = ONBOARDING_STEPS[idx - 1]
+        if (prevStep === "github-auth") {
+          prevStep = "install-ellamaka-cli"
+        }
+        if (prevStep === "star-guide") {
+          prevStep = "memory-config"
+        }
+        currentStep = prevStep
       }
     },
-    skip: () => {
-      if (currentStep !== "done" && isOptionalStep(currentStep as OnboardingStepName)) {
+    skip: (context?: StepContext) => {
+      if (currentStep !== "done" && isOptionalStep(currentStep as OnboardingStepName, context)) {
         const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
         if (idx !== -1 && idx < ONBOARDING_STEPS.length - 1) {
-          currentStep = ONBOARDING_STEPS[idx + 1]
+          let nextStep = ONBOARDING_STEPS[idx + 1]
+          if (nextStep === "star-guide") {
+            currentStep = "done"
+            return
+          }
+          currentStep = nextStep
         } else {
           currentStep = "done"
         }

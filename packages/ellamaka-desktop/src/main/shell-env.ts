@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process"
-import { userInfo } from "node:os"
-import { basename } from "node:path"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { homedir, userInfo } from "node:os"
+import { basename, join } from "node:path"
 import { getLogger } from "./logging"
 
 const TIMEOUT = 5_000
@@ -98,3 +99,75 @@ export function mergeShellEnv(shell: Record<string, string> | null, env: Record<
     ...env,
   }
 }
+
+export function persistWopalHomeEnv(wopalHome: string): { success: boolean; message?: string } {
+  const log = getLogger()
+  try {
+    process.env.WOPAL_HOME = wopalHome
+    const isWin = process.platform === "win32"
+
+    if (isWin) {
+      // 1. Windows: setx command for User environment variables
+      const res = spawnSync("setx", ["WOPAL_HOME", wopalHome], { windowsHide: true })
+      if (res.error || res.status !== 0) {
+        const errMsg = res.error?.message || res.stderr?.toString() || `setx exited with code ${res.status}`
+        log.error("[shell-env] Failed to run setx WOPAL_HOME:", errMsg)
+        return { success: false, message: `Failed to set Windows environment variable: ${errMsg}` }
+      }
+      return { success: true, message: "Windows WOPAL_HOME user environment variable set via setx." }
+    } else {
+      // 2. POSIX (macOS & Linux): append/update shell profile files
+      const userShell = getUserShell()
+      const shellName = basename(userShell).toLowerCase()
+      const home = homedir()
+
+      const targetProfiles: string[] = []
+      if (shellName === "zsh") {
+        targetProfiles.push(join(home, ".zshrc"))
+      } else if (shellName === "bash") {
+        targetProfiles.push(join(home, ".bashrc"))
+        if (existsSync(join(home, ".bash_profile"))) {
+          targetProfiles.push(join(home, ".bash_profile"))
+        }
+      } else if (shellName === "fish") {
+        targetProfiles.push(join(home, ".config", "fish", "config.fish"))
+      } else {
+        targetProfiles.push(join(home, ".profile"))
+      }
+
+      for (const profilePath of targetProfiles) {
+        try {
+          const dir = join(profilePath, "..")
+          if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+          let content = existsSync(profilePath) ? readFileSync(profilePath, "utf-8") : ""
+          const isFish = profilePath.endsWith(".fish")
+          const lineToSet = isFish
+            ? `set -gx WOPAL_HOME "${wopalHome}"`
+            : `export WOPAL_HOME="${wopalHome}"`
+
+          const pattern = isFish
+            ? /^set\s+-gx\s+WOPAL_HOME\s+.*$/m
+            : /^export\s+WOPAL_HOME=.*$/m
+
+          if (pattern.test(content)) {
+            content = content.replace(pattern, lineToSet)
+          } else {
+            const nl = content.endsWith("\n") || content.length === 0 ? "" : "\n"
+            content += `${nl}\n# WopalSpace Environment\n${lineToSet}\n`
+          }
+
+          writeFileSync(profilePath, content, "utf-8")
+        } catch (err) {
+          log.error(`[shell-env] Error updating profile ${profilePath}:`, err)
+        }
+      }
+
+      return { success: true, message: `Updated shell profile(s) for ${shellName}.` }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { success: false, message }
+  }
+}
+

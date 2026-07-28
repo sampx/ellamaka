@@ -137,11 +137,6 @@ export function AiProviderStep(props: StepProps) {
           <span class="ob-field-help">API Key 仅用于配置本机 Ellamaka。</span>
         </div>
 
-        <div class="ob-credential-actions">
-          <button type="submit" class="ob-button" disabled={loading() || (!apiKey().trim() && !detectedKey())}>
-            {loading() ? "正在保存…" : detectedKey() && !apiKey().trim() ? "使用现有 API Key" : "保存 API Key"}
-          </button>
-        </div>
       </Show>
     </form>
   )

@@ -4,6 +4,7 @@ import { ProgressDisplay } from "../components/ProgressDisplay"
 export interface StepProps {
   onStatusChange?: (status: "working" | "success" | "error") => void
   onComplete: () => void
+  onSkip?: () => void
   onError: (error: {
     code?: string
     message: string
@@ -53,7 +54,7 @@ export function CreateSpaceStep(props: StepProps) {
         ? envData.availableTypes as AvailableType[]
         : []
       if (types.length === 0) {
-        throw new Error("未检测到可用的 Space 类型，请返回能力本体步骤重新检查。")
+        throw new Error("未检测到可用的空间类型，请返回上一步重新初始化。")
       }
       setAvailableTypes(types)
       if (!types.some((item) => item.type === spaceType())) {
@@ -85,16 +86,37 @@ export function CreateSpaceStep(props: StepProps) {
     void loadEnvironment()
   })
 
+  const handleSkipCreate = async () => {
+    props.onError(null)
+    props.onStatusChange?.("working")
+    setIsSubmitting(true)
+    try {
+      const res = await window.api.onboardingExecuteStep("create-space", { skip: true })
+      if (res.status === "skipped" || res.status === "completed" || res.status === "reused") {
+        props.onStatusChange?.("success")
+        props.onComplete()
+      } else {
+        props.onStatusChange?.("error")
+        props.onError(res.error?.message ?? "无法跳过工作空间创建。")
+      }
+    } catch (err) {
+      props.onStatusChange?.("error")
+      props.onError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
     if (!spaceDir().trim()) {
       props.onStatusChange?.("error")
-      props.onError("请选择工作空间目录。")
+      props.onError("请选择或输入工作空间目录。")
       return
     }
     if (!spaceType() || availableTypes().length === 0) {
       props.onStatusChange?.("error")
-      props.onError("Ontology types not available. Please complete the Ontology Setup step first.")
+      props.onError("能力类型不可用，请返回上一步重新配置。")
       return
     }
 
@@ -119,7 +141,7 @@ export function CreateSpaceStep(props: StepProps) {
         props.onStatusChange?.("success")
       } else {
         props.onStatusChange?.("error")
-        const message = res.error?.message ?? "工作空间创建失败，请查看日志了解原因。"
+        const message = res.error?.message ?? "工作空间创建失败。"
         const details = [
           res.error?.suggestion ? `建议: ${res.error.suggestion}` : "",
           res.error?.details ?? "",
@@ -141,7 +163,7 @@ export function CreateSpaceStep(props: StepProps) {
   const handleBrowse = async () => {
     try {
       const result = await window.api.openDirectoryPicker({
-        title: "Select WopalSpace Root Directory",
+        title: "选择工作空间根目录",
         defaultPath: spaceDir(),
       })
       if (typeof result === "string") {
@@ -164,7 +186,7 @@ export function CreateSpaceStep(props: StepProps) {
   return (
     <form id="onboarding-step-create-space" onSubmit={handleSubmit} class="space-y-6">
       <Show when={isLoading()}>
-        <ProgressDisplay phase="正在检查现有工作空间和可用类型…" />
+        <ProgressDisplay phase="正在检测已有工作空间与能力类型…" />
       </Show>
 
       <Show when={!isLoading() && probeError()}>
@@ -184,7 +206,7 @@ export function CreateSpaceStep(props: StepProps) {
         <div class="ob-result-summary">
           <div class="ob-result-icon">✓</div>
           <div class="ob-result-title">
-            {resultInfo()?.status === "reused" ? "工作空间已复用" : "工作空间已创建"}
+            {resultInfo()?.status === "reused" ? "已复用现有工作空间" : "工作空间已创建"}
           </div>
           <div class="ob-result-details">
             <div class="ob-result-row">
@@ -196,7 +218,7 @@ export function CreateSpaceStep(props: StepProps) {
               <span class="ob-result-value ob-result-mono">{resultInfo()?.path}</span>
             </div>
             <div class="ob-result-row">
-              <span class="ob-result-label">能力类型</span>
+              <span class="ob-result-label">类型</span>
               <span class="ob-result-value">{resultInfo()?.type}</span>
             </div>
           </div>
@@ -204,99 +226,99 @@ export function CreateSpaceStep(props: StepProps) {
       </Show>
 
       <Show when={!isLoading() && !probeError() && !resultInfo()}>
-      <Show when={existingSpaces().length > 0}>
-        <div class="ob-form-group">
-          <label class="ob-label">已有工作空间</label>
-          <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", "margin-bottom": "8px" }}>
-            选择已注册的工作空间可直接复用：
-          </p>
-          <For each={existingSpaces()}>
-            {(space) => (
+        <Show when={existingSpaces().length > 0}>
+          <div class="ob-existing-spaces-banner" style={{ "background": "rgba(255,255,255,0.04)", "border-radius": "8px", "padding": "16px", "margin-bottom": "20px" }}>
+            <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "12px" }}>
+              <div>
+                <strong style={{ "font-size": "14px" }}>检测到已存在 {existingSpaces().length} 个工作空间</strong>
+                <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", margin: "2px 0 0" }}>
+                  您可以直接跳过创建并继续，或者在下面创建新的工作空间。
+                </p>
+              </div>
               <button
                 type="button"
                 class="ob-button ob-button-secondary"
-                style={{ display: "block", width: "100%", "text-align": "left", "margin-bottom": "4px", padding: "8px 12px" }}
-                onClick={() => handleSelectExistingSpace(space)}
+                onClick={handleSkipCreate}
+                disabled={isSubmitting()}
+                style={{ padding: "8px 16px", "font-size": "13px" }}
               >
-                <span style={{ "font-weight": "600" }}>{space.name}</span>
-                <span style={{ "font-size": "11px", color: "var(--ob-text-subtle)", "margin-left": "8px" }}>{space.path}</span>
-                {space.type && <span style={{ "font-size": "11px", color: "var(--ob-accent)", "margin-left": "8px" }}>type: {space.type}</span>}
+                跳过创建（复用已有）
               </button>
-            )}
-          </For>
-        </div>
-      </Show>
+            </div>
 
-      <div class="ob-form-group">
-        <label class="ob-label">工作空间目录</label>
-        <div class="ob-input-row" style={{ display: "flex", gap: "8px" }}>
-          <input
-            type="text"
+            <div class="ob-form-group">
+              <label class="ob-label" style={{ "font-size": "12px" }}>已有空间列表：</label>
+              <For each={existingSpaces()}>
+                {(space) => (
+                  <button
+                    type="button"
+                    class="ob-button ob-button-secondary"
+                    style={{ display: "block", width: "100%", "text-align": "left", "margin-bottom": "4px", padding: "8px 12px" }}
+                    onClick={() => handleSelectExistingSpace(space)}
+                  >
+                    <span style={{ "font-weight": "600" }}>{space.name}</span>
+                    <span style={{ "font-size": "11px", color: "var(--ob-text-subtle)", "margin-left": "8px" }}>{space.path}</span>
+                    {space.type && <span style={{ "font-size": "11px", color: "var(--ob-accent)", "margin-left": "8px" }}>[{space.type}]</span>}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+
+        <div class="ob-form-group">
+          <label class="ob-label">工作空间目录</label>
+          <div class="ob-input-row" style={{ display: "flex", gap: "8px" }}>
+            <input
+              type="text"
+              class="ob-input"
+              style={{ flex: 1 }}
+              value={spaceDir()}
+              onInput={(e) => setSpaceDir(e.currentTarget.value)}
+              placeholder="~/WopalSpace"
+              disabled={isSubmitting()}
+            />
+            <button
+              type="button"
+              class="ob-button ob-button-secondary"
+              onClick={handleBrowse}
+              disabled={isSubmitting()}
+              style={{ padding: "0 14px", "white-space": "nowrap", "font-size": "13px" }}
+            >
+              选择目录
+            </button>
+          </div>
+          <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", "margin-top": "6px" }}>
+            该目录将承载项目文件与 <code>.wopal-space/</code> 空间配置。
+          </p>
+        </div>
+
+        <div class="ob-form-group" style={{ "margin-top": "18px" }}>
+          <label class="ob-label" for="space-type-select">
+            空间类型
+          </label>
+          <select
+            id="space-type-select"
             class="ob-input"
-            style={{ flex: 1 }}
-            value={spaceDir()}
-            onInput={(e) => setSpaceDir(e.currentTarget.value)}
-            placeholder="~/WopalSpace"
-            disabled={isSubmitting()}
-          />
-          <button
-            type="button"
-            class="ob-button ob-button-secondary"
-            onClick={handleBrowse}
-            disabled={isSubmitting()}
-            style={{ padding: "0 14px", "white-space": "nowrap", "font-size": "13px" }}
+            value={spaceType()}
+            onChange={(e) => setSpaceType(e.currentTarget.value)}
+            disabled={isSubmitting() || isLoading()}
+            style={{ "text-transform": "capitalize" }}
           >
-            选择目录
-          </button>
+            <Show when={isLoading()}>
+              <option value="">正在加载类型…</option>
+            </Show>
+            <For each={availableTypes()}>
+              {(t) => (
+                <option value={t.type}>
+                  {t.type === "common" ? "通用 (main 分支)" : `${t.type}`}
+                </option>
+              )}
+            </For>
+          </select>
         </div>
-        <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", "margin-top": "6px" }}>
-          该目录将承载 WopalSpace 内容和 <code>.wopal-space/</code> 运行时。
-        </p>
-      </div>
 
-      <div class="ob-form-group" style={{ "margin-top": "18px" }}>
-        <label class="ob-label" for="space-type-select">
-          Space 能力类型
-        </label>
-        <select
-          id="space-type-select"
-          class="ob-input"
-          value={spaceType()}
-          onChange={(e) => setSpaceType(e.currentTarget.value)}
-          disabled={isSubmitting() || isLoading()}
-          style={{ "text-transform": "capitalize" }}
-        >
-          <Show when={isLoading()}>
-            <option value="">正在加载类型…</option>
-          </Show>
-          <For each={availableTypes()}>
-            {(t) => (
-              <option value={t.type}>
-                {t.type === "common" ? "通用（main 分支）" : `${t.type}`}
-              </option>
-            )}
-          </For>
-        </select>
-        <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", "margin-top": "6px" }}>
-          能力类型来自本地已准备的能力本体分支。
-        </p>
-      </div>
-
-      <div class="ob-credential-actions">
-        <button
-          type="submit"
-          class="ob-button"
-          disabled={isSubmitting() || !spaceDir().trim() || !spaceType()}
-        >
-          {isSubmitting()
-            ? "正在处理…"
-            : existingSpaces().some((space) => space.path === spaceDir().trim())
-              ? "使用此工作空间"
-              : "创建此工作空间"}
-        </button>
-      </div>
       </Show>
-
     </form>
   )
 }

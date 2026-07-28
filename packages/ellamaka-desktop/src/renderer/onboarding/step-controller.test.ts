@@ -13,7 +13,8 @@ describe("step-controller", () => {
   test("ONBOARDING_STEPS contains 10 steps in order", () => {
     expect(ONBOARDING_STEPS.length).toBe(10)
     expect(ONBOARDING_STEPS[0]).toBe("system-check")
-    expect(ONBOARDING_STEPS[5]).toBe("ontology-setup")
+    expect(ONBOARDING_STEPS[4]).toBe("ontology-setup")
+    expect(ONBOARDING_STEPS[5]).toBe("ai-provider")
     expect(ONBOARDING_STEPS[6]).toBe("runtime-setup")
     expect(ONBOARDING_STEPS[7]).toBe("create-space")
     expect(ONBOARDING_STEPS[9]).toBe("star-guide")
@@ -32,7 +33,7 @@ describe("step-controller", () => {
     const controller = createStepController("system-check")
 
     expect(controller.getCurrentStep()).toBe("system-check")
-    expect(controller.getProgressPercent()).toBe(10)
+    expect(controller.getProgressPercent()).toBe(25)
 
     controller.next()
     expect(controller.getCurrentStep()).toBe("install-wopal-cli")

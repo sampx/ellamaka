@@ -16,7 +16,7 @@ import { spawnSync } from "node:child_process"
 import { accessSync, constants, existsSync, mkdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { getUserShell, loadShellEnv } from "./shell-env"
+import { getUserShell, loadShellEnv, persistWopalHomeEnv } from "./shell-env"
 import type { OnboardingStepResult } from "../preload/types"
 
 import { statfsSync } from "node:fs"
@@ -58,19 +58,43 @@ export async function performSystemCheck(homePath: string): Promise<OnboardingSt
     }
   }
 
-  // 3. Check Network connectivity to R2 CDN
+  // 3. Check Network connectivity to R2 CDN (with fallback & tolerant timeout)
   let networkOk = false
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 2500)
-    const res = await fetch("https://download.coursedao.com/wopal-cli/latest/manifest.json", {
-      method: "HEAD",
-      signal: controller.signal,
-    })
-    clearTimeout(timer)
-    networkOk = res.ok || res.status < 500
-  } catch {
-    networkOk = false
+  const cdnUrl = "https://download.coursedao.com/wopal-cli/latest/manifest.json"
+  
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 8000)
+      const res = await fetch(cdnUrl, {
+        method: attempt === 0 ? "HEAD" : "GET",
+        headers: attempt === 1 ? { Range: "bytes=0-0" } : undefined,
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (res.ok || res.status < 500) {
+        networkOk = true
+        break
+      }
+    } catch {
+      // Retry next attempt
+    }
+  }
+
+  // Fallback check to general internet if CDN attempt timed out
+  if (!networkOk) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch("https://1.1.1.1", { method: "HEAD", signal: controller.signal })
+      clearTimeout(timer)
+      if (res.ok || res.status < 500) {
+        // General internet is reachable, tolerate CDN latency warning
+        networkOk = true
+      }
+    } catch {
+      networkOk = false
+    }
   }
 
   if (!networkOk) {
@@ -203,6 +227,7 @@ export type StepExecutor = (
   step: OnboardingStepName | "inspect",
   input?: unknown,
   onProgress?: (progress: any) => void,
+  abortSignal?: AbortSignal,
 ) => Promise<OnboardingStepResult>
 
 export interface OnboardingIpcDeps {
@@ -226,8 +251,9 @@ const STEP_OPERATION_LABELS: Record<OnboardingStepName, string> = {
 
 export function createOnboardingIpcHandlers(deps: OnboardingIpcDeps = {}) {
   let currentOperation: Promise<OnboardingStepResult> | null = null
+  let currentAbortController: AbortController | null = null
 
-  const defaultExecuteStep: StepExecutor = async (step, input, onProgress) => {
+  const defaultExecuteStep: StepExecutor = async (step, input, onProgress, abortSignal) => {
     const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
     process.env.WOPAL_HOME = homePath
     
@@ -246,14 +272,22 @@ switch (step) {
             onProgress,
           }))
 
-        case "system-check":
-          return performSystemCheck(homePath)
+        case "system-check": {
+          const inputHome = (input as Record<string, unknown> | undefined)?.customHomePath as string | undefined
+          const targetHome = inputHome?.trim() ? inputHome.trim() : homePath
+          const resolvedHome = targetHome.startsWith("~") ? join(homedir(), targetHome.slice(1)) : targetHome
+          deps.homePath = resolvedHome
+          process.env.WOPAL_HOME = resolvedHome
+          persistWopalHomeEnv(resolvedHome)
+          return performSystemCheck(resolvedHome)
+        }
 
         case "install-wopal-cli":
           return installWopalCli({
             homePath,
             forceUpgrade: (input as Record<string, unknown> | undefined)?.forceUpgrade as boolean | undefined,
             onProgress,
+            abortSignal,
           })
 
         case "install-ellamaka-cli": {
@@ -265,6 +299,7 @@ switch (step) {
             operation: "install-engine",
             input: payload,
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -282,6 +317,7 @@ switch (step) {
             operation: "configure-github",
             input: { token },
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -300,6 +336,7 @@ switch (step) {
             operation: "configure-provider",
             input: { providerId, apiKey },
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -314,6 +351,7 @@ switch (step) {
             operation: "prepare-ontology",
             input: opInput,
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -323,6 +361,7 @@ switch (step) {
             operation: "prepare-runtime",
             input: {},
             onProgress,
+            abortSignal,
           }))
 
         case "create-space": {
@@ -352,6 +391,7 @@ switch (step) {
             operation: "initialize-space",
             input: { path, type: (payload.type as string) || undefined },
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -361,6 +401,7 @@ switch (step) {
             operation: "configure-memory",
             input: buildMemoryOperationInput(input),
             onProgress,
+            abortSignal,
           }))
         }
 
@@ -552,9 +593,12 @@ switch (step) {
         state = updateStep(state, stepName, "in-progress")
         writeOnboardingState(state, deps.homePath)
 
+        const abortController = new AbortController()
+        currentAbortController = abortController
+
         try {
           const executor = deps.executeStep ?? defaultExecuteStep
-          const res = await executor(stepName, input, (p) => deps.broadcastProgress?.({ step: stepName, ...p }))
+          const res = await executor(stepName, input, (p) => deps.broadcastProgress?.({ step: stepName, ...p }), abortController.signal)
 
           state = readOnboardingState(deps.homePath) ?? state
           if (res.status === "completed" || res.status === "reused") {
@@ -614,6 +658,7 @@ switch (step) {
           }
         } finally {
           currentOperation = null
+          currentAbortController = null
         }
       }
 
@@ -659,7 +704,8 @@ switch (step) {
 
       let state = readOnboardingState(deps.homePath) ?? createDefaultOnboardingState()
       state = markCompleted(state)
-      if (!writeOnboardingState(state, deps.homePath)) {
+      const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+      if (!writeOnboardingState(state, homePath)) {
         return {
           status: "failed" as const,
           error: {
@@ -668,7 +714,32 @@ switch (step) {
           },
         }
       }
+      // Persist WOPAL_HOME to user environment variables / shell profile
+      persistWopalHomeEnv(homePath)
       return { status: "completed" as const, result: readiness.result }
+    },
+
+    "onboarding-cancel-step": async () => {
+      if (currentAbortController) {
+        currentAbortController.abort()
+        return { status: "ok" }
+      }
+      return { status: "no-op" }
+    },
+
+    "onboarding-set-wopal-home": async (_event: unknown, newHomePath: string) => {
+      if (typeof newHomePath === "string" && newHomePath.trim().length > 0) {
+        const trimmed = newHomePath.trim()
+        // Reject path traversal attacks or raw dangerous inputs
+        if (trimmed.includes("\0") || trimmed.includes("..")) {
+          return { status: "error", message: "Invalid or unsafe home path" }
+        }
+        const resolved = trimmed.startsWith("~") ? join(homedir(), trimmed.slice(1)) : trimmed
+        deps.homePath = resolved
+        process.env.WOPAL_HOME = resolved
+        return { status: "ok", homePath: resolved }
+      }
+      return { status: "error", message: "Invalid home path" }
     },
   }
 }

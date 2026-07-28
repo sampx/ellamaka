@@ -16,6 +16,7 @@ export const IPC_HANDLE_CHANNELS = [
   "onboarding-execute-step",
   "onboarding-complete",
   "onboarding-probe",
+  "onboarding-set-wopal-home",
   "kill-sidecar",
   "await-initialization",
   "get-window-config",

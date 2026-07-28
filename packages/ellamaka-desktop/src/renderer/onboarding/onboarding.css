@@ -102,11 +102,17 @@
   color: #fff;
 }
 
-.ob-step-nav-pill.active {
-  background: var(--ob-accent);
-  color: #fff;
-  border-color: var(--ob-accent);
-  box-shadow: 0 0 10px rgba(255, 111, 97, 0.4);
+.ob-step-nav-pill.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.02);
+  border-color: transparent;
+  color: var(--ob-text-subtle);
+}
+
+.ob-step-nav-pill.locked:hover {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ob-text-subtle);
 }
 
 /* Main Content */
@@ -131,17 +137,19 @@
 .ob-wizard-stage {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 48px;
+  display: flex;
+  width: 100%;
   align-items: stretch;
-  gap: 12px;
 }
 
 .ob-grid-layout {
+  flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: 45% 55%;
+  gap: 20px;
+  width: 100%;
+  height: 100%;
 }
 
 .ob-nav-arrow {
@@ -513,16 +521,30 @@
   margin-left: 6px;
 }
 
-/* Supporting actions stay inside the task card; navigation lives at card sides. */
-.ob-card-support-actions {
+/* Fixed bottom navigation bar — always visible, never scrolled away */
+.ob-fixed-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0 0;
+  margin-top: 16px;
+  border-top: 1px solid var(--ob-card-border);
+  flex-shrink: 0;
+}
+
+.ob-fixed-nav-center {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-top: auto;
-  padding-top: 16px;
-  border-top: 1px solid var(--ob-card-border);
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-nav-prev,
+.ob-nav-next {
+  min-width: 120px;
 }
 
 .ob-retry-button {

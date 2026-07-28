@@ -167,6 +167,7 @@ describe("IPC channel registry (unregister coverage)", () => {
     "onboarding-execute-step",
     "onboarding-complete",
     "onboarding-probe",
+    "onboarding-set-wopal-home",
     "kill-sidecar",
     "await-initialization",
     "get-window-config",

@@ -57,6 +57,18 @@ export function registerIpcHandlers(deps: Deps) {
       }
     }
   })
+  // Remove existing handlers before re-registering (dev HMR may call this twice)
+  for (const channel of [
+    "get-onboarding-mode",
+    "onboarding-get-state",
+    "onboarding-execute-step",
+    "onboarding-complete",
+    "onboarding-probe",
+    "onboarding-set-wopal-home",
+    "onboarding-cancel-step",
+  ]) {
+    ipcMain.removeHandler(channel)
+  }
   ipcMain.handle("get-onboarding-mode", () => onboardingHandlers["get-onboarding-mode"]())
   ipcMain.handle("onboarding-get-state", () => onboardingHandlers["onboarding-get-state"]())
   ipcMain.handle("onboarding-execute-step", (event, step, input) =>
@@ -65,6 +77,12 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("onboarding-complete", () => onboardingHandlers["onboarding-complete"]())
   ipcMain.handle("onboarding-probe", (_event, kind: string) =>
     onboardingHandlers["onboarding-probe"](_event, kind),
+  )
+  ipcMain.handle("onboarding-set-wopal-home", (event, path: string) =>
+    onboardingHandlers["onboarding-set-wopal-home"](event, path),
+  )
+  ipcMain.handle("onboarding-cancel-step", () =>
+    onboardingHandlers["onboarding-cancel-step"](),
   )
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
