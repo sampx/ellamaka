@@ -14,7 +14,7 @@ const distDir = path.resolve(__dirname, "../../dist")
 
 process.chdir(dir)
 
-await import("../opencode/script/generate.ts")
+const generated = await import("../opencode/script/generate.ts")
 
 import { Script } from "@opencode-ai/script"
 import pkg from "../opencode/package.json"
@@ -260,6 +260,7 @@ for (const item of targets) {
     define: {
       OPENCODE_VERSION: `'${Script.version}'`,
       OPENCODE_MIGRATIONS: JSON.stringify(migrations),
+      OPENCODE_MODELS_DEV: generated.modelsData,
       OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
       OPENCODE_WORKER_PATH: workerPath,
       OPENCODE_CHANNEL: `'${channel}'`,
