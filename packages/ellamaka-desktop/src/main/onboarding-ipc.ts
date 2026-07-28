@@ -180,7 +180,7 @@ export function detectGithubToken(homePath?: string): { token: string; source: s
   return null
 }
 
-export function detectProviderAuth(homePath?: string, providerId = "opencode"): string | undefined {
+export function detectProviderAuth(homePath?: string, providerId = "opencode-go"): string | undefined {
   const authPath = join(homePath ?? join(homedir(), ".wopal"), "ellamaka", "data", "auth.json")
   if (existsSync(authPath)) {
     try {
@@ -323,7 +323,7 @@ switch (step) {
 
         case "ai-provider": {
           const payload = (input as Record<string, unknown>) ?? {}
-          const providerId = (payload.provider as string) || (payload.providerId as string) || "opencode"
+          const providerId = (payload.provider as string) || (payload.providerId as string) || "opencode-go"
 
           const apiKey = (payload.apiKey as string | undefined)?.trim() || detectProviderAuth(homePath, providerId)
 
@@ -449,7 +449,7 @@ switch (step) {
             }
           }
           case "ai-provider": {
-            const existingKey = detectProviderAuth(homePath, "opencode")
+            const existingKey = detectProviderAuth(homePath, "opencode-go")
             return {
               hasKey: !!existingKey,
               maskedKey: existingKey ? `${existingKey.slice(0, 3)}...${existingKey.slice(-4)}` : null,

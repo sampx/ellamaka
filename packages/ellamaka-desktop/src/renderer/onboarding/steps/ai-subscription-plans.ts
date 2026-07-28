@@ -12,7 +12,7 @@ export interface AiSubscriptionPlan {
 export const AI_SUBSCRIPTION_PLANS: readonly AiSubscriptionPlan[] = [
   {
     id: "opencode-go",
-    providerId: "opencode",
+    providerId: "opencode-go",
     name: "OpenCode Go",
     description: "可选择中国当前前沿大模型",
     introductoryPriceUsd: 5,

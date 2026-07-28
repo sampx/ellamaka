@@ -6,7 +6,7 @@ describe("AI subscription plans", () => {
     expect(AI_SUBSCRIPTION_PLANS).toHaveLength(1)
     expect(AI_SUBSCRIPTION_PLANS[0]).toMatchObject({
       id: "opencode-go",
-      providerId: "opencode",
+      providerId: "opencode-go",
       name: "OpenCode Go",
       introductoryPriceUsd: 5,
       monthlyPriceUsd: 10,
