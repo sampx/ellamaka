@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "fs"
 import { join } from "path"
 import { tmpdir as osTmpdir } from "os"
 import { detectWopalSpace } from "../detect"
-import { BINARY_NAME, BINARY_TITLE, VERSION_PREFIX } from "../branding"
+import { BINARY_NAME, BINARY_TITLE, VERSION_PREFIX, UI_UPSTREAM_URL } from "../branding"
 import { ellamaka, wordmark } from "../logo"
 
 const tmpDirs: string[] = []
@@ -72,6 +72,10 @@ describe("branding constants", () => {
 
   test("VERSION_PREFIX is ellamaka", () => {
     expect(VERSION_PREFIX).toBe("ellamaka")
+  })
+
+  test("UI_UPSTREAM_URL is null by default", () => {
+    expect(UI_UPSTREAM_URL).toBeNull()
   })
 })
 

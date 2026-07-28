@@ -3,10 +3,11 @@ import { Effect, Stream } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
 import { ProxyUtil } from "../proxy-util"
+import { UI_UPSTREAM_URL } from "../../../../ellamaka/branding"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
-export const UI_UPSTREAM = new URL("https://app.opencode.ai")
+export const UI_UPSTREAM = UI_UPSTREAM_URL ? new URL(UI_UPSTREAM_URL) : null
 
 export const csp = (hash = "") =>
   `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'${hash ? ` 'sha256-${hash}'` : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; media-src 'self' data:; connect-src * data:`
@@ -38,6 +39,7 @@ function proxyResponseHeaders(headers: Record<string, string>) {
 }
 
 export function upstreamURL(path: string) {
+  if (!UI_UPSTREAM) return null
   return new URL(path, UI_UPSTREAM).toString()
 }
 
@@ -85,8 +87,13 @@ export function serveUIEffect(
 
     if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
 
+    if (!UI_UPSTREAM) return yield* Effect.succeed(notFound())
+
+    const targetUrl = upstreamURL(path)
+    if (!targetUrl) return yield* Effect.succeed(notFound())
+
     const response = yield* services.client.execute(
-      HttpClientRequest.make(request.method)(upstreamURL(path), {
+      HttpClientRequest.make(request.method)(targetUrl, {
         headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
         body: requestBody(request),
       }),
@@ -106,3 +113,4 @@ export function serveUIEffect(
     })
   })
 }
+

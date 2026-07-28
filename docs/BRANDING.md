@@ -11,7 +11,9 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-28 | Updated | §1 / §15.5 建立 Web UI 运行时代理与品牌解耦策略：新增 `UI_UPSTREAM_URL` 品牌常量控制代理目标，未内嵌 UI 时默认关闭上游隐式代理并响应 404，保证品牌隔离与独立服务权责。 |
 | 2026-07-18 | Added | Workbench 通过 Runtime API 获取 Wopal CLI 健康状态，并在用户确认后执行 CLI 修复。CLI 故障降级 Space Control，保留 Session Runtime 与 PTY。 |
+
 | 2026-07-15 | Updated | Workbench Session Projection 在数据库查询边界排除已归档会话和带 `parentID` 的子会话，保证左侧树只展示可直接装载的根会话。 |
 | 2026-07-13 | Updated | §17 简化桌面 PTY 生命周期：Web 与 Desktop 共用 sidecar 断连宽限回收，移除 Electron Main PTY 注册表与专用 IPC 设计；同步更新 `DESKTOP.md` 和 Workbench 设计 |
 | 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
@@ -95,6 +97,8 @@
 | `BINARY_TITLE` | `Ellamaka` | 用户界面标题 |
 | `CHANNEL_RELEASE` | `latest` | 发布渠道标识，与 opencode 标准 channel 一致 |
 | `CHANNEL_DEV` | `main` | 本地开发渠道标识，对应 ellamaka 主分支名 |
+| `UI_UPSTREAM_URL` | `null` | 未内嵌 Web UI 时的在线代理目标域名；默认 `null` 禁用反向代理，彻底与上游公网服务解耦 |
+
 
 ### 实现逻辑
 
@@ -687,9 +691,23 @@ bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
 | `packages/ellamaka-app/` | `merge=ours` | ellamaka 定制,不接受上游覆盖 |
 | `packages/ellamaka-app/` 新增目录 | 无保护 | 无上游对应,不参与合并冲突 |
 
-上游 `packages/app` 有更新时,通过人工或脚本 review → cherry-pick 到 `ellamaka-app`。
+### 15.5 运行时 UI 代理与品牌解耦策略
 
-### 15.5 与 poc/web 的关系
+#### 目的
+
+界定独立品牌边界与在线服务解耦契约。ellamaka 作为独立产品，不默认依赖或关联第三方上游云端服务，确保运行时行为的自主性与可预期性。
+
+#### 设计策略与契约
+
+1. **零隐式代理（Zero Implicit Proxying）**
+   当二进制未包含嵌入式静态 UI 产物（如构建参数为 `--web-ui none`）时，系统严格执行“本地优先、无隐式代理”原则。访问服务端 UI 路由时直接返回资源未找到状态（`404`），不再隐式反向代理至上游公网服务。
+
+2. **品牌域名控制契约（Branding-driven Proxy Control）**
+   在线反向代理的目标域名被抽象为品牌层声明变量 `UI_UPSTREAM_URL`：
+   - **默认状态 (`null`)**：禁用反向代理机制，避免在任何未显式配置的情况下泄漏网络请求或展示非预期品牌界面。
+   - **品牌托管支持（Custom Host Support）**：仅在部署品牌方自有的 Workbench 静态托管服务（例如 `https://ellamaka.wopal.cn`）时，可通过将 `UI_UPSTREAM_URL` 显式声明为指定域名，复用路由透传机制，实现云端前端与本地 CLI 引擎的契约衔接。
+
+### 15.6 与 poc/web 的关系
 
 | 阶段 | poc/web | ellamaka-app |
 |------|---------|--------------|
@@ -697,7 +715,8 @@ bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
 | 验证完成后 | 保留作为探索参考 | 承接产品化代码和架构决策 |
 | 后续 | 能力逐步迁移,最终归档 | 唯一 web UI 产品形态 |
 
-### 15.6 实施范围
+### 15.7 实施范围
+
 
 **已完成(基础设施跑通 → 空间侧栏接通)**:
 1. 复制 `packages/app` → `packages/ellamaka-app`(排除 node_modules/dist/.turbo)

@@ -198,12 +198,11 @@ describe("HttpApi UI fallback", () => {
         ),
       }).request("/")
 
-      expect(response.status).toBe(200)
-      expect(response.headers.get("content-type")).toContain("text/html")
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
-      expect(proxiedUrl).toBe("https://app.opencode.ai/")
+      expect(response.status).toBe(404)
+      expect(proxiedUrl).toBeUndefined()
     }),
   )
+
 
   it.live("strips upstream transfer encoding headers from proxied assets", () =>
     Effect.gen(function* () {
@@ -245,12 +244,8 @@ describe("HttpApi UI fallback", () => {
         Effect.map(HttpServerResponse.toWeb),
       )
 
-      expect(response.status).toBe(200)
-      expect(proxiedUrl).toBe("https://app.opencode.ai/assets/app.js")
-      expect(response.headers.get("content-encoding")).toBeNull()
-      expect(response.headers.get("content-length")).not.toBe("999")
-      expect(response.headers.get("content-type")).toContain("text/javascript")
-      expect(yield* responseText(response)).toBe("console.log('ok')")
+      expect(response.status).toBe(404)
+      expect(proxiedUrl).toBeUndefined()
     }),
   )
 
@@ -293,9 +288,7 @@ describe("HttpApi UI fallback", () => {
         Effect.map(HttpServerResponse.toWeb),
       )
 
-      expect(response.status).toBe(200)
-      expect(response.headers.get("transfer-encoding")).toBeNull()
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
+      expect(response.status).toBe(404)
     }),
   )
 
@@ -387,8 +380,7 @@ describe("HttpApi UI fallback", () => {
         client: httpClient(new Response("<html>opencode</html>", { headers: { "content-type": "text/html" } })),
       }).request(`/?auth_token=${btoa("opencode:secret")}`)
 
-      expect(response.status).toBe(200)
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
+      expect(response.status).toBe(404)
     }),
   )
 
@@ -402,7 +394,7 @@ describe("HttpApi UI fallback", () => {
         headers: { authorization: `Basic ${btoa("opencode:secret")}` },
       })
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(404)
     }),
   )
 
@@ -416,9 +408,10 @@ describe("HttpApi UI fallback", () => {
         headers: { authorization: `Basic ${btoa("opencode:sec:ret")}` },
       })
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(404)
     }),
   )
+
 
   // Regression for #25698 (Ope): the browser fetches the PWA manifest and
   // its icons via flows that don't carry app-managed credentials (the
