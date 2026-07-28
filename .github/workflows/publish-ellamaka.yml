@@ -175,13 +175,13 @@ jobs:
             name="$(basename "$f")"
             ct="application/octet-stream"
             case "$name" in *.tar.gz) ct="application/x-tar";; *.zip) ct="application/zip";; esac
-            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000" "$ct"
+            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
           done
 
-          # Metadata (30-day cache)
-          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000" "application/json"
-          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000" "text/plain"
-          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000" "text/markdown"
+          # Metadata (30-day cache with immutable)
+          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
+          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000, immutable" "text/plain"
+          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
 
           # Latest alias: manifest only (60-second TTL)
           put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=60" "application/json"
@@ -245,10 +245,9 @@ jobs:
             exit 1
           fi
 
-          # Build purge URL list: latest alias + all versioned paths.
-          # When a version is re-released (same tag, new artifacts), the old
-          # files must be evicted from CDN edge caches or users will hit
-          # checksum mismatches.
+          # Build purge URL list: latest alias + versioned metadata.
+          # Note: We do NOT purge newly uploaded binary artifact URLs to avoid CDN cold-starts.
+          # Re-released old URLs (if any) are already captured in OLD_URLS above.
           PURGE_URLS=(
             "https://download.coursedao.com/ellamaka/latest/manifest.json"
             "https://download.coursedao.com/ellamaka/v${VERSION}/manifest.json"
@@ -262,14 +261,6 @@ jobs:
               [ -n "$url" ] && PURGE_URLS+=("$url")
             done < "$OLD_URLS"
           fi
-
-          # Add all artifact URLs from the manifest
-          while IFS= read -r url; do
-            [ -n "$url" ] && PURGE_URLS+=("$url")
-          done < <(node -e '
-            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
-            for (const a of m.artifacts) console.log(a.url);
-          ')
 
           mapfile -t PURGE_URLS < <(printf '%s\n' "${PURGE_URLS[@]}" | sort -u)
           for ((offset=0; offset<${#PURGE_URLS[@]}; offset+=30)); do
@@ -294,6 +285,30 @@ jobs:
             fi
           done
           echo "CDN purge complete for ellamaka v${VERSION}"
+
+      - name: Warmup Cloudflare CDN cache for release artifacts
+        if: needs.version.outputs.release != ''
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          echo "Warming up CDN cache for ellamaka v${VERSION}..."
+          WARMUP_URLS=(
+            "https://download.coursedao.com/ellamaka/latest/manifest.json"
+            "https://download.coursedao.com/ellamaka/v${VERSION}/manifest.json"
+          )
+          while IFS= read -r url; do
+            [ -n "$url" ] && WARMUP_URLS+=("$url")
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log(a.url);
+          ')
+
+          for url in "${WARMUP_URLS[@]}"; do
+            echo "Pre-fetching: $url"
+            curl -s -L -X GET -H "User-Agent: WopalReleaseWarmup/1.0" --range 0-1048576 -o /dev/null "$url" || true
+          done
+          echo "CDN cache warmup complete."
 
       - name: Create or update ellamaka GitHub release (no binary assets)
         if: needs.version.outputs.release != ''

@@ -234,12 +234,12 @@ jobs:
               *.deb) ct="application/vnd.debian.binary-package" ;;
               *.rpm) ct="application/x-rpm" ;;
             esac
-            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000" "$ct"
+            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
           done
 
-          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000" "application/json"
-          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000" "text/plain"
-          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000" "text/markdown"
+          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
+          put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000, immutable" "text/plain"
+          put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
 
           put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
           echo "  uploaded manifest: ${LATEST_PREFIX}/manifest.json"
@@ -333,6 +333,8 @@ jobs:
           fi
           VERSION_BASE="${CDN_ROOT}/v${VERSION}"
           LATEST_BASE="${CDN_ROOT}/latest"
+          # Note: We purge latest alias binaries & feeds for auto-updater freshness,
+          # but do NOT purge newly uploaded versioned binaries (VERSION_BASE) to avoid CDN cold-starts.
           PURGE_URLS=(
             "${LATEST_BASE}/manifest.json"
             "${LATEST_BASE}/latest-mac.yml"
@@ -353,11 +355,6 @@ jobs:
           for f in dist/ellamaka-desktop-*; do
             [ -f "$f" ] || continue
             name="$(basename "$f")"
-            case "$name" in
-              *.dmg|*.zip|*.exe|*.AppImage|*.deb|*.rpm|*.zip.blockmap|*.exe.blockmap)
-                PURGE_URLS+=("${VERSION_BASE}/${name}")
-                ;;
-            esac
             case "$name" in
               *.zip|*.exe|*.AppImage|*.zip.blockmap|*.exe.blockmap)
                 PURGE_URLS+=("${LATEST_BASE}/${name}")
@@ -388,6 +385,35 @@ jobs:
             fi
           done
           echo "CDN purge complete for ellamaka-desktop v${VERSION}"
+
+      - name: Warmup Cloudflare CDN cache for release artifacts
+        continue-on-error: true
+        env:
+          CHANNEL: ${{ needs.version.outputs.channel }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if [ "$CHANNEL" = "beta" ]; then
+            CDN_ROOT="https://download.coursedao.com/ellamaka-desktop/beta"
+          else
+            CDN_ROOT="https://download.coursedao.com/ellamaka-desktop"
+          fi
+          echo "Warming up CDN cache for ellamaka-desktop v${VERSION} (${CHANNEL})..."
+          WARMUP_URLS=(
+            "${CDN_ROOT}/latest/manifest.json"
+            "${CDN_ROOT}/v${VERSION}/manifest.json"
+          )
+          while IFS= read -r url; do
+            [ -n "$url" ] && WARMUP_URLS+=("$url")
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log(a.url);
+          ')
+
+          for url in "${WARMUP_URLS[@]}"; do
+            echo "Pre-fetching: $url"
+            curl -s -L -X GET -H "User-Agent: WopalReleaseWarmup/1.0" --range 0-1048576 -o /dev/null "$url" || true
+          done
+          echo "CDN cache warmup complete."
 
       - name: Create or update ontology GitHub release
         if: needs.version.outputs.release != ''

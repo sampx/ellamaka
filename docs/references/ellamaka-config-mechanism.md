@@ -72,6 +72,8 @@ ellamaka 有两种运行模式，配置加载链路完全不同：
 | 6 | `<WOPAL_SPACE_ROOT>/.wopal/agents/{name}.md` | agent frontmatter（permission 最高优先级） |
 
 > `~/.wopal/config/` 是纯配置目录，不扫描能力。能力来自 `~/.wopal/`（全局）和 `.wopal/`（空间）。
+>
+> **环境变量 (`.env`) 装载边界**：进程级 `Global` 模块初始化时仅装载全局 `$WOPAL_HOME/.env`。空间级 `.env` 由空间根目录 `WOPAL_SPACE_ROOT` 明确激活后再由空间上下文（如插件 `loadWopalEnv`）装载，避免进程启动时因 `cwd` 误判导致全局环境变量被错误抢占。
 
 wopal-space 模式**不加载**：
 - 项目级 `opencode.jsonc` / `.opencode/`
