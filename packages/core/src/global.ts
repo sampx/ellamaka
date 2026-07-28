@@ -54,20 +54,7 @@ export const Path = paths
     }
   }
 
-  // Space .wopal/.env — higher priority, loaded first
-  let dir = process.cwd()
-  while (true) {
-    const wopalDir = path.join(dir, ".wopal")
-    if (existsSync(wopalDir)) {
-      loadEnvFile(path.join(wopalDir, ".env"))
-      break
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-
-  // Global WOPAL_HOME/.env — lower priority, loaded second, fills gaps
+  // Global WOPAL_HOME/.env
   loadEnvFile(path.join(wopalRoot, ".env"))
 }
 
