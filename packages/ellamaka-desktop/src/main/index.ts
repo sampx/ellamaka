@@ -420,7 +420,14 @@ const main = Effect.gen(function* () {
   // Install quit guard: Cmd+Q confirmation + macOS window-all-closed / activate
   enableQuitGuard({
     getMainWindow: () => mainWindow,
-    getSidecarState: () => supervisor?.getState(),
+    getSidecarState: () => {
+      if (supervisor) return supervisor.getState()
+      const mode = resolveOnboardingMode(process.env.WOPAL_HOME)
+      if (mode === "onboarding") {
+        return { status: "stopped", onboarding: true } as any
+      }
+      return undefined
+    },
     stopSidecar: killSidecar,
   })
 
@@ -494,7 +501,7 @@ const main = Effect.gen(function* () {
       setBackgroundColor: (color) => setBackgroundColor(color),
       exportDebugLogs: () => exportDebugLogs(),
       recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
-      getSidecarState: () => ({ phase: "stopped", connection: null } as any),
+      getSidecarState: () => ({ status: "stopped", onboarding: true } as any),
       restartSidecar: () => Promise.resolve(),
       subscribeToSidecarState: () => () => {},
     })
@@ -502,7 +509,7 @@ const main = Effect.gen(function* () {
     mainWindow = createMainWindow()
     if (mainWindow) {
       interceptWindowClose(mainWindow, {
-        getSidecarState: () => ({ phase: "stopped", connection: null } as any),
+        getSidecarState: () => ({ status: "stopped", onboarding: true } as any),
         stopSidecar: () => Promise.resolve(),
       })
       createMenu({

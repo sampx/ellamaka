@@ -111,4 +111,73 @@ describe("bootstrap-installer", () => {
     expect(upgradeTriggered).toBe(true)
     expect(res.status).toBe("completed")
   })
+
+  test("installWopalCli terminates installer when the operation times out", async () => {
+    let killCount = 0
+    const child = {
+      exitCode: null as number | null,
+      signalCode: null,
+      on: () => child,
+      once: () => child,
+      stdout: { on: () => {} },
+      stderr: { on: () => {} },
+      kill: () => {
+        killCount += 1
+        child.exitCode = 1
+        return true
+      },
+    } as any
+
+    const result = await Promise.race([
+      installWopalCli({
+        homePath: testHome,
+        spawnFn: () => child,
+        fetchInstallerScript: async () => "echo timeout",
+        timeoutMs: 10,
+      } as any),
+      new Promise<"test-timeout">((resolve) => setTimeout(() => resolve("test-timeout"), 100)),
+    ])
+
+    expect(result).not.toBe("test-timeout")
+    expect(typeof result === "string" ? undefined : result.error?.code).toBe("INSTALLATION_TIMEOUT")
+    expect(killCount).toBeGreaterThan(0)
+  })
+
+  test("installWopalCli stops forwarding progress after cancellation", async () => {
+    let stdoutListener: ((chunk: string) => void) | undefined
+    const child = {
+      exitCode: null as number | null,
+      signalCode: null,
+      on: () => child,
+      once: () => child,
+      stdout: {
+        on: (event: string, listener: (chunk: string) => void) => {
+          if (event === "data") stdoutListener = listener
+        },
+      },
+      stderr: { on: () => {} },
+      kill: () => {
+        child.exitCode = 1
+        return true
+      },
+    } as any
+    const controller = new AbortController()
+    const progress: string[] = []
+    const operation = installWopalCli({
+      homePath: testHome,
+      spawnFn: () => child,
+      fetchInstallerScript: async () => "echo abort",
+      abortSignal: controller.signal,
+      onProgress: (entry) => progress.push(entry.message ?? ""),
+    })
+
+    await Promise.resolve()
+    controller.abort()
+    const result = await operation
+    const progressCount = progress.length
+    stdoutListener?.("download continued")
+
+    expect(result.error?.code).toBe("INSTALLATION_ABORTED")
+    expect(progress).toHaveLength(progressCount)
+  })
 })

@@ -13,6 +13,7 @@ import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { setSessionModel } from "@/utils/session-model-tracker"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
@@ -150,6 +151,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         remove()
       })
       return false
+    }
+
+    if (input.draft.sessionID && input.draft.model) {
+      setSessionModel(input.draft.sessionID, input.draft.model)
     }
 
     await input.client.session.promptAsync({

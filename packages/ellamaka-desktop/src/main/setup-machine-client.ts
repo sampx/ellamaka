@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { homedir } from "node:os"
 import semver from "semver"
 import type { OnboardingStepResult } from "../preload/types"
+import { terminateChildProcessTree } from "./child-process-lifecycle"
 
 export interface RunSetupOperationOptions {
   binaryPath: string
@@ -11,6 +12,7 @@ export interface RunSetupOperationOptions {
   input?: Record<string, unknown>
   onProgress?: (progress: { phase?: string; message?: string }) => void
   timeoutMs?: number
+  inactivityTimeoutMs?: number
   abortSignal?: AbortSignal
   spawnFn?: (command: string, args: string[], options: any) => ChildProcess
 }
@@ -80,8 +82,9 @@ export function resolveWopalCliEntry(binaryPath: string): { command: string; spa
 export async function runSetupOperation(options: RunSetupOperationOptions): Promise<OnboardingStepResult> {
   const { binaryPath, operation, input = {}, onProgress, spawnFn, abortSignal } = options
   const timeoutMs = options.timeoutMs ?? (
-    operation === "install-engine" || operation === "prepare-ontology" ? 300000 : 120000
+    operation === "install-engine" ? 600000 : operation === "prepare-ontology" ? 300000 : 120000
   )
+  const inactivityTimeoutMs = options.inactivityTimeoutMs ?? (operation === "install-engine" ? 45000 : 0)
 
   const resolved = resolveWopalCliEntry(binaryPath)
   if (!resolved && !spawnFn) {
@@ -133,25 +136,72 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
     let stdoutData = ""
     let stderrData = ""
     let isSettled = false
+    let child: ChildProcess
+    let inactivityTimer: ReturnType<typeof setTimeout> | undefined
 
-    const timer = setTimeout(() => {
+    const cleanup = () => {
+      clearTimeout(timer)
+      if (inactivityTimer) clearTimeout(inactivityTimer)
+      abortSignal?.removeEventListener("abort", abortHandler)
+    }
+
+    const stop = async (result: OnboardingStepResult) => {
       if (isSettled) return
       isSettled = true
-      try {
-        child.kill()
-      } catch {}
-      resolve({
+      cleanup()
+      await terminateChildProcessTree(child)
+      resolve(result)
+    }
+
+    const resetInactivityTimer = () => {
+      if (inactivityTimeoutMs <= 0) return
+      if (inactivityTimer) clearTimeout(inactivityTimer)
+      inactivityTimer = setTimeout(() => {
+        void stop({
+          status: "failed",
+          error: {
+            code: "ENGINE_DOWNLOAD_STALLED",
+            message: "Ellamaka AI 引擎下载长时间无响应，已停止本次安装。",
+            suggestion: "请检查网络连接或代理设置，确认网络恢复后点击下方“重试安装”。",
+            details: `Operation '${operation}' produced no output for ${inactivityTimeoutMs}ms.`,
+          },
+        })
+      }, inactivityTimeoutMs)
+    }
+
+    const abortHandler = () => {
+      void stop({
         status: "failed",
         error: {
-          code: "SETUP_OPERATION_TIMEOUT",
-          message: `Operation '${operation}' timed out after ${timeoutMs}ms.`,
+          code: "SETUP_OPERATION_ABORTED",
+          message: `Operation '${operation}' was aborted.`,
         },
+      })
+    }
+
+    const timer = setTimeout(() => {
+      void stop({
+        status: "failed",
+        error: operation === "install-engine"
+          ? {
+              code: "ENGINE_INSTALL_TIMEOUT",
+              message: "Ellamaka AI 引擎安装超时，已停止本次安装。",
+              suggestion: "请检查网络连接或代理设置，确认网络恢复后点击下方“重试安装”。",
+              details: `Operation '${operation}' timed out after ${timeoutMs}ms.`,
+            }
+          : {
+              code: "SETUP_OPERATION_TIMEOUT",
+              message: `Operation '${operation}' timed out after ${timeoutMs}ms.`,
+            },
       })
     }, timeoutMs)
 
-    let child: ChildProcess
     try {
-      child = spawnImpl(command, spawnArgs, { env, stdio: "pipe" })
+      child = spawnImpl(command, spawnArgs, {
+        env,
+        stdio: "pipe",
+        detached: process.platform !== "win32",
+      })
     } catch (err) {
       clearTimeout(timer)
       return resolve({
@@ -159,22 +209,6 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
         error: {
           code: "SETUP_SPAWN_ERROR",
           message: `Failed to spawn setup process: ${err instanceof Error ? err.message : String(err)}`,
-        },
-      })
-    }
-
-    const abortHandler = () => {
-      if (isSettled) return
-      isSettled = true
-      clearTimeout(timer)
-      try {
-        child.kill()
-      } catch {}
-      resolve({
-        status: "failed",
-        error: {
-          code: "SETUP_OPERATION_ABORTED",
-          message: `Operation '${operation}' was aborted.`,
         },
       })
     }
@@ -187,7 +221,11 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
       abortSignal.addEventListener("abort", abortHandler)
     }
 
+    resetInactivityTimer()
+
     child.stdout?.on("data", (chunk: any) => {
+      if (isSettled) return
+      resetInactivityTimer()
       const str = chunk.toString()
       stdoutData += str
       // Forward non-JSON progress lines to onProgress.
@@ -204,6 +242,8 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
     })
 
     child.stderr?.on("data", (chunk: any) => {
+      if (isSettled) return
+      resetInactivityTimer()
       const str = chunk.toString()
       stderrData += str
       onProgress?.({ phase: operation, message: str.trim() })
@@ -215,8 +255,7 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
     child.on("exit", (code) => {
       if (isSettled) return
       isSettled = true
-      clearTimeout(timer)
-      if (abortSignal) abortSignal.removeEventListener("abort", abortHandler)
+      cleanup()
 
       const envelope = extractJsonEnvelope(stdoutData, stderrData)
       if (envelope && typeof envelope === "object") {
@@ -321,8 +360,7 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
     child.on("error", (err: Error) => {
       if (isSettled) return
       isSettled = true
-      clearTimeout(timer)
-      if (abortSignal) abortSignal.removeEventListener("abort", abortHandler)
+      cleanup()
       resolve({
         status: "failed",
         error: {

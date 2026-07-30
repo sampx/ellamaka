@@ -113,6 +113,9 @@ export type Platform = {
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /** Save recent model to state/model.json (desktop only) */
+  saveRecentModel?(model: { providerID: string; modelID: string } | string): Promise<void>
 }
 
 export type DisplayBackend = "auto" | "wayland"

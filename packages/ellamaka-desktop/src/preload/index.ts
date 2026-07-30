@@ -4,6 +4,7 @@ import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 const api: ElectronAPI = {
   getOnboardingMode: () => ipcRenderer.invoke("get-onboarding-mode"),
   onboardingGetState: () => ipcRenderer.invoke("onboarding-get-state"),
+  onboardingSetCurrentStep: (step) => ipcRenderer.invoke("onboarding-set-current-step", step),
   onboardingExecuteStep: (step, input) => ipcRenderer.invoke("onboarding-execute-step", step, input),
   onboardingComplete: () => ipcRenderer.invoke("onboarding-complete"),
   onboardingTransitionToWorkbench: () => ipcRenderer.invoke("onboarding-transition-to-workbench"),
@@ -103,6 +104,7 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener("sidecar-state", handler)
   },
   restartSidecar: () => ipcRenderer.invoke("restart-sidecar"),
+  saveRecentModel: (model: { providerID: string; modelID: string } | string) => ipcRenderer.invoke("save-recent-model", model),
 }
 
 contextBridge.exposeInMainWorld("api", api)

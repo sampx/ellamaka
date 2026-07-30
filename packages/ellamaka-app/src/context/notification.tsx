@@ -15,6 +15,7 @@ import { getRelativeTime } from "@/utils/time"
 import { EventSessionError } from "@opencode-ai/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
+import { getAndClearSessionModel } from "@/utils/session-model-tracker"
 
 type NotificationBase = {
   directory?: string
@@ -255,6 +256,13 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
             language.t("notification.session.responseReady.description", { agent: session.agent ?? "agent", time: relativeTime }),
             href,
           )
+        }
+
+        if (platform.saveRecentModel) {
+          const trackedModel = getAndClearSessionModel(session.id)
+          if (trackedModel) {
+            void platform.saveRecentModel(trackedModel)
+          }
         }
       })
     }

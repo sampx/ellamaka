@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { EventEmitter } from "node:events"
 import { runSetupOperation } from "./setup-machine-client"
 
 describe("setup-machine-client", () => {
@@ -214,8 +215,8 @@ describe("setup-machine-client", () => {
   })
 
   test("runSetupOperation uses 300s timeout for prepare-ontology", async () => {
-    // Verify that prepare-ontology is treated as a download-class operation
-    // with 300s timeout (same as install-engine)
+    // Verify that prepare-ontology remains a download-class operation
+    // with its own 300s hard timeout.
     const fakeEnvelope = {
       apiVersion: "wopal.capability/v1",
       capability: "setup.operation",
@@ -250,6 +251,65 @@ describe("setup-machine-client", () => {
 
     expect(res.status).toBe("completed")
     expect(res.result).toEqual({ ontologyPath: "/tmp/onto", mode: "clone", availableTypes: [] })
+  })
+
+  test("runSetupOperation stops a stalled engine download before the hard timeout", async () => {
+    const child = new EventEmitter() as any
+    child.stdin = { write: () => {}, end: () => {} }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.exitCode = null
+    child.signalCode = null
+    child.kill = () => {
+      child.exitCode = 1
+      child.emit("exit", 1)
+      return true
+    }
+
+    const res = await runSetupOperation({
+      binaryPath: binPath,
+      operation: "install-engine",
+      spawnFn: () => child,
+      timeoutMs: 100,
+      inactivityTimeoutMs: 5,
+    })
+
+    expect(res.status).toBe("failed")
+    expect(res.error?.code).toBe("ENGINE_DOWNLOAD_STALLED")
+    expect(res.error?.message).toContain("下载长时间无响应")
+    expect(res.error?.suggestion).toContain("重试安装")
+  })
+
+  test("runSetupOperation keeps an active engine download alive", async () => {
+    const child = new EventEmitter() as any
+    child.stdin = { write: () => {}, end: () => {} }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.exitCode = null
+    child.signalCode = null
+    child.kill = () => true
+
+    setTimeout(() => child.stdout.emit("data", "Downloading 10%\n"), 10)
+    setTimeout(() => {
+      child.stdout.emit("data", JSON.stringify({
+        capability: "setup.operation",
+        ok: true,
+        data: { operation: "install-engine", status: "created", result: { version: "1.2.3" } },
+      }))
+      child.exitCode = 0
+      child.emit("exit", 0)
+    }, 25)
+
+    const res = await runSetupOperation({
+      binaryPath: binPath,
+      operation: "install-engine",
+      spawnFn: () => child,
+      timeoutMs: 100,
+      inactivityTimeoutMs: 20,
+    })
+
+    expect(res.status).toBe("completed")
+    expect(res.result?.version).toBe("1.2.3")
   })
 
   test("runSetupOperation parses error capability envelope", async () => {

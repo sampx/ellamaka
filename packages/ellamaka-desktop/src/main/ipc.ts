@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/ellamaka-app/desktop-menu"
@@ -61,6 +64,7 @@ export function registerIpcHandlers(deps: Deps) {
   for (const channel of [
     "get-onboarding-mode",
     "onboarding-get-state",
+    "onboarding-set-current-step",
     "onboarding-execute-step",
     "onboarding-complete",
     "onboarding-probe",
@@ -71,6 +75,9 @@ export function registerIpcHandlers(deps: Deps) {
   }
   ipcMain.handle("get-onboarding-mode", () => onboardingHandlers["get-onboarding-mode"]())
   ipcMain.handle("onboarding-get-state", () => onboardingHandlers["onboarding-get-state"]())
+  ipcMain.handle("onboarding-set-current-step", (_event, step) =>
+    onboardingHandlers["onboarding-set-current-step"](_event, step),
+  )
   ipcMain.handle("onboarding-execute-step", (event, step, input) =>
     onboardingHandlers["onboarding-execute-step"](event, step, input),
   )
@@ -259,6 +266,49 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action)
+  })
+  ipcMain.handle("save-recent-model", (_event: IpcMainInvokeEvent, rawModel: { providerID?: string; modelID?: string } | string) => {
+    let providerID = ""
+    let modelID = ""
+
+    if (typeof rawModel === "string") {
+      const parts = rawModel.split("/")
+      providerID = parts[0] || ""
+      modelID = parts.slice(1).join("/") || ""
+    } else if (rawModel && typeof rawModel === "object") {
+      providerID = rawModel.providerID || ""
+      modelID = rawModel.modelID || ""
+    }
+
+    if (!providerID || !modelID) return
+
+    const stateDir = process.env.WOPAL_HOME
+      ? path.join(process.env.WOPAL_HOME, "ellamaka/state")
+      : (deps.homePath ? path.join(deps.homePath, "ellamaka/state") : path.join(os.homedir(), ".local/state/opencode"))
+    const filePath = path.join(stateDir, "model.json")
+
+    let data: { recent?: Array<{ providerID: string; modelID: string }>; favorite?: any; variant?: any } = {
+      recent: [],
+      favorite: [],
+      variant: {},
+    }
+    try {
+      if (fs.existsSync(filePath)) {
+        data = JSON.parse(fs.readFileSync(filePath, "utf-8"))
+      }
+    } catch {}
+
+    const recent = Array.isArray(data.recent) ? data.recent : []
+    const filteredRecent = recent.filter(
+      (item) => !(item.providerID === providerID && item.modelID === modelID)
+    )
+
+    data.recent = [{ providerID, modelID }, ...filteredRecent].slice(0, 10)
+
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true })
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8")
+    } catch {}
   })
 }
 

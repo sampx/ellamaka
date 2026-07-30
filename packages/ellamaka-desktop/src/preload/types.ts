@@ -63,6 +63,9 @@ export type OnboardingStepResult = {
 export type ElectronAPI = {
   getOnboardingMode: () => Promise<{ mode: "onboarding" | "workbench" }>
   onboardingGetState: () => Promise<import("../main/onboarding-state").OnboardingState | null>
+  onboardingSetCurrentStep: (
+    step: import("../shared/onboarding-constants").OnboardingStepName,
+  ) => Promise<{ status: string; currentStep?: string; message?: string }>
   onboardingExecuteStep: (
     step: import("../shared/onboarding-constants").OnboardingStepName,
     input?: unknown,
@@ -137,4 +140,5 @@ export type ElectronAPI = {
   getSidecarState: () => Promise<SidecarRuntimeState>
   onSidecarState: (cb: (state: SidecarRuntimeState) => void) => () => void
   restartSidecar: () => Promise<void>
+  saveRecentModel: (model: { providerID: string; modelID: string } | string) => Promise<void>
 }

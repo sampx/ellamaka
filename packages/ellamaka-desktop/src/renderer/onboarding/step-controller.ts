@@ -7,7 +7,6 @@ export const OPTIONAL_STEPS: Set<OnboardingStepName> = new Set([
   "github-auth",
   "ai-provider",
   "memory-config",
-  "star-guide",
 ])
 
 export interface StepContext {
@@ -32,38 +31,41 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
   {
     phase: 1,
     title: "引擎准备",
-    steps: ["system-check", "install-wopal-cli", "install-ellamaka-cli"],
-    autoAdvanceSteps: new Set(["system-check", "install-wopal-cli", "install-ellamaka-cli"]),
+    steps: ["system-check", "install-cli"],
+    autoAdvanceSteps: new Set([]),
   },
   {
     phase: 2,
-    title: "能力与模型",
-    steps: ["ontology-setup", "ai-provider"], // github-auth is integrated into ontology-setup
+    title: "预备能力",
+    steps: ["ontology-setup"], // github-auth is integrated into ontology-setup
     autoAdvanceSteps: new Set([]),
   },
   {
     phase: 3,
     title: "空间与记忆",
-    steps: ["runtime-setup", "create-space", "memory-config"],
-    autoAdvanceSteps: new Set(["runtime-setup"]),
+    steps: ["create-space", "ai-provider", "memory-config"],
+    autoAdvanceSteps: new Set([]),
   },
   {
     phase: 4,
     title: "启动",
-    steps: ["done"], // star-guide is silent on done page entry
+    steps: ["done"],
     autoAdvanceSteps: new Set([]),
   },
 ]
 
-export function getPhaseForStep(step: OnboardingStepName | "done"): PhaseConfig {
+export function getPhaseForStep(step: OnboardingStepName | "done" | string): PhaseConfig {
   if (step === "github-auth") {
-    return PHASE_CONFIGS[1] // Phase 2 (integrated with ontology-setup)
+    return PHASE_CONFIGS[1] // Phase 2
   }
   if (step === "star-guide") {
-    return PHASE_CONFIGS[3] // Phase 4 (integrated with done)
+    return PHASE_CONFIGS[3] // Phase 4
+  }
+  if (step === "install-wopal-cli" || step === "install-ellamaka-cli") {
+    return PHASE_CONFIGS[0] // Phase 1
   }
   for (const config of PHASE_CONFIGS) {
-    if (config.steps.includes(step)) {
+    if (config.steps.includes(step as any)) {
       return config
     }
   }
@@ -77,12 +79,18 @@ export interface StepMetadata {
   content?: StepContent
 }
 
-export const STEP_METADATA: Record<OnboardingStepName | "done", StepMetadata> = {
+export const STEP_METADATA: Record<OnboardingStepName | "done" | string, StepMetadata> = {
   "system-check": {
     title: zhCN.steps["system-check"].title,
     description: zhCN.steps["system-check"].goal,
     optional: false,
     content: zhCN.steps["system-check"],
+  },
+  "install-cli": {
+    title: zhCN.steps["install-cli"].title,
+    description: zhCN.steps["install-cli"].goal,
+    optional: false,
+    content: zhCN.steps["install-cli"],
   },
   "install-wopal-cli": {
     title: zhCN.steps["install-wopal-cli"].title,
@@ -114,12 +122,6 @@ export const STEP_METADATA: Record<OnboardingStepName | "done", StepMetadata> = 
     optional: false,
     content: zhCN.steps["ontology-setup"],
   },
-  "runtime-setup": {
-    title: zhCN.steps["runtime-setup"].title,
-    description: zhCN.steps["runtime-setup"].goal,
-    optional: false,
-    content: zhCN.steps["runtime-setup"],
-  },
   "create-space": {
     title: zhCN.steps["create-space"].title,
     description: zhCN.steps["create-space"].goal,
@@ -146,11 +148,11 @@ export const STEP_METADATA: Record<OnboardingStepName | "done", StepMetadata> = 
   },
 }
 
-export function getStepMetadata(step: OnboardingStepName | "done"): StepMetadata {
-  return STEP_METADATA[step] ?? { title: step, description: "", optional: false }
+export function getStepMetadata(step: OnboardingStepName | "done" | string): StepMetadata {
+  return STEP_METADATA[step] ?? { title: String(step), description: "", optional: false }
 }
 
-export function getStepContent(step: OnboardingStepName | "done"): StepContent | undefined {
+export function getStepContent(step: OnboardingStepName | "done" | string): StepContent | undefined {
   return STEP_METADATA[step]?.content
 }
 
@@ -165,8 +167,8 @@ const EXPLICIT_ACTION_STEPS = new Set<OnboardingStepName>([
   "memory-config",
 ])
 
-export function isExplicitActionStep(step: OnboardingStepName | "done"): boolean {
-  return step !== "done" && EXPLICIT_ACTION_STEPS.has(step)
+export function isExplicitActionStep(step: OnboardingStepName | "done" | string): boolean {
+  return step !== "done" && EXPLICIT_ACTION_STEPS.has(step as any)
 }
 
 export function resolveFeedbackMode(input: {
@@ -193,13 +195,21 @@ export function resolveForwardMode(input: {
   return input.submitFromNavigation === false ? "disabled" : "submit"
 }
 
-export function createStepController(initialStep: OnboardingStepName | "done" = "system-check") {
-  let currentStep: OnboardingStepName | "done" = initialStep
+export function isRetryActionVisible(
+  step: OnboardingStepName | "done",
+  input: { working: boolean; success: boolean | undefined },
+): boolean {
+  return step !== "done" && !input.working && input.success === false
+}
+
+export function createStepController(initialStep: OnboardingStepName | "done" | string = "system-check") {
+  let currentStep: OnboardingStepName | "done" = (initialStep === "star-guide" ? "done" : initialStep === "install-wopal-cli" || initialStep === "install-ellamaka-cli" ? "install-cli" : initialStep) as OnboardingStepName | "done"
 
   return {
     getCurrentStep: () => currentStep,
-    setCurrentStep: (step: OnboardingStepName | "done") => {
-      currentStep = step
+    setCurrentStep: (step: OnboardingStepName | "done" | string) => {
+      const normalized = step === "star-guide" ? "done" : (step === "install-wopal-cli" || step === "install-ellamaka-cli" ? "install-cli" : step)
+      currentStep = normalized as OnboardingStepName | "done"
     },
     getProgressPercent: () => {
       if (currentStep === "done") return 100
@@ -211,14 +221,8 @@ export function createStepController(initialStep: OnboardingStepName | "done" = 
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx !== -1 && idx < ONBOARDING_STEPS.length - 1) {
         let nextStep = ONBOARDING_STEPS[idx + 1]
-        // Skip github-auth as standalone step because it's merged into ontology-setup
         if (nextStep === "github-auth") {
           nextStep = "ontology-setup"
-        }
-        // Skip star-guide as standalone step because it's merged into done
-        if (nextStep === "star-guide") {
-          currentStep = "done"
-          return
         }
         currentStep = nextStep
       } else {
@@ -227,17 +231,14 @@ export function createStepController(initialStep: OnboardingStepName | "done" = 
     },
     prev: () => {
       if (currentStep === "done") {
-        currentStep = "memory-config" // Skip star-guide standalone page
+        currentStep = "memory-config"
         return
       }
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx > 0) {
         let prevStep = ONBOARDING_STEPS[idx - 1]
         if (prevStep === "github-auth") {
-          prevStep = "install-ellamaka-cli"
-        }
-        if (prevStep === "star-guide") {
-          prevStep = "memory-config"
+          prevStep = "install-cli"
         }
         currentStep = prevStep
       }
@@ -247,10 +248,6 @@ export function createStepController(initialStep: OnboardingStepName | "done" = 
         const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
         if (idx !== -1 && idx < ONBOARDING_STEPS.length - 1) {
           let nextStep = ONBOARDING_STEPS[idx + 1]
-          if (nextStep === "star-guide") {
-            currentStep = "done"
-            return
-          }
           currentStep = nextStep
         } else {
           currentStep = "done"

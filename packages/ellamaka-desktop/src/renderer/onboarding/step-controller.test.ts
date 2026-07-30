@@ -4,29 +4,30 @@ import {
   getStepMetadata,
   isExplicitActionStep,
   isOptionalStep,
+  isRetryActionVisible,
   ONBOARDING_STEPS,
   resolveFeedbackMode,
   resolveForwardMode,
 } from "./step-controller"
 
 describe("step-controller", () => {
-  test("ONBOARDING_STEPS contains 10 steps in order", () => {
-    expect(ONBOARDING_STEPS.length).toBe(10)
+  test("ONBOARDING_STEPS contains 8 steps in order", () => {
+    expect(ONBOARDING_STEPS.length).toBe(8)
     expect(ONBOARDING_STEPS[0]).toBe("system-check")
-    expect(ONBOARDING_STEPS[4]).toBe("ontology-setup")
+    expect(ONBOARDING_STEPS[1]).toBe("install-cli")
+    expect(ONBOARDING_STEPS[3]).toBe("ontology-setup")
+    expect(ONBOARDING_STEPS[4]).toBe("create-space")
     expect(ONBOARDING_STEPS[5]).toBe("ai-provider")
-    expect(ONBOARDING_STEPS[6]).toBe("runtime-setup")
-    expect(ONBOARDING_STEPS[7]).toBe("create-space")
-    expect(ONBOARDING_STEPS[9]).toBe("star-guide")
+    expect(ONBOARDING_STEPS[6]).toBe("memory-config")
+    expect(ONBOARDING_STEPS[7]).toBe("done")
   })
 
   test("isOptionalStep correctly identifies optional steps", () => {
     expect(isOptionalStep("github-auth")).toBe(true)
     expect(isOptionalStep("ai-provider")).toBe(true)
     expect(isOptionalStep("memory-config")).toBe(true)
-    expect(isOptionalStep("star-guide")).toBe(true)
     expect(isOptionalStep("system-check")).toBe(false)
-    expect(isOptionalStep("install-wopal-cli")).toBe(false)
+    expect(isOptionalStep("install-cli")).toBe(false)
   })
 
   test("stepController handles next/prev/skip navigation", () => {
@@ -36,10 +37,10 @@ describe("step-controller", () => {
     expect(controller.getProgressPercent()).toBe(25)
 
     controller.next()
-    expect(controller.getCurrentStep()).toBe("install-wopal-cli")
+    expect(controller.getCurrentStep()).toBe("install-cli")
 
-    controller.skip() // install-wopal-cli is not optional, stays at install-wopal-cli
-    expect(controller.getCurrentStep()).toBe("install-wopal-cli")
+    controller.skip() // install-cli is not optional, stays at install-cli
+    expect(controller.getCurrentStep()).toBe("install-cli")
   })
 
   test("getStepMetadata returns valid title and description for steps", () => {
@@ -72,5 +73,12 @@ describe("step-controller", () => {
     expect(resolveFeedbackMode({ hasError: false, working: true, success: undefined })).toBe("working")
     expect(resolveFeedbackMode({ hasError: true, working: false, success: false })).toBe("error")
     expect(resolveFeedbackMode({ hasError: false, working: false, success: true })).toBe("hidden")
+  })
+
+  test("failed CLI installation exposes retry in the bottom action bar", () => {
+    expect(isRetryActionVisible("install-cli", { working: false, success: false })).toBe(true)
+    expect(isRetryActionVisible("install-cli", { working: true, success: false })).toBe(false)
+    expect(isRetryActionVisible("install-cli", { working: false, success: true })).toBe(false)
+    expect(isRetryActionVisible("done", { working: false, success: false })).toBe(false)
   })
 })

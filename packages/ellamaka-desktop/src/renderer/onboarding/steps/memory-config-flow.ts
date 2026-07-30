@@ -7,8 +7,9 @@
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface MemoryProbeResult {
-  state: "unconfigured" | "disabled" | "incomplete" | "ready"
+  state: "unconfigured" | "disabled" | "incomplete" | "ready" | "space-custom"
   enabled: boolean
+  memoryInjectionEnabled?: boolean
   envPath: string
   llmEndpoint: string
   llmModel: string
@@ -16,11 +17,18 @@ export interface MemoryProbeResult {
   embeddingEndpoint: string
   embeddingModel: string
   embeddingKeyConfigured: boolean
+  globalMemory?: Record<string, any> | null
+  spaceMemory?: Record<string, any> | null
+  effectiveSpace?: { name: string; path: string; type?: string | null } | null
   error?: string | null
 }
 
 export interface MemoryFormState {
   enabled: boolean
+  memoryInjectionEnabled: boolean
+  scope: "global" | "space"
+  spaceMode: "inherit" | "custom" | "disabled"
+  spacePath?: string
   llmEndpoint: string
   llmModel: string
   llmKey: string
@@ -32,16 +40,30 @@ export interface MemoryFormState {
   embeddingKeyConfigured: boolean
 }
 
+export type MemoryScope = "global" | "space"
+
+export interface MemoryScopeDrafts {
+  global: MemoryFormState
+  space: MemoryFormState
+}
+
+export type MemoryScopeEditing = Record<MemoryScope, boolean>
+
 export interface MemoryFormErrors {
   llmEndpoint?: string
   llmKey?: string
   llmModel?: string
   embeddingEndpoint?: string
   embeddingModel?: string
+  embeddingKey?: string
 }
 
 export interface MemoryPayload {
-  enabled: boolean
+  enabled?: boolean
+  memoryInjectionEnabled?: boolean
+  scope?: "global" | "space"
+  spaceMode?: "inherit" | "custom" | "disabled"
+  spacePath?: string
   llmEndpoint?: string
   llmKey?: string
   llmModel?: string
@@ -52,6 +74,7 @@ export interface MemoryPayload {
 
 export interface MemoryResultSummary {
   enabled: boolean
+  memoryInjectionEnabled?: boolean
   state: string
   outcome: string
   envPath: string
@@ -61,6 +84,9 @@ export interface MemoryResultSummary {
   embeddingEndpoint: string
   embeddingModel: string
   embeddingKeySaved: boolean
+  isSpaceInherited?: boolean
+  spaceMode?: "inherit" | "custom" | "disabled"
+  spaceName?: string
 }
 
 // ── normalizeMemoryProbe ───────────────────────────────────────────────
@@ -78,7 +104,7 @@ export function normalizeMemoryProbe(
     : (raw ?? {})
   const llm = (mem.llm ?? {}) as Record<string, unknown>
   const emb = (mem.embedding ?? {}) as Record<string, unknown>
-  const states: MemoryProbeResult["state"][] = ["unconfigured", "disabled", "incomplete", "ready"]
+  const states: MemoryProbeResult["state"][] = ["unconfigured", "disabled", "incomplete", "ready", "space-custom"]
   const state = states.includes(mem.state as MemoryProbeResult["state"])
     ? mem.state as MemoryProbeResult["state"]
     : "unconfigured"
@@ -86,13 +112,17 @@ export function normalizeMemoryProbe(
   return {
     state,
     enabled: Boolean(mem.enabled),
+    memoryInjectionEnabled: mem.memoryInjectionEnabled !== false,
     envPath: String(mem.envPath ?? ""),
-    llmEndpoint: String(llm.endpoint ?? ""),
-    llmModel: String(llm.model ?? ""),
-    llmKeyConfigured: Boolean(llm.keyConfigured),
-    embeddingEndpoint: String(emb.endpoint ?? ""),
-    embeddingModel: String(emb.model ?? ""),
-    embeddingKeyConfigured: Boolean(emb.keyConfigured),
+    llmEndpoint: String(mem.llmEndpoint ?? llm.endpoint ?? ""),
+    llmModel: String(mem.llmModel ?? llm.model ?? ""),
+    llmKeyConfigured: Boolean(mem.hasLlmKey ?? llm.keyConfigured),
+    embeddingEndpoint: String(mem.embeddingEndpoint ?? emb.endpoint ?? ""),
+    embeddingModel: String(mem.embeddingModel ?? emb.model ?? ""),
+    embeddingKeyConfigured: Boolean(mem.hasEmbeddingKey ?? emb.keyConfigured),
+    globalMemory: (raw?.globalMemory as any) ?? null,
+    spaceMemory: (raw?.spaceMemory as any) ?? null,
+    effectiveSpace: (raw?.effectiveSpace as any) ?? null,
     error: typeof raw?.error === "string" ? raw.error : null,
   }
 }
@@ -120,8 +150,16 @@ export function buildInitialForm(probe: MemoryProbeResult): MemoryFormState {
     llmEndpoint === embeddingEndpoint
   )
 
+  let spaceMode: "inherit" | "custom" | "disabled" = "inherit"
+  if (probe.spaceMemory) {
+    spaceMode = (probe.spaceMemory as any).enabled === false ? "disabled" : "custom"
+  }
+
   return {
     enabled: isFresh ? false : probe.enabled,
+    memoryInjectionEnabled: probe.memoryInjectionEnabled !== false,
+    scope: probe.state === "space-custom" ? "space" : "global",
+    spaceMode,
     llmEndpoint,
     llmModel,
     llmKey: "",
@@ -134,18 +172,121 @@ export function buildInitialForm(probe: MemoryProbeResult): MemoryFormState {
   }
 }
 
+function memoryRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null
+}
+
+function memoryString(source: Record<string, unknown> | null, key: string, fallback: string): string {
+  const value = source?.[key]
+  return typeof value === "string" && value ? value : fallback
+}
+
+export function buildMemoryScopeDraft(
+  probe: MemoryProbeResult,
+  scope: MemoryScope,
+): MemoryFormState {
+  const base = buildInitialForm(probe)
+  const globalMemory = memoryRecord(probe.globalMemory)
+  const spaceMemory = memoryRecord(probe.spaceMemory)
+  const source = scope === "space" ? spaceMemory ?? globalMemory : globalMemory
+  const spaceMode = scope === "space"
+    ? !spaceMemory
+      ? "inherit"
+      : spaceMemory.enabled === false
+        ? "disabled"
+        : "custom"
+    : base.spaceMode
+  const llmEndpoint = memoryString(source, "llmEndpoint", base.llmEndpoint || "https://api.openai.com/v1")
+  const embeddingEndpoint = memoryString(source, "embeddingEndpoint", base.embeddingEndpoint)
+
+  return {
+    enabled: typeof source?.enabled === "boolean" ? source.enabled : base.enabled,
+    memoryInjectionEnabled: typeof source?.memoryInjectionEnabled === "boolean"
+      ? source.memoryInjectionEnabled
+      : base.memoryInjectionEnabled,
+    scope,
+    spaceMode,
+    spacePath: scope === "space" ? probe.effectiveSpace?.path : undefined,
+    llmEndpoint,
+    llmModel: memoryString(source, "llmModel", base.llmModel || "gpt-4o-mini"),
+    llmKey: "",
+    embeddingEndpoint,
+    embeddingModel: memoryString(source, "embeddingModel", base.embeddingModel || "text-embedding-3-small"),
+    embeddingKey: "",
+    reuseEmbedding: !embeddingEndpoint || embeddingEndpoint === llmEndpoint,
+    llmKeyConfigured: typeof source?.hasLlmKey === "boolean"
+      ? source.hasLlmKey
+      : base.llmKeyConfigured,
+    embeddingKeyConfigured: typeof source?.hasEmbeddingKey === "boolean"
+      ? source.hasEmbeddingKey
+      : base.embeddingKeyConfigured,
+  }
+}
+
+export function createMemoryScopeDrafts(probe: MemoryProbeResult): MemoryScopeDrafts {
+  return {
+    global: buildMemoryScopeDraft(probe, "global"),
+    space: buildMemoryScopeDraft(probe, "space"),
+  }
+}
+
+export function hasMemorySpaceTarget(probe: MemoryProbeResult): boolean {
+  return Boolean(probe.effectiveSpace?.path?.trim())
+}
+
+export function switchMemoryScopeDraft(
+  drafts: MemoryScopeDrafts,
+  currentDraft: MemoryFormState,
+  targetScope: MemoryScope,
+): { drafts: MemoryScopeDrafts; targetDraft: MemoryFormState } {
+  const nextDrafts = {
+    ...drafts,
+    [currentDraft.scope]: { ...currentDraft },
+  }
+  return {
+    drafts: nextDrafts,
+    targetDraft: { ...nextDrafts[targetScope] },
+  }
+}
+
+export function refreshMemoryScopeDraftsAfterSave(
+  probe: MemoryProbeResult,
+  savedScope: MemoryScope,
+  previousDrafts: MemoryScopeDrafts,
+  previousEditing: MemoryScopeEditing,
+  previousDirty: MemoryScopeEditing,
+): { drafts: MemoryScopeDrafts; editing: MemoryScopeEditing; dirty: MemoryScopeEditing } {
+  const drafts = createMemoryScopeDrafts(probe)
+  const otherScope: MemoryScope = savedScope === "global" ? "space" : "global"
+  if (previousDirty[otherScope]) {
+    drafts[otherScope] = { ...previousDrafts[otherScope] }
+  }
+  return {
+    drafts,
+    editing: {
+      ...previousEditing,
+      [savedScope]: false,
+    },
+    dirty: {
+      ...previousDirty,
+      [savedScope]: false,
+    },
+  }
+}
+
 // ── validateMemoryForm ─────────────────────────────────────────────────
 
 const URL_PATTERN = /^https?:\/\/.+/i
 
 /**
  * Validate the form state. Returns null if valid, or an object with
- * per-field error messages. Only validates when enabled.
+ * per-field error messages. Only validates when enabled and custom.
  */
 export function validateMemoryForm(
   form: MemoryFormState,
 ): MemoryFormErrors | null {
   if (!form.enabled) return null
+  if (form.scope === "space" && form.spaceMode && form.spaceMode !== "custom") return null
 
   const errors: MemoryFormErrors = {}
 
@@ -187,18 +328,26 @@ export function validateMemoryForm(
 
 /**
  * Build the IPC payload from the form state.
- * - Disabled: only sends { enabled: false }
- * - Enabled: sends all non-empty fields
- * - Keys: only sent when user typed a new value; empty = keep existing
- * - Reuse mode: copies llmEndpoint/llmKey to embedding when applicable
  */
 export function buildMemoryPayload(form: MemoryFormState): MemoryPayload {
+  const spacePath = form.scope === "space" ? form.spacePath : undefined
+
+  if (form.scope === "space" && form.spaceMode === "inherit") {
+    return { scope: "space", spaceMode: "inherit", spacePath }
+  }
+  if (form.scope === "space" && form.spaceMode === "disabled") {
+    return { enabled: false, scope: "space", spaceMode: "disabled", spacePath }
+  }
   if (!form.enabled) {
-    return { enabled: false }
+    return { enabled: false, scope: form.scope, spaceMode: form.spaceMode, spacePath }
   }
 
   const payload: MemoryPayload = {
     enabled: true,
+    memoryInjectionEnabled: form.memoryInjectionEnabled,
+    scope: form.scope,
+    spaceMode: form.scope === "space" ? form.spaceMode : undefined,
+    spacePath,
     llmEndpoint: form.llmEndpoint.trim() || undefined,
     llmModel: form.llmModel.trim() || undefined,
   }
@@ -209,9 +358,7 @@ export function buildMemoryPayload(form: MemoryFormState): MemoryPayload {
   }
 
   if (form.reuseEmbedding) {
-    // Reuse: embedding endpoint = llm endpoint
     payload.embeddingEndpoint = form.llmEndpoint.trim() || undefined
-    // If user typed a new LLM key, also use it for embedding
     if (form.llmKey.trim()) {
       payload.embeddingKey = form.llmKey.trim()
     }
@@ -242,6 +389,7 @@ export function buildMemoryResultSummary(
 ): MemoryResultSummary {
   return {
     enabled: Boolean(result.memoryEnabled),
+    memoryInjectionEnabled: result.memoryInjectionEnabled !== false,
     state: String(result.state ?? "unknown"),
     outcome: String(result.outcome ?? "unknown"),
     envPath: String(result.envPath ?? ""),
@@ -251,6 +399,45 @@ export function buildMemoryResultSummary(
     embeddingEndpoint: String(result.embeddingEndpoint ?? ""),
     embeddingModel: String(result.embeddingModel ?? ""),
     embeddingKeySaved: Boolean(result.embeddingKeyConfigured),
+    spaceMode: (result.spaceMode as any) ?? undefined,
+  }
+}
+
+export function buildMemoryResultSummaryFromProbe(
+  probe: MemoryProbeResult,
+  targetScope: "global" | "space" = "global",
+): MemoryResultSummary {
+  const isSpace = targetScope === "space"
+  const isInherited = isSpace && !probe.spaceMemory
+  const mem = isSpace
+    ? (probe.spaceMemory || probe.globalMemory || probe)
+    : (probe.globalMemory || probe)
+
+  let spaceMode: "inherit" | "custom" | "disabled" | undefined = undefined
+  if (isSpace) {
+    if (!probe.spaceMemory) spaceMode = "inherit"
+    else if ((probe.spaceMemory as any).enabled === false) spaceMode = "disabled"
+    else spaceMode = "custom"
+  }
+
+  const effectiveEnabled = isInherited
+    ? Boolean(probe.globalMemory ? (probe.globalMemory as any).enabled : false)
+    : Boolean((mem as any).enabled ?? probe.enabled)
+
+  return {
+    enabled: effectiveEnabled,
+    memoryInjectionEnabled: (mem as any).memoryInjectionEnabled !== false,
+    state: String((mem as any).state ?? probe.state),
+    outcome: isInherited ? "inherited" : "reused",
+    envPath: String((mem as any).envPath ?? probe.envPath ?? ""),
+    llmEndpoint: String((mem as any).llmEndpoint ?? probe.llmEndpoint ?? ""),
+    llmModel: String((mem as any).llmModel ?? probe.llmModel ?? ""),
+    llmKeySaved: Boolean((mem as any).hasLlmKey ?? probe.llmKeyConfigured),
+    embeddingEndpoint: String((mem as any).embeddingEndpoint ?? probe.embeddingEndpoint ?? ""),
+    embeddingModel: String((mem as any).embeddingModel ?? probe.embeddingModel ?? ""),
+    embeddingKeySaved: Boolean((mem as any).hasEmbeddingKey ?? probe.embeddingKeyConfigured),
+    isSpaceInherited: isInherited,
+    spaceMode,
   }
 }
 

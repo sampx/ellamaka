@@ -1,14 +1,12 @@
 export const ONBOARDING_STEPS = [
   "system-check",
-  "install-wopal-cli",
-  "install-ellamaka-cli",
+  "install-cli",
   "github-auth",
   "ontology-setup",
-  "ai-provider",
-  "runtime-setup",
   "create-space",
+  "ai-provider",
   "memory-config",
-  "star-guide",
+  "done",
 ] as const
 
 export type OnboardingStepName = (typeof ONBOARDING_STEPS)[number]

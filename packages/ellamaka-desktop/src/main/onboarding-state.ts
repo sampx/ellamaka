@@ -74,6 +74,11 @@ export function readOnboardingState(customHome?: string): OnboardingState | null
     const raw = readFileSync(statePath, "utf-8")
     const parsed = JSON.parse(raw) as OnboardingState
     if (parsed && typeof parsed === "object" && parsed.version === 1 && typeof parsed.steps === "object") {
+      let currentStep = parsed.currentStep as string
+      if (currentStep === "star-guide") currentStep = "done"
+      if (currentStep === "install-wopal-cli" || currentStep === "install-ellamaka-cli") currentStep = "install-cli"
+      if (currentStep === "github-auth") currentStep = "ontology-setup"
+      parsed.currentStep = currentStep as any
       return parsed
     }
     throw new Error("Invalid schema structure")
@@ -175,5 +180,87 @@ export function advanceToNextStep(
     ...state,
     currentStep: ONBOARDING_STEPS[idx + 1],
     updatedAt: new Date().toISOString(),
+  }
+}
+
+export function setCurrentStep(
+  state: OnboardingState,
+  stepName: OnboardingStepName | "done",
+): OnboardingState {
+  return {
+    ...state,
+    currentStep: stepName,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+export function rewindToStep(
+  state: OnboardingState,
+  targetStep: OnboardingStepName,
+): OnboardingState {
+  const targetIdx = ONBOARDING_STEPS.indexOf(targetStep)
+  if (targetIdx === -1) return state
+
+  const now = new Date().toISOString()
+  const nextSteps = { ...state.steps }
+  const nextErrors = { ...state.errors }
+
+  // Clear states of all steps following targetStep back to pending
+  for (let i = targetIdx + 1; i < ONBOARDING_STEPS.length; i++) {
+    const s = ONBOARDING_STEPS[i]
+    nextSteps[s] = "pending"
+    delete nextErrors[s]
+  }
+
+  // Reset targetStep itself to pending
+  nextSteps[targetStep] = "pending"
+  delete nextErrors[targetStep]
+
+  return {
+    ...state,
+    completed: false,
+    currentStep: targetStep,
+    steps: nextSteps,
+    errors: nextErrors,
+    updatedAt: now,
+  }
+}
+
+export function navigateToStep(
+  state: OnboardingState,
+  targetStep: OnboardingStepName | "done",
+): OnboardingState {
+  const now = new Date().toISOString()
+  if (targetStep === "done") {
+    return markCompleted(state)
+  }
+
+  const currentIdx = ONBOARDING_STEPS.indexOf(state.currentStep as OnboardingStepName)
+  const targetIdx = ONBOARDING_STEPS.indexOf(targetStep)
+
+  if (targetIdx === -1) return state
+
+  if (currentIdx !== -1 && targetIdx < currentIdx) {
+    return rewindToStep(state, targetStep)
+  }
+
+  const nextSteps = { ...state.steps }
+  const nextErrors = { ...state.errors }
+
+  for (let i = 0; i < targetIdx; i++) {
+    const s = ONBOARDING_STEPS[i]
+    if (nextSteps[s] === "pending" || nextSteps[s] === "in-progress") {
+      nextSteps[s] = "done"
+    }
+    delete nextErrors[s]
+  }
+
+  return {
+    ...state,
+    completed: false,
+    currentStep: targetStep,
+    steps: nextSteps,
+    errors: nextErrors,
+    updatedAt: now,
   }
 }

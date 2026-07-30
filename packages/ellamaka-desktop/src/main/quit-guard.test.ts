@@ -24,6 +24,10 @@ describe("quit guard", () => {
       expect(shouldConfirmQuit(makeState("restarting"))).toBe(true)
     })
 
+    test("returns true when onboarding mode is active", () => {
+      expect(shouldConfirmQuit({ onboarding: true } as any)).toBe(true)
+    })
+
     test("returns false when sidecar is stopped", () => {
       expect(shouldConfirmQuit(makeState("stopped"))).toBe(false)
     })

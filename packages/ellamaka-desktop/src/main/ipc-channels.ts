@@ -13,6 +13,7 @@
 export const IPC_HANDLE_CHANNELS = [
   "get-onboarding-mode",
   "onboarding-get-state",
+  "onboarding-set-current-step",
   "onboarding-execute-step",
   "onboarding-complete",
   "onboarding-probe",
@@ -56,6 +57,7 @@ export const IPC_HANDLE_CHANNELS = [
   "set-pinch-zoom-enabled",
   "set-titlebar",
   "run-desktop-menu-action",
+  "save-recent-model",
 ] as const
 
 export const IPC_EVENT_CHANNELS = [

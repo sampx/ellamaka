@@ -164,6 +164,7 @@ describe("IPC channel registry (unregister coverage)", () => {
   const EXPECTED_HANDLE_CHANNELS = new Set([
     "get-onboarding-mode",
     "onboarding-get-state",
+    "onboarding-set-current-step",
     "onboarding-execute-step",
     "onboarding-complete",
     "onboarding-probe",
@@ -207,6 +208,7 @@ describe("IPC channel registry (unregister coverage)", () => {
     "set-pinch-zoom-enabled",
     "set-titlebar",
     "run-desktop-menu-action",
+    "save-recent-model",
   ])
 
   const EXPECTED_EVENT_CHANNELS = new Set([

@@ -13,20 +13,49 @@ export interface LogDrawerProps {
   onCopy?: () => void
 }
 
+const STORAGE_KEY = "wopal_onboarding_log_drawer_expanded"
+
+function getInitialExpandedState(): boolean {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved !== null) {
+      return saved === "true"
+    }
+  } catch {
+    // ignore localStorage errors
+  }
+  return false // Default collapsed per user requirement
+}
+
+function saveExpandedState(expanded: boolean) {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(expanded))
+  } catch {
+    // ignore localStorage write errors
+  }
+}
+
 export function LogDrawer(props: LogDrawerProps) {
-  const [expanded, setExpanded] = createSignal(true)
+  const [expanded, setExpandedSignal] = createSignal(getInitialExpandedState())
   const errorCount = () => props.logs.filter((l) => l.isError).length
   let bodyRef: HTMLDivElement | undefined
+
+  const toggleExpanded = () => {
+    const next = !expanded()
+    setExpandedSignal(next)
+    saveExpandedState(next)
+  }
 
   // Auto-scroll to bottom when logs change
   createEffect(() => {
     props.logs.length
-    if (bodyRef) {
+    if (bodyRef && expanded()) {
       bodyRef.scrollTop = bodyRef.scrollHeight
     }
   })
 
-  const handleCopy = async () => {
+  const handleCopy = async (e: MouseEvent) => {
+    e.stopPropagation()
     const text = props.logs.map((l) => l.text).join("\n")
     try {
       await navigator.clipboard.writeText(text)
@@ -36,9 +65,14 @@ export function LogDrawer(props: LogDrawerProps) {
     props.onCopy?.()
   }
 
+  const handleClear = (e: MouseEvent) => {
+    e.stopPropagation()
+    props.onClear?.()
+  }
+
   return (
     <div class="ob-log-drawer">
-      <div class="ob-log-header" onClick={() => setExpanded(!expanded())}>
+      <div class="ob-log-header" onClick={toggleExpanded} style={{ cursor: "pointer" }}>
         <div class="ob-log-header-left">
           <span class="ob-log-icon">{expanded() ? "▼" : "▲"}</span>
           <span class="ob-log-title">日志</span>
@@ -51,7 +85,7 @@ export function LogDrawer(props: LogDrawerProps) {
             <button class="ob-log-action-btn" onClick={handleCopy} title={zhCN.actions.copy}>
               {zhCN.actions.copy}
             </button>
-            <button class="ob-log-action-btn" onClick={() => props.onClear?.()} title={zhCN.actions.clear}>
+            <button class="ob-log-action-btn" onClick={handleClear} title={zhCN.actions.clear}>
               {zhCN.actions.clear}
             </button>
           </Show>

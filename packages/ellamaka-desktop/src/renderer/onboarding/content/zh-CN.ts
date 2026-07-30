@@ -108,12 +108,20 @@ export const zhCN: OnboardingContent = {
   locale: "zh-CN",
   steps: {
     "system-check": {
-      title: "系统环境检查",
-      shortTitle: "系统检查",
-      goal: "验证运行环境是否满足 WopalSpace 要求",
-      why: "确保 Git、网络、磁盘空间和目录权限就绪，避免后续步骤失败。",
+      title: "选择安装目录",
+      shortTitle: "安装目录",
+      goal: "初始化 WOPAL_HOME 工作主目录并校验基础运行环境。",
+      why: "为您准备高效的全流程 AI 智能协同与超级个体工作空间，确保 Git、网络和磁盘空间就绪。",
       duration: "约 10 秒",
       outcome: "环境检查报告，确认系统可以安全安装。",
+    },
+    "install-cli": {
+      title: "组件安装",
+      shortTitle: "组件安装",
+      goal: "准备 Wopal CLI 工具链与 Ellamaka 运行时引擎",
+      why: "下载并校验基础工具链与 AI 引擎，为后续空间与代理调度提供核心能力。",
+      duration: "约 1 分钟",
+      outcome: "Wopal CLI 与 Ellamaka 引擎安装校验就绪。",
     },
     "install-wopal-cli": {
       title: "安装 Wopal CLI",
@@ -152,11 +160,11 @@ export const zhCN: OnboardingContent = {
     "ontology-setup": {
       title: "选择空间能力本体",
       shortTitle: "能力本体",
-      goal: "选择空间继承的角色、技能、规则和能力类型",
-      why: "Fork（强烈推荐，需 GitHub Token）：创建你的远程副本，可持续优化能力类型，并将进化成果贡献到开源社区。",
+      goal: "选择能力来源与同步方式",
+      why: "Fork 会保留并同步你的能力演化；Clone 只保存在当前电脑。",
       duration: "约 1-3 分钟",
-      outcome: "所选能力本体准备完成，创建空间时可直接使用。",
-      notes: "Clone：仅下载到当前电脑使用，无法将能力进化推送到远程；更换设备或本地数据损坏时存在丢失风险。",
+      outcome: "能力本体准备完成，可直接用于创建空间。",
+      notes: "已有本体只复用，不在配置向导中自动迁移模式。",
     },
     "runtime-setup": {
       title: "安装配置本体能力",

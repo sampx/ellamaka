@@ -248,6 +248,8 @@ const createPlatform = (releaseVersion: () => string): Platform => {
         type: "image/png",
       })
     },
+
+    saveRecentModel: (model: { providerID: string; modelID: string } | string) => window.api.saveRecentModel(model),
   }
 }
 

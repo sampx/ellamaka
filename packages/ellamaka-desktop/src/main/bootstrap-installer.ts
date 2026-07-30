@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { OnboardingStepResult } from "../preload/types"
 import { getWopalHome } from "./onboarding-state"
+import { terminateChildProcessTree } from "./child-process-lifecycle"
 
 export function parseSemver(vStr: string): number[] {
   const match = vStr.match(/(\d+)\.(\d+)\.(\d+)/)
@@ -45,9 +46,11 @@ export interface InstallWopalCliOptions {
   forceUpgrade?: boolean
   onProgress?: (progress: { phase: string; message?: string }) => void
   spawnFn?: (command: string, args: string[], options: any) => ChildProcess
-  fetchInstallerScript?: (platform: string) => Promise<string>
+  fetchInstallerScript?: (platform: string, signal?: AbortSignal) => Promise<string>
   fetchLatestVersion?: () => Promise<string | null>
   abortSignal?: AbortSignal
+  timeoutMs?: number
+  fetchTimeoutMs?: number
 }
 
 export async function installWopalCli(options: InstallWopalCliOptions = {}): Promise<OnboardingStepResult> {
@@ -55,6 +58,13 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
   const isWin = process.platform === "win32"
   const binName = isWin ? "wopal.exe" : "wopal"
   const binPath = join(homePath, "bin", binName)
+
+  if (options.abortSignal?.aborted) {
+    return {
+      status: "failed",
+      error: { code: "INSTALLATION_ABORTED", message: "Wopal CLI 安装已取消。" },
+    }
+  }
 
   let localVersion: string | null = null
 
@@ -100,23 +110,45 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
   options.onProgress?.({ phase: "downloading-installer", message: "Fetching latest wopal installer script..." })
 
   let scriptContent = ""
-  if (options.fetchInstallerScript) {
-    scriptContent = await options.fetchInstallerScript(process.platform)
-  } else {
-    const url = isWin ? "https://wopal.cn/install.ps1" : "https://wopal.cn/install.sh"
-    try {
-      const resp = await fetch(url)
+  const installerUrl = isWin ? "https://wopal.cn/install.ps1" : "https://wopal.cn/install.sh"
+  const fetchController = new AbortController()
+  const abortFetch = () => fetchController.abort()
+  const fetchTimer = setTimeout(abortFetch, options.fetchTimeoutMs ?? 30000)
+  options.abortSignal?.addEventListener("abort", abortFetch, { once: true })
+  try {
+    if (options.fetchInstallerScript) {
+      scriptContent = await options.fetchInstallerScript(process.platform, fetchController.signal)
+    } else {
+      const resp = await fetch(installerUrl, { signal: fetchController.signal })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       scriptContent = await resp.text()
-    } catch (err) {
+    }
+  } catch (err) {
+    if (options.abortSignal?.aborted) {
+      return {
+        status: "failed",
+        error: { code: "INSTALLATION_ABORTED", message: "Wopal CLI 安装已取消。" },
+      }
+    }
+    if (fetchController.signal.aborted) {
       return {
         status: "failed",
         error: {
-          code: "INSTALLER_DOWNLOAD_FAILED",
-          message: `Failed to download installer from ${url}: ${err instanceof Error ? err.message : String(err)}`,
+          code: "INSTALLER_DOWNLOAD_TIMEOUT",
+          message: "下载安装程序超时，请检查网络连接后重试。",
         },
       }
     }
+    return {
+      status: "failed",
+      error: {
+        code: "INSTALLER_DOWNLOAD_FAILED",
+        message: `Failed to download installer from ${installerUrl}: ${err instanceof Error ? err.message : String(err)}`,
+      },
+    }
+  } finally {
+    clearTimeout(fetchTimer)
+    options.abortSignal?.removeEventListener("abort", abortFetch)
   }
 
   // Write script to temporary location
@@ -167,44 +199,60 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
   return new Promise((resolve) => {
     let child: ChildProcess
     let isSettled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
 
-    const abortHandler = () => {
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      options.abortSignal?.removeEventListener("abort", abortHandler)
+    }
+
+    const stop = async (result: OnboardingStepResult) => {
       if (isSettled) return
       isSettled = true
-      try { child.kill("SIGTERM") } catch {}
-      resolve({
+      cleanup()
+      await terminateChildProcessTree(child)
+      resolve(result)
+    }
+
+    const abortHandler = () => {
+      void stop({
         status: "failed",
         error: {
           code: "INSTALLATION_ABORTED",
-          message: "Wopal CLI 安装已被用户取消。",
+          message: "Wopal CLI 安装已取消。",
         },
       })
     }
 
-    if (options.abortSignal) {
-      if (options.abortSignal.aborted) {
-        return resolve({
-          status: "failed",
-          error: { code: "INSTALLATION_ABORTED", message: "Wopal CLI 安装已被用户取消。" },
-        })
-      }
-      options.abortSignal.addEventListener("abort", abortHandler)
-    }
-
     try {
-      child = spawnImpl(cmd, args, { env, stdio: "pipe" })
+      child = spawnImpl(cmd, args, {
+        env,
+        stdio: "pipe",
+        detached: process.platform !== "win32",
+      })
     } catch (err) {
-      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
       return resolve({
         status: "failed",
         error: { code: "SPAWN_EXCEPTION", message: err instanceof Error ? err.message : String(err) },
       })
     }
 
+    options.abortSignal?.addEventListener("abort", abortHandler, { once: true })
+    timer = setTimeout(() => {
+      void stop({
+        status: "failed",
+        error: {
+          code: "INSTALLATION_TIMEOUT",
+          message: "Wopal CLI 安装超过 5 分钟，已终止当前下载。请检查网络后重试。",
+        },
+      })
+    }, options.timeoutMs ?? 300000)
+
     let stdoutLog = ""
     let stderrLog = ""
 
     child.stdout?.on("data", (chunk: any) => {
+      if (isSettled) return
       const str = chunk.toString()
       const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
       stdoutLog += clean
@@ -214,6 +262,7 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
     })
 
     child.stderr?.on("data", (chunk: any) => {
+      if (isSettled) return
       const str = chunk.toString()
       const clean = str.replace(/\x1b\[[0-9;]*m/g, "")
       stderrLog += clean
@@ -225,7 +274,7 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
     child.on("exit", (code: number | null) => {
       if (isSettled) return
       isSettled = true
-      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
+      cleanup()
 
       const fullLog = (stdoutLog + stderrLog).trim()
       const expectedPath = join(homePath, "bin", binName)
@@ -286,7 +335,7 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
     child.on("error", (err: Error) => {
       if (isSettled) return
       isSettled = true
-      if (options.abortSignal) options.abortSignal.removeEventListener("abort", abortHandler)
+      cleanup()
       resolve({
         status: "failed",
         error: { code: "SPAWN_ERROR", message: err.message },

@@ -1,5 +1,6 @@
 import { createSignal, onMount, Show } from "solid-js"
 import { ProgressDisplay } from "../components/ProgressDisplay"
+import { ResultPanel } from "../components/ResultPanel"
 import { AI_SUBSCRIPTION_PLANS } from "./ai-subscription-plans"
 
 export interface StepProps {
@@ -20,7 +21,10 @@ export function AiProviderStep(props: StepProps) {
     try {
       const res = await window.api.onboardingProbe("ai-provider")
       if (res && (res as any).hasKey) {
-        setDetectedKey((res as any).maskedKey || "oc_****")
+        const masked = (res as any).maskedKey || "oc_****"
+        setDetectedKey(masked)
+        setConfigured(true)
+        props.onStatusChange?.("success")
       }
     } catch {
     } finally {
@@ -34,10 +38,16 @@ export function AiProviderStep(props: StepProps) {
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
+    if (configured() && !apiKey().trim()) {
+      props.onStatusChange?.("success")
+      props.onComplete()
+      return
+    }
+
     const keyToSubmit = apiKey().trim()
     if (!keyToSubmit && !detectedKey()) {
       props.onStatusChange?.("error")
-      props.onError("请填写 OpenCode Go API Key，或选择使用默认免费模型。")
+      props.onError("请填写 OpenCode Go API Key，或选择跳过本步骤。")
       return
     }
     props.onError(null)
@@ -52,6 +62,9 @@ export function AiProviderStep(props: StepProps) {
 
       if (res.status === "completed" || res.status === "reused") {
         setConfigured(true)
+        if (keyToSubmit) {
+          setDetectedKey(`${keyToSubmit.slice(0, 3)}...${keyToSubmit.slice(-4)}`)
+        }
         props.onStatusChange?.("success")
       } else {
         props.onStatusChange?.("error")
@@ -72,20 +85,34 @@ export function AiProviderStep(props: StepProps) {
       </Show>
 
       <Show when={!probing() && configured()}>
-        <div class="ob-result-summary">
-          <div class="ob-result-icon">✓</div>
-          <div class="ob-result-title">OpenCode Go 已配置</div>
+        <ResultPanel
+          title="OpenCode Go 已配置"
+          actions={
+            <button
+              type="button"
+              class="ob-button ob-button-secondary"
+              onClick={() => {
+                setConfigured(false)
+              }}
+              style={{ "font-size": "12px", padding: "6px 14px" }}
+            >
+              更换 API Key
+            </button>
+          }
+        >
           <div class="ob-result-details">
             <div class="ob-result-row">
               <span class="ob-result-label">套餐</span>
               <span class="ob-result-value">{plan.name}</span>
             </div>
             <div class="ob-result-row">
-              <span class="ob-result-label">状态</span>
-              <span class="ob-result-value ob-result-accent">API Key 可用</span>
+              <span class="ob-result-label">API Key 状态</span>
+              <span class="ob-result-value ob-result-accent">
+                {detectedKey() ? `已识别可用的 API Key (${detectedKey()})` : "API Key 已配置完成"}
+              </span>
             </div>
           </div>
-        </div>
+        </ResultPanel>
       </Show>
 
       <Show when={!probing() && !configured()}>

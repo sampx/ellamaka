@@ -5,7 +5,12 @@ import {
   validateMemoryForm,
   buildMemoryPayload,
   buildMemoryResultSummary,
+  buildMemoryResultSummaryFromProbe,
+  createMemoryScopeDrafts,
+  hasMemorySpaceTarget,
   isMemoryProbeSatisfied,
+  refreshMemoryScopeDraftsAfterSave,
+  switchMemoryScopeDraft,
   type MemoryProbeResult,
   type MemoryFormState,
   type MemoryFormErrors,
@@ -198,6 +203,124 @@ describe("memory-config-flow | buildInitialForm", () => {
     }
     const form = buildInitialForm(probe)
     expect(form.reuseEmbedding).toBe(false)
+  })
+})
+
+describe("memory-config-flow | scope drafts", () => {
+  const probe: MemoryProbeResult = {
+    state: "disabled",
+    enabled: false,
+    envPath: "/home/.wopal/.env",
+    llmEndpoint: "",
+    llmModel: "",
+    llmKeyConfigured: false,
+    embeddingEndpoint: "",
+    embeddingModel: "",
+    embeddingKeyConfigured: false,
+    globalMemory: {
+      enabled: false,
+      memoryInjectionEnabled: true,
+      envPath: "/home/.wopal/.env",
+      llmEndpoint: "https://global.example.com/v1",
+      llmModel: "global-model",
+      embeddingEndpoint: "https://global.example.com/v1",
+      embeddingModel: "global-embedding",
+      hasLlmKey: true,
+      hasEmbeddingKey: true,
+    },
+    spaceMemory: null,
+    effectiveSpace: { name: "coding", path: "/spaces/coding" },
+  }
+
+  test("creates independent global and inherited space drafts from probe", () => {
+    const drafts = createMemoryScopeDrafts(probe)
+
+    expect(drafts.global.scope).toBe("global")
+    expect(drafts.global.enabled).toBe(false)
+    expect(drafts.global.llmEndpoint).toBe("https://global.example.com/v1")
+    expect(drafts.space.scope).toBe("space")
+    expect(drafts.space.spaceMode).toBe("inherit")
+    expect(drafts.space.spacePath).toBe("/spaces/coding")
+    expect(drafts.space.llmEndpoint).toBe("https://global.example.com/v1")
+    expect(hasMemorySpaceTarget(probe)).toBe(true)
+  })
+
+  test("rejects space scope when probe has no registered space path", () => {
+    expect(hasMemorySpaceTarget({ ...probe, effectiveSpace: null })).toBe(false)
+  })
+
+  test("preserves unsaved global input across space and global tab switches", () => {
+    const initial = createMemoryScopeDrafts(probe)
+    const unsavedGlobal: MemoryFormState = {
+      ...initial.global,
+      enabled: true,
+      llmEndpoint: "https://draft.example.com/v1",
+      llmModel: "draft-model",
+      llmKey: "draft-secret",
+      embeddingEndpoint: "https://draft-embedding.example.com/v1",
+      embeddingModel: "draft-embedding",
+      embeddingKey: "draft-embedding-secret",
+      reuseEmbedding: false,
+    }
+
+    const toSpace = switchMemoryScopeDraft(initial, unsavedGlobal, "space")
+    const unsavedSpace: MemoryFormState = {
+      ...toSpace.targetDraft,
+      spaceMode: "custom",
+      llmEndpoint: "https://space.example.com/v1",
+      llmModel: "space-model",
+    }
+    const backToGlobal = switchMemoryScopeDraft(toSpace.drafts, unsavedSpace, "global")
+
+    expect(backToGlobal.targetDraft.llmEndpoint).toBe("https://draft.example.com/v1")
+    expect(backToGlobal.targetDraft.llmModel).toBe("draft-model")
+    expect(backToGlobal.targetDraft.llmKey).toBe("draft-secret")
+    expect(backToGlobal.targetDraft.embeddingEndpoint).toBe("https://draft-embedding.example.com/v1")
+    expect(backToGlobal.targetDraft.embeddingModel).toBe("draft-embedding")
+    expect(backToGlobal.targetDraft.embeddingKey).toBe("draft-embedding-secret")
+    expect(backToGlobal.targetDraft.reuseEmbedding).toBe(false)
+    expect(backToGlobal.drafts.space.llmEndpoint).toBe("https://space.example.com/v1")
+  })
+
+  test("refreshes the saved scope without discarding the other unsaved draft", () => {
+    const initial = createMemoryScopeDrafts(probe)
+    const drafts = {
+      ...initial,
+      space: {
+        ...initial.space,
+        spaceMode: "custom" as const,
+        llmEndpoint: "https://unsaved-space.example.com/v1",
+        llmModel: "unsaved-space-model",
+        llmKey: "unsaved-space-secret",
+      },
+    }
+    const refreshedProbe: MemoryProbeResult = {
+      ...probe,
+      state: "ready",
+      enabled: true,
+      globalMemory: {
+        ...(probe.globalMemory ?? {}),
+        enabled: true,
+        llmEndpoint: "https://saved-global.example.com/v1",
+        llmModel: "saved-global-model",
+      },
+    }
+
+    const refreshed = refreshMemoryScopeDraftsAfterSave(
+      refreshedProbe,
+      "global",
+      drafts,
+      { global: true, space: true },
+      { global: true, space: true },
+    )
+
+    expect(refreshed.drafts.global.llmEndpoint).toBe("https://saved-global.example.com/v1")
+    expect(refreshed.editing.global).toBe(false)
+    expect(refreshed.drafts.space.llmEndpoint).toBe("https://unsaved-space.example.com/v1")
+    expect(refreshed.drafts.space.llmKey).toBe("unsaved-space-secret")
+    expect(refreshed.editing.space).toBe(true)
+    expect(refreshed.dirty.global).toBe(false)
+    expect(refreshed.dirty.space).toBe(true)
   })
 })
 
@@ -415,19 +538,87 @@ describe("memory-config-flow | buildMemoryPayload", () => {
     const form: MemoryFormState = {
       enabled: false,
       llmEndpoint: "https://api.example.com",
-      llmModel: "gpt-4",
+      llmModel: "gpt-4o-mini",
       llmKey: "",
-      embeddingEndpoint: "https://api.example.com",
+      embeddingEndpoint: "",
       embeddingModel: "text-embedding-3-small",
       embeddingKey: "",
-      reuseEmbedding: false,
+      reuseEmbedding: true,
       llmKeyConfigured: true,
       embeddingKeyConfigured: false,
     }
     const payload = buildMemoryPayload(form)
-    expect(payload.enabled).toBe(false)
-    expect(payload.llmEndpoint).toBeUndefined()
-    expect(payload.llmKey).toBeUndefined()
+    expect(payload).toEqual({ enabled: false, scope: undefined, spaceMode: undefined, spacePath: undefined })
+  })
+
+  test("space scope payloads attach spacePath for inherit, disabled, and custom modes", () => {
+    const spacePath = "/Users/sam/space1"
+
+    const inheritPayload = buildMemoryPayload({
+      enabled: true,
+      scope: "space",
+      spaceMode: "inherit",
+      spacePath,
+      llmEndpoint: "",
+      llmModel: "",
+      llmKey: "",
+      embeddingEndpoint: "",
+      embeddingModel: "",
+      embeddingKey: "",
+      reuseEmbedding: true,
+      llmKeyConfigured: false,
+      embeddingKeyConfigured: false,
+    } as any)
+    expect(inheritPayload).toEqual({ scope: "space", spaceMode: "inherit", spacePath })
+
+    const disabledPayload = buildMemoryPayload({
+      enabled: false,
+      scope: "space",
+      spaceMode: "disabled",
+      spacePath,
+      llmEndpoint: "",
+      llmModel: "",
+      llmKey: "",
+      embeddingEndpoint: "",
+      embeddingModel: "",
+      embeddingKey: "",
+      reuseEmbedding: true,
+      llmKeyConfigured: false,
+      embeddingKeyConfigured: false,
+    } as any)
+    expect(disabledPayload).toEqual({ enabled: false, scope: "space", spaceMode: "disabled", spacePath })
+  })
+
+  test("scope drafts provide the detected space path to every space strategy", () => {
+    const probe: MemoryProbeResult = {
+      state: "ready",
+      enabled: true,
+      envPath: "/home/.wopal/.env",
+      llmEndpoint: "https://api.example.com/v1",
+      llmModel: "model",
+      llmKeyConfigured: true,
+      embeddingEndpoint: "https://api.example.com/v1",
+      embeddingModel: "embedding",
+      embeddingKeyConfigured: true,
+      effectiveSpace: { name: "coding", path: "/spaces/coding" },
+    }
+    const draft = createMemoryScopeDrafts(probe).space
+
+    expect(buildMemoryPayload({ ...draft, spaceMode: "inherit" })).toMatchObject({
+      scope: "space",
+      spaceMode: "inherit",
+      spacePath: "/spaces/coding",
+    })
+    expect(buildMemoryPayload({ ...draft, enabled: false, spaceMode: "disabled" })).toMatchObject({
+      scope: "space",
+      spaceMode: "disabled",
+      spacePath: "/spaces/coding",
+    })
+    expect(buildMemoryPayload({ ...draft, enabled: true, spaceMode: "custom" })).toMatchObject({
+      scope: "space",
+      spaceMode: "custom",
+      spacePath: "/spaces/coding",
+    })
   })
 })
 
@@ -485,6 +676,33 @@ describe("memory-config-flow | buildMemoryResultSummary", () => {
     const str = JSON.stringify(summary)
     expect(str).not.toContain("sk-")
     expect(str).not.toContain("apiKey")
+  })
+
+  test("buildMemoryResultSummaryFromProbe accurately reflects space inheritance when global memory is disabled", () => {
+    const probe: MemoryProbeResult = {
+      state: "disabled",
+      enabled: false,
+      envPath: "/home/.env",
+      llmEndpoint: "",
+      llmModel: "",
+      llmKeyConfigured: false,
+      embeddingEndpoint: "",
+      embeddingModel: "",
+      embeddingKeyConfigured: false,
+      globalMemory: {
+        enabled: false,
+        envPath: "/home/.env",
+        llmEndpoint: "",
+        llmModel: "",
+      },
+      spaceMemory: null,
+      effectiveSpace: { name: "coding", path: "/space/coding" },
+    }
+
+    const summary = buildMemoryResultSummaryFromProbe(probe, "space")
+    expect(summary.spaceMode).toBe("inherit")
+    expect(summary.isSpaceInherited).toBe(true)
+    expect(summary.enabled).toBe(false)
   })
 })
 

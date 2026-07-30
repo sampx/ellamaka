@@ -85,7 +85,7 @@
 }
 
 .ob-step-nav-pill {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ob-text-muted);
   background: rgba(255, 255, 255, 0.05);
@@ -122,7 +122,7 @@
   display: flex;
   justify-content: center;
   align-items: stretch;
-  padding: 24px 16px 16px;
+  padding: 24px 28px 16px;   /* 水平 padding 加大（16 → 28），与 header 20px 对齐并留出对称呼吸感 */
   overflow: hidden;
 }
 
@@ -146,7 +146,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 45% 55%;
+  grid-template-columns: minmax(0, 40fr) minmax(0, 60fr);
   gap: 20px;
   width: 100%;
   height: 100%;
@@ -190,6 +190,7 @@
 .ob-step-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -256,25 +257,151 @@
   border-radius: 10px;
 }
 
+.ob-step-guide-markdown {
+  color: var(--ob-text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.ob-step-guide-markdown h2,
+.ob-step-guide-markdown h3 {
+  color: var(--ob-text-main);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.45;
+  margin: 22px 0 8px;
+}
+
+.ob-step-guide-markdown p,
+.ob-step-guide-markdown ul,
+.ob-step-guide-markdown ol {
+  margin-bottom: 12px;
+}
+
+.ob-step-guide-markdown ul,
+.ob-step-guide-markdown ol {
+  padding-left: 22px;
+}
+
+.ob-step-guide-markdown li {
+  margin-bottom: 6px;
+}
+
+.ob-step-guide-markdown blockquote {
+  margin: 16px 0;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(255, 111, 97, 0.72);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 111, 97, 0.08);
+  color: var(--ob-text-muted);
+}
+
+.ob-step-guide-markdown pre,
+.ob-step-guide-markdown table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ob-step-guide-markdown a {
+  color: var(--ob-accent);
+  text-underline-offset: 2px;
+}
+
+.ob-step-guide-figure {
+  margin: 18px 0;
+}
+
+.ob-step-guide-figure img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border: 1px solid var(--ob-card-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ob-step-guide-figure figcaption {
+  margin-top: 7px;
+  color: var(--ob-text-subtle);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.ob-step-guide-mobile {
+  display: none;
+}
+
 /* Right: Task Card */
 .ob-card {
   background: var(--ob-card-bg);
   backdrop-filter: blur(24px);
   border: 1px solid var(--ob-card-border);
   border-radius: 16px;
-  padding: 24px;
+  padding: 28px;        /* 内边距加大（24 → 28），给放大后的内容更多呼吸感 */
   display: flex;
   flex-direction: column;
+  min-width: 0;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   min-height: 0;
 }
 
 .ob-card-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 0;
   flex-shrink: 0;
+}
+
+.ob-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.ob-card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ob-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  margin-top: 0;         /* 偏下调整为偏上：移除 auto，改回顶对齐 */
+  margin-bottom: auto;   /* 下方仍分摊剩余空间，保持视觉平衡 */
+}
+
+.ob-result-status-header {
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 18px;
+  flex-shrink: 0;
+}
+
+.ob-result-status-icon {
+  font-size: 32px;
+  color: #34d399;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.ob-result-status-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
 }
 
 .ob-card-title {
@@ -293,8 +420,12 @@
   font-weight: 600;
 }
 
-.ob-mobile-step-summary {
-  display: none;
+.ob-card-description {
+  max-width: 560px;
+  margin: 0;
+  color: var(--ob-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 /* Workbench-style fixed feedback area */
@@ -424,15 +555,7 @@
   color: var(--ob-text-main);
 }
 
-/* Card Body - Scrollable */
-.ob-card-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
+/* Card Body - Scrollable (definition merged above; scrollbar rules below) */
 .ob-card-body::-webkit-scrollbar {
   width: 6px;
 }
@@ -442,15 +565,6 @@
   border-radius: 3px;
 }
 
-/* Step Content */
-.ob-step-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  flex: 1;
-  min-height: 200px;
-}
-
 /* Result Summary */
 .ob-result-summary {
   display: flex;
@@ -458,9 +572,81 @@
   align-items: center;
   gap: 16px;
   padding: 20px;
-  flex: 1;
+}
+
+.ob-result-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  width: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.ob-result-panel-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.ob-result-panel-icon {
+  font-size: 32px;
+  color: #34d399;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.ob-result-panel-error .ob-result-panel-icon {
+  color: var(--ob-error);
+}
+
+.ob-result-panel-title {
+  margin: 0;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ob-result-panel-working .ob-result-panel-title {
+  color: var(--ob-text-muted);
+}
+
+.ob-result-panel-error .ob-result-panel-title {
+  color: var(--ob-error);
+}
+
+.ob-result-panel-message {
+  max-width: 560px;
+  margin: 8px 0 0;
+  color: var(--ob-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ob-result-panel-error .ob-result-panel-message {
+  color: #fca5a5;
+}
+
+.ob-result-panel-spinner {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  margin-bottom: 6px;
+}
+
+.ob-result-panel-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.ob-result-panel-actions {
+  display: flex;
   justify-content: center;
-  min-height: 200px;
 }
 
 .ob-result-icon {
@@ -480,10 +666,14 @@
 
 .ob-result-details {
   width: 100%;
+  min-width: 420px;     /* 窄视口兜底（380 → 420） */
+  max-width: 560px;     /* 放大信息框，减少两侧空白（440 → 560） */
+  box-sizing: border-box;
+  align-self: center;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--ob-card-border);
   border-radius: 12px;
-  padding: 16px;
+  padding: 20px;        /* 内边距加大（16 → 20） */
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -513,6 +703,10 @@
 
 .ob-result-value.ob-result-accent {
   color: var(--ob-accent);
+}
+
+.ob-result-value.ob-result-error {
+  color: var(--ob-error);
 }
 
 .ob-result-warning {
@@ -880,17 +1074,225 @@
   font-style: normal;
 }
 
-.ob-ontology-result {
-  min-height: 0;
-  align-items: stretch;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 4px 0;
+.ob-ontology-flow {
+  gap: 20px;
+  padding: 0 2px 4px;
 }
 
-.ob-ontology-result > .ob-result-icon,
-.ob-ontology-result > .ob-result-title {
-  align-self: center;
+.ob-ontology-flow .ob-ontology-section {
+  gap: 10px;
+}
+
+.ob-ontology-flow .ob-ontology-section-title {
+  color: var(--ob-text-muted);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.ob-ontology-flow .ob-source-option {
+  padding: 15px 16px;
+  border-radius: 12px;
+}
+
+.ob-ontology-flow .ob-source-option strong {
+  font-size: 15px;
+}
+
+.ob-ontology-flow .ob-source-option small {
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.ob-ontology-flow .ob-advanced-toggle {
+  padding: 8px 4px;
+  font-size: 13px;
+}
+
+.ob-ontology-flow .ob-custom-source {
+  gap: 10px;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.ob-ontology-flow .ob-label {
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.ob-ontology-flow .ob-mode-options {
+  gap: 12px;
+}
+
+.ob-ontology-flow .ob-mode-option {
+  min-height: 104px;
+  gap: 8px;
+  padding: 15px 16px;
+  border-radius: 12px;
+}
+
+.ob-ontology-flow .ob-mode-option-title strong {
+  font-size: 15px;
+}
+
+.ob-ontology-flow .ob-mode-option-title span {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.ob-ontology-flow .ob-mode-option small {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ob-ontology-flow .ob-plan-badge {
+  font-size: 12px;
+}
+
+.ob-ontology-flow .ob-field-help,
+.ob-ontology-flow .ob-result-location,
+.ob-ontology-flow .ob-space-types-header span:last-child,
+.ob-ontology-flow .ob-space-types-empty {
+  font-size: 13px;
+}
+
+.ob-ontology-flow .ob-result-panel-message,
+.ob-ontology-flow .ob-space-type-item strong {
+  font-size: 14px;
+}
+
+.ob-ontology-flow .ob-space-type-item code {
+  font-size: 12px;
+}
+
+.ob-ontology-flow .ob-space-types {
+  width: 100%;
+  max-width: 560px;
+}
+
+.ob-github-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--ob-card-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ob-github-card.ready {
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.07);
+}
+
+.ob-github-card.required {
+  border-color: rgba(255, 111, 97, 0.32);
+  background: rgba(255, 111, 97, 0.06);
+}
+
+.ob-github-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ob-github-card-icon {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ob-text-main);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ob-github-card.ready .ob-github-card-icon {
+  background: rgba(52, 211, 153, 0.14);
+  color: #34d399;
+}
+
+.ob-github-card-title {
+  color: var(--ob-text-main);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ob-github-card-description {
+  margin-top: 3px;
+  color: var(--ob-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ob-github-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: rgba(7, 10, 18, 0.28);
+}
+
+.ob-github-detail-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ob-github-detail-row span {
+  color: var(--ob-text-subtle);
+  font-size: 12px;
+}
+
+.ob-github-detail-row strong {
+  overflow-wrap: anywhere;
+  color: var(--ob-text-main);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ob-github-token-field {
+  padding-top: 2px;
+}
+
+.ob-github-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ob-github-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.ob-inline-action {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ob-accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ob-inline-action:hover:not(:disabled) {
+  color: #ff8c82;
+}
+
+.ob-inline-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .ob-result-location {
@@ -1009,6 +1411,7 @@
 
 /* Spinner */
 .ob-spinner {
+  display: inline-block; /* 让 span 等内联元素也能应用 width/height，保持旋转动画可见 */
   width: 24px;
   height: 24px;
   border: 3px solid rgba(255, 255, 255, 0.1);
@@ -1326,12 +1729,36 @@
     display: none;
   }
 
-  .ob-mobile-step-summary {
+  .ob-step-guide-mobile {
     display: block;
-    margin: -6px 0 14px;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--ob-card-border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+  }
+
+  .ob-step-guide-mobile > summary {
+    padding: 10px 12px;
     color: var(--ob-text-muted);
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .ob-step-guide-mobile[open] > summary {
+    border-bottom: 1px solid var(--ob-card-border);
+  }
+
+  .ob-step-guide-mobile-content {
+    max-height: min(42vh, 360px);
+    padding: 14px;
+    overflow-y: auto;
+  }
+
+  .ob-step-guide-mobile-content .ob-step-info-title {
+    font-size: 18px;
   }
 
   .ob-nav-arrow {

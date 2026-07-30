@@ -13,6 +13,9 @@ export type AppMode = "onboarding" | "workbench"
 // Synchronous because resolveOnboardingMode is called early in main startup
 // before any async work. loadShellEnv uses spawnSync with a 5s cap.
 export function probeWopalHomeFromShell(): string | null {
+  if (process.platform === "win32") {
+    return process.env.WOPAL_HOME?.trim() || null
+  }
   try {
     const shell = getUserShell()
     const env = loadShellEnv(shell)

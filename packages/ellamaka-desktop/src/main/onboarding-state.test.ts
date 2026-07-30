@@ -9,6 +9,8 @@ import {
   markStarted,
   markCompleted,
   createDefaultOnboardingState,
+  rewindToStep,
+  navigateToStep,
   ONBOARDING_STEPS,
   type OnboardingState,
 } from "./onboarding-state"
@@ -45,6 +47,17 @@ describe("onboarding-state", () => {
     expect(state?.completed).toBe(false)
   })
 
+  test("readOnboardingState restores the integrated GitHub step as ontology setup", () => {
+    const statePath = join(testHome, "ellamaka", "state", "onboarding.json")
+    mkdirSync(join(testHome, "ellamaka", "state"), { recursive: true })
+    const initial = createDefaultOnboardingState()
+    writeFileSync(statePath, JSON.stringify({ ...initial, currentStep: "github-auth" }), "utf-8")
+
+    const state = readOnboardingState(testHome)
+
+    expect(state?.currentStep).toBe("ontology-setup")
+  })
+
   test("readOnboardingState backs up corrupted JSON file and returns null", () => {
     const stateDir = join(testHome, "ellamaka", "state")
     const statePath = join(stateDir, "onboarding.json")
@@ -74,20 +87,20 @@ describe("onboarding-state", () => {
 
   test("updateStep updates specific step status and timestamp", () => {
     const initial = createDefaultOnboardingState()
-    const updated = updateStep(initial, "install-wopal-cli", "in-progress")
+    const updated = updateStep(initial, "install-cli", "in-progress")
 
-    expect(updated.steps["install-wopal-cli"]).toBe("in-progress")
-    expect(updated.currentStep).toBe("install-wopal-cli")
+    expect(updated.steps["install-cli"]).toBe("in-progress")
+    expect(updated.currentStep).toBe("install-cli")
     expect(updated.updatedAt).not.toBeNull()
     expect(updated.steps["system-check"]).toBe("pending")
   })
 
   test("updateStep with error records error message", () => {
     const initial = createDefaultOnboardingState()
-    const updated = updateStep(initial, "install-wopal-cli", "failed", "Network error")
+    const updated = updateStep(initial, "install-cli", "failed", "Network error")
 
-    expect(updated.steps["install-wopal-cli"]).toBe("failed")
-    expect(updated.errors["install-wopal-cli"]).toBe("Network error")
+    expect(updated.steps["install-cli"]).toBe("failed")
+    expect(updated.errors["install-cli"]).toBe("Network error")
   })
 
   test("markStarted sets startedAt if not set", () => {
@@ -109,6 +122,45 @@ describe("onboarding-state", () => {
     expect(completed.completed).toBe(true)
     expect(completed.currentStep).toBe("done")
     expect(completed.updatedAt).not.toBeNull()
+  })
+
+  test("rewindToStep resets subsequent step statuses to pending and updates currentStep", () => {
+    let state = createDefaultOnboardingState()
+    state = updateStep(state, "system-check", "completed")
+    state = updateStep(state, "install-cli", "completed")
+    state = updateStep(state, "github-auth", "completed")
+
+    expect(state.steps["install-cli"]).toBe("completed")
+    expect(state.steps["github-auth"]).toBe("completed")
+
+    const rewound = rewindToStep(state, "install-cli")
+    expect(rewound.currentStep).toBe("install-cli")
+    expect(rewound.completed).toBe(false)
+    expect(rewound.steps["install-cli"]).toBe("pending")
+    expect(rewound.steps["github-auth"]).toBe("pending")
+  })
+
+  test("navigateToStep advances currentStep and marks prior steps as done", () => {
+    let state = createDefaultOnboardingState()
+    state = navigateToStep(state, "ontology-setup")
+
+    expect(state.currentStep).toBe("ontology-setup")
+    expect(state.steps["system-check"]).toBe("done")
+    expect(state.steps["install-cli"]).toBe("done")
+    expect(state.steps["github-auth"]).toBe("done")
+    expect(state.steps["ontology-setup"]).toBe("pending")
+    expect(state.steps["create-space"]).toBe("pending")
+  })
+
+  test("navigateToStep rewinds when targetStep is prior to currentStep", () => {
+    let state = createDefaultOnboardingState()
+    state = navigateToStep(state, "ontology-setup")
+
+    const rewound = navigateToStep(state, "install-cli")
+    expect(rewound.currentStep).toBe("install-cli")
+    expect(rewound.steps["system-check"]).toBe("done")
+    expect(rewound.steps["install-cli"]).toBe("pending")
+    expect(rewound.steps["ontology-setup"]).toBe("pending")
   })
 })
 

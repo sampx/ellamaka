@@ -6,20 +6,22 @@ import {
   ONBOARDING_STEPS,
   PHASE_CONFIGS,
   getPhaseForStep,
+  isRetryActionVisible,
   isOptionalStep,
   type OnboardingStepName,
 } from "./step-controller"
 import { SystemCheckStep } from "./steps/system-check"
-import { InstallWopalCliStep } from "./steps/install-wopal-cli"
-import { InstallEllamakaCliStep } from "./steps/install-ellamaka-cli"
-import { OntologyGithubStep } from "./steps/ontology-github-step"
+import { InstallCliStep } from "./steps/install-cli"
+import { OntologySetupStep } from "./steps/ontology-setup"
 import { AiProviderStep } from "./steps/ai-provider"
 import { CreateSpaceStep } from "./steps/create-space"
-import { RuntimeSetupStep } from "./steps/runtime-setup"
 import { MemoryConfigStep } from "./steps/memory-config"
 import { DoneStep } from "./steps/done"
 import { LogDrawer } from "./components/LogDrawer"
+import { ProgressDisplay } from "./components/ProgressDisplay"
+import { StepGuide } from "./components/StepGuide"
 import { zhCN } from "./content/zh-CN"
+import { getStepGuideSource, STEP_GUIDE_ASSETS } from "./content/step-guides"
 import "./onboarding.css"
 
 export interface LogEntry {
@@ -30,13 +32,11 @@ export interface LogEntry {
 // Step categorization for nav button behavior
 const FORM_SUBMIT_STEPS = new Set<OnboardingStepName>([
   "system-check",
-  "install-wopal-cli",
-  "install-ellamaka-cli",
-  "runtime-setup",
+  "install-cli",
   "github-auth",
-  "ai-provider",
   "ontology-setup",
   "create-space",
+  "ai-provider",
   "memory-config",
 ])
 
@@ -51,6 +51,8 @@ export function OnboardingRoot() {
   const [stepResult, setStepResult] = createSignal<{ success: boolean } | null>(null)
   const [hasExistingSpaces, setHasExistingSpaces] = createSignal(false)
   const [maxUnlockedPhase, setMaxUnlockedPhase] = createSignal<number>(1)
+  const [initialized, setInitialized] = createSignal(false)
+  const [systemUserName, setSystemUserName] = createSignal<string>("")
 
   const controller = createStepController("system-check")
 
@@ -70,6 +72,33 @@ export function OnboardingRoot() {
       if (prog.suggestion) appendLog(`建议: ${prog.suggestion}`, prog.phase === "failed")
       if (prog.details) appendLog(prog.details, prog.phase === "failed")
     })
+
+    void (async () => {
+      try {
+        const [state, userProbe] = await Promise.all([
+          window.api.onboardingGetState(),
+          window.api.onboardingProbe("system-user").catch(() => null),
+        ])
+
+        const name = (userProbe as { userName?: string } | null)?.userName?.trim()
+        if (name) setSystemUserName(name)
+
+        if (state && state.currentStep && !state.completed) {
+          const savedStep = state.currentStep
+          if (savedStep !== currentStep()) {
+            setCurrentStep(savedStep)
+            controller.setCurrentStep(savedStep)
+            updateUnlockedPhase(savedStep)
+            appendLog(`[system] 已自动从本地 onboarding.json 恢复当前进度: ${savedStep}`)
+          }
+        }
+      } catch (err) {
+        appendLog(`[warning] 获取步骤恢复状态失败: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setInitialized(true)
+      }
+    })()
+
     return unsub
   })
 
@@ -89,6 +118,9 @@ export function OnboardingRoot() {
     setCurrentStep(nextStep)
     updateUnlockedPhase(nextStep)
     appendLog(`[step] 进入步骤: ${getStepMetadata(nextStep).title}`)
+    if (nextStep !== "done") {
+      void window.api.onboardingSetCurrentStep(nextStep)
+    }
   }
 
   const handlePrev = () => {
@@ -99,6 +131,9 @@ export function OnboardingRoot() {
     const prevStep = controller.getCurrentStep()
     setCurrentStep(prevStep)
     appendLog(`[step] 返回步骤: ${getStepMetadata(prevStep).title}`)
+    if (prevStep !== "done") {
+      void window.api.onboardingSetCurrentStep(prevStep)
+    }
   }
 
   const handleJumpPhase = (phaseNum: 1 | 2 | 3 | 4) => {
@@ -111,6 +146,9 @@ export function OnboardingRoot() {
     setCurrentStep(target)
     controller.setCurrentStep(target)
     appendLog(`[step] 切换到阶段 ${phaseNum}: ${config.title}`)
+    if (target !== "done") {
+      void window.api.onboardingSetCurrentStep(target)
+    }
   }
 
   const handleSkip = async () => {
@@ -159,9 +197,12 @@ export function OnboardingRoot() {
     }
   }
 
-  const handleStepStatusChange = (status: "working" | "success" | "error") => {
+  const handleStepStatusChange = (status: "idle" | "working" | "success" | "error") => {
     if (status === "working") {
       setWorking(true)
+      setStepResult(null)
+    } else if (status === "idle") {
+      setWorking(false)
       setStepResult(null)
     } else if (status === "success") {
       setWorking(false)
@@ -175,30 +216,22 @@ export function OnboardingRoot() {
   const currentPhase = () => getPhaseForStep(currentStep())
   const meta = () => getStepMetadata(currentStep())
   const content = () => getStepContent(currentStep())
+  const guideSource = () => getStepGuideSource(currentStep())
+
+  const isDone = () => currentStep() === "done"
 
   const isCurrentOptional = () => {
+    if (isDone()) return false
     const step = currentStep()
-    if (step === "done") return false
     // create-space optionality is determined by the component itself (existing spaces)
     if (step === "create-space") return false
     return isOptionalStep(step as OnboardingStepName, { hasExistingSpaces: hasExistingSpaces() })
   }
 
-  const handleCancel = async () => {
-    try {
-      await window.api.onboardingCancelStep()
-    } catch {
-      // ignore
-    }
-    setWorking(false)
-    setStepResult({ success: false })
-    appendLog("[step] 用户已取消当前操作")
-  }
+
 
   // --- Navigation button state derivation ---
   const stepName = () => currentStep() as OnboardingStepName
-
-  const isDone = () => currentStep() === "done"
 
   // Previous button: enabled when there is a real previous step and not working
   const prevEnabled = () => {
@@ -209,17 +242,20 @@ export function OnboardingRoot() {
 
   // Retry button: visible when step failed; disabled while working
   const retryVisible = () => {
-    if (isDone()) return false
-    if (working()) return false
-    if (stepResult()?.success === false) return true
-    return false
+    return isRetryActionVisible(currentStep(), {
+      working: working(),
+      success: stepResult()?.success,
+    })
   }
 
   const retryEnabled = () => !working() && !isDone()
 
+  const retryLabel = () => stepName() === "install-cli" ? "重试安装" : "重试"
+
   // Next button: hidden for done (launch is in-card)
   const nextVisible = () => {
     if (isDone()) return false
+    if (stepResult()?.success === false) return false
     return true
   }
 
@@ -239,11 +275,9 @@ export function OnboardingRoot() {
     if (stepResult()?.success === true) return "下一步"
     // Step-specific action labels for the primary submit action
     const step = stepName()
-    if (step === "system-check") return "开始检查"
-    if (step === "install-wopal-cli") return "安装 Wopal CLI"
-    if (step === "install-ellamaka-cli") return "安装 Ellamaka"
-    if (step === "runtime-setup") return "配置运行时"
-    if (step === "ontology-setup") return "准备能力库"
+    if (step === "system-check") return "下一步"
+    if (step === "install-cli") return "开始安装"
+    if (step === "ontology-setup") return "准备能力本体"
     if (step === "ai-provider") return "保存配置"
     if (step === "create-space") return "创建工作空间"
     if (step === "memory-config") return "保存配置"
@@ -276,7 +310,7 @@ export function OnboardingRoot() {
       <header class="ob-header">
         <div class="ob-brand">
           <img src="/ellamaka-text-logo.png?v=2" class="ob-brand-logo" alt="Ellamaka Logo" onError={(e) => (e.currentTarget.style.display = "none")} />
-          <span style={{ "font-weight": "700", "font-size": "15px", color: "#fff" }}>WopalSpace 设置</span>
+          <span style={{ "font-weight": "700", "font-size": "15px", color: "#fff" }}>WopalSpace 配置向导</span>
         </div>
 
         {/* 4-Phase Tracker Bar */}
@@ -310,35 +344,44 @@ export function OnboardingRoot() {
               {/* Left: Phase Info */}
               <div class="ob-step-info">
                 <div class="ob-step-info-card">
-                  <div class="ob-step-number">阶段 {currentPhase().phase} / 4</div>
-                  <h3 class="ob-step-info-title">{currentPhase().title}</h3>
-                  <p class="ob-step-info-goal">{content()?.goal ?? meta().description}</p>
-
-                  <Show when={content()?.why}>
-                    <div class="ob-step-info-section">
-                      <div class="ob-step-info-label">为什么需要这一步</div>
-                      <p class="ob-step-info-text">{content()?.why}</p>
-                    </div>
-                  </Show>
-
-                  <Show when={content()?.duration}>
-                    <div class="ob-step-info-section">
-                      <div class="ob-step-info-label">预计耗时</div>
-                      <p class="ob-step-info-text">{content()?.duration}</p>
-                    </div>
-                  </Show>
+                  <div class="ob-step-number">阶段 {currentPhase().phase} / 4 · {currentPhase().title}</div>
+                  <h3 class="ob-step-info-title">{meta().title}</h3>
+                  <StepGuide
+                    step={currentStep()}
+                    source={guideSource()}
+                    assets={STEP_GUIDE_ASSETS}
+                  />
                 </div>
               </div>
 
               {/* Right: Card View */}
               <div class="ob-card">
-                <div class="ob-card-header">
-                  <h2 class="ob-card-title">{meta().title}</h2>
-                  <Show when={isCurrentOptional()}>
-                    <span class="ob-optional-tag">可选</span>
-                  </Show>
-                </div>
-                <p class="ob-mobile-step-summary">{content()?.goal ?? meta().description}</p>
+                <details class="ob-step-guide-mobile">
+                  <summary>查看本步骤说明</summary>
+                  <div class="ob-step-guide-mobile-content">
+                    <div class="ob-step-number">阶段 {currentPhase().phase} / 4 · {currentPhase().title}</div>
+                    <h3 class="ob-step-info-title">{meta().title}</h3>
+                    <StepGuide
+                      step={currentStep()}
+                      source={guideSource()}
+                      assets={STEP_GUIDE_ASSETS}
+                    />
+                  </div>
+                </details>
+
+                <Show when={currentStep() !== "done" && currentStep() !== "system-check"}>
+                  <div class="ob-card-header" style={{ "justify-content": "center", "text-align": "center" }}>
+                    <div class="ob-card-heading">
+                      <h2 class="ob-card-title" style={{ "text-align": "center" }}>{meta().title}</h2>
+                      <Show when={isCurrentOptional()}>
+                        <span class="ob-optional-tag">可选</span>
+                      </Show>
+                    </div>
+                    <Show when={currentStep() !== "memory-config" && currentStep() !== "ontology-setup" && currentStep() !== "github-auth"}>
+                      <p class="ob-card-description">{content()?.goal ?? meta().description}</p>
+                    </Show>
+                  </div>
+                </Show>
 
                 <Show when={errorInfo()}>
                   <div class="ob-feedback-slot">
@@ -360,54 +403,52 @@ export function OnboardingRoot() {
 
                 {/* Card Body - Scrollable */}
                 <div class="ob-card-body">
-                  <Switch>
-                    {/* Phase 1 Steps - rendered directly so currentStep reflects sub-step */}
-                    <Match when={currentStep() === "system-check"}>
-                      <SystemCheckStep
-                        onComplete={handleNext}
-                        onError={handleError}
-                        onStatusChange={handleStepStatusChange}
-                      />
-                    </Match>
-                    <Match when={currentStep() === "install-wopal-cli"}>
-                      <InstallWopalCliStep
-                        onComplete={handleNext}
-                        onError={handleError}
-                        onStatusChange={handleStepStatusChange}
-                      />
-                    </Match>
-                    <Match when={currentStep() === "install-ellamaka-cli"}>
-                      <InstallEllamakaCliStep
-                        onComplete={handleNext}
-                        onError={handleError}
-                        onStatusChange={handleStepStatusChange}
-                      />
-                    </Match>
+                  <Show when={initialized()} fallback={
+                    <div class="ob-progress-container" style={{ padding: "40px 0", "text-align": "center" }}>
+                      <div class="ob-spinner" style={{ width: "24px", height: "24px", "border-width": "2px", margin: "0 auto 12px" }} />
+                      <div style={{ "font-size": "13px", color: "var(--ob-text-subtle)" }}>正在恢复当前配置进度…</div>
+                    </div>
+                  }>
+                    <Switch>
+                      {/* Phase 1 Steps - rendered directly so currentStep reflects sub-step */}
+                      <Match when={currentStep() === "system-check"}>
+                        <SystemCheckStep
+                          userName={systemUserName()}
+                          onComplete={handleNext}
+                          onError={handleError}
+                          onStatusChange={handleStepStatusChange}
+                        />
+                      </Match>
+                      <Match when={currentStep() === "install-cli"}>
+                        <InstallCliStep
+                          onComplete={handleNext}
+                          onError={handleError}
+                          onStatusChange={handleStepStatusChange}
+                        />
+                      </Match>
 
-                    {/* Phase 2 Steps */}
-                    <Match when={currentStep() === "ontology-setup" || currentStep() === "github-auth"}>
-                      <OntologyGithubStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
-                    </Match>
-                    <Match when={currentStep() === "ai-provider"}>
-                      <AiProviderStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
-                    </Match>
+                      {/* Phase 2 Steps */}
+                      <Match when={currentStep() === "ontology-setup" || currentStep() === "github-auth"}>
+                        <OntologySetupStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
+                      </Match>
 
-                    {/* Phase 3 Steps */}
-                    <Match when={currentStep() === "runtime-setup"}>
-                      <RuntimeSetupStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
-                    </Match>
-                    <Match when={currentStep() === "create-space"}>
-                      <CreateSpaceStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
-                    </Match>
-                    <Match when={currentStep() === "memory-config"}>
-                      <MemoryConfigStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
-                    </Match>
+                      {/* Phase 3 Steps */}
+                      <Match when={currentStep() === "create-space"}>
+                        <CreateSpaceStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
+                      </Match>
+                      <Match when={currentStep() === "ai-provider"}>
+                        <AiProviderStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
+                      </Match>
+                      <Match when={currentStep() === "memory-config"}>
+                        <MemoryConfigStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
+                      </Match>
 
-                    {/* Phase 4 Steps */}
-                    <Match when={currentStep() === "done" || currentStep() === "star-guide"}>
-                      <DoneStep />
-                    </Match>
-                  </Switch>
+                      {/* Phase 4 Steps */}
+                      <Match when={currentStep() === "done"}>
+                        <DoneStep />
+                      </Match>
+                    </Switch>
+                  </Show>
                 </div>
 
                 {/* Fixed Navigation Bar — always visible at card bottom */}
@@ -433,15 +474,7 @@ export function OnboardingRoot() {
                     </Show>
                   </div>
 
-                  <Show when={working()}>
-                    <button
-                      type="button"
-                      class="ob-button ob-button-secondary ob-nav-stop"
-                      onClick={handleCancel}
-                    >
-                      停止
-                    </button>
-                  </Show>
+
 
                   <Show when={!working() && retryVisible()}>
                     <button
@@ -450,7 +483,7 @@ export function OnboardingRoot() {
                       onClick={handleRetry}
                       disabled={!retryEnabled()}
                     >
-                      重试
+                      {retryLabel()}
                     </button>
                   </Show>
 

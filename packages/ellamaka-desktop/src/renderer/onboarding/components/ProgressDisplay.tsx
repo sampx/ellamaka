@@ -7,6 +7,8 @@ export interface ProgressDisplayProps {
   phase?: string
   /** Elapsed time in seconds */
   elapsed?: number
+  /** Whether to show loading spinner for indeterminate mode (default: true) */
+  showSpinner?: boolean
 }
 
 export function ProgressDisplay(props: ProgressDisplayProps) {
@@ -31,7 +33,7 @@ export function ProgressDisplay(props: ProgressDisplayProps) {
         </div>
       </Show>
 
-      <Show when={props.percent === undefined}>
+      <Show when={props.percent === undefined && (props.showSpinner ?? true)}>
         <div class="ob-progress-indeterminate">
           <div class="ob-spinner" style={{ width: "20px", height: "20px", "border-width": "2px" }} />
         </div>

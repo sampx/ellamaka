@@ -6,13 +6,19 @@ export function getOnboardingLogger(homePath?: string) {
   const actualHome = homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const logDir = join(actualHome, "logs")
   const logFile = join(logDir, "onboarding.log")
+  let logAvailable = true
 
-  if (!existsSync(logDir)) {
-    mkdirSync(logDir, { recursive: true })
+  try {
+    if (!existsSync(logDir)) {
+      mkdirSync(logDir, { recursive: true })
+    }
+  } catch {
+    logAvailable = false
   }
 
   return {
     log: (message: string) => {
+      if (!logAvailable) return
       try {
         if (existsSync(logFile)) {
           const stats = statSync(logFile)

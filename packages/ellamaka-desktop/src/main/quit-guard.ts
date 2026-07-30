@@ -6,12 +6,15 @@ let forceQuit = false
 let confirmShowing = false
 let shutdownInProgress = false
 
-export function shouldConfirmQuit(state: SidecarRuntimeState | undefined): boolean {
+export type QuitStateInput = SidecarRuntimeState | { onboarding?: boolean; status?: string } | undefined
+
+export function shouldConfirmQuit(state: QuitStateInput): boolean {
   if (!state) return false
+  if ("onboarding" in state && state.onboarding) return true
   return state.status === "ready" || state.status === "starting" || state.status === "restarting"
 }
 
-function getLocaleText() {
+function getLocaleText(isOnboarding = false) {
   let lang = ""
   try {
     const raw = getStore("opencode.global.dat").get("language")
@@ -39,7 +42,9 @@ function getLocaleText() {
     return {
       title: "退出 Ellamaka",
       message: "确定要退出 Ellamaka 吗？",
-      detail: "后台 AI 引擎与终端会话正在运行中。退出应用将终止所有正在进行的任务。",
+      detail: isOnboarding
+        ? "向导配置尚未完成。退出应用将中断当前的设置流程。"
+        : "后台 AI 引擎与终端会话正在运行中。退出应用将终止所有正在进行的任务。",
       buttons: ["退出应用", "取消"],
     }
   }
@@ -47,16 +52,18 @@ function getLocaleText() {
   return {
     title: "Quit Ellamaka?",
     message: "Are you sure you want to quit Ellamaka?",
-    detail: "The AI backend and terminal sessions are running. Quitting will terminate all active tasks.",
+    detail: isOnboarding
+      ? "Onboarding setup is not complete. Quitting will interrupt the setup process."
+      : "The AI backend and terminal sessions are running. Quitting will terminate all active tasks.",
     buttons: ["Quit", "Cancel"],
   }
 }
 
-export async function confirmQuit(win: BrowserWindow | null): Promise<boolean> {
+export async function confirmQuit(win: BrowserWindow | null, isOnboarding = false): Promise<boolean> {
   if (confirmShowing) return false
   confirmShowing = true
   try {
-    const text = getLocaleText()
+    const text = getLocaleText(isOnboarding)
     const options = {
       type: "warning" as const,
       buttons: text.buttons,
@@ -118,9 +125,10 @@ export function enableQuitGuard(deps: {
     shutdownInProgress = true
     void (async () => {
       try {
-        const state = getSidecarState()
+        const state = getSidecarState() as QuitStateInput
         if (shouldConfirmQuit(state)) {
-          const confirmed = await confirmQuit(getMainWindow())
+          const isOnboarding = state ? ("onboarding" in state && Boolean(state.onboarding)) : false
+          const confirmed = await confirmQuit(getMainWindow(), isOnboarding)
           if (!confirmed) {
             shutdownInProgress = false
             return
@@ -177,10 +185,11 @@ export function interceptWindowClose(win: BrowserWindow, deps?: WindowCloseDeps)
     shutdownInProgress = true
     void (async () => {
       try {
-        const state = deps?.getSidecarState?.()
+        const state = deps?.getSidecarState?.() as QuitStateInput
         if (shouldConfirmQuit(state)) {
           const targetWin = win.isDestroyed() ? null : win
-          const confirmed = await confirmQuit(targetWin)
+          const isOnboarding = state ? ("onboarding" in state && Boolean(state.onboarding)) : false
+          const confirmed = await confirmQuit(targetWin, isOnboarding)
           if (!confirmed) {
             shutdownInProgress = false
             return

@@ -1,8 +1,9 @@
 import { createSignal, onMount, Show, For } from "solid-js"
 import { ProgressDisplay } from "../components/ProgressDisplay"
+import { ResultPanel } from "../components/ResultPanel"
 
 export interface StepProps {
-  onStatusChange?: (status: "working" | "success" | "error") => void
+  onStatusChange?: (status: "idle" | "working" | "success" | "error") => void
   onComplete: () => void
   onSkip?: () => void
   onError: (error: {
@@ -41,6 +42,8 @@ export function CreateSpaceStep(props: StepProps) {
   const [probeError, setProbeError] = createSignal<string | null>(null)
   const [resultInfo, setResultInfo] = createSignal<SpaceResult | null>(null)
 
+  const [showCreateForm, setShowCreateForm] = createSignal<boolean>(false)
+
   const loadEnvironment = async () => {
     props.onError(null)
     setProbeError(null)
@@ -65,6 +68,9 @@ export function CreateSpaceStep(props: StepProps) {
         ? envData.spaces as SpaceEntry[]
         : []
       setExistingSpaces(spaces)
+      if (spaces.length > 0) {
+        props.onStatusChange?.("success")
+      }
 
       const defaultPath = typeof envData.defaultSpacePath === "string"
         ? envData.defaultSpacePath
@@ -97,7 +103,7 @@ export function CreateSpaceStep(props: StepProps) {
         props.onComplete()
       } else {
         props.onStatusChange?.("error")
-        props.onError(res.error?.message ?? "无法跳过工作空间创建。")
+        props.onError(res.error?.message ?? "无法复用现有工作空间。")
       }
     } catch (err) {
       props.onStatusChange?.("error")
@@ -109,6 +115,11 @@ export function CreateSpaceStep(props: StepProps) {
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
+    if (existingSpaces().length > 0 && !showCreateForm() && !resultInfo()) {
+      await handleSkipCreate()
+      return
+    }
+
     if (!spaceDir().trim()) {
       props.onStatusChange?.("error")
       props.onError("请选择或输入工作空间目录。")
@@ -176,15 +187,8 @@ export function CreateSpaceStep(props: StepProps) {
     }
   }
 
-  const handleSelectExistingSpace = (space: SpaceEntry) => {
-    setSpaceDir(space.path)
-    if (space.type) {
-      setSpaceType(space.type)
-    }
-  }
-
   return (
-    <form id="onboarding-step-create-space" onSubmit={handleSubmit} class="space-y-6">
+    <form id="onboarding-step-create-space" onSubmit={handleSubmit} class="ob-step-content">
       <Show when={isLoading()}>
         <ProgressDisplay phase="正在检测已有工作空间与能力类型…" />
       </Show>
@@ -203,11 +207,7 @@ export function CreateSpaceStep(props: StepProps) {
       </Show>
 
       <Show when={resultInfo()}>
-        <div class="ob-result-summary">
-          <div class="ob-result-icon">✓</div>
-          <div class="ob-result-title">
-            {resultInfo()?.status === "reused" ? "已复用现有工作空间" : "工作空间已创建"}
-          </div>
+        <ResultPanel title={resultInfo()?.status === "reused" ? "已复用现有工作空间" : "工作空间已创建"}>
           <div class="ob-result-details">
             <div class="ob-result-row">
               <span class="ob-result-label">名称</span>
@@ -222,47 +222,56 @@ export function CreateSpaceStep(props: StepProps) {
               <span class="ob-result-value">{resultInfo()?.type}</span>
             </div>
           </div>
-        </div>
+        </ResultPanel>
       </Show>
 
-      <Show when={!isLoading() && !probeError() && !resultInfo()}>
-        <Show when={existingSpaces().length > 0}>
-          <div class="ob-existing-spaces-banner" style={{ "background": "rgba(255,255,255,0.04)", "border-radius": "8px", "padding": "16px", "margin-bottom": "20px" }}>
-            <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "12px" }}>
-              <div>
-                <strong style={{ "font-size": "14px" }}>检测到已存在 {existingSpaces().length} 个工作空间</strong>
-                <p style={{ "font-size": "12px", color: "var(--ob-text-subtle)", margin: "2px 0 0" }}>
-                  您可以直接跳过创建并继续，或者在下面创建新的工作空间。
-                </p>
-              </div>
-              <button
-                type="button"
-                class="ob-button ob-button-secondary"
-                onClick={handleSkipCreate}
-                disabled={isSubmitting()}
-                style={{ padding: "8px 16px", "font-size": "13px" }}
-              >
-                跳过创建（复用已有）
-              </button>
-            </div>
+      {/* Show existing spaces clean summary card when spaces exist and user is not creating a new one */}
+      <Show when={!isLoading() && !probeError() && !resultInfo() && existingSpaces().length > 0 && !showCreateForm()}>
+        <ResultPanel
+          title="已检测到现有工作空间"
+          actions={
+            <button
+              type="button"
+              class="ob-button ob-button-secondary"
+              onClick={() => {
+                setShowCreateForm(true)
+                props.onStatusChange?.("idle")
+              }}
+              style={{ "font-size": "12px", padding: "6px 14px" }}
+            >
+              + 创建新工作空间
+            </button>
+          }
+        >
+          <div class="ob-result-details">
+            <For each={existingSpaces()}>
+              {(space) => (
+                <div class="ob-result-row">
+                  <span class="ob-result-label">{space.name}</span>
+                  <span class="ob-result-value ob-result-mono">
+                    {space.path} {space.type ? `[${space.type}]` : ""}
+                  </span>
+                </div>
+              )}
+            </For>
+          </div>
+        </ResultPanel>
+      </Show>
 
-            <div class="ob-form-group">
-              <label class="ob-label" style={{ "font-size": "12px" }}>已有空间列表：</label>
-              <For each={existingSpaces()}>
-                {(space) => (
-                  <button
-                    type="button"
-                    class="ob-button ob-button-secondary"
-                    style={{ display: "block", width: "100%", "text-align": "left", "margin-bottom": "4px", padding: "8px 12px" }}
-                    onClick={() => handleSelectExistingSpace(space)}
-                  >
-                    <span style={{ "font-weight": "600" }}>{space.name}</span>
-                    <span style={{ "font-size": "11px", color: "var(--ob-text-subtle)", "margin-left": "8px" }}>{space.path}</span>
-                    {space.type && <span style={{ "font-size": "11px", color: "var(--ob-accent)", "margin-left": "8px" }}>[{space.type}]</span>}
-                  </button>
-                )}
-              </For>
-            </div>
+      {/* Show create space form when no existing space or user chose to create new */}
+      <Show when={!isLoading() && !probeError() && !resultInfo() && (existingSpaces().length === 0 || showCreateForm())}>
+        <Show when={existingSpaces().length > 0}>
+          <div>
+            <button
+              type="button"
+              class="ob-button ob-button-secondary"
+              onClick={() => {
+                setShowCreateForm(false)
+                props.onStatusChange?.("success")
+              }}
+            >
+              ← 返回使用已有空间
+            </button>
           </div>
         </Show>
 
@@ -293,7 +302,7 @@ export function CreateSpaceStep(props: StepProps) {
           </p>
         </div>
 
-        <div class="ob-form-group" style={{ "margin-top": "18px" }}>
+        <div class="ob-form-group">
           <label class="ob-label" for="space-type-select">
             空间类型
           </label>
@@ -317,7 +326,6 @@ export function CreateSpaceStep(props: StepProps) {
             </For>
           </select>
         </div>
-
       </Show>
     </form>
   )
