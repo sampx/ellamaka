@@ -38,13 +38,6 @@ Ellamaka sidecar (packages/opencode/build-node.ts)
 | PTY/TUI OS processes | Ellamaka sidecar | Current sidecar runtime |
 | Sidecar credentials | Electron Main | Current app process |
 
-### Database Channels
-
-- `bun run dev` and `./scripts/dev.sh` default the sidecar build to channel `local` and use `ellamaka-local.db`.
-- A normal source build on branch `main` keeps channel `main` and uses `ellamaka-main.db`.
-- A release build uses the stable release channel and `ellamaka.db`.
-- Do not disable channel database selection in the Desktop runtime. Explicit `OPENCODE_CHANNEL` and `OPENCODE_DB` overrides remain authoritative.
-
 ### PTY Lifecycle Rules
 
 - Last WebSocket subscriber disconnect → 10s Grace → auto-terminate

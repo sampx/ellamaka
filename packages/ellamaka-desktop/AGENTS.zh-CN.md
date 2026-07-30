@@ -38,13 +38,6 @@ Ellamaka sidecar（packages/opencode/build-node.ts）
 | PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前 sidecar 运行期 |
 | Sidecar 连接凭据 | Electron Main Process | 当前应用进程 |
 
-### 数据库 Channel
-
-- `bun run dev` 与 `./scripts/dev.sh` 默认以 `local` channel 构建 sidecar，并使用 `ellamaka-local.db`。
-- 在 `main` 分支进行普通源码构建时保持 `main` channel，并使用 `ellamaka-main.db`。
-- 正式 release 构建使用稳定发布 channel 与 `ellamaka.db`。
-- Desktop 运行时不得关闭 channel 数据库选择；显式设置的 `OPENCODE_CHANNEL` 与 `OPENCODE_DB` 仍具有最高优先级。
-
 ### PTY 生命周期规则
 
 - 最后一个 WebSocket subscriber 断开 → 10 秒 Grace → 自动终止

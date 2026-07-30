@@ -30,13 +30,11 @@ const readRuntimeFlags = () =>
 
 export function getChannelPath(flags: Pick<DatabaseFlags, "disableChannelDb"> = readRuntimeFlags()) {
   if (flags.disableChannelDb) return path.join(Global.Path.data, "ellamaka.db")
-  // beta shares the main channel database so a beta sidecar never collides
-  // with a concurrently running production sidecar (both would otherwise open
-  // ellamaka.db). prod/latest keep the unqualified ellamaka.db.
-  if (["latest", "prod"].includes(InstallationChannel))
+  // beta shares the release database so beta testers operate on the same data
+  // as production users. prod/latest/beta all use the unqualified ellamaka.db.
+  if (["latest", "prod", "beta"].includes(InstallationChannel))
     return path.join(Global.Path.data, "ellamaka.db")
-  const dbChannel = InstallationChannel === "beta" ? "main" : InstallationChannel
-  const safe = dbChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
+  const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
   return path.join(Global.Path.data, `ellamaka-${safe}.db`)
 }
 

@@ -11,11 +11,11 @@ describe("Database.getChannelPath", () => {
   it.effect("returns database path for the current channel", () =>
     Effect.gen(function* () {
       const flags = yield* RuntimeFlags.Service
-      // beta shares the main channel database so it never collides with the
-      // production sidecar that uses ellamaka.db.
-      const dbChannel = InstallationChannel === "beta" ? "main" : InstallationChannel
-      const safe = dbChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
-      const expected = ["latest", "prod"].includes(InstallationChannel)
+      // beta shares the release database (ellamaka.db) with prod/latest so beta
+      // testers operate on the same data as production users.
+      const isRelease = ["latest", "prod", "beta"].includes(InstallationChannel)
+      const safe = InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")
+      const expected = isRelease
         ? path.join(Global.Path.data, "ellamaka.db")
         : path.join(Global.Path.data, `ellamaka-${safe}.db`)
 
