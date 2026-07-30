@@ -1,26 +1,12 @@
 # Ellamaka
 
 > **状态**: Active
-> **更新时间**: 2026-07-18
+> **更新时间**: 2026-07-30
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
-
-## 0. Change Log
-
-| 日期 | 类型 | 摘要 |
-|------|------|------|
-| 2026-07-18 | Updated | Runtime API 新增 Wopal CLI 健康握手与用户确认修复。CLI 控制能力降级时保留 General Session Runtime、Chat、TUI 和 PTY。 |
-| 2026-07-15 | Updated | Workbench Session Projection 只暴露未归档根会话，归档会话和带 `parentID` 的子会话不进入左侧会话列表。 |
-| 2026-07-11 | Major | §7.1 新增 Runtime API 与 SDK 契约。Effect HttpApi、OpenAPI 和生成 SDK 形成单一 API 链路；Wopal CLI adapter 通过版本化 capability contract 集成空间控制能力。 |
-| 2026-07-04 | Updated | §9 新增 ellamaka-app Web UI 架构设计决策;§1.1 补充 ellamaka-app 引用 |
-| 2026-06-18 | Updated | §3 放弃 opencode 配置兼容：普通模式下不再加载 opencode XDG 全局配置和项目级 opencode.jsonc；§2 适配点表格同步 |
-| 2026-06-11 | Updated | §1 新增文档关系声明；§2 表移除与 BRANDING.md 重复细节，添加节号引用；§5 简化指向 BRANDING.md；同步 BRANDING.md 重构为设计意图驱动 |
-| 2026-05-31 | Updated | 精简为设计事实与契约；移除上游继承描述和 fork delta 管理哲学。 |
-| 2026-05-31 | Updated | 明确 P1 不改 runtime loading 模型；skill loader 改为确定性覆盖。 |
-| 2026-05-30 | Created | 初始创建。 |
 
 ## 1. Role
 
-ellamaka 是 OpenCode fork，WopalSpace 的执行引擎。负责 WopalSpace 模式下的自动检测、配置加载、ontology 运行时物化、plugin 执行与权限系统。
+ellamaka 是 OpenCode fork，WopalSpace 的执行引擎。它同时承载非 WopalSpace 与 WopalSpace 两种运行模式，负责配置加载、capability composition、ontology 运行时物化、plugin 执行与权限系统。
 
 不负责：空间初始化、ontology 内容设计、空间运行态维护——这些归属 wopal-cli、Space Ontology 和 `.wopal-space/`。
 
@@ -41,11 +27,11 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 
 | 适配点 | 概要 | BRANDING.md 节号 |
 |--------|------|-------------------|
-| WOPAL_SPACE 自动检测 | 从 cwd 向上查找 `.wopal/.git` 文件确定空间根 | §7.3 |
+| WopalSpace 自动检测 | CLI 从 cwd 检测单一空间；sidecar 按 instance directory 解析独立空间根 | §5 |
 | 全局路径分离 | `~/.wopal/config` + `~/.wopal/ellamaka/{data,cache,state}` | §5 |
-| 普通模式配置加载 | 所有模式仅从 `~/.wopal/config/settings.jsonc` 加载配置，不与 opencode XDG 全局配置交互 | §6.2 |
-| 空间配置加载 | 从空间根加载 `.wopal/` 下的配置和能力 | §5.1 |
-| 空间模式跳过项目配置 | `RuntimeFlags.wopalSpace` guard 短路项目级 `opencode.jsonc` | §7.3 |
+| 非 WopalSpace 模式 | 配置入口迁移至 WOPAL_HOME；capability loading 保持 OpenCode-compatible 并叠加 WOPAL_HOME 全局能力 | §6.2 |
+| WopalSpace 模式 | 从 instance space root 加载 `.wopal/` 配置和能力；空间根与任意子目录共享同一 context | §6.1 |
+| Instance 运行模式 | Config state 按 directory 持有可选 WopalSpaceContext；server 不使用进程 env 表达当前空间 | §8 |
 | Agent/Command/Plugin 加载 | 从 `.wopal/` 加载同名可覆盖内置 | §2, §5.1 |
 | 权限合并 | defaults → global → space settings → agent frontmatter | §3（本文件） |
 | 引擎安装识别 | 识别 `~/.wopal/bin/` 安装路径 | §4.8 |
@@ -59,7 +45,12 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 
 ## 3. Configuration Contract
 
-空间模式下配置加载优先级（低→高）：
+Ellamaka 运行时包含两种模式：
+
+- **非 WopalSpace**：当前 instance 没有 WopalSpaceContext。配置入口由 WOPAL_HOME 所有，capability loading 保持 OpenCode-compatible 的目录发现和覆盖机制，并在末层叠加 WOPAL_HOME 全局能力。
+- **WopalSpace**：当前 instance 持有 `{ root, wopalDir }`。当前 directory 可以是空间根或其任意子目录，配置和能力始终从同一个 root 加载。
+
+WopalSpace 模式下配置加载优先级（低→高）：
 
 | 层级 | 来源 |
 |------|------|
@@ -69,7 +60,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | Agent frontmatter | `<space>/.wopal/agents/*.md` |
 | Environment override | `OPENCODE_CONFIG_CONTENT` |
 
-权限合并同此优先链，按最后匹配项生效。普通模式下仅从 `~/.wopal/config/settings.jsonc` 加载配置，不加载 opencode XDG 全局配置。
+权限合并同此优先链，按最后匹配项生效。非 WopalSpace 模式的配置文件入口迁移至 `$WOPAL_HOME/config/settings.jsonc`，不加载 opencode XDG 全局配置；agents、commands、plugins、skills 与外部技能继续遵循 OpenCode-compatible capability loading，并由 `$WOPAL_HOME` 提供 Ellamaka 全局覆盖层。
 
 ## 4. Ontology Loading Contract
 
@@ -109,9 +100,11 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 | Runtime data | `~/.wopal/ellamaka/data/` | ellamaka |
 | Cache | `~/.wopal/ellamaka/cache/` | ellamaka |
 | Process state | `~/.wopal/ellamaka/state/` | ellamaka |
+| Instance WopalSpace context | 当前 sidecar `InstanceState`，按 directory 隔离 | Config；`undefined` 表示非 WopalSpace，`{ root, wopalDir }` 表示 WopalSpace |
+| CLI WopalSpace compatibility env | CLI 单进程运行期的 `WOPAL_SPACE` / `WOPAL_SPACE_ROOT` | CLI 入口；不作为 sidecar 当前空间状态 |
 | Wopal CLI 健康 | `$WOPAL_HOME/bin/wopal` 的短时探测结果 | `CliContract`，CLI 二进制保持版本事实来源 |
 | 空间 ontology | `<space>/.wopal/` | Space Ontology，ellamaka 加载 |
-| 空间运行态 | `<space>/.wopal-space/` | space runtime，ellamaka 不写入 |
+| 空间运行态 | `<space>/.wopal-space/` | space runtime；wopal-plugin 按 instance root 写日志，Ellamaka engine 不拥有其目录结构 |
 
 ### 7.1 Runtime API 与 SDK 契约
 
@@ -124,6 +117,14 @@ Wopal CLI adapter 作为 Runtime 的领域服务使用 `wopal ... --json --api-v
 `CliContract` 将 CLI 安装状态与能力调用分开处理。`/global/health` 公开最低版本、已检测版本与兼容状态。CLI 不可用时，Ellamaka 保持 Session Runtime，Workbench 将 Space Control 降级为可恢复状态。用户确认修复后，Runtime 使用已安装 CLI 的更新命令或第一方 installer 修复二进制，并重新探测状态；sidecar 与已有 Workbench 现场继续运行。
 
 完整的路径语义、schema、错误、版本、SDK 生成和端点门禁见 [API-CONTRACT.md](./API-CONTRACT.md)。
+
+### 7.2 Sidecar Instance Context
+
+一个 sidecar 同时服务多个 directory instance。Config、Plugin、Skill、Instruction 和 child process environment 从当前 InstanceState 读取可选 WopalSpaceContext。空间根与空间内任意子目录获得同一个 root；非 WopalSpace instance 保持独立且不继承其他空间状态。
+
+PluginInput 通过可选 `wopalSpace` 字段接收当前 instance 的权威空间上下文。Shell、PTY、MCP 与 LSP 启动时基于同一上下文构造环境：非 WopalSpace 子进程不携带空间变量，WopalSpace 子进程只携带所属空间 root。
+
+`WOPAL_HOME` 是 sidecar 的进程级安装根。它拥有全局配置、全局能力和运行时存储。`WOPAL_SPACE` 与 `WOPAL_SPACE_ROOT` 只服务单目录 CLI 兼容边界，不承担 server request routing 或 plugin context 所有权。
 
 ## 8. Web UI 与 ellamaka-app
 
@@ -144,8 +145,7 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 
 关于 `ellamaka-app` 工作台（Workbench）的具体界面、视图模型（TUI/Chat/Split 面板模型）、详细目录架构、上游同步细节、PoC 能力迁移规约以及与 `wopal-cli` 的协同，请参阅独立的详细设计规范文档：
 
-- 英文版：[ELLAMAKA-WORKBENCH.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.md)
-- 中文版：[ELLAMAKA-WORKBENCH.zh-CN.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/ELLAMAKA-WORKBENCH.zh-CN.md)
+- 中文版：[WORKBENCH.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/WORKBENCH.md)
 
 ---
 
@@ -155,7 +155,7 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 |------|----------|
 | `./BRANDING.md` | 品牌化定制唯一真相源— |
 | `./API-CONTRACT.md` | Runtime API、OpenAPI、生成 SDK 与 Wopal CLI adapter 契约 |
-| `./ELLAMAKA-WORKBENCH.md` | ellamaka 自定义工作台 app 设计 |
+| `./WORKBENCH.md` | ellamaka 自定义工作台 app 设计 |
 | `./DISTRIBUTION.md` | release、artifact、安装契约 |
 | `../../wopal-cli/docs/DESIGN.md` | wopal-cli 如何消费 ellamaka release |
 | `UPSTREAM-MERGE-LOG.md` | 裁剪边界、合并策略、验证经验 |

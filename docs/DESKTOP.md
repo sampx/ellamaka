@@ -1,7 +1,7 @@
 # ellamaka-desktop 设计
 
 > **状态**: Draft
-> **更新时间**: 2026-07-13
+> **更新时间**: 2026-07-30
 > **目标包**: `packages/ellamaka-desktop`
 > **上游基线**: OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
 > **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`
@@ -114,6 +114,10 @@ Sidecar 由当前仓库的 `packages/opencode` node runtime 构建，提供 Ella
 
 Sidecar 使用随机本地端口和临时认证凭据，仅监听 loopback。Main Process 保存连接信息并通过受控初始化接口交给 Renderer。
 
+一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace directory instance。Config InstanceState 为每个 directory 保存可选 WopalSpaceContext。空间根与空间内任意子目录共享同一个 root；非 WopalSpace instance 保持 OpenCode-compatible capability loading，并使用 WOPAL_HOME 配置迁移与全局能力层。
+
+PluginInput、Skill、Instruction、Shell、PTY、MCP 与 LSP 都消费当前 instance context。Sidecar 的 `process.env` 不表达当前空间。Child process environment 在创建时按 instance 构造：非 WopalSpace 不携带空间变量，WopalSpace 只携带所属空间 root。
+
 PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subscriber 断开时，服务进入断连宽限期；同一 PTY 在宽限期内重新连接时继续运行，宽限期结束后仍未连接则自动终止。
 
 ## 4. 状态所有权
@@ -125,6 +129,7 @@ PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subs
 | Panel 布局、宽度、绑定 Session、directory、PTY ID 提示 | `ellamaka-app` / `localStorage` | 跨刷新、跨应用启动 |
 | PTY session、subscriber、断连回收计时 | Ellamaka sidecar | 当前 sidecar 运行期 |
 | PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前 sidecar 运行期 |
+| Directory WopalSpace context | Ellamaka sidecar `InstanceState` | 当前 directory instance；空间根和子目录共享 root |
 | Sidecar 连接凭据 | Electron Main Process | 当前应用进程 |
 
 `localStorage` 继续负责 Workbench 布局，并将 PTY ID 作为重连提示保存。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。Renderer 每次使用持久化 PTY ID 前都通过 `ptyManager.ensure()` 探测；2xx 表示存活并复用，明确 404 表示已回收并清除旧 ID，传输失败或非权威响应表示状态未知并保留旧 ID。只有 `dead` 结果才能触发 PTY 重建。

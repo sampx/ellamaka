@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-07-18
+> **更新时间**: 2026-07-30
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发设计）
 
@@ -11,6 +11,7 @@
 
 | 日期 | 类型 | 摘要 |
 |------|------|------|
+| 2026-07-30 | Updated | §5、§6、§8 建立非 WopalSpace/WopalSpace 双模式与 sidecar instance context：CLI 保留单目录 env 边界，sidecar 按 directory 持有空间根；非 WopalSpace 保持 OpenCode-compatible capability loading。 |
 | 2026-07-28 | Updated | §1 / §15.5 建立 Web UI 运行时代理与品牌解耦策略：新增 `UI_UPSTREAM_URL` 品牌常量控制代理目标，未内嵌 UI 时默认关闭上游隐式代理并响应 404，保证品牌隔离与独立服务权责。 |
 | 2026-07-18 | Added | Workbench 通过 Runtime API 获取 Wopal CLI 健康状态，并在用户确认后执行 CLI 修复。CLI 故障降级 Space Control，保留 Session Runtime 与 PTY。 |
 
@@ -132,7 +133,7 @@
 
 ### 实现逻辑
 
-完全替换 `global.ts` 中的路径常量。同时保留 `opencodeConfig` 变量（指向 `~/.config/opencode/`）供非空间模式兼容层使用。`WOPAL_HOME/config/` 是纯配置目录，两种模式下都不在该目录扫描 agents/commands/plugins。
+完全替换 `global.ts` 中的路径常量。同时保留 `opencodeConfig` 变量（指向 `~/.config/opencode/`）供非 WopalSpace capability compatibility layer 使用。`WOPAL_HOME/config/` 是纯配置目录，两种模式下都不在该目录扫描 agents/commands/plugins。
 
 ### 系统管理配置
 
@@ -205,30 +206,32 @@ GitHub issue URL 从 `anomalyco/opencode` 替换为 `wopal-cn/${BINARY_NAME}`，
 
 ### 目的
 
-使 ellamaka 在进入 WopalSpace 时自动激活空间模式，无需用户显式传参。
+使 ellamaka 根据当前执行目录识别非 WopalSpace 与 WopalSpace 模式。CLI 服务单一目录；sidecar 在同一进程内为每个 directory instance 独立持有检测结果。
 
 ### 检测算法
 
 1. 从 cwd 向上逐级查找 `.wopal/.git`
 2. `.wopal/.git` 是**文件**（非目录）→ 这是 ontology worktree 标记，返回此目录作为空间根
 3. `.wopal/.git` 不存在或是目录（普通 git 仓库）→ 跳过，继续向上
-4. 到达用户 home 目录 → 停止，返回 undefined（普通模式）
+4. 到达用户 home 目录 → 停止，返回 undefined（非 WopalSpace 模式）
 
 ### 空间根契约
 
-- `WOPAL_SPACE=1`：触发下游所有空间模式行为
-- `WOPAL_SPACE_ROOT=<绝对路径>`：配置和能力加载器直接消费
-- `--disable-wopalspace` 显式传入 → 清除两者，强制禁用（逃生舱）
+- **CLI 单目录运行**：入口将检测结果映射为 `WOPAL_SPACE=1` 与 `WOPAL_SPACE_ROOT=<绝对路径>`，供同一 CLI 进程使用。
+- **Server/sidecar 多 instance 运行**：Config state 按 directory 保存 `WopalSpaceContext | undefined`。PluginInput、Skill、Instruction 与子进程启动器消费当前 instance context。
+- **空间子目录**：从空间根或其任意子目录进入都得到同一个 `root` 与 `wopalDir`。
+- **非 WopalSpace**：context 为 `undefined`，保持 OpenCode-compatible capability loading。
+- `--disable-wopalspace` 仅控制 CLI 检测入口，作为显式逃生舱。
 
 > CLI flag 命名为 `--disable-wopalspace`（无 `no-` 前缀），避开 yargs 对 `--no-XXX` 的内置取反解析。yargs 会把它解析为 `disableWopalspace` 字段。
 
 ### 启动安全
 
-CLI 入口中间件**始终先清除**用户环境中的 `WOPAL_SPACE`/`WOPAL_SPACE_ROOT`，再执行自动检测。防止继承环境变量导致的误判。
+CLI 入口中间件先清除继承的 `WOPAL_SPACE`/`WOPAL_SPACE_ROOT`，再执行自动检测。Sidecar 不从父进程继承“当前空间”，也不在 instance 配置加载中修改进程级空间变量。
 
 ### 实现逻辑
 
-独立文件 `packages/ellamaka/detect.ts`，CLI 入口仅注入几行调用。检测到后通过 `process.env` 传递结果，由 downstream 的 `Flag.WOPAL_SPACE` 和 `RuntimeFlags.wopalSpace` 消费。
+独立文件 `packages/ellamaka/detect.ts` 提供纯目录检测。CLI 入口将结果转换成单进程兼容 env。Sidecar 将结果保存进 Config 的 InstanceState，并通过 PluginInput 和 instance services 显式传递。
 
 ---
 
@@ -236,17 +239,17 @@ CLI 入口中间件**始终先清除**用户环境中的 `WOPAL_SPACE`/`WOPAL_SP
 
 ### 目的
 
-ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置路径加载，不与 opencode 配置体系交互：
-- **空间模式**：叠加空间级 `.wopal/` 配置和能力
-- **普通模式**：仅使用 `~/.wopal/config/settings.jsonc` 全局配置
+ellamaka 提供两种运行模式：
+- **WopalSpace 模式**：配置和能力由 `$WOPAL_HOME` 与当前 instance 的 `<spaceRoot>/.wopal/` 共同组成。
+- **非 WopalSpace 模式**：配置入口迁移到 `$WOPAL_HOME/config/settings.jsonc`；capability loading 保持 OpenCode-compatible，并在最后叠加 `$WOPAL_HOME` 全局能力。
 
-### 6.1 空间模式配置加载
+### 6.1 WopalSpace 模式配置加载
 
 #### 加载链路（优先级从低到高）
 
 ```
-① ~/.wopal/config/settings.jsonc          — 全局配置（ellamaka 字段作为默认值）
-② ~/.wopal/                                — 全局能力（agents/commands/plugins/skills）
+① $WOPAL_HOME/config/settings.jsonc       — 全局配置（ellamaka 字段作为默认值）
+② $WOPAL_HOME/                            — 全局能力（agents/commands/plugins/skills）
 ③ <space>/.wopal/config/settings.jsonc     — 空间公开配置（提交至 ontology，提取 ellamaka + tui 字段）
 ④ <space>/.wopal/config/settings.local.jsonc — 空间私有配置（深度合并覆盖 ③，gitignored，不提交）
 ⑤ <space>/.wopal/                          — 空间能力
@@ -267,28 +270,28 @@ ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置�
 `wopalSpaceDirectories()` 构建的目录序列（去重，后覆盖前）：
 
 ```
-~/.wopal/config → ~/.wopal/ → <space>/.wopal/
+$WOPAL_HOME/config → $WOPAL_HOME/ → <space>/.wopal/
 ```
 
 #### 短路设计
 
-`tryLoadWopalSpaceConfig()` 在 WOPAL_SPACE 激活时：
+`tryLoadWopalSpaceConfig()` 在当前 Config state 含 WopalSpaceContext 时：
 1. 调用 `loadWopalSpaceSettingsFiles()` 获取目录列表和设置文件
 2. 合并全局配置，然后遍历空间设置文件（`settings.jsonc` → `settings.local.jsonc`）提取 `ellamaka` 字段并合并
 3. 从目录加载 agents（含 frontmatter mergeDeep）、commands、plugins
 4. 返回完整结果，`config.ts` 中 **直接短路返回**，不执行后续任何 opencode 配置加载（remote wellknown、`~/.config/opencode/`、项目 `opencode.jsonc`、`.opencode/` 扫描等）
 
-### 6.2 普通模式配置加载
+### 6.2 非 WopalSpace 模式配置加载
 
-空间模式未激活时，ellamaka 仅从自身配置路径加载配置，不与 opencode 配置体系产生交互：
+当前 Config state 不含 WopalSpaceContext 时，配置文件入口只属于 Ellamaka：
 
 ```
-① ~/.wopal/config/settings.jsonc  — ellamaka 全局配置
+① $WOPAL_HOME/config/settings.jsonc  — ellamaka 全局配置
 ```
 
 `settings.jsonc` 若包含 `ellamaka` 字段，提取该字段作为配置主体。
 
-**设计决策**：不再加载 opencode XDG 全局配置文件（`~/.config/opencode/{config.json, opencode.json[c]}`）和项目级 `opencode.jsonc`。原因：ellamaka 版本可能与用户机器上的 opencode 版本不一致，opencode 配置格式的跨版本不兼容变更会导致 ellamaka 解析失败。
+**设计决策**：配置加载已迁移到 `$WOPAL_HOME/config/settings.jsonc`，不再加载 opencode XDG 全局配置文件（`~/.config/opencode/{config.json, opencode.json[c]}`）和项目级 `opencode.jsonc`。Capability loading 仍遵循 OpenCode-compatible 的目录发现与覆盖机制；配置迁移不等于移除 OpenCode 生态能力目录。
 
 #### 能力加载（优先级从低到高）
 
@@ -296,31 +299,31 @@ ellamaka 提供两种运行模式的配置加载，均从 ellamaka 自身配置�
 
 ```
 ① .opencode/、~/.opencode/、~/.config/opencode/   — opencode 生态能力（原生路径）
-② ~/.wopal/                                         — ellamaka 全局能力（最后加载，覆盖 ①）
+② $WOPAL_HOME/                                      — ellamaka 全局能力（最后加载，覆盖 ①）
 ```
 
-`~/.wopal/`（由 `WOPAL_HOME` 定位）下的 agents/commands/plugins/skills 等 capability 目录在普通模式**最后**加载，作为全局能力底座覆盖 opencode 生态同名能力。这使非空间模式下也能使用 ellamaka 自带的能力（如 wopal/faq/rook 等 agent、wopal 命令、wopal-plugin 等）。
+`$WOPAL_HOME/` 下的 agents/commands/plugins/skills 等 capability 目录在非 WopalSpace 模式**最后**加载，作为全局能力底座覆盖 OpenCode 生态同名能力。这使非 WopalSpace 模式也能使用 Ellamaka 自带能力。
 
-`~/.wopal/config/` 是纯配置目录，不参与能力扫描——能力只来自 `~/.wopal/` 根下的 capability 子目录。
+`$WOPAL_HOME/config/` 是纯配置目录，不参与能力扫描——Ellamaka 全局能力来自 `$WOPAL_HOME/` 根下的 capability 子目录。
 
 #### 插件依赖安装（ellamaka 增强）
 
 **upstream 行为**：opencode 的配置加载循环（`config.ts` 目录扫描）对每个能力目录只调用 `npmSvc.install(dir, { add: [{ name: "@opencode-ai/plugin" }] })`，仅安装 plugin SDK 公共头文件。对 `file://` 本地插件，`resolvePluginTarget`（`plugin/shared.ts`）只解析路径、检查 `package.json` 存在，**不安装插件自身的 `dependencies`**。upstream 的设计假设是：`file://` 插件由开发者自行 `npm install` 管理依赖，opencode 不代劳。若插件 `import` 了未安装的包（如 `openai`），运行时会报 `Cannot find package 'openai'`。
 
-**ellamaka 增强**：普通模式扫描到 `~/.wopal/`（`Global.Path.wopalHome`）时，额外为该目录下的本地插件自动安装其 `package.json` 中声明的 `dependencies`。实现上复用了 wopal-space 模式的 `localPluginInstallDeps(dir)` 函数（定义在 `wopal-space.ts`），该函数：
+**ellamaka 增强**：非 WopalSpace 模式扫描到 `$WOPAL_HOME/`（`Global.Path.wopalHome`）时，额外为该目录下的本地插件自动安装其 `package.json` 中声明的 `dependencies`。该机制与 WopalSpace 的插件依赖安装使用同一实现边界。
 
 1. 扫描目录下所有本地插件（通过 `ConfigPlugin.load`）
 2. 读取每个插件的 `package.json`，提取 `name`
 3. 生成 `{ name, version: "file:<插件目录>" }` 形式的 install 请求
 4. 返回依赖列表，与 `@opencode-ai/plugin` 一起交给 `npmSvc.install` 安装到该目录的 `node_modules`
 
-**范围限定**：仅对 `Global.Path.wopalHome` 目录触发 `localPluginInstallDeps`，其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）仍按 upstream 默认行为，只装 `@opencode-ai/plugin`。原因：这些目录是 opencode 生态的 npm 插件（通过 `npm:` 协议安装，依赖随包发布），没有需要额外收集的 `file:` 依赖；只有 `~/.wopal/` 下维护着 ellamaka 自有的本地插件（如 wopal-plugin）。
+**范围限定**：依赖收集只作用于 Ellamaka 管理的 capability roots：`Global.Path.wopalHome` 与当前 WopalSpace instance 的 `wopalDir`。其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）保持 upstream 行为，只安装 `@opencode-ai/plugin`。
 
-**与空间模式的关系**：`localPluginInstallDeps` 本是为空间模式写的（`tryLoadWopalSpaceConfig` 遍历空间配置目录时调用）。普通模式直接 import 同一个函数，不重写一份。
+**与 WopalSpace 模式的关系**：两个模式复用同一插件依赖收集与安装服务，分别接收 `$WOPAL_HOME` 或当前 instance 的 `wopalDir`。
 
 ### 6.3 目录扫描守卫
 
-`ConfigPaths.directories()` 中 `!Flag.WOPAL_SPACE` guard：空间模式下不将 `~/.config/opencode/` 纳入能力扫描目录。
+`ConfigPaths.directories()` 负责非 WopalSpace 的 OpenCode-compatible capability directories。WopalSpace 请求从当前 Config instance state 获得专属目录序列，不依赖进程级 `Flag.WOPAL_SPACE` 过滤其他 instance。
 
 ---
 
@@ -332,7 +335,7 @@ TUI 的配置加载和视觉元素与 WopalSpace 模式深度整合。所有模�
 
 ### 7.1 TUI 配置加载
 
-TUI 加载流程中的统一行为（空间/非空间模式一致）：
+TUI 加载流程中的统一行为（WopalSpace/非 WopalSpace 模式一致）：
 
 1. **跳过 opencode 配置**：不加载 `~/.config/opencode/tui.*`，`.opencode/` 目录的能力扫描（agents/commands/plugins）不受影响
 2. **全局 TUI 配置**：从 `~/.wopal/config/settings.jsonc` 提取 `tui` 字段 → 合并到 TUI 配置
@@ -342,7 +345,7 @@ TUI 加载流程中的统一行为（空间/非空间模式一致）：
 
 ### 7.2 TUI 品牌插件
 
-空间模式下通过 ontology 插件注入额外品牌元素：
+WopalSpace 模式下通过 ontology 插件注入额外品牌元素：
 - `tui-ellamaka.tsx`：home_logo 块字符画 + 阴影、home_prompt_right 紧凑 logo、session_prompt_right logo + session ID
 - `ellamaka-theme.json`：Nord 系 TUI 主题
 
@@ -393,54 +396,38 @@ slashName: Flag.WOPAL_SPACE ? undefined : "help",
 
 ---
 
-## 8. 运行时标志集成
+## 8. 运行时模式集成
 
 ### 目的
 
-利用 WOPAL_SPACE 环境变量驱动运行时行为，在空间模式下自动调整与 opencode 生态相关的功能。
+运行模式属于当前 instance。一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace instance，各 instance 的 Config、Plugin、Skill、Instruction 和 child process environment 使用同一份可选 WopalSpaceContext。
 
-### WOPAL_SPACE 驱动的标志
+### Context Contract
 
-| 标志 | 行为 |
-|------|------|
-| `RuntimeFlags.wopalSpace` | 反射 WOPAL_SPACE 状态，供所有 downstream 模块消费 |
-| `disableClaudeCodePrompt` | 空间模式下自动禁用 Claude Code prompt（避免注入 opencode 生态提示词） |
-| `disableClaudeCodeSkills` | 空间模式下自动禁用 `.claude/skills/` 扫描（技能由 Wopal 生态管理） |
+| 运行边界 | Context 来源 | 所有权 |
+|----------|--------------|--------|
+| CLI 单目录运行 | `detectWopalSpace(process.cwd())`，入口映射为 `WOPAL_SPACE*` | 当前 CLI 进程 |
+| Server/sidecar | `detectWopalSpace(InstanceContext.directory)`，保存为 Config InstanceState | 当前 directory instance |
+| Plugin | `PluginInput.wopalSpace` | 当前 plugin instance |
+| Shell/PTY/MCP/LSP | 当前 Config WopalSpaceContext 构造的 child env | 当前 child process |
 
-`.agents/skills/` 不受 `WOPAL_SPACE` 禁用。`.agents/` 已成为行业事实标准目录，所有 agent 工具都应读取此目录下的技能；空间模式下 `.agents/skills/` 仍参与扫描，与 Wopal 生态能力共存。
+`WOPAL_HOME` 是进程级安装根。`WOPAL_SPACE` 与 `WOPAL_SPACE_ROOT` 是 CLI 兼容边界，不表达 sidecar 的当前空间。Sidecar 配置加载保持无进程级空间 env 副作用。
 
-### 实现逻辑
+### 非 WopalSpace 模式
 
-`RuntimeFlags` 是 Effect Config 层，`disableClaudeCodePrompt` 和 `disableClaudeCodeSkills` 由三个来源取或：通用禁用环境变量 + 专属禁用环境变量 + `WOPAL_SPACE`。这意味着：
-- 空间模式自动禁用（wopal=true）
-- 用户仍可通过 `OPENCODE_DISABLE_CLAUDE_CODE=0` 等显式覆盖（如果真有需要）
+非 WopalSpace instance 的 context 为 `undefined`。配置入口由 `$WOPAL_HOME/config/settings.jsonc` 所有；capability loading 保持 OpenCode-compatible 的目录发现、外部技能与覆盖机制，并在末层叠加 `$WOPAL_HOME` 全局能力。Child process environment 不包含 `WOPAL_SPACE` 或 `WOPAL_SPACE_ROOT`。
 
-`Flag.WOPAL_SPACE` 是同步 getter，供 config 加载等需要立即判断的场景使用（如 `tryLoadWopalSpaceConfig` 的入口 guard）。
+### WopalSpace 模式
 
-### WOPAL_SPACE 环境变量的设置点
+WopalSpace instance 的 context 包含 `{ root, wopalDir }`。从空间根或其任意子目录运行时都使用同一个 root。空间 settings、agents、commands、plugins、skills 与 TUI 配置均从该 root 的 `.wopal/` 加载。Child process environment 只注入当前 instance 的 `WOPAL_SPACE=1` 与 `WOPAL_SPACE_ROOT=<root>`。
 
-`WOPAL_SPACE` / `WOPAL_SPACE_ROOT` 在两个入口设置，确保所有启动路径都能让 RuntimeFlags 读到空间模式状态：
+`.claude/skills/` 与 Claude compatibility instructions 的启用状态由当前 instance mode 决定。`.agents/skills/` 在两种模式下都参与 OpenCode-compatible 技能发现。
 
-| 入口 | 设置位置 | 机制 |
-|------|---------|------|
-| CLI（`ellamaka serve` 等） | `index.ts` yargs middleware | `detectWopalSpace(process.cwd())` 成功后设 env |
-| Desktop sidecar | `wopal-space-settings.ts` `loadWopalSpaceSettingsFiles` | `detectWopalSpace(ctx.directory)` 成功后设 env |
+### Skill Priority
 
-Desktop sidecar 直接 import server 模块，不经 CLI yargs middleware，故在配置加载层补设 env。两处设置逻辑等价：检测到空间根后设 `WOPAL_SPACE=1` 和 `WOPAL_SPACE_ROOT=<root>`。
+WopalSpace 模式下，`<spaceRoot>/.wopal/skills/` 的同名技能显式优先于 `$WOPAL_HOME/skills/`、`.agents/skills/`、配置 paths 和 urls。`discoverSkills()` 从当前 Config InstanceState 获得 `spaceDir`，`loadSkills()` 按完整来源路径裁决 winner。
 
-### Skill 加载中的消费
-
-`skill/index.ts` 的 `discoverSkills()` 接收 `disableClaudeCodeSkills` 和 `disableAgentsSkills` 参数，在扫描外部技能目录时根据标志跳过。空间模式下 `.claude/skills/` 自动被跳过；`.agents/skills/` 仍参与扫描。
-
-### Skill 优先级：空间目录显式优先
-
-空间模式下，`<spaceRoot>/.wopal/skills/` 下的同名技能**显式优先**于其他来源（`~/.wopal/skills/`、`.agents/skills/`、配置 paths、urls）。这不是靠扫描顺序的副作用，而是 `loadSkills()` 的显式裁决：
-
-- `discoverSkills()` 通过 `config.isWopalSpace()` 识别空间模式，从 `config.directories()` 中识别出空间目录（`spaceDir`）。
-- `loadSkills()` 对同名技能组，在空间模式下优先选择 location 在 `spaceDir` 下的条目作为 winner，其余条目丢弃。
-- 非空间模式下保持"后扫描者覆盖"的语义不变。
-
-这保证无论扫描顺序如何，空间目录内的技能最终胜出，符合"空间内技能优先级最高"的设计。
+非 WopalSpace 模式保持 OpenCode-compatible 的覆盖顺序，并在最后加载 `$WOPAL_HOME` 全局能力。空间 A 的技能集合不会进入空间 B 或非 WopalSpace instance。
 
 ---
 
@@ -508,7 +495,7 @@ TUI 启动后 1 秒触发 `checkUpgrade()` → `upgrade()`，流程如下：
 
 ### 目的
 
-空间模式下，`~/.wopal/`（全局 ontology）和 `<space>/.wopal/`（空间 ontology）可能包含同一插件（不同文件路径、相同 runtime ID）。按 file URL 去重无法识别，导致插件被加载两次。
+WopalSpace 模式下，`$WOPAL_HOME/`（全局 ontology）和 `<space>/.wopal/`（空间 ontology）可能包含同一插件（不同文件路径、相同 runtime ID）。按 file URL 去重无法识别，导致插件被加载两次。
 
 ### 实现
 
@@ -595,8 +582,8 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 
 | 路径/名称 | 类型 | 保留原因 |
 |-----------|------|----------|
-| `.opencode/` 目录 | 能力目录 | 非空间模式下用于能力扫描（agents/commands/plugins），配置不再从此目录加载 |
-| `opencode.json` / `opencode.jsonc` | 配置文件 | 不再加载 — 非空间模式下仅使用 `~/.wopal/config/settings.jsonc` |
+| `.opencode/` 目录 | 能力目录 | 非 WopalSpace 模式用于 OpenCode-compatible capability scanning（agents/commands/plugins），配置不从此目录加载 |
+| `opencode.json` / `opencode.jsonc` | 配置文件 | 不再加载 — 非 WopalSpace 模式只使用 `$WOPAL_HOME/config/settings.jsonc` |
 | `opencode-clipboard.png` | 临时文件 | 运行时缓存，用户不可见 |
 | `"opencode-oauth-dummy-key"` | 运行时标识 | 内部变量名，改名引入风险无收益 |
 | `ProviderID.opencode` | API 枚举 | 内部 provider 标识 |
