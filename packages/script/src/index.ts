@@ -23,11 +23,21 @@ const env = {
   OPENCODE_VERSION: process.env["OPENCODE_VERSION"],
   OPENCODE_RELEASE: process.env["OPENCODE_RELEASE"],
 }
+const KNOWN_CHANNELS = ["main", "beta", "prod", "latest", "local"] as const
+
 const CHANNEL = await (async () => {
   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
   if (env.OPENCODE_BUMP) return "latest"
   if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.startsWith("0.0.0-")) return "latest"
-  return await $`git branch --show-current`.text().then((x) => x.trim())
+  // Historical fallback returned the current git branch name unconditionally.
+  // That is dangerous for sidecar builds (build-node.ts) in feature worktrees:
+  // the branch name gets baked into dist/node/node.js as OPENCODE_CHANNEL,
+  // producing per-branch db files (e.g. ellamaka-<branch>.db) and fragmenting
+  // session data. Only known release channels are accepted from git; any other
+  // branch falls back to "local", matching dev.sh's explicit
+  // OPENCODE_CHANNEL=local.
+  const branch = await $`git branch --show-current`.text().then((x) => x.trim())
+  return (KNOWN_CHANNELS as readonly string[]).includes(branch) ? branch : "local"
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
