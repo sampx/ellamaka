@@ -1,6 +1,5 @@
 import path from "path"
 import fs from "fs/promises"
-import { existsSync, readFileSync } from "fs"
 import os from "os"
 import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
@@ -35,28 +34,6 @@ const paths = {
 }
 
 export const Path = paths
-
-{
-  function loadEnvFile(filePath: string) {
-    if (!existsSync(filePath)) return
-    for (const line of readFileSync(filePath, "utf-8").split("\n")) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith("#")) continue
-      const eq = trimmed.indexOf("=")
-      if (eq < 1) continue
-      const key = trimmed.slice(0, eq).trim()
-      if (key in process.env) continue
-      let value = trimmed.slice(eq + 1).trim()
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1)
-      }
-      process.env[key] = value
-    }
-  }
-
-  // Global WOPAL_HOME/.env
-  loadEnvFile(path.join(wopalRoot, ".env"))
-}
 
 Flock.setGlobal({ state })
 

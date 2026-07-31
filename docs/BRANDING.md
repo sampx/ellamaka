@@ -7,30 +7,6 @@
 
 本文档是 ellamaka 品牌化定制的唯一真相源。记录每项定制设计的**目的、内容、要求和实现逻辑**。具体文件级变更由 `git diff upstream/dev` 回答，不在本文档中维护。
 
-## 变更记录
-
-| 日期 | 类型 | 摘要 |
-|------|------|------|
-| 2026-07-30 | Updated | §5、§6、§8 建立非 WopalSpace/WopalSpace 双模式与 sidecar instance context：CLI 保留单目录 env 边界，sidecar 按 directory 持有空间根；非 WopalSpace 保持 OpenCode-compatible capability loading。 |
-| 2026-07-28 | Updated | §1 / §15.5 建立 Web UI 运行时代理与品牌解耦策略：新增 `UI_UPSTREAM_URL` 品牌常量控制代理目标，未内嵌 UI 时默认关闭上游隐式代理并响应 404，保证品牌隔离与独立服务权责。 |
-| 2026-07-18 | Added | Workbench 通过 Runtime API 获取 Wopal CLI 健康状态，并在用户确认后执行 CLI 修复。CLI 故障降级 Space Control，保留 Session Runtime 与 PTY。 |
-
-| 2026-07-15 | Updated | Workbench Session Projection 在数据库查询边界排除已归档会话和带 `parentID` 的子会话，保证左侧树只展示可直接装载的根会话。 |
-| 2026-07-13 | Updated | §17 简化桌面 PTY 生命周期：Web 与 Desktop 共用 sidecar 断连宽限回收，移除 Electron Main PTY 注册表与专用 IPC 设计；同步更新 `DESKTOP.md` 和 Workbench 设计 |
-| 2026-07-13 | Updated | 新增 `docs/DESKTOP.md`，建立 ellamaka-desktop 独立架构文档；§17 关联桌面架构真相源 |
-| 2026-07-13 | Updated | §0 更新桌面端裁剪决策；新增 §17 ellamaka-desktop，采用 OpenCode v1.15.13 Electron desktop 作为固定复制基线，由独立包承载 ellamaka-app、sidecar 与桌面进程生命周期 |
-| 2026-07-11 | Updated | §9 重写：恢复自动更新，改用 ellamaka CDN（`download.coursedao.com/ellamaka/latest/manifest.json`）；安装方法从 `"wopal"` 重命名为 `"ellamaka"`；`upgrade()` 不再检测安装方式，直接走 CDN |
-| 2026-07-07 | Updated | §16 扩展 Workbench 会话归组 API：新增 spaceOverview/nonSpaceOverview/searchDirectories/recentDirectories 四端点，完全按 Workbench 自有归组模型（空间→项目→子目录/worktree→会话），不沿用 opencode project_id 归组；引入 stale 检测、会话标记（目录/工作树）、realpath 统一匹配 |
-| 2026-07-07 | Updated | §16 扩展项目目录聚合端点：新增 `/wopal-space/projects` 和 `/wopal-space/non-space-projects`，按空间路径过滤 project 表 ∪ session 表并聚合会话数；realpath 统一匹配；为 Workbench 三级 Session Browser 提供数据源 |
-| 2026-07-07 | Updated | 新增 §16 WopalSpace 空间注册表 API;§15.2/§15.6 更新为实际实施文件清单和进度 |
-| 2026-07-06 | Updated | §7.5 新增 WopalSpace 模式下 `/help` 命令覆盖机制：TUI palette 的 `help.show` 在空间模式下不注册 `slashName`，使 `/help` 回落到服务端命令系统，由 `commands/help.md` 接管 |
-| 2026-06-22 | Updated | §6.2 补充普通模式插件依赖安装机制说明（复用 `localPluginInstallDeps`） |
-| 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容；§7.1 TUI 配置统一；新增 §14 TUI tips 和 sidebar 品牌化：所有模式下移除 opencode 相关 tips，CLI 命令引用使用 BINARY_NAME，sidebar 版本署名使用 BINARY_TITLE |
-| 2026-06-18 | Updated | §6.2 放弃 opencode 配置兼容：所有模式仅加载 ellamaka 自身配置，不再加载 opencode XDG 全局配置和项目级 opencode.jsonc |
-| 2026-06-15 | Updated | §6.1 加载链路增加 `settings.local.jsonc`（公开/私有配置拆分） |
-| 2026-06-11 | Updated | channel 改名 `latest`/`main`（与 opencode 一致）；update guard 从 channel 判断改为路径判断 `isWopalInstall()`；数据库剥离逻辑移除 |
-| 2026-06-01 | Created | 初始版本，以文件级变更清单形式记录 |
-
 ## 0. 项目精简
 
 品牌化第一步：删除不由 ellamaka 产品直接继承的上游模块和文件。需要保留的产品能力由独立品牌包承接。
@@ -127,9 +103,13 @@
 
 ### 环境变量加载
 
-启动时按优先级加载 `.env` 文件：
-1. **空间级**（高优先级）：从 cwd 向上查找 `.wopal/.env`，找到即停止
-2. **全局级**（低优先级）：`WOPAL_HOME/.env`，填充空间级未覆盖的变量
+Core `Global` 只负责 `WOPAL_HOME` 路径布局，不将 `.env` 文件写入 `process.env`。`process.env` 只表达真实进程启动环境和 shell 临时覆盖。
+
+`.env` 由 wopal-plugin 的 per-invocation effective env loader 消费，优先级为：
+
+1. 真实 process/shell env（最高，用于临时覆盖）
+2. 当前空间 `<wopalSpaceRoot>/.wopal/.env`
+3. 全局 `$WOPAL_HOME/.env`
 
 ### 实现逻辑
 
