@@ -6,7 +6,7 @@ import { Installation } from "../../src/installation"
 import { findEllamakaArtifact } from "../../src/installation"
 import { AppProcess } from "@opencode-ai/core/process"
 import { testEffect } from "../lib/effect"
-import { readJsoncConfig, getWorkspaceAutoupdate } from "../../src/cli/upgrade"
+import { readJsoncConfig, getWorkspaceAutoupdate, shouldSkipAutoUpgrade } from "../../src/cli/upgrade"
 import { mkdirSync, writeFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -262,4 +262,22 @@ describe("installation upgrade", () => {
       expect(error.stderr).toContain("ellamaka")
     }),
   )
+})
+
+describe("shouldSkipAutoUpgrade", () => {
+  test("stable latest channel should NOT skip auto-upgrade", () => {
+    expect(shouldSkipAutoUpgrade("latest", "1.15.13")).toBe(false)
+  })
+
+  test("local channel (dev.sh) should skip auto-upgrade", () => {
+    expect(shouldSkipAutoUpgrade("local", "local")).toBe(true)
+  })
+
+  test("main channel (dev build) should skip auto-upgrade", () => {
+    expect(shouldSkipAutoUpgrade("main", "1.15.13-main.20260731135022")).toBe(true)
+  })
+
+  test("unknown preview channel should skip auto-upgrade", () => {
+    expect(shouldSkipAutoUpgrade("beta", "1.15.14-beta.1")).toBe(true)
+  })
 })

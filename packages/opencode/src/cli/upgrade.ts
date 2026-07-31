@@ -2,13 +2,26 @@ import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Installation } from "@/installation"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { InstallationVersion, InstallationChannel } from "@opencode-ai/core/installation/version"
 import { GlobalBus } from "@/bus/global"
 import { existsSync, readFileSync } from "fs"
 import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "upgrade" })
+
+/**
+ * Decide whether auto-upgrade should be skipped for the given build channel.
+ *
+ * Only the stable release channel ("latest") participates in CDN auto-upgrade.
+ * Dev builds ("main"), local debug runs ("local"), and any other preview
+ * channel are not published to the CDN stable manifest; auto-upgrading them
+ * would silently replace a dev/local binary with the stable one, losing the
+ * developer's build.
+ */
+export function shouldSkipAutoUpgrade(channel: string, currentVersion: string): boolean {
+  return channel !== "latest"
+}
 
 export function readJsoncConfig(filepath: string): Record<string, unknown> | null {
   try {
@@ -58,6 +71,21 @@ export async function upgrade() {
 
   if (InstallationVersion === latest) {
     log.info(`already latest (${latest})`)
+    return
+  }
+
+  // Non-stable channels (dev builds, local debug, previews) are not published
+  // to the CDN stable manifest. Auto-upgrading them would replace the dev/local
+  // binary with the stable one. Skip auto-upgrade and notify only.
+  if (shouldSkipAutoUpgrade(InstallationChannel, InstallationVersion)) {
+    log.info(`skip auto-upgrade for ${InstallationChannel} channel build (current ${InstallationVersion}, latest ${latest})`)
+    GlobalBus.emit("event", {
+      directory: "global",
+      payload: {
+        type: Installation.Event.UpdateAvailable.type,
+        properties: { version: latest },
+      },
+    })
     return
   }
 
