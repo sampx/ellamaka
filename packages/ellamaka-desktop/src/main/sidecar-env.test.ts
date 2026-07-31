@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { resolveShellPath } from "./shell-env"
 
 describe("sidecar env", () => {
   test("prepareSidecarEnv sets Ellamaka server username (not opencode)", () => {
@@ -38,5 +39,25 @@ describe("sidecar env", () => {
     expect(loopback).toContain("127.0.0.1")
     expect(loopback).toContain("localhost")
     expect(loopback).toContain("::1")
+  })
+})
+
+describe("resolveShellPath", () => {
+  test("uses shell PATH when shell env is available", () => {
+    const shellEnv = { PATH: "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" }
+    expect(resolveShellPath(shellEnv, "/usr/bin:/bin")).toBe(shellEnv.PATH)
+  })
+
+  test("falls back to app PATH when shell env is null", () => {
+    expect(resolveShellPath(null, "/usr/bin:/bin")).toBe("/usr/bin:/bin")
+  })
+
+  test("falls back to app PATH when shell PATH is empty", () => {
+    expect(resolveShellPath({ PATH: "" }, "/usr/bin:/bin")).toBe("/usr/bin:/bin")
+  })
+
+  test("returns undefined when neither shell nor app PATH exists", () => {
+    expect(resolveShellPath({ PATH: "" }, undefined)).toBeUndefined()
+    expect(resolveShellPath(null, undefined)).toBeUndefined()
   })
 })

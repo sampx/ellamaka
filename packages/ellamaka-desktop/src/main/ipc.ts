@@ -49,11 +49,13 @@ type Deps = {
 }
 
 import { createOnboardingIpcHandlers } from "./onboarding-ipc"
+import { persistWopalHomeEnv } from "./shell-env"
 import { IPC_HANDLE_CHANNELS, IPC_EVENT_CHANNELS } from "./ipc-channels"
 
 export function registerIpcHandlers(deps: Deps) {
   const onboardingHandlers = createOnboardingIpcHandlers({
     homePath: deps.homePath,
+    persistWopalHomeEnv,
     broadcastProgress: (progress) => {
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send("onboarding-progress", progress)

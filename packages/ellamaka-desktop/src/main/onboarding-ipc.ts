@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process"
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir, userInfo } from "node:os"
-import { getUserShell, loadShellEnv, persistWopalHomeEnv } from "./shell-env"
+import { getUserShell, loadShellEnv } from "./shell-env"
 import type { OnboardingStepResult } from "../preload/types"
 
 import { statfsSync } from "node:fs"
@@ -173,6 +173,105 @@ export interface GithubCliProbe {
 
 export interface GithubAuthenticationProbeDeps extends GithubTokenDetectionDeps {
   probeGhCli?: () => GithubCliProbe
+  verifyGithubToken?: (token: string) => Promise<{ account: string | null; valid: boolean }>
+}
+
+function probeGithubCli(): GithubCliProbe {
+  const version = spawnSync("gh", ["--version"], { stdio: "pipe", timeout: 3000 })
+  if (version.status !== 0) {
+    return { installed: false, authenticated: false, account: null }
+  }
+
+  const env = { ...process.env }
+  delete env.GITHUB_TOKEN
+  delete env.GH_TOKEN
+  const auth = spawnSync("gh", ["auth", "token"], { stdio: "pipe", env, timeout: 3000 })
+  if (auth.status !== 0 || !auth.stdout?.toString().trim()) {
+    return { installed: true, authenticated: false, account: null }
+  }
+
+  const accountResult = spawnSync("gh", ["api", "user", "--jq", ".login"], { stdio: "pipe", env, timeout: 5000 })
+  const account = accountResult.status === 0 ? accountResult.stdout?.toString().trim() || null : null
+  return { installed: true, authenticated: true, account }
+}
+
+export async function verifyGithubTokenViaApi(token: string): Promise<{ account: string | null; valid: boolean }> {
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "ellamaka-onboarding",
+      },
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!res.ok) return { account: null, valid: false }
+    const data = (await res.json()) as { login?: string }
+    const account = data.login?.trim()
+    return { account: account || null, valid: Boolean(account) }
+  } catch {
+    return { account: null, valid: false }
+  }
+}
+
+export async function probeGithubAuthentication(
+  homePath?: string,
+  deps: GithubAuthenticationProbeDeps = {},
+) {
+  const tokenInfo = detectGithubToken(homePath, {
+    env: deps.env,
+    loadUserShellEnv: deps.loadUserShellEnv,
+    readGhToken: () => null,
+  })
+  const ghCli = deps.probeGhCli ? deps.probeGhCli() : probeGithubCli()
+
+  if (ghCli.authenticated) {
+    return {
+      detected: true,
+      source: "gh-cli" as const,
+      account: ghCli.account,
+      ghCliInstalled: ghCli.installed,
+      ghCliAuthenticated: ghCli.authenticated,
+      tokenConfigured: tokenInfo !== null,
+      tokenSource: tokenInfo?.source ?? null,
+    }
+  }
+
+  if (!tokenInfo) {
+    return {
+      detected: false,
+      source: null,
+      account: null,
+      ghCliInstalled: ghCli.installed,
+      ghCliAuthenticated: ghCli.authenticated,
+      tokenConfigured: false,
+      tokenSource: null,
+    }
+  }
+
+  const verify = deps.verifyGithubToken ?? verifyGithubTokenViaApi
+  const verification = await verify(tokenInfo.token)
+  if (!verification.valid) {
+    return {
+      detected: false,
+      source: null,
+      account: null,
+      ghCliInstalled: ghCli.installed,
+      ghCliAuthenticated: ghCli.authenticated,
+      tokenConfigured: true,
+      tokenSource: tokenInfo.source,
+    }
+  }
+
+  return {
+    detected: true,
+    source: tokenInfo.source,
+    account: verification.account,
+    ghCliInstalled: ghCli.installed,
+    ghCliAuthenticated: ghCli.authenticated,
+    tokenConfigured: true,
+    tokenSource: tokenInfo.source,
+  }
 }
 
 export function detectGithubToken(
@@ -228,48 +327,6 @@ export function detectGithubToken(
   }
 
   return null
-}
-
-function probeGithubCli(): GithubCliProbe {
-  const version = spawnSync("gh", ["--version"], { stdio: "pipe", timeout: 3000 })
-  if (version.status !== 0) {
-    return { installed: false, authenticated: false, account: null }
-  }
-
-  const env = { ...process.env }
-  delete env.GITHUB_TOKEN
-  delete env.GH_TOKEN
-  const auth = spawnSync("gh", ["auth", "token"], { stdio: "pipe", env, timeout: 3000 })
-  if (auth.status !== 0 || !auth.stdout?.toString().trim()) {
-    return { installed: true, authenticated: false, account: null }
-  }
-
-  const accountResult = spawnSync("gh", ["api", "user", "--jq", ".login"], { stdio: "pipe", env, timeout: 5000 })
-  const account = accountResult.status === 0 ? accountResult.stdout?.toString().trim() || null : null
-  return { installed: true, authenticated: true, account }
-}
-
-export function probeGithubAuthentication(
-  homePath?: string,
-  deps: GithubAuthenticationProbeDeps = {},
-) {
-  const tokenInfo = detectGithubToken(homePath, {
-    env: deps.env,
-    loadUserShellEnv: deps.loadUserShellEnv,
-    readGhToken: () => null,
-  })
-  const ghCli = deps.probeGhCli ? deps.probeGhCli() : probeGithubCli()
-  const source = ghCli.authenticated ? "gh-cli" : tokenInfo?.source ?? null
-
-  return {
-    detected: ghCli.authenticated || tokenInfo !== null,
-    source,
-    account: ghCli.account,
-    ghCliInstalled: ghCli.installed,
-    ghCliAuthenticated: ghCli.authenticated,
-    tokenConfigured: tokenInfo !== null,
-    tokenSource: tokenInfo?.source ?? null,
-  }
 }
 
 export function detectProviderAuth(homePath?: string, providerId = "opencode-go"): string | undefined {
@@ -675,6 +732,14 @@ export interface OnboardingIpcDeps {
   homePath?: string
   executeStep?: StepExecutor
   broadcastProgress?: (progress: any) => void
+  // Persists WOPAL_HOME into the user shell profile. Defaults to a no-op so that
+  // tests never rewrite the real user shell profile; production wiring injects
+  // the real implementation (see main/ipc.ts).
+  persistWopalHomeEnv?: (wopalHome: string) => { success: boolean; message?: string }
+}
+
+function noopPersistWopalHomeEnv(_wopalHome: string): { success: boolean; message?: string } {
+  return { success: true }
 }
 
 const STEP_OPERATION_LABELS: Record<OnboardingStepName, string> = {
@@ -717,7 +782,7 @@ switch (step as string) {
           const resolvedHome = targetHome.startsWith("~") ? join(homedir(), targetHome.slice(1)) : targetHome
           deps.homePath = resolvedHome
           process.env.WOPAL_HOME = resolvedHome
-          persistWopalHomeEnv(resolvedHome)
+          ;(deps.persistWopalHomeEnv ?? noopPersistWopalHomeEnv)(resolvedHome)
           return performSystemCheck(resolvedHome)
         }
 
@@ -1090,7 +1155,7 @@ switch (step as string) {
           case "ellamaka-cli":
             return probeLocalCli(join(homePath, "bin", isWin ? "ellamaka.exe" : "ellamaka"))
           case "github-auth": {
-            return probeGithubAuthentication(homePath)
+            return await probeGithubAuthentication(homePath)
           }
           case "ai-provider": {
             const existingKey = detectProviderAuth(homePath, "opencode-go")
@@ -1433,7 +1498,7 @@ switch (step as string) {
         }
       }
       // Persist WOPAL_HOME to user environment variables / shell profile
-      persistWopalHomeEnv(homePath)
+      ;(deps.persistWopalHomeEnv ?? noopPersistWopalHomeEnv)(homePath)
       return { status: "completed" as const, result: readiness.result }
     },
 

@@ -287,8 +287,8 @@ describe("onboarding-ipc", () => {
     expect(result).toEqual({ token: "gho_cli_token", source: "gh-cli" })
   })
 
-  test("probeGithubAuthentication reports CLI account and token source without exposing secrets", () => {
-    const result = probeGithubAuthentication(testHome, {
+  test("probeGithubAuthentication reports CLI account and token source without exposing secrets", async () => {
+    const result = await probeGithubAuthentication(testHome, {
       env: { GH_TOKEN: "configured_token" },
       loadUserShellEnv: () => ({}),
       probeGhCli: () => ({ installed: true, authenticated: true, account: "sam" }),
@@ -306,8 +306,8 @@ describe("onboarding-ipc", () => {
     expect(JSON.stringify(result)).not.toContain("configured_token")
   })
 
-  test("probeGithubAuthentication reports an installed but unauthenticated CLI", () => {
-    const result = probeGithubAuthentication(testHome, {
+  test("probeGithubAuthentication reports an installed but unauthenticated CLI", async () => {
+    const result = await probeGithubAuthentication(testHome, {
       env: {},
       loadUserShellEnv: () => ({}),
       probeGhCli: () => ({ installed: true, authenticated: false, account: null }),
@@ -322,6 +322,82 @@ describe("onboarding-ipc", () => {
       tokenConfigured: false,
       tokenSource: null,
     })
+  })
+
+  test("probeGithubAuthentication verifies token via API when gh CLI unauthenticated and token present", async () => {
+    const result = await probeGithubAuthentication(testHome, {
+      env: { GITHUB_TOKEN: "valid_token" },
+      loadUserShellEnv: () => ({}),
+      probeGhCli: () => ({ installed: true, authenticated: false, account: null }),
+      verifyGithubToken: async () => ({ account: "octocat", valid: true }),
+    })
+
+    expect(result).toEqual({
+      detected: true,
+      source: "github-token-env",
+      account: "octocat",
+      ghCliInstalled: true,
+      ghCliAuthenticated: false,
+      tokenConfigured: true,
+      tokenSource: "github-token-env",
+    })
+    expect(JSON.stringify(result)).not.toContain("valid_token")
+  })
+
+  test("probeGithubAuthentication rejects invalid token as not detected", async () => {
+    const result = await probeGithubAuthentication(testHome, {
+      env: { GITHUB_TOKEN: "expired_token" },
+      loadUserShellEnv: () => ({}),
+      probeGhCli: () => ({ installed: false, authenticated: false, account: null }),
+      verifyGithubToken: async () => ({ account: null, valid: false }),
+    })
+
+    expect(result).toEqual({
+      detected: false,
+      source: null,
+      account: null,
+      ghCliInstalled: false,
+      ghCliAuthenticated: false,
+      tokenConfigured: true,
+      tokenSource: "github-token-env",
+    })
+    expect(JSON.stringify(result)).not.toContain("expired_token")
+  })
+
+  test("probeGithubAuthentication treats token verification failure as not detected", async () => {
+    const result = await probeGithubAuthentication(testHome, {
+      env: { GITHUB_TOKEN: "unknown_token" },
+      loadUserShellEnv: () => ({}),
+      probeGhCli: () => ({ installed: false, authenticated: false, account: null }),
+      verifyGithubToken: async () => ({ account: null, valid: false }),
+    })
+
+    expect(result).toEqual({
+      detected: false,
+      source: null,
+      account: null,
+      ghCliInstalled: false,
+      ghCliAuthenticated: false,
+      tokenConfigured: true,
+      tokenSource: "github-token-env",
+    })
+  })
+
+  test("probeGithubAuthentication prefers gh CLI account when both CLI authenticated and token present", async () => {
+    let verifyCalled = false
+    const result = await probeGithubAuthentication(testHome, {
+      env: { GITHUB_TOKEN: "extra_token" },
+      loadUserShellEnv: () => ({}),
+      probeGhCli: () => ({ installed: true, authenticated: true, account: "cli-user" }),
+      verifyGithubToken: async () => {
+        verifyCalled = true
+        return { account: "should-not-win", valid: true }
+      },
+    })
+
+    expect(result.account).toBe("cli-user")
+    expect(result.source).toBe("gh-cli")
+    expect(verifyCalled).toBe(false)
   })
 
   test("onboardingProbe ai-provider returns hasKey", async () => {

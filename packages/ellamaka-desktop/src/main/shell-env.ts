@@ -100,6 +100,18 @@ export function mergeShellEnv(shell: Record<string, string> | null, env: Record<
   }
 }
 
+// GUI processes launched from Finder/Dock inherit a minimal system PATH that
+// omits user-level directories (e.g. /opt/homebrew/bin). The user's login shell
+// PATH is the authoritative source for tool discovery (gh, go, bun, ...), so
+// it must win over the GUI default PATH rather than be silently overridden.
+export function resolveShellPath(
+  shellEnv: Record<string, string> | null,
+  appPath: string | undefined,
+): string | undefined {
+  if (shellEnv?.PATH) return shellEnv.PATH
+  return appPath
+}
+
 export function persistWopalHomeEnv(wopalHome: string): { success: boolean; message?: string } {
   const log = getLogger()
   try {
