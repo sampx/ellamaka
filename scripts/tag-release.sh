@@ -15,21 +15,23 @@ usage() {
 $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellamaka-desktop，并 watch 至完成
 
 用法:
-  $SCRIPT <version> [选项]
+  $SCRIPT <子命令> <version> [选项]
+
+━━━ 子命令 ━━━
+  cli        仅发布 CLI（dispatch publish-ellamaka）
+  desktop    仅发布 Desktop（dispatch publish-ellamaka-desktop）
+  all        双发：CLI + Desktop
 
 ━━━ 参数 ━━━
-  version   版本号（必填）
-              CLI / prod Desktop: 任意版本号，如 0.0.1-p1-test、1.15.14
-              beta Desktop:       X.Y.Z 或 X.Y.Z-beta.N（见下方自动行为）
+  version    版本号（必填）
+               CLI / prod Desktop: 任意版本号，如 0.0.1-p1-test、1.15.14
+               beta Desktop:       X.Y.Z 或 X.Y.Z-beta.N（见下方自动行为）
 
 ━━━ 选项 ━━━
-  -h, --help   显示此帮助
-  --channel    Desktop 发布渠道: beta | prod（默认 prod）
-  --retag      强制复用已存在的远程 tag（CI 失败后重试）
-               不加此选项时，远程 tag 已存在则自动递增
-  --cli        仅发布 CLI（dispatch publish-ellamaka）
-  --desktop    仅发布 Desktop（dispatch publish-ellamaka-desktop）
-               不加 --cli/--desktop 时默认双发
+  -h, --help        显示此帮助
+  --channel         Desktop 发布渠道: beta | prod（仅 desktop / all 有效，默认 prod）
+  --retag           强制复用已存在的远程 tag（CI 失败后重试）
+                      不加此选项时，远程 tag 已存在则自动递增
 
 ━━━ 自动行为 ━━━
   tag 自增规则:
@@ -49,33 +51,36 @@ $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellam
 
 ━━━ 示例 ━━━
   # CLI 测试版
-  $SCRIPT 0.0.1-p1-test
+  $SCRIPT cli 0.0.1-p1-test
 
-  # CLI 仅发布
-  $SCRIPT 1.15.14 --cli
+  # CLI 正式版
+  $SCRIPT cli 1.15.14
 
   # Desktop beta（自动补全 beta 序号）
-  $SCRIPT 1.15.14 --channel beta --desktop
+  $SCRIPT desktop 1.15.14 --channel beta
 
   # Desktop beta（手动指定序号）
-  $SCRIPT 1.15.14-beta.3 --channel beta --desktop
+  $SCRIPT desktop 1.15.14-beta.3 --channel beta
 
   # Desktop 正式版
-  $SCRIPT 1.15.14 --channel prod --desktop
+  $SCRIPT desktop 1.15.14 --channel prod
+
+  # 双发 prod
+  $SCRIPT all 1.15.14
 
   # CI 失败后重试（显式指定完整版本号）
-  $SCRIPT 1.15.14-beta.1 --channel beta --desktop --retag
+  $SCRIPT desktop 1.15.14-beta.1 --channel beta --retag
 EOF
   exit 0
 }
 
 # --- Argument parsing ---
+SUBCOMMAND=""
 RETAG=false
 CHANNEL="prod"
 CHANNEL_EXPLICIT=false
-WATCH_CLI=true
-WATCH_DESKTOP_AUTO=true
 ARGS=()
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
@@ -88,16 +93,43 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --retag) RETAG=true; shift ;;
-    --cli) WATCH_CLI=true; WATCH_DESKTOP_AUTO=false; shift ;;
-    --desktop) WATCH_CLI=false; WATCH_DESKTOP_AUTO=true; shift ;;
+    cli|desktop|all)
+      [ -n "$SUBCOMMAND" ] && die "重复的子命令: $1（已指定 ${SUBCOMMAND}）"
+      SUBCOMMAND="$1"
+      shift
+      ;;
     -*) die "未知选项: $1" ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
 
+# Validate subcommand
+if [ -z "$SUBCOMMAND" ]; then
+  echo "错误: 缺少子命令（cli | desktop | all）" >&2
+  echo "用法: $SCRIPT <子命令> <version> [选项]" >&2
+  echo "试试: $SCRIPT --help" >&2
+  exit 1
+fi
+
+# Map subcommand to watch flags
+case "$SUBCOMMAND" in
+  cli)
+    WATCH_CLI=true
+    WATCH_DESKTOP_AUTO=false
+    ;;
+  desktop)
+    WATCH_CLI=false
+    WATCH_DESKTOP_AUTO=true
+    ;;
+  all)
+    WATCH_CLI=true
+    WATCH_DESKTOP_AUTO=true
+    ;;
+esac
+
 VERSION="${ARGS[0]:-}"
 
-[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT <version> [选项]\n试试: $SCRIPT --help"
+[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT $SUBCOMMAND <version> [选项]\n试试: $SCRIPT --help"
 
 # Normalize v prefix
 case "$VERSION" in
@@ -123,9 +155,9 @@ elif [[ "$PLAIN_VERSION" == *-beta.* ]]; then
   die "beta 版本号必须指定 --channel beta"
 fi
 
-# CLI + beta channel conflict
-if [ "$WATCH_DESKTOP_AUTO" = false ] && [ "$CHANNEL_EXPLICIT" = true ] && [ "$CHANNEL" != "prod" ]; then
-  die "--channel $CHANNEL 仅适用于包含 Desktop 的发布"
+# --channel scope check: only desktop / all support channel
+if [ "$SUBCOMMAND" = "cli" ] && [ "$CHANNEL_EXPLICIT" = true ]; then
+  die "--channel 仅适用于 desktop / all 子命令，cli 子命令不支持"
 fi
 
 # --- gh availability ---
