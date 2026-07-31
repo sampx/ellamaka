@@ -404,7 +404,7 @@ start_backend() {
   local port="$1" debug="$2" debug_modules="$3" preload="$4"
   shift 4
   local plugin_modules=""
-  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$LOGDIR") args=(serve --port "$port" --print-logs)
+  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") args=(serve --port "$port" --print-logs)
   if [ "$debug" = true ]; then
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
     args+=(--log-level DEBUG)
@@ -516,7 +516,7 @@ cmd_tui() {
 
   if $attach; then
     mkdir -p "$LOGDIR"
-    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR") attach_args=() plugin_modules=""
+    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") attach_args=() plugin_modules=""
     if $debug; then
       attach_args+=(--log-level DEBUG)
       plugin_modules="$(plugin_debug_modules "$debug_modules")"
@@ -548,7 +548,7 @@ cmd_tui() {
   fi
 
   mkdir -p "$LOGDIR"
-  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR") tui_args=() plugin_modules=""
+  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") tui_args=() plugin_modules=""
   if $debug; then
     tui_args+=(--log-level DEBUG)
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
