@@ -31,7 +31,7 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | 全局路径分离 | `~/.wopal/config` + `~/.wopal/ellamaka/{data,cache,state}` | §5 |
 | 非 WopalSpace 模式 | 配置入口迁移至 WOPAL_HOME；capability loading 保持 OpenCode-compatible 并叠加 WOPAL_HOME 全局能力 | §6.2 |
 | WopalSpace 模式 | 从 instance space root 加载 `.wopal/` 配置和能力；空间根与任意子目录共享同一 context | §6.1 |
-| Instance 运行模式 | Config state 按 directory 持有可选 WopalSpaceContext；server 不使用进程 env 表达当前空间 | §8 |
+| Instance 运行模式 | 按 directory 检测空间根；server 不使用进程 env 表达当前空间 | §8 |
 | Agent/Command/Plugin 加载 | 从 `.wopal/` 加载同名可覆盖内置 | §2, §5.1 |
 | 权限合并 | defaults → global → space settings → agent frontmatter | §3（本文件） |
 | 引擎安装识别 | 识别 `~/.wopal/bin/` 安装路径 | §4.8 |
@@ -47,8 +47,8 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 
 Ellamaka 运行时包含两种模式：
 
-- **非 WopalSpace**：当前 instance 没有 WopalSpaceContext。配置入口由 WOPAL_HOME 所有，capability loading 保持 OpenCode-compatible 的目录发现和覆盖机制，并在末层叠加 WOPAL_HOME 全局能力。
-- **WopalSpace**：当前 instance 持有 `{ root, wopalDir }`。当前 directory 可以是空间根或其任意子目录，配置和能力始终从同一个 root 加载。
+- **非 WopalSpace**：当前 instance 没有 `wopalSpaceRoot`。配置入口由 WOPAL_HOME 所有，capability loading 保持 OpenCode-compatible 的目录发现和覆盖机制，并在末层叠加 WOPAL_HOME 全局能力。
+- **WopalSpace**：当前 instance 的 `wopalSpaceRoot` 是空间根。当前 directory 可以是空间根或其任意子目录，配置和能力始终从这个根加载。
 
 WopalSpace 模式下配置加载优先级（低→高）：
 
@@ -100,7 +100,7 @@ P1 不改 runtime loading 模型。setup 将 ontology base capabilities 物化�
 | Runtime data | `~/.wopal/ellamaka/data/` | ellamaka |
 | Cache | `~/.wopal/ellamaka/cache/` | ellamaka |
 | Process state | `~/.wopal/ellamaka/state/` | ellamaka |
-| Instance WopalSpace context | 当前 sidecar `InstanceState`，按 directory 隔离 | Config；`undefined` 表示非 WopalSpace，`{ root, wopalDir }` 表示 WopalSpace |
+| Instance WopalSpace root | 当前 directory 的检测结果 | `undefined` 表示非 WopalSpace；绝对路径表示 WopalSpace |
 | CLI WopalSpace compatibility env | CLI 单进程运行期的 `WOPAL_SPACE` / `WOPAL_SPACE_ROOT` | CLI 入口；不作为 sidecar 当前空间状态 |
 | Wopal CLI 健康 | `$WOPAL_HOME/bin/wopal` 的短时探测结果 | `CliContract`，CLI 二进制保持版本事实来源 |
 | 空间 ontology | `<space>/.wopal/` | Space Ontology，ellamaka 加载 |
@@ -120,9 +120,9 @@ Wopal CLI adapter 作为 Runtime 的领域服务使用 `wopal ... --json --api-v
 
 ### 7.2 Sidecar Instance Context
 
-一个 sidecar 同时服务多个 directory instance。Config、Plugin、Skill、Instruction 和 child process environment 从当前 InstanceState 读取可选 WopalSpaceContext。空间根与空间内任意子目录获得同一个 root；非 WopalSpace instance 保持独立且不继承其他空间状态。
+一个 sidecar 同时服务多个 directory instance。配置加载和插件创建从当前 directory 直接检测可选的 `wopalSpaceRoot`。空间根与空间内任意子目录得到同一个 root；非 WopalSpace instance 不继承其他空间状态。
 
-PluginInput 通过可选 `wopalSpace` 字段接收当前 instance 的权威空间上下文。Shell、PTY、MCP 与 LSP 启动时基于同一上下文构造环境：非 WopalSpace 子进程不携带空间变量，WopalSpace 子进程只携带所属空间 root。
+PluginInput 通过可选 `wopalSpaceRoot` 字段接收当前 instance 的空间根。字段缺失表示非 WopalSpace。插件使用该字段定位空间级资源，普通 Engine 运行时保持上游环境与子进程行为。
 
 `WOPAL_HOME` 是 sidecar 的进程级安装根。它拥有全局配置、全局能力和运行时存储。`WOPAL_SPACE` 与 `WOPAL_SPACE_ROOT` 只服务单目录 CLI 兼容边界，不承担 server request routing 或 plugin context 所有权。
 

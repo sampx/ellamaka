@@ -273,3 +273,42 @@ describe("Instruction.systemPaths global config", () => {
     }),
   )
 })
+
+describe("Instruction instance-scoped WopalSpace mode", () => {
+  it.live("WopalSpace instance skips CLAUDE.md via Config state without env", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ ".claude/CLAUDE.md": "# Global Claude" })
+      const projectTmp = yield* tmpWithFiles({ "CLAUDE.md": "# Project Claude" })
+
+      const prevWopal = process.env.WOPAL_SPACE
+      const prevRoot = process.env.WOPAL_SPACE_ROOT
+      delete process.env.WOPAL_SPACE
+      delete process.env.WOPAL_SPACE_ROOT
+      try {
+        yield* Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const paths = yield* svc.systemPaths()
+          expect(paths.has(path.join(globalTmp, ".claude", "CLAUDE.md"))).toBe(false)
+          expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
+          expect(yield* svc.system()).toEqual([])
+        }).pipe(
+          provideInstance(projectTmp),
+          Effect.provide(
+            Instruction.layer.pipe(
+              Layer.provide(TestConfig.layer({ isWopalSpace: () => Effect.succeed(true) })),
+              Layer.provide(AppFileSystem.defaultLayer),
+              Layer.provide(FetchHttpClient.layer),
+              Layer.provide(Global.layerWith({ home: globalTmp, config: globalTmp })),
+              Layer.provide(RuntimeFlags.layer({})),
+            ),
+          ),
+        )
+      } finally {
+        if (prevWopal === undefined) delete process.env.WOPAL_SPACE
+        else process.env.WOPAL_SPACE = prevWopal
+        if (prevRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
+        else process.env.WOPAL_SPACE_ROOT = prevRoot
+      }
+    }),
+  )
+})

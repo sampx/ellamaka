@@ -32,6 +32,7 @@ import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
+import { resolveWopalSpaceRoot } from "@/config/wopal-space-settings"
 
 const log = Log.create({ service: "plugin" })
 
@@ -174,6 +175,7 @@ export const layer = Layer.effect(
           ...(serverUrl ? {} : { fetch: async (...args) => Server.Default().app.fetch(...args) }),
         })
         const cfg = yield* config.get()
+        const wopalSpaceRoot = resolveWopalSpaceRoot(ctx.directory)
         const input: PluginInput = {
           client,
           project: ctx.project,
@@ -189,6 +191,7 @@ export const layer = Layer.effect(
           },
           // @ts-expect-error
           $: typeof Bun === "undefined" ? undefined : Bun.$,
+          ...(wopalSpaceRoot ? { wopalSpaceRoot } : {}),
         }
 
         for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {

@@ -60,11 +60,12 @@ export const layer: Layer.Layer<
     const global = yield* Global.Service
     const flags = yield* RuntimeFlags.Service
     const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
+    const disableClaudeCodePrompt = flags.disableClaudeCodePrompt || (yield* cfg.isWopalSpace())
     const globalFiles = [
       path.join(global.config, "AGENTS.md"),
-      ...(!flags.disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
+      ...(!disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
     ]
-    const instructionFiles = files(flags.disableClaudeCodePrompt)
+    const instructionFiles = files(disableClaudeCodePrompt)
 
     const state = yield* InstanceState.make(
       Effect.fn("Instruction.state")(() =>

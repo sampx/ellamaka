@@ -114,9 +114,9 @@ Sidecar 由当前仓库的 `packages/opencode` node runtime 构建，提供 Ella
 
 Sidecar 使用随机本地端口和临时认证凭据，仅监听 loopback。Main Process 保存连接信息并通过受控初始化接口交给 Renderer。
 
-一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace directory instance。Config InstanceState 为每个 directory 保存可选 WopalSpaceContext。空间根与空间内任意子目录共享同一个 root；非 WopalSpace instance 保持 OpenCode-compatible capability loading，并使用 WOPAL_HOME 配置迁移与全局能力层。
+一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace directory instance。每个配置加载和插件创建按 directory 独立检测可选 `wopalSpaceRoot`。空间根与空间内任意子目录共享同一个值；非 WopalSpace instance 保持 OpenCode-compatible capability loading，并使用 WOPAL_HOME 配置迁移与全局能力层。
 
-PluginInput、Skill、Instruction、Shell、PTY、MCP 与 LSP 都消费当前 instance context。Sidecar 的 `process.env` 不表达当前空间。Child process environment 在创建时按 instance 构造：非 WopalSpace 不携带空间变量，WopalSpace 只携带所属空间 root。
+PluginInput 使用 `wopalSpaceRoot` 接收当前 instance 的空间根。Instruction 使用 Config 的当前模式保持既有兼容行为。Sidecar 的 `process.env` 不表达当前空间，Shell、PTY、MCP 与 LSP 保持官方的运行时行为。
 
 PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subscriber 断开时，服务进入断连宽限期；同一 PTY 在宽限期内重新连接时继续运行，宽限期结束后仍未连接则自动终止。
 

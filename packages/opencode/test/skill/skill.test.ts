@@ -94,23 +94,10 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
   )
 
 const withWopalSpace = <A, E, R>(spaceRoot: string, self: Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() => {
-      const prevWopal = process.env.WOPAL_SPACE
-      const prevRoot = process.env.WOPAL_SPACE_ROOT
-      process.env.WOPAL_SPACE = "1"
-      process.env.WOPAL_SPACE_ROOT = spaceRoot
-      return { prevWopal, prevRoot }
-    }),
-    () => self,
-    (prev) =>
-      Effect.sync(() => {
-        if (prev.prevWopal === undefined) delete process.env.WOPAL_SPACE
-        else process.env.WOPAL_SPACE = prev.prevWopal
-        if (prev.prevRoot === undefined) delete process.env.WOPAL_SPACE_ROOT
-        else process.env.WOPAL_SPACE_ROOT = prev.prevRoot
-      }),
-  )
+  Effect.promise(async () => {
+    await fs.mkdir(path.join(spaceRoot, ".wopal"), { recursive: true })
+    await fs.writeFile(path.join(spaceRoot, ".wopal", ".git"), "")
+  }).pipe(Effect.andThen(self))
 
 describe("skill", () => {
   it.live("discovers skills from .opencode/skill/ directory", () =>

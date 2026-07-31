@@ -84,6 +84,7 @@ export type PluginInput = {
   }
   serverUrl: URL
   $: BunShell
+  wopalSpaceRoot?: string
 }
 
 export type PluginOptions = Record<string, unknown>

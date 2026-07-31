@@ -218,9 +218,9 @@ GitHub issue URL 从 `anomalyco/opencode` 替换为 `wopal-cn/${BINARY_NAME}`，
 ### 空间根契约
 
 - **CLI 单目录运行**：入口将检测结果映射为 `WOPAL_SPACE=1` 与 `WOPAL_SPACE_ROOT=<绝对路径>`，供同一 CLI 进程使用。
-- **Server/sidecar 多 instance 运行**：Config state 按 directory 保存 `WopalSpaceContext | undefined`。PluginInput、Skill、Instruction 与子进程启动器消费当前 instance context。
-- **空间子目录**：从空间根或其任意子目录进入都得到同一个 `root` 与 `wopalDir`。
-- **非 WopalSpace**：context 为 `undefined`，保持 OpenCode-compatible capability loading。
+- **Server/sidecar 多 instance 运行**：每个配置加载和插件创建都按 directory 独立检测空间根。PluginInput 接收可选 `wopalSpaceRoot`。
+- **空间子目录**：从空间根或其任意子目录进入都得到同一个 `wopalSpaceRoot`。
+- **非 WopalSpace**：`wopalSpaceRoot` 缺失，保持 OpenCode-compatible capability loading。
 - `--disable-wopalspace` 仅控制 CLI 检测入口，作为显式逃生舱。
 
 > CLI flag 命名为 `--disable-wopalspace`（无 `no-` 前缀），避开 yargs 对 `--no-XXX` 的内置取反解析。yargs 会把它解析为 `disableWopalspace` 字段。
@@ -231,7 +231,7 @@ CLI 入口中间件先清除继承的 `WOPAL_SPACE`/`WOPAL_SPACE_ROOT`，再执�
 
 ### 实现逻辑
 
-独立文件 `packages/ellamaka/detect.ts` 提供纯目录检测。CLI 入口将结果转换成单进程兼容 env。Sidecar 将结果保存进 Config 的 InstanceState，并通过 PluginInput 和 instance services 显式传递。
+独立文件 `packages/ellamaka/detect.ts` 提供纯目录检测。CLI 入口将结果转换成单进程兼容 env。Sidecar 直接将当前 directory 的检测结果传给 PluginInput，不把空间状态写入进程 env。
 
 ---
 
@@ -275,7 +275,7 @@ $WOPAL_HOME/config → $WOPAL_HOME/ → <space>/.wopal/
 
 #### 短路设计
 
-`tryLoadWopalSpaceConfig()` 在当前 Config state 含 WopalSpaceContext 时：
+`tryLoadWopalSpaceConfig()` 在当前 directory 检测到空间根时：
 1. 调用 `loadWopalSpaceSettingsFiles()` 获取目录列表和设置文件
 2. 合并全局配置，然后遍历空间设置文件（`settings.jsonc` → `settings.local.jsonc`）提取 `ellamaka` 字段并合并
 3. 从目录加载 agents（含 frontmatter mergeDeep）、commands、plugins
@@ -283,7 +283,7 @@ $WOPAL_HOME/config → $WOPAL_HOME/ → <space>/.wopal/
 
 ### 6.2 非 WopalSpace 模式配置加载
 
-当前 Config state 不含 WopalSpaceContext 时，配置文件入口只属于 Ellamaka：
+当前 directory 未检测到空间根时，配置文件入口只属于 Ellamaka：
 
 ```
 ① $WOPAL_HOME/config/settings.jsonc  — ellamaka 全局配置
@@ -317,13 +317,13 @@ $WOPAL_HOME/config → $WOPAL_HOME/ → <space>/.wopal/
 3. 生成 `{ name, version: "file:<插件目录>" }` 形式的 install 请求
 4. 返回依赖列表，与 `@opencode-ai/plugin` 一起交给 `npmSvc.install` 安装到该目录的 `node_modules`
 
-**范围限定**：依赖收集只作用于 Ellamaka 管理的 capability roots：`Global.Path.wopalHome` 与当前 WopalSpace instance 的 `wopalDir`。其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）保持 upstream 行为，只安装 `@opencode-ai/plugin`。
+**范围限定**：依赖收集只作用于 Ellamaka 管理的 capability roots：`Global.Path.wopalHome` 与当前 WopalSpace 的 `<wopalSpaceRoot>/.wopal/`。其他能力目录（`.opencode/`、`~/.opencode/`、`~/.config/opencode/`）保持 upstream 行为，只安装 `@opencode-ai/plugin`。
 
-**与 WopalSpace 模式的关系**：两个模式复用同一插件依赖收集与安装服务，分别接收 `$WOPAL_HOME` 或当前 instance 的 `wopalDir`。
+**与 WopalSpace 模式的关系**：两个模式复用同一插件依赖收集与安装服务，分别接收 `$WOPAL_HOME` 或当前 instance 的 `<wopalSpaceRoot>/.wopal/`。
 
 ### 6.3 目录扫描守卫
 
-`ConfigPaths.directories()` 负责非 WopalSpace 的 OpenCode-compatible capability directories。WopalSpace 请求从当前 Config instance state 获得专属目录序列，不依赖进程级 `Flag.WOPAL_SPACE` 过滤其他 instance。
+`ConfigPaths.directories()` 负责非 WopalSpace 的 OpenCode-compatible capability directories。WopalSpace 请求从当前 directory 检测结果构造专属目录序列，不依赖进程级 `Flag.WOPAL_SPACE` 过滤其他 instance。
 
 ---
 
@@ -400,26 +400,25 @@ slashName: Flag.WOPAL_SPACE ? undefined : "help",
 
 ### 目的
 
-运行模式属于当前 instance。一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace instance，各 instance 的 Config、Plugin、Skill、Instruction 和 child process environment 使用同一份可选 WopalSpaceContext。
+运行模式属于当前 directory。一个 sidecar 同时承载非 WopalSpace 与多个 WopalSpace instance。每次配置加载和插件创建独立检测可选 `wopalSpaceRoot`。
 
 ### Context Contract
 
 | 运行边界 | Context 来源 | 所有权 |
 |----------|--------------|--------|
 | CLI 单目录运行 | `detectWopalSpace(process.cwd())`，入口映射为 `WOPAL_SPACE*` | 当前 CLI 进程 |
-| Server/sidecar | `detectWopalSpace(InstanceContext.directory)`，保存为 Config InstanceState | 当前 directory instance |
-| Plugin | `PluginInput.wopalSpace` | 当前 plugin instance |
-| Shell/PTY/MCP/LSP | 当前 Config WopalSpaceContext 构造的 child env | 当前 child process |
+| Server/sidecar | `detectWopalSpace(InstanceContext.directory)` | 当前 directory instance |
+| Plugin | `PluginInput.wopalSpaceRoot` | 当前 plugin instance |
 
 `WOPAL_HOME` 是进程级安装根。`WOPAL_SPACE` 与 `WOPAL_SPACE_ROOT` 是 CLI 兼容边界，不表达 sidecar 的当前空间。Sidecar 配置加载保持无进程级空间 env 副作用。
 
 ### 非 WopalSpace 模式
 
-非 WopalSpace instance 的 context 为 `undefined`。配置入口由 `$WOPAL_HOME/config/settings.jsonc` 所有；capability loading 保持 OpenCode-compatible 的目录发现、外部技能与覆盖机制，并在末层叠加 `$WOPAL_HOME` 全局能力。Child process environment 不包含 `WOPAL_SPACE` 或 `WOPAL_SPACE_ROOT`。
+非 WopalSpace instance 没有 `wopalSpaceRoot`。配置入口由 `$WOPAL_HOME/config/settings.jsonc` 所有；capability loading 保持 OpenCode-compatible 的目录发现、外部技能与覆盖机制，并在末层叠加 `$WOPAL_HOME` 全局能力。Plugin 的 `.env`、日志、规则、prompt 和模板路径归 `$WOPAL_HOME` 所有。
 
 ### WopalSpace 模式
 
-WopalSpace instance 的 context 包含 `{ root, wopalDir }`。从空间根或其任意子目录运行时都使用同一个 root。空间 settings、agents、commands、plugins、skills 与 TUI 配置均从该 root 的 `.wopal/` 加载。Child process environment 只注入当前 instance 的 `WOPAL_SPACE=1` 与 `WOPAL_SPACE_ROOT=<root>`。
+WopalSpace instance 的 `wopalSpaceRoot` 是空间根。从空间根或其任意子目录运行时都使用同一个值。空间 settings、agents、commands、plugins、skills 与 TUI 配置均从 `<wopalSpaceRoot>/.wopal/` 加载。Plugin 的空间级 `.env`、日志、规则、prompt 和模板路径由该字段定位。
 
 `.claude/skills/` 与 Claude compatibility instructions 的启用状态由当前 instance mode 决定。`.agents/skills/` 在两种模式下都参与 OpenCode-compatible 技能发现。
 
