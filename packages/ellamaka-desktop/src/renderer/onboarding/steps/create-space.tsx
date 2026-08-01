@@ -69,7 +69,17 @@ export function CreateSpaceStep(props: StepProps) {
         : []
       setExistingSpaces(spaces)
       if (spaces.length > 0) {
-        props.onStatusChange?.("success")
+        // Auto-confirm reuse: execute backend skip to mark step done, then user can proceed directly
+        try {
+          const res = await window.api.onboardingExecuteStep("create-space", { skip: true })
+          if (res.status === "skipped" || res.status === "completed" || res.status === "reused") {
+            props.onStatusChange?.("success")
+          } else {
+            props.onStatusChange?.("idle")
+          }
+        } catch {
+          props.onStatusChange?.("idle")
+        }
       }
 
       const defaultPath = typeof envData.defaultSpacePath === "string"

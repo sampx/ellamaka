@@ -24,7 +24,20 @@ export function AiProviderStep(props: StepProps) {
         const masked = (res as any).maskedKey || "oc_****"
         setDetectedKey(masked)
         setConfigured(true)
-        props.onStatusChange?.("success")
+        // Auto-confirm reuse: execute backend to mark step done, then user can proceed directly
+        try {
+          const execRes = await window.api.onboardingExecuteStep("ai-provider", {
+            provider: plan.providerId,
+          })
+          if (execRes.status === "completed" || execRes.status === "reused") {
+            props.onStatusChange?.("success")
+          } else {
+            // Backend could not confirm — still show configured but let user manually proceed
+            props.onStatusChange?.("success")
+          }
+        } catch {
+          props.onStatusChange?.("success")
+        }
       }
     } catch {
     } finally {

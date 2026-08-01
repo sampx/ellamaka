@@ -11,19 +11,18 @@ import {
 } from "./step-controller"
 
 describe("step-controller", () => {
-  test("ONBOARDING_STEPS contains 8 steps in order", () => {
-    expect(ONBOARDING_STEPS.length).toBe(8)
+  test("ONBOARDING_STEPS contains 7 steps in order", () => {
+    expect(ONBOARDING_STEPS.length).toBe(7)
     expect(ONBOARDING_STEPS[0]).toBe("system-check")
     expect(ONBOARDING_STEPS[1]).toBe("install-cli")
-    expect(ONBOARDING_STEPS[3]).toBe("ontology-setup")
-    expect(ONBOARDING_STEPS[4]).toBe("create-space")
-    expect(ONBOARDING_STEPS[5]).toBe("ai-provider")
-    expect(ONBOARDING_STEPS[6]).toBe("memory-config")
-    expect(ONBOARDING_STEPS[7]).toBe("done")
+    expect(ONBOARDING_STEPS[2]).toBe("ontology-setup")
+    expect(ONBOARDING_STEPS[3]).toBe("create-space")
+    expect(ONBOARDING_STEPS[4]).toBe("ai-provider")
+    expect(ONBOARDING_STEPS[5]).toBe("memory-config")
+    expect(ONBOARDING_STEPS[6]).toBe("done")
   })
 
   test("isOptionalStep correctly identifies optional steps", () => {
-    expect(isOptionalStep("github-auth")).toBe(true)
     expect(isOptionalStep("ai-provider")).toBe(true)
     expect(isOptionalStep("memory-config")).toBe(true)
     expect(isOptionalStep("system-check")).toBe(false)
@@ -59,7 +58,6 @@ describe("step-controller", () => {
   })
 
   test("credential steps require an explicit action before navigation", () => {
-    expect(isExplicitActionStep("github-auth")).toBe(true)
     expect(isExplicitActionStep("ai-provider")).toBe(true)
     expect(isExplicitActionStep("ontology-setup")).toBe(true)
     expect(isExplicitActionStep("create-space")).toBe(true)

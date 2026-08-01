@@ -67,7 +67,7 @@ export type ElectronAPI = {
     step: import("../shared/onboarding-constants").OnboardingStepName,
   ) => Promise<{ status: string; currentStep?: string; message?: string }>
   onboardingExecuteStep: (
-    step: import("../shared/onboarding-constants").OnboardingStepName,
+    step: import("../shared/onboarding-constants").OnboardingStepName | "github-auth",
     input?: unknown,
   ) => Promise<OnboardingStepResult>
   onboardingComplete: () => Promise<OnboardingStepResult>

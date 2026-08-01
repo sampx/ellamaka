@@ -742,7 +742,7 @@ function noopPersistWopalHomeEnv(_wopalHome: string): { success: boolean; messag
   return { success: true }
 }
 
-const STEP_OPERATION_LABELS: Record<OnboardingStepName, string> = {
+const STEP_OPERATION_LABELS: Record<string, string> = {
   "system-check": "检查系统环境",
   "install-cli": "安装与配置基础组件",
   "github-auth": "配置 GitHub 认证",

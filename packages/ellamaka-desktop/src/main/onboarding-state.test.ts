@@ -128,16 +128,16 @@ describe("onboarding-state", () => {
     let state = createDefaultOnboardingState()
     state = updateStep(state, "system-check", "completed")
     state = updateStep(state, "install-cli", "completed")
-    state = updateStep(state, "github-auth", "completed")
+    state = updateStep(state, "ontology-setup", "completed")
 
     expect(state.steps["install-cli"]).toBe("completed")
-    expect(state.steps["github-auth"]).toBe("completed")
+    expect(state.steps["ontology-setup"]).toBe("completed")
 
     const rewound = rewindToStep(state, "install-cli")
     expect(rewound.currentStep).toBe("install-cli")
     expect(rewound.completed).toBe(false)
     expect(rewound.steps["install-cli"]).toBe("pending")
-    expect(rewound.steps["github-auth"]).toBe("pending")
+    expect(rewound.steps["ontology-setup"]).toBe("pending")
   })
 
   test("navigateToStep advances currentStep and marks prior steps as done", () => {
@@ -147,7 +147,6 @@ describe("onboarding-state", () => {
     expect(state.currentStep).toBe("ontology-setup")
     expect(state.steps["system-check"]).toBe("done")
     expect(state.steps["install-cli"]).toBe("done")
-    expect(state.steps["github-auth"]).toBe("done")
     expect(state.steps["ontology-setup"]).toBe("pending")
     expect(state.steps["create-space"]).toBe("pending")
   })

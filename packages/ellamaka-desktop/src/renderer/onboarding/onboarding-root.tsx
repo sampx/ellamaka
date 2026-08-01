@@ -33,7 +33,6 @@ export interface LogEntry {
 const FORM_SUBMIT_STEPS = new Set<OnboardingStepName>([
   "system-check",
   "install-cli",
-  "github-auth",
   "ontology-setup",
   "create-space",
   "ai-provider",
@@ -377,7 +376,7 @@ export function OnboardingRoot() {
                         <span class="ob-optional-tag">可选</span>
                       </Show>
                     </div>
-                    <Show when={currentStep() !== "memory-config" && currentStep() !== "ontology-setup" && currentStep() !== "github-auth"}>
+                    <Show when={currentStep() !== "memory-config" && currentStep() !== "ontology-setup"}>
                       <p class="ob-card-description">{content()?.goal ?? meta().description}</p>
                     </Show>
                   </div>
@@ -428,7 +427,7 @@ export function OnboardingRoot() {
                       </Match>
 
                       {/* Phase 2 Steps */}
-                      <Match when={currentStep() === "ontology-setup" || currentStep() === "github-auth"}>
+                      <Match when={currentStep() === "ontology-setup"}>
                         <OntologySetupStep onComplete={handleNext} onError={handleError} onStatusChange={handleStepStatusChange} />
                       </Match>
 

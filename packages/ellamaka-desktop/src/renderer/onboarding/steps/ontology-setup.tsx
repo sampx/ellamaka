@@ -108,7 +108,27 @@ export function OntologySetupStep(props: StepProps) {
       setOntologyProbe(ontology)
       setMode(initial.mode)
       if (ontology.status === "ready") {
-        props.onStatusChange?.("idle")
+        // Auto-confirm reuse: execute backend to mark step done, then user can proceed directly
+        try {
+          const res = await executeOntologySetup(
+            {
+              mode: ontology.mode === "fork" ? "fork" : "clone",
+              hasGithubAuth: auth.detected,
+              githubToken: "",
+              reuseExisting: true,
+            },
+            window.api.onboardingExecuteStep,
+          )
+          if (res.status === "completed" || res.status === "reused") {
+            setResultInfo(normalizeOntologyResult(res.result, ontology.mode === "fork" ? "fork" : "clone", "official"))
+            props.onStatusChange?.("success")
+          } else {
+            // Backend reuse failed — fall back to idle, user can manually retry
+            props.onStatusChange?.("idle")
+          }
+        } catch {
+          props.onStatusChange?.("idle")
+        }
       } else if (ontology.status === "broken") {
         props.onStatusChange?.("error")
       } else {

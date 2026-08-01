@@ -4,7 +4,6 @@ import { zhCN, type StepContent } from "./content/zh-CN"
 export { ONBOARDING_STEPS, type OnboardingStepName }
 
 export const OPTIONAL_STEPS: Set<OnboardingStepName> = new Set([
-  "github-auth",
   "ai-provider",
   "memory-config",
 ])
@@ -55,9 +54,6 @@ export const PHASE_CONFIGS: PhaseConfig[] = [
 ]
 
 export function getPhaseForStep(step: OnboardingStepName | "done" | string): PhaseConfig {
-  if (step === "github-auth") {
-    return PHASE_CONFIGS[1] // Phase 2
-  }
   if (step === "star-guide") {
     return PHASE_CONFIGS[3] // Phase 4
   }
@@ -103,12 +99,6 @@ export const STEP_METADATA: Record<OnboardingStepName | "done" | string, StepMet
     description: zhCN.steps["install-ellamaka-cli"].goal,
     optional: false,
     content: zhCN.steps["install-ellamaka-cli"],
-  },
-  "github-auth": {
-    title: zhCN.steps["github-auth"].title,
-    description: zhCN.steps["github-auth"].goal,
-    optional: true,
-    content: zhCN.steps["github-auth"],
   },
   "ai-provider": {
     title: zhCN.steps["ai-provider"].title,
@@ -160,7 +150,6 @@ export type ForwardMode = "submit" | "advance" | "disabled"
 export type FeedbackMode = "idle" | "working" | "error" | "hidden"
 
 const EXPLICIT_ACTION_STEPS = new Set<OnboardingStepName>([
-  "github-auth",
   "ai-provider",
   "ontology-setup",
   "create-space",
@@ -220,11 +209,7 @@ export function createStepController(initialStep: OnboardingStepName | "done" | 
       if (currentStep === "done") return
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx !== -1 && idx < ONBOARDING_STEPS.length - 1) {
-        let nextStep = ONBOARDING_STEPS[idx + 1]
-        if (nextStep === "github-auth") {
-          nextStep = "ontology-setup"
-        }
-        currentStep = nextStep
+        currentStep = ONBOARDING_STEPS[idx + 1]
       } else {
         currentStep = "done"
       }
@@ -236,11 +221,7 @@ export function createStepController(initialStep: OnboardingStepName | "done" | 
       }
       const idx = ONBOARDING_STEPS.indexOf(currentStep as OnboardingStepName)
       if (idx > 0) {
-        let prevStep = ONBOARDING_STEPS[idx - 1]
-        if (prevStep === "github-auth") {
-          prevStep = "install-cli"
-        }
-        currentStep = prevStep
+        currentStep = ONBOARDING_STEPS[idx - 1]
       }
     },
     skip: (context?: StepContext) => {

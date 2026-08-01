@@ -114,7 +114,20 @@ export function MemoryConfigStep(props: StepProps) {
       }
       applyProbe(p)
       if (p.globalMemory || p.spaceMemory || p.effectiveSpace) {
-        props.onStatusChange?.("success")
+        // Auto-confirm reuse: execute backend with current probed config to mark step done
+        try {
+          const form = getFormState()
+          const payload = buildMemoryPayload(form)
+          const res = await window.api.onboardingExecuteStep("memory-config", payload)
+          if (res.status === "completed" || res.status === "reused") {
+            props.onStatusChange?.("success")
+          } else {
+            // Backend could not confirm — still let user proceed, state will be reconciled by navigateToStep
+            props.onStatusChange?.("success")
+          }
+        } catch {
+          props.onStatusChange?.("success")
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t.probeFailed
