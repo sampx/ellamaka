@@ -398,3 +398,29 @@ jobs:
             echo "- Gitee (ellamaka): https://gitee.com/wopal-cn/ellamaka/releases/tag/v${VERSION}"
             echo "- Gitee (ontology): https://gitee.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-v${VERSION}"
           } >> $GITHUB_STEP_SUMMARY
+
+  cleanup:
+    name: Prune historical ellamaka releases
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka' && needs.version.outputs.release != ''
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Prune releases beyond keep-count (R2 + GitHub + Gitee)
+        env:
+          # aws s3api reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          # Cross-repo delete on wopal-space-ontology needs the RELEASE_TOKEN PAT.
+          # github.token only has scope on wopal-cn/ellamaka.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
+        run: |
+          node scripts/cleanup-ellamaka-releases.mjs --keep 5 --keep-prerelease 1
