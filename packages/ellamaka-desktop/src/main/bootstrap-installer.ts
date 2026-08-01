@@ -1,5 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { OnboardingStepResult } from "../preload/types"
 import { getWopalHome } from "./onboarding-state"
@@ -151,9 +152,8 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
     options.abortSignal?.removeEventListener("abort", abortFetch)
   }
 
-  // Write script to temporary location
-  const tmpDir = join(homePath, "tmp")
-  if (!existsSync(tmpDir)) mkdirSync(tmpDir, { recursive: true })
+  // Write script to system temp directory (not WOPAL_HOME/tmp).
+  const tmpDir = mkdtempSync(join(tmpdir(), "wopal-install-"))
   const scriptPath = join(tmpDir, isWin ? "install.ps1" : "install.sh")
 
   // Remove the final exec command that would replace our process
@@ -204,6 +204,7 @@ export async function installWopalCli(options: InstallWopalCliOptions = {}): Pro
     const cleanup = () => {
       if (timer) clearTimeout(timer)
       options.abortSignal?.removeEventListener("abort", abortHandler)
+      try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* best-effort */ }
     }
 
     const stop = async (result: OnboardingStepResult) => {

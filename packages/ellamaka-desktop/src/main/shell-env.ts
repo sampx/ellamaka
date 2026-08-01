@@ -112,6 +112,65 @@ export function resolveShellPath(
   return appPath
 }
 
+const BLOCK_START = "# >>> wopal home >>>"
+const BLOCK_END = "# <<< wopal home <<<"
+
+/**
+ * Value to write into the shell profile. Uses $HOME-relative form for the
+ * default path so dotfiles stay portable across machines/user accounts;
+ * keeps the original value for user-overridden paths.
+ */
+function wopalHomeForProfile(wopalHome: string): string {
+  const defaultHome = join(homedir(), ".wopal")
+  return wopalHome === defaultHome ? "${HOME}/.wopal" : wopalHome
+}
+
+/** Build the managed block content for the current shell. */
+function renderWopalBlock(shellName: string, wopalHome: string): string {
+  const profileHome = wopalHomeForProfile(wopalHome)
+  const isFish = shellName === "fish"
+  const varRef = "${WOPAL_HOME}"
+  const lines = [BLOCK_START]
+  if (isFish) {
+    lines.push(`set -gx WOPAL_HOME "${profileHome}"`)
+    lines.push(`fish_add_path "${varRef}/bin"`)
+  } else {
+    lines.push(`export WOPAL_HOME="${profileHome}"`)
+    lines.push(`export PATH="${varRef}/bin:$PATH"`)
+  }
+  lines.push(BLOCK_END)
+  return lines.join("\n")
+}
+
+/**
+ * Idempotently write or replace the managed block in a shell profile.
+ * Strips trailing blank lines before appending to avoid accumulating
+ * empty lines on repeated runs.
+ */
+function ensureShellBlock(profilePath: string, shellName: string, wopalHome: string): void {
+  const block = renderWopalBlock(shellName, wopalHome)
+  const escapedStart = BLOCK_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const escapedEnd = BLOCK_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const blockRegex = new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`)
+
+  let content = existsSync(profilePath) ? readFileSync(profilePath, "utf-8") : ""
+
+  // Migrate: remove legacy "# WopalSpace Environment" block (single export line).
+  content = content.replace(/\n?# WopalSpace Environment\nexport WOPAL_HOME=.*\n?/g, "")
+  content = content.replace(/\n?# WopalSpace Environment\nset -gx WOPAL_HOME .*\n?/g, "")
+
+  if (blockRegex.test(content)) {
+    // Replace existing block.
+    content = content.replace(blockRegex, block)
+  } else {
+    // Strip trailing blank lines, then ensure exactly one blank line separator.
+    content = content.replace(/\n+$/, "")
+    content = content.length === 0 ? block : `${content}\n\n${block}`
+  }
+
+  writeFileSync(profilePath, content.endsWith("\n") ? content : `${content}\n`, "utf-8")
+}
+
 export function persistWopalHomeEnv(wopalHome: string): { success: boolean; message?: string } {
   const log = getLogger()
   try {
@@ -119,16 +178,19 @@ export function persistWopalHomeEnv(wopalHome: string): { success: boolean; mess
     const isWin = process.platform === "win32"
 
     if (isWin) {
-      // 1. Windows: setx command for User environment variables
-      const res = spawnSync("setx", ["WOPAL_HOME", wopalHome], { windowsHide: true })
+      // Windows: use .NET API via PowerShell to avoid setx's 1024-char PATH truncation.
+      const psScript = `[Environment]::SetEnvironmentVariable('WOPAL_HOME', '${wopalHome.replace(/'/g, "''")}', 'User')`
+      const res = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", psScript], {
+        windowsHide: true,
+      })
       if (res.error || res.status !== 0) {
-        const errMsg = res.error?.message || res.stderr?.toString() || `setx exited with code ${res.status}`
-        log.error("[shell-env] Failed to run setx WOPAL_HOME:", errMsg)
+        const errMsg = res.error?.message || res.stderr?.toString() || `PowerShell exited with code ${res.status}`
+        log.error("[shell-env] Failed to set WOPAL_HOME via PowerShell:", errMsg)
         return { success: false, message: `Failed to set Windows environment variable: ${errMsg}` }
       }
-      return { success: true, message: "Windows WOPAL_HOME user environment variable set via setx." }
+      return { success: true, message: "Windows WOPAL_HOME user environment variable set." }
     } else {
-      // 2. POSIX (macOS & Linux): append/update shell profile files
+      // POSIX (macOS & Linux): idempotent managed block in shell profile(s).
       const userShell = getUserShell()
       const shellName = basename(userShell).toLowerCase()
       const home = homedir()
@@ -151,25 +213,7 @@ export function persistWopalHomeEnv(wopalHome: string): { success: boolean; mess
         try {
           const dir = join(profilePath, "..")
           if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
-          let content = existsSync(profilePath) ? readFileSync(profilePath, "utf-8") : ""
-          const isFish = profilePath.endsWith(".fish")
-          const lineToSet = isFish
-            ? `set -gx WOPAL_HOME "${wopalHome}"`
-            : `export WOPAL_HOME="${wopalHome}"`
-
-          const pattern = isFish
-            ? /^set\s+-gx\s+WOPAL_HOME\s+.*$/m
-            : /^export\s+WOPAL_HOME=.*$/m
-
-          if (pattern.test(content)) {
-            content = content.replace(pattern, lineToSet)
-          } else {
-            const nl = content.endsWith("\n") || content.length === 0 ? "" : "\n"
-            content += `${nl}\n# WopalSpace Environment\n${lineToSet}\n`
-          }
-
-          writeFileSync(profilePath, content, "utf-8")
+          ensureShellBlock(profilePath, shellName, wopalHome)
         } catch (err) {
           log.error(`[shell-env] Error updating profile ${profilePath}:`, err)
         }
