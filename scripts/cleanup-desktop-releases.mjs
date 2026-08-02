@@ -170,7 +170,7 @@ function listGithubReleases(repo) {
 
 function deleteGithubRelease(repo, tag, dryRun) {
   if (dryRun) {
-    console.log(`  [DRY RUN] would delete GitHub release ${repo}:${tag}`);
+    console.log(`  [DRY RUN] would delete GitHub release + tag ${repo}:${tag}`);
     return;
   }
   const idCmd = `gh api repos/${repo}/releases/tags/${tag} --jq '.id'`;
@@ -182,7 +182,12 @@ function deleteGithubRelease(repo, tag, dryRun) {
     return;
   }
   execSync(`gh api -X DELETE repos/${repo}/releases/${releaseId}`, { stdio: "inherit" });
-  console.log(`  deleted GitHub release ${repo}:${tag}`);
+  try {
+    execSync(`gh api -X DELETE repos/${repo}/git/refs/tags/${tag}`, { stdio: ["pipe", "pipe", "pipe"] });
+    console.log(`  deleted GitHub release + tag ${repo}:${tag}`);
+  } catch {
+    console.log(`  deleted GitHub release ${repo}:${tag} (tag deletion skipped — not found)`);
+  }
 }
 
 // --- Gitee cleanup ---
@@ -203,12 +208,18 @@ function listGiteeReleases(token, repo) {
 function deleteGiteeRelease(token, repo, release, dryRun) {
   const [owner, repoName] = repo.split("/");
   if (dryRun) {
-    console.log(`  [DRY RUN] would delete Gitee release ${repo}:${release.tag_name} (id=${release.id})`);
+    console.log(`  [DRY RUN] would delete Gitee release + tag ${repo}:${release.tag_name} (id=${release.id})`);
     return;
   }
   const url = `${GITEE_BASE}/repos/${owner}/${repoName}/releases/${release.id}?access_token=${encodeURIComponent(token)}`;
   execSync(`curl -fsSL -X DELETE "${url}"`, { stdio: "inherit" });
-  console.log(`  deleted Gitee release ${repo}:${release.tag_name} (id=${release.id})`);
+  const tagUrl = `${GITEE_BASE}/repos/${owner}/${repoName}/git/refs/tags/${release.tag_name}?access_token=${encodeURIComponent(token)}`;
+  try {
+    execSync(`curl -fsSL -X DELETE "${tagUrl}"`, { stdio: ["pipe", "pipe", "pipe"] });
+    console.log(`  deleted Gitee release + tag ${repo}:${release.tag_name} (id=${release.id})`);
+  } catch {
+    console.log(`  deleted Gitee release ${repo}:${release.tag_name} (id=${release.id}) (tag deletion skipped)`);
+  }
 }
 
 // --- Main ---

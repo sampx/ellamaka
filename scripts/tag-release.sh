@@ -360,9 +360,9 @@ if git -C "$REPO_ROOT" tag -l "$RESOLVED_TAG" | grep -q "$RESOLVED_TAG"; then
   git -C "$REPO_ROOT" tag -d "$RESOLVED_TAG"
 fi
 
-# Create tag + push
+# Create tag + push (annotated tag for reliable creation timestamp)
 echo "→ 创建 tag: $RESOLVED_TAG"
-git -C "$REPO_ROOT" tag "$RESOLVED_TAG"
+git -C "$REPO_ROOT" tag -a "$RESOLVED_TAG" -m "Release $RESOLVED_TAG"
 
 echo "→ 原子推送 main 和 $RESOLVED_TAG"
 git -C "$REPO_ROOT" push origin main "$RESOLVED_TAG"
