@@ -27,7 +27,7 @@ const artifactPrefix = channel === "beta" ? "ellamaka-desktop-beta" : "ellamaka-
 const getBase = (): Configuration => ({
   ...(electronDist ? { electronDist } : {}),
   ...(buildVersion ? { buildVersion } : {}),
-  artifactName: `${artifactPrefix}-${os}-${arch}.${ext}`,
+  artifactName: `${artifactPrefix}-\${os}-\${arch}.\${ext}`,
   copyright: "Copyright © 2025 Ellamaka",
   extraMetadata: {
     name: packageName,
@@ -56,7 +56,7 @@ const getBase = (): Configuration => ({
     entitlementsInherit: "resources/entitlements.plist",
     notarize: false,
     target: ["dmg", "zip"],
-    artifactName: `${artifactPrefix}-${os}-${arch}.${ext}`,
+    artifactName: `${artifactPrefix}-\${os}-\${arch}.\${ext}`,
   },
   dmg: {
     sign: false,
@@ -81,7 +81,7 @@ const getBase = (): Configuration => ({
     icon: "resources/icons",
     category: "Development",
     target: ["AppImage", "deb", "rpm"],
-    artifactName: `${artifactPrefix}-${os}-${arch}.${ext}`,
+    artifactName: `${artifactPrefix}-\${os}-\${arch}.\${ext}`,
     executableName: "ellamaka",
   },
 })
