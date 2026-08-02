@@ -63,7 +63,7 @@ export function parseArgs(argv) {
 //   arch names for linux: amd64 (deb), x86_64 (AppImage, rpm). Both are
 //   normalized to x64 in the manifest.
 const CLI_ARCHIVE_RE = /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/
-const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-([^-]+)-(arm64|x64|amd64|x86_64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
+const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-(?:beta-)?([^-]+)-(arm64|x64|amd64|x86_64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
 const DESKTOP_OS_MAP = { darwin: "darwin", mac: "darwin", win32: "windows", win: "windows", linux: "linux" }
 const DESKTOP_ARCH_MAP = { arm64: "arm64", x64: "x64", amd64: "x64", x86_64: "x64" }
 const ARCHIVE_EXT_RE = /\.(tar\.gz|zip|dmg|exe|AppImage|deb|rpm)$/
