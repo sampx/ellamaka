@@ -401,7 +401,7 @@ jobs:
 
   cleanup:
     name: Prune historical ellamaka releases
-    needs: build-and-release
+    needs: [version, build-and-release]
     runs-on: ubuntu-latest
     if: github.repository == 'wopal-cn/ellamaka' && needs.version.outputs.release != ''
     continue-on-error: true

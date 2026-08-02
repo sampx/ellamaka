@@ -21,10 +21,10 @@ on:
 # 自动触发，虽脚本会在启动后 cancel，但浪费 runner 配额且令用户困惑。
 # 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
 
-# Desktop 创建 wopal-space-ontology GitHub/Gitee Release（与 CLI workflow 一致），
+# Desktop 创建 ellamaka + wopal-space-ontology GitHub/Gitee Release（与 CLI workflow 一致），
 # tag 前缀 ellamaka-desktop-v 以区分 CLI 的 ellamaka-v。
 permissions:
-  contents: read
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -415,6 +415,28 @@ jobs:
           done
           echo "CDN cache warmup complete."
 
+      - name: Create or update ellamaka GitHub release
+        if: needs.version.outputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          version="$VERSION"
+          tag="ellamaka-desktop-v${version}"
+          if gh release view "$tag" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
+            gh release edit "$tag" \
+              --repo wopal-cn/ellamaka \
+              --draft=false \
+              --notes-file release-output/release-notes.md
+            echo "Updated ellamaka release $tag"
+          else
+            gh release create "$tag" \
+              --repo wopal-cn/ellamaka \
+              --title "ellamaka-desktop v${version}" \
+              --notes-file release-output/release-notes.md
+            echo "Created ellamaka release $tag"
+          fi
+
       - name: Create or update ontology GitHub release
         if: needs.version.outputs.release != ''
         env:
@@ -440,6 +462,15 @@ jobs:
               --notes-file release-output/release-notes.md
             echo "Created ontology release $tag"
           fi
+
+      - name: Create or update ellamaka Gitee release
+        if: needs.version.outputs.release != ''
+        continue-on-error: true
+        env:
+          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          node scripts/create-gitee-release.mjs --version "$VERSION" --repo wopal-cn/ellamaka --tag ellamaka-desktop-v"$VERSION" --notes-file release-output/release-notes.md
 
       - name: Create or update ontology Gitee release
         if: needs.version.outputs.release != ''
@@ -474,7 +505,7 @@ jobs:
 
   cleanup:
     name: Prune historical desktop releases
-    needs: release
+    needs: [version, release]
     runs-on: ubuntu-latest
     if: github.repository == 'wopal-cn/ellamaka' && needs.version.outputs.release != ''
     continue-on-error: true
