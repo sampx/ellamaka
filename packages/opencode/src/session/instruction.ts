@@ -60,20 +60,20 @@ export const layer: Layer.Layer<
     const global = yield* Global.Service
     const flags = yield* RuntimeFlags.Service
     const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
-    const disableClaudeCodePrompt = flags.disableClaudeCodePrompt || (yield* cfg.isWopalSpace())
-    const globalFiles = [
-      path.join(global.config, "AGENTS.md"),
-      ...(!disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
-    ]
-    const instructionFiles = files(disableClaudeCodePrompt)
 
     const state = yield* InstanceState.make(
-      Effect.fn("Instruction.state")(() =>
-        Effect.succeed({
+      Effect.fn("Instruction.state")(function* () {
+        const disableClaudeCodePrompt = flags.disableClaudeCodePrompt || (yield* cfg.isWopalSpace())
+        return {
           // Track which instruction files have already been attached for a given assistant message.
           claims: new Map<MessageID, Set<string>>(),
-        }),
-      ),
+          globalFiles: [
+            path.join(global.config, "AGENTS.md"),
+            ...(!disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
+          ],
+          instructionFiles: files(disableClaudeCodePrompt),
+        }
+      }),
     )
 
     const relative = Effect.fnUntraced(function* (instruction: string) {
@@ -110,9 +110,10 @@ export const layer: Layer.Layer<
     const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
       const config = yield* cfg.get()
       const ctx = yield* InstanceState.context
+      const s = yield* InstanceState.get(state)
       const paths = new Set<string>()
 
-      for (const file of globalFiles) {
+      for (const file of s.globalFiles) {
         if (yield* fs.existsSafe(file)) {
           paths.add(path.resolve(file))
           break
@@ -121,7 +122,7 @@ export const layer: Layer.Layer<
 
       // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
       if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-        for (const file of instructionFiles) {
+        for (const file of s.instructionFiles) {
           const matches = yield* fs
             .findUp(file, ctx.directory, ctx.worktree)
             .pipe(Effect.catch(() => Effect.succeed([])))
@@ -169,7 +170,8 @@ export const layer: Layer.Layer<
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {
-      for (const file of instructionFiles) {
+      const s = yield* InstanceState.get(state)
+      for (const file of s.instructionFiles) {
         const filepath = path.resolve(path.join(dir, file))
         if (yield* fs.existsSafe(filepath)) return filepath
       }

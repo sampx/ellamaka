@@ -64,7 +64,6 @@ export interface SessionProvisioner {
 
 export class Service extends Context.Service<Service, SessionProvisioner>()("@opencode/SessionProvisioner") {}
 
-const WOPAL_CLI = CliContract.executablePath()
 const WOPAL_HOME = Global.Path.wopalHome
 
 const make = Effect.gen(function* () {
@@ -78,7 +77,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const snapshot = yield* registry.getSpaces()
       if (snapshot.spaces.length > 0) return snapshot.spaces
-      return (yield* registry.refreshSpaces(WOPAL_CLI)).spaces
+      return (yield* registry.refreshSpaces(CliContract.executablePath())).spaces
     })
 
   const ensureHealthyDirectory = (directory: string) =>

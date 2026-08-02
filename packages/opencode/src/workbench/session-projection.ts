@@ -75,7 +75,6 @@ interface RawSessionRow {
   time_archived: number | null
 }
 
-const WOPAL_CLI = CliContract.executablePath()
 const MAX_LIMIT_PER_SCOPE = 500
 
 /**
@@ -125,7 +124,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const snapshot = yield* registry.getSpaces()
       if (snapshot.spaces.length > 0) return snapshot.spaces
-      return (yield* registry.refreshSpaces(WOPAL_CLI)).spaces
+      return (yield* registry.refreshSpaces(CliContract.executablePath())).spaces
     })
 
   const spacesOrEmpty = () =>
@@ -187,9 +186,10 @@ const make = Effect.gen(function* () {
       // against the owning space's root before passing to the tree builder.
       // A single global fetch would only cover whichever space the serve CWD
       // happens to sit in, missing every other (dynamically created) space.
+      const cli = CliContract.executablePath()
       const projectsPerSpace = yield* Effect.all(
         resolvedSpaces.map((space) =>
-          registry.refreshProjects(WOPAL_CLI, space.name).pipe(
+          registry.refreshProjects(cli, space.name).pipe(
             Effect.map((snapshot) =>
               snapshot.items.map((project) => {
                 const absoluteProjectPath = resolveSpaceRootPath(space.path, project.path)
@@ -205,6 +205,7 @@ const make = Effect.gen(function* () {
                 }
               }),
             ),
+            Effect.catch((_cause) => Effect.succeed([])),
           ),
         ),
         { concurrency: 4 },
@@ -251,10 +252,11 @@ const make = Effect.gen(function* () {
           spacePath: input.spacePath,
         })
       }
+      const cli = CliContract.executablePath()
       const [projects, rows, searched] = yield* Effect.all([
-        registry.refreshProjects(WOPAL_CLI, space.name),
+        registry.refreshProjects(cli, space.name),
         activeRows(),
-        input.query?.trim() ? registry.searchSpace(WOPAL_CLI, input.query.trim(), space.name, "dir") : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+        input.query?.trim() ? registry.searchSpace(cli, input.query.trim(), space.name, "dir") : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
       ], { concurrency: 3 })
       const candidates: Array<{ kind: WorkbenchLocation["kind"]; name: string; path: string; lastUsedAt?: number }> = [
         { kind: "space-root" as const, name: space.name, path: space.path },

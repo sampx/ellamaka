@@ -10,17 +10,11 @@ import type { SpaceEntry } from "@/wopal/cli-schema"
 // CLI executable path
 // ---------------------------------------------------------------------------
 
-const WOPAL_CLI = CliContract.executablePath()
-
-// ---------------------------------------------------------------------------
-// Space list helper
-// ---------------------------------------------------------------------------
-
 const resolveSpaces = (registry: SpaceRegistry) =>
   Effect.gen(function* () {
     const snapshot = yield* registry.getSpaces()
     if (snapshot.spaces.length > 0) return snapshot.spaces
-    const refreshed = yield* registry.refreshSpaces(WOPAL_CLI)
+    const refreshed = yield* registry.refreshSpaces(CliContract.executablePath())
     return refreshed.spaces
   }).pipe(Effect.catch(() => Effect.succeed([] as SpaceEntry[])))
 

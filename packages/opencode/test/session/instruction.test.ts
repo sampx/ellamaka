@@ -5,6 +5,8 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { NodeFileSystem } from "@effect/platform-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { Config } from "../../src/config/config"
+import { InstanceState } from "../../src/effect/instance-state"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Instruction } from "../../src/session/instruction"
 import type { MessageV2 } from "../../src/session/message-v2"
@@ -106,6 +108,26 @@ function loaded(filepath: string): MessageV2.WithParts[] {
     },
   ]
 }
+
+describe("Instruction.layer", () => {
+  it.live("builds without WOPAL_SPACE or InstanceRef", () =>
+    Effect.scoped(
+      Layer.build(
+        Instruction.layer.pipe(
+          Layer.provide(
+            Layer.mock(Config.Service, {
+              isWopalSpace: () => InstanceState.context.pipe(Effect.as(false)),
+            }),
+          ),
+          Layer.provide(AppFileSystem.defaultLayer),
+          Layer.provide(FetchHttpClient.layer),
+          Layer.provide(Global.layerWith({ home: "/tmp", config: "/tmp" })),
+          Layer.provide(RuntimeFlags.layer({ wopalSpace: false, disableClaudeCodePrompt: false })),
+        ),
+      ),
+    ).pipe(Effect.asVoid),
+  )
+})
 
 describe("Instruction.resolve", () => {
   it.live("returns empty when AGENTS.md is at project root (already in systemPaths)", () =>

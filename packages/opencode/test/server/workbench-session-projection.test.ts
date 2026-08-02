@@ -318,6 +318,49 @@ describe("session-projection-group-resolution", () => {
       expect(location!.sessions[0].branch).toBe("feat/wt")
     }),
   )
+
+  it.instance("getSessionTree keeps all scopes when one project refresh fails", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const brokenDir = path.join(instance.directory, "broken-space")
+      const healthyDir = path.join(instance.directory, "healthy-space")
+      yield* Effect.sync(() => {
+        require("fs").mkdirSync(brokenDir, { recursive: true })
+        require("fs").mkdirSync(healthyDir, { recursive: true })
+      })
+      const spaces: SpaceEntry[] = [
+        { name: "broken", path: brokenDir },
+        { name: "healthy", path: healthyDir },
+      ]
+      const layer = SessionProjection.layer.pipe(
+        Layer.provide(SessionDirectoryHealth.defaultLayer),
+        Layer.provide(
+          Layer.succeed(SpaceRegistry.Service, {
+            getSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshProjects: (_executable, spaceName) =>
+              spaceName === "broken"
+                ? Effect.fail(new SpaceControlUnavailable({ message: "broken space" }))
+                : Effect.succeed({ items: [], total: 0, refreshedAt: 1 }),
+            searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 1 }),
+          }),
+        ),
+      )
+
+      const tree = yield* Effect.promise(() =>
+        Effect.runPromise(
+          Effect.gen(function* () {
+            const projection = yield* SessionProjection.Service
+            return yield* projection.getSessionTree()
+          }).pipe(Effect.scoped, Effect.provide(layer)),
+        ),
+      )
+
+      const names = tree.scopes.map((scope) => scope.name)
+      expect(names).toContain("broken")
+      expect(names).toContain("healthy")
+    }),
+  )
 })
 
 describe("resolveSpaceRootPath", () => {

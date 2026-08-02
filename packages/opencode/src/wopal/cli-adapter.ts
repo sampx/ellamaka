@@ -40,8 +40,11 @@ const make = Effect.gen(function* () {
     // the closure so the returned Effect has no requirements.
     Effect.suspend((): Effect.Effect<T, SpaceControlUnavailable | CapabilityContractError> => {
       const timeout = opts?.timeout ?? defaultTimeout
+      const isTs = executablePath.endsWith(".ts")
+      const execCmd = isTs ? "bun" : executablePath
+      const execArgs = isTs ? [executablePath, ...args] : args
       return spawner
-        .spawn(ChildProcess.make(executablePath, args, { stdin: "ignore", stdout: "pipe", stderr: "pipe" }))
+        .spawn(ChildProcess.make(execCmd, execArgs, { stdin: "ignore", stdout: "pipe", stderr: "pipe" }))
         .pipe(
           Effect.catch((cause) =>
             Effect.fail(
@@ -69,11 +72,11 @@ const make = Effect.gen(function* () {
                 const body =
                   exitCode !== 0
                     ? parseEnvelope(stdout, expectedCapability).pipe(
-                        Effect.catchTag("SpaceControlUnavailable", () =>
+                        Effect.catchTag("SpaceControlUnavailable", (error) =>
                           Effect.fail(
                             new SpaceControlUnavailable({
                               message: "CLI exited with non-zero code and non-JSON stdout",
-                              reason: `exit code ${exitCode}`,
+                              reason: `exit code ${exitCode}: ${error.reason}`,
                             }),
                           ),
                         ),

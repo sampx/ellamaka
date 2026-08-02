@@ -30,10 +30,24 @@ export const CliRepairSchema = Schema.Struct({
 export type CliRepair = typeof CliRepairSchema.Type
 
 export function executablePath() {
+  if (process.env.WOPAL_DEV_CLI_PATH && existsSync(process.env.WOPAL_DEV_CLI_PATH)) {
+    return process.env.WOPAL_DEV_CLI_PATH
+  }
   return path.join(Global.Path.wopalHome, "bin", process.platform === "win32" ? "wopal.exe" : "wopal")
 }
 
-export function classifyWopalCliVersion(actualVersion: string): CliHealth {
+export function classifyWopalCliVersion(
+  actualVersion: string,
+  options: { development?: boolean } = {},
+): CliHealth {
+  if (options.development && actualVersion.trim()) {
+    return {
+      state: "ok",
+      requiredVersion: MIN_WOPAL_CLI_VERSION,
+      actualVersion,
+    }
+  }
+
   const normalized = semver.valid(actualVersion)
   if (!normalized) {
     return {
@@ -62,7 +76,10 @@ const make = Effect.gen(function* () {
 
   const run = (command: string, args: string[]) =>
     Effect.gen(function* () {
-      const child = yield* spawner.spawn(ChildProcess.make(command, args, { stdin: "ignore", stdout: "pipe", stderr: "pipe" }))
+      const isTs = command.endsWith(".ts")
+      const execCmd = isTs ? "bun" : command
+      const execArgs = isTs ? [command, ...args] : args
+      const child = yield* spawner.spawn(ChildProcess.make(execCmd, execArgs, { stdin: "ignore", stdout: "pipe", stderr: "pipe" }))
       return yield* Effect.all(
         [
           Stream.mkString(Stream.decodeText(child.stdout)),
@@ -81,6 +98,8 @@ const make = Effect.gen(function* () {
 
   const inspectNow = (): Effect.Effect<CliHealth> => {
     const executable = executablePath()
+    const developmentPath = process.env.WOPAL_DEV_CLI_PATH
+    const development = Boolean(developmentPath && path.resolve(executable) === path.resolve(developmentPath))
     if (!existsSync(executable)) {
       return Effect.succeed({ state: "missing", requiredVersion: MIN_WOPAL_CLI_VERSION })
     }
@@ -94,7 +113,7 @@ const make = Effect.gen(function* () {
             reason: stderr.trim() || `wopal --version exited with code ${exitCode}`,
           }
         }
-        return classifyWopalCliVersion(stdout.trim())
+        return classifyWopalCliVersion(stdout.trim(), { development })
       }),
       Effect.catch((cause) =>
         Effect.succeed({

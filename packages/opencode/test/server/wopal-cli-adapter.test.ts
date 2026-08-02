@@ -1,6 +1,9 @@
 import { describe, expect } from "bun:test"
+import path from "path"
 import { Effect, Layer, Schema } from "effect"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
+import { tmpdirScoped } from "../fixture/fixture"
 import { CliAdapter } from "../../src/wopal/cli-adapter"
 import { SpaceRegistry } from "../../src/wopal/space-registry"
 
@@ -8,6 +11,7 @@ const it = testEffect(
   Layer.mergeAll(
     SpaceRegistry.layer.pipe(Layer.provide(CliAdapter.defaultLayer)),
     CliAdapter.defaultLayer,
+    CrossSpawnSpawner.defaultLayer,
   ),
 )
 
@@ -38,6 +42,30 @@ const shellCmd = (json: string, exitCode?: number): [string, string[]] => {
 // ---------------------------------------------------------------------------
 
 describe("wopal-cli-adapter", () => {
+  it.live("executes a TypeScript development CLI through Bun", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const executable = path.join(dir, "wopal.ts")
+      const data = { items: [{ name: "main", path: "/tmp/workspace", type: "local" }], total: 1 }
+      yield* Effect.promise(() => Bun.write(executable, `process.stdout.write(${JSON.stringify(successEnvelope("space.list", data))})\n`))
+
+      const adapter = yield* CliAdapter.Service
+      const result = yield* adapter.execute(
+        executable,
+        [],
+        "space.list",
+        Schema.Struct({
+          items: Schema.Array(
+            Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) }),
+          ),
+          total: Schema.Number,
+        }),
+      )
+
+      expect(result).toEqual(data)
+    }),
+  )
+
   it.live("decodes v1 success envelope for space.list", () =>
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
