@@ -109,4 +109,23 @@ describe("cleanup-desktop-releases: selectForDeletion", () => {
     expect(toDelete).not.toContain("ellamaka-desktop-v1.15.13-4");
     expect(toDelete).not.toContain("ellamaka-desktop-v1.15.13-3");
   });
+
+  it("handles ellamaka repo tag format (desktop-v tags in wopal-cn/ellamaka)", () => {
+    // wopal-cn/ellamaka holds the same ellamaka-desktop-v tag shape as the
+    // ontology repo; cleanup must classify and prune them identically.
+    const ellamakaTags = [
+      "ellamaka-desktop-v1.15.13-2",
+      "ellamaka-desktop-v1.15.13-1",
+      "ellamaka-desktop-v1.15.13-beta.4",
+      "ellamaka-desktop-v1.15.13-beta.3",
+      "ellamaka-desktop-v1.15.13-beta.2",
+    ];
+    const toDelete = selectForDeletion(ellamakaTags, 3, 2);
+    // 2 prod (under 3 keep) → none deleted from prod
+    // 3 beta, keep 2 → delete the oldest beta (beta.2)
+    expect(toDelete).toEqual(["ellamaka-desktop-v1.15.13-beta.2"]);
+    expect(toDelete).not.toContain("ellamaka-desktop-v1.15.13-2");
+    expect(toDelete).not.toContain("ellamaka-desktop-v1.15.13-beta.4");
+    expect(toDelete).not.toContain("ellamaka-desktop-v1.15.13-beta.3");
+  });
 });

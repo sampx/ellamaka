@@ -11,9 +11,12 @@
  *   1. Cloudflare R2 — delete ellamaka-desktop/v<VERSION>/ (prod) and
  *      ellamaka-desktop/beta/v<VERSION>/ (beta) prefixes. Never touches
  *      latest/ aliases.
- *   2. GitHub (wopal-cn/wopal-space-ontology) — delete releases tagged
+ *   2. GitHub (wopal-cn/ellamaka) — delete releases tagged
+ *      ellamaka-desktop-v<VERSION>. Leaves v* and ellamaka-v* alone.
+ *   3. GitHub (wopal-cn/wopal-space-ontology) — delete releases tagged
  *      ellamaka-desktop-v<VERSION>. Leaves cli-v* and ellamaka-v* alone.
- *   3. Gitee (wopal-cn/wopal-space-ontology) — same tag filter.
+ *   4. Gitee (wopal-cn/ellamaka) — same tag filter.
+ *   5. Gitee (wopal-cn/wopal-space-ontology) — same tag filter.
  *
  * Tag → version parsing:
  *   ellamaka-desktop-v1.15.13-2      → { version: "1.15.13-2",      channel: "prod" }
@@ -28,7 +31,7 @@
  *
  * Environment variables:
  *   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / R2_ENDPOINT — R2 credentials
- *   GH_TOKEN    — GitHub PAT with repo scope on wopal-space-ontology
+ *   GH_TOKEN    — GitHub PAT with repo scope on both wopal-cn repos
  *   GITEE_TOKEN — Gitee API token
  */
 
@@ -157,36 +160,38 @@ function deleteR2Prefix(r2Url, r2Root, version, dryRun) {
 // --- GitHub cleanup ---
 
 const GH_REPO = "wopal-cn/wopal-space-ontology";
+const ELLAMAKA_REPO = "wopal-cn/ellamaka";
 
-function listGithubReleases() {
-  const cmd = `gh api repos/${GH_REPO}/releases --paginate --jq '[.[] | select(.tag_name | startswith("${TAG_PREFIX}"))] | .[].tag_name'`;
+function listGithubReleases(repo) {
+  const cmd = `gh api repos/${repo}/releases --paginate --jq '[.[] | select(.tag_name | startswith("${TAG_PREFIX}"))] | .[].tag_name'`;
   const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
   return output.trim().split("\n").filter((t) => t.startsWith(TAG_PREFIX));
 }
 
-function deleteGithubRelease(tag, dryRun) {
+function deleteGithubRelease(repo, tag, dryRun) {
   if (dryRun) {
-    console.log(`  [DRY RUN] would delete GitHub release ${tag}`);
+    console.log(`  [DRY RUN] would delete GitHub release ${repo}:${tag}`);
     return;
   }
-  const idCmd = `gh api repos/${GH_REPO}/releases/tags/${tag} --jq '.id'`;
+  const idCmd = `gh api repos/${repo}/releases/tags/${tag} --jq '.id'`;
   let releaseId;
   try {
     releaseId = execSync(idCmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
   } catch {
-    console.log(`  skip ${tag} (release not found)`);
+    console.log(`  skip ${repo}:${tag} (release not found)`);
     return;
   }
-  execSync(`gh api -X DELETE repos/${GH_REPO}/releases/${releaseId}`, { stdio: "inherit" });
-  console.log(`  deleted GitHub release ${tag}`);
+  execSync(`gh api -X DELETE repos/${repo}/releases/${releaseId}`, { stdio: "inherit" });
+  console.log(`  deleted GitHub release ${repo}:${tag}`);
 }
 
 // --- Gitee cleanup ---
 
 const GITEE_BASE = "https://gitee.com/api/v5";
 
-function listGiteeReleases(token) {
-  const url = `${GITEE_BASE}/repos/${GH_REPO}/releases?access_token=${encodeURIComponent(token)}&per_page=100`;
+function listGiteeReleases(token, repo) {
+  const [owner, repoName] = repo.split("/");
+  const url = `${GITEE_BASE}/repos/${owner}/${repoName}/releases?access_token=${encodeURIComponent(token)}&per_page=100`;
   const cmd = `curl -fsSL "${url}"`;
   const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
   const releases = JSON.parse(output);
@@ -195,14 +200,15 @@ function listGiteeReleases(token) {
     .map((r) => ({ id: r.id, tag_name: r.tag_name }));
 }
 
-function deleteGiteeRelease(token, release, dryRun) {
+function deleteGiteeRelease(token, repo, release, dryRun) {
+  const [owner, repoName] = repo.split("/");
   if (dryRun) {
-    console.log(`  [DRY RUN] would delete Gitee release ${release.tag_name} (id=${release.id})`);
+    console.log(`  [DRY RUN] would delete Gitee release ${repo}:${release.tag_name} (id=${release.id})`);
     return;
   }
-  const url = `${GITEE_BASE}/repos/${GH_REPO}/releases/${release.id}?access_token=${encodeURIComponent(token)}`;
+  const url = `${GITEE_BASE}/repos/${owner}/${repoName}/releases/${release.id}?access_token=${encodeURIComponent(token)}`;
   execSync(`curl -fsSL -X DELETE "${url}"`, { stdio: "inherit" });
-  console.log(`  deleted Gitee release ${release.tag_name} (id=${release.id})`);
+  console.log(`  deleted Gitee release ${repo}:${release.tag_name} (id=${release.id})`);
 }
 
 // --- Main ---
@@ -278,16 +284,34 @@ async function main() {
     console.log("  nothing to delete");
   }
 
-  // --- GitHub ---
+  // --- GitHub: wopal-cn/ellamaka ---
+  console.log(`\n=== GitHub (${ELLAMAKA_REPO}): listing ellamaka-desktop-v* releases ===`);
+  const ghEllamakaTags = listGithubReleases(ELLAMAKA_REPO);
+  console.log(`  found ${ghEllamakaTags.length} ellamaka-desktop-v* releases`);
+  const ghEllamakaDelete = selectForDeletion(ghEllamakaTags, flags.keepProd, flags.keepBeta);
+  if (ghEllamakaDelete.length > 0) {
+    console.log(`  deleting ${ghEllamakaDelete.length} releases:`);
+    for (const tag of ghEllamakaDelete) {
+      try {
+        deleteGithubRelease(ELLAMAKA_REPO, tag, flags.dryRun);
+      } catch (err) {
+        console.error(`  failed to delete ${tag}: ${err.message}`);
+      }
+    }
+  } else {
+    console.log("  nothing to delete");
+  }
+
+  // --- GitHub: wopal-cn/wopal-space-ontology ---
   console.log(`\n=== GitHub (${GH_REPO}): listing ellamaka-desktop-v* releases ===`);
-  const ghTags = listGithubReleases();
+  const ghTags = listGithubReleases(GH_REPO);
   console.log(`  found ${ghTags.length} ellamaka-desktop-v* releases`);
   const ghDelete = selectForDeletion(ghTags, flags.keepProd, flags.keepBeta);
   if (ghDelete.length > 0) {
     console.log(`  deleting ${ghDelete.length} releases:`);
     for (const tag of ghDelete) {
       try {
-        deleteGithubRelease(tag, flags.dryRun);
+        deleteGithubRelease(GH_REPO, tag, flags.dryRun);
       } catch (err) {
         console.error(`  failed to delete ${tag}: ${err.message}`);
       }
@@ -298,10 +322,34 @@ async function main() {
 
   // --- Gitee ---
   if (giteeToken) {
+    console.log(`\n=== Gitee (${ELLAMAKA_REPO}): listing ellamaka-desktop-v* releases ===`);
+    let giteeEllamakaReleases = [];
+    try {
+      giteeEllamakaReleases = listGiteeReleases(giteeToken, ELLAMAKA_REPO);
+      console.log(`  found ${giteeEllamakaReleases.length} ellamaka-desktop-v* releases`);
+    } catch (err) {
+      console.error(`  Gitee list failed: ${err.message}`);
+    }
+    const giteeEllamakaTags = giteeEllamakaReleases.map((r) => r.tag_name);
+    const giteeEllamakaDeleteTags = selectForDeletion(giteeEllamakaTags, flags.keepProd, flags.keepBeta);
+    const giteeEllamakaDelete = giteeEllamakaReleases.filter((r) => giteeEllamakaDeleteTags.includes(r.tag_name));
+    if (giteeEllamakaDelete.length > 0) {
+      console.log(`  deleting ${giteeEllamakaDelete.length} releases:`);
+      for (const release of giteeEllamakaDelete) {
+        try {
+          deleteGiteeRelease(giteeToken, ELLAMAKA_REPO, release, flags.dryRun);
+        } catch (err) {
+          console.error(`  failed to delete ${release.tag_name}: ${err.message}`);
+        }
+      }
+    } else {
+      console.log("  nothing to delete");
+    }
+
     console.log(`\n=== Gitee (${GH_REPO}): listing ellamaka-desktop-v* releases ===`);
     let giteeReleases = [];
     try {
-      giteeReleases = listGiteeReleases(giteeToken);
+      giteeReleases = listGiteeReleases(giteeToken, GH_REPO);
       console.log(`  found ${giteeReleases.length} ellamaka-desktop-v* releases`);
     } catch (err) {
       console.error(`  Gitee list failed: ${err.message}`);
@@ -313,7 +361,7 @@ async function main() {
       console.log(`  deleting ${giteeDelete.length} releases:`);
       for (const release of giteeDelete) {
         try {
-          deleteGiteeRelease(giteeToken, release, flags.dryRun);
+          deleteGiteeRelease(giteeToken, GH_REPO, release, flags.dryRun);
         } catch (err) {
           console.error(`  failed to delete ${release.tag_name}: ${err.message}`);
         }
