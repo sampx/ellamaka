@@ -55,7 +55,7 @@ P1 的 canonical release source：
 P2 的 canonical consumer：
 
 1. `wopal ellamaka install`：默认安装 Desktop latest + CLI stable latest，并在落盘前校验兼容性。
-2. `wopal ellamaka install --headless`：只安装外部 Ellamaka CLI。
+2. `wopal ellamaka install --cli`：只安装外部 Ellamaka CLI。
 3. `wopal setup`：确保完整产品并拉起 Desktop Setup Center。
 4. Desktop-first：Desktop bootstrap Wopal CLI 后，通过 machine operation 安装并校验 CLI stable latest。
 5. 人工从 GitHub/Gitee Release 页面点击 R2 链接下载。
@@ -160,7 +160,7 @@ dist/ellamaka-windows-x64-baseline.zip
 4. 先上传全部文件到 workflow-run staging prefix 并回读校验，再以禁止覆盖的写入复制 artifacts、checksums 和 release notes 到 `s3://wopal-release/ellamaka/v$VERSION/`；最后写入 `manifest.json` 作为正式发布提交点
 5. 回读 versioned manifest/artifacts 并校验 identity、SHA-256 和完整性；有效 manifest 已存在时 fail closed，禁止覆盖。只有 partial objects、没有 manifest/latest/updater/Release 页面引用且能证明 attempt ownership 时，可显式清理后从修复 commit 同版本重试
 6. 直接更新 CLI stable latest——CLI 是独立产品，发布不受任何 Desktop 版本约束（见 RELEASE-IDENTITY.md §11）
-7. 整对象替换 headless/full-product 共用的 stable latest `s3://wopal-release/ellamaka/latest/manifest.json`
+7. 整对象替换 cli-only/full-product 共用的 stable latest `s3://wopal-release/ellamaka/latest/manifest.json`
 8. 主动 purge latest 的 CDN cache；mutable alias 更新失败时 workflow 失败，但不得回滚或覆盖 versioned release，只能基于已提交 manifest 单独重试 promotion
 9. 创建 4 个 release 条目（均使用本次 CLI 的 `release-notes.md`，**不挂 binary**）：
    - GitHub `wopal-cn/ellamaka`：`gh release create ellamaka-cli-v$VERSION --repo wopal-cn/ellamaka --notes-file`
@@ -306,15 +306,15 @@ Contract：
 ellamaka CLI 通过以下渠道分发到用户本地：
 
 - **主路径**：`wopal ellamaka install` 完整安装或 Desktop Setup Center 的 `install-engine` machine operation。
-- **Headless 路径**：`wopal ellamaka install --headless`。
+- **CLI-only 路径**：`wopal ellamaka install --cli`。
 - **手动下载**：用户从 GitHub/Gitee Release 页面点击 R2 链接下载。
 
 ### 安装契约
 
 consumer（wopal-cli 或 Desktop）在安装 ellamaka 时须遵循以下契约：
 
-- 只从 R2 读取机器契约：headless 读取 CLI `latest/manifest.json`；完整产品读取 Desktop channel latest 与 CLI stable latest。
-- Headless 安装默认使用 Engine stable latest；完整产品安装和 Setup Center 根据 Desktop requirements 校验同一个 CLI stable latest。
+- 只从 R2 读取机器契约：cli-only 读取 CLI `latest/manifest.json`；完整产品读取 Desktop channel latest 与 CLI stable latest。
+- CLI-only 安装默认使用 Engine stable latest；完整产品安装和 Setup Center 根据 Desktop requirements 校验同一个 CLI stable latest。
 - 修改本机前解析并验证完整安装计划；CLI latest 不兼容时明确失败并建议刷新或重试，不搜索历史版本或回退到 `testedWith`。
 - 根据平台和稳定 artifact naming 计算目标文件名，不依赖 GitHub API 解析 release 页面。
 - 安装目标固定为上述 binary path。
@@ -338,7 +338,7 @@ consumer（wopal-cli 或 Desktop）在安装 ellamaka 时须遵循以下契约�
 2. 读取 `ellamaka/latest/manifest.json`，校验 product、stable channel、upstream baseline 和 engine API range。
 3. 安装 Desktop + CLI，并校验实际 release identity。
 
-`wopal ellamaka install --beta --headless` 是无意义的参数组合，必须返回 option conflict；headless stable 使用 `--headless`。本期 Wopal 公共安装命令不安装 CLI prerelease；CLI prerelease 只保留 versioned artifact 供发布验证和人工诊断。
+`wopal ellamaka install --beta --cli` 是无意义的参数组合，必须返回 option conflict；cli-only stable 使用 `--cli`。本期 Wopal 公共安装命令不安装 CLI prerelease；CLI prerelease 只保留 versioned artifact 供发布验证和人工诊断。
 
 `wopal setup` 默认安装或复用 stable Desktop。`wopal setup --beta` 显式选择 beta Desktop；不在 Desktop 安装前增加 channel prompt。`--beta` 与 `--terminal` 冲突，因为 terminal setup 不安装 Desktop。
 

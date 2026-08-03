@@ -56,7 +56,7 @@ Desktop prod: X.Y.Z
 
 ### 4.1 Ellamaka CLI
 
-`ellamaka-cli` 是可独立安装的 Engine/CLI 产品，支持 Wopal 完整安装、headless 安装和手动下载。其 SemVer 表达 CLI 与 Engine 公共契约的演进。
+`ellamaka-cli` 是可独立安装的 Engine/CLI 产品，支持 Wopal 完整安装、cli-only 安装和手动下载。其 SemVer 表达 CLI 与 Engine 公共契约的演进。
 
 ### 4.2 Ellamaka Desktop
 
@@ -394,7 +394,7 @@ Desktop 保留自己的 manifest policy gate。electron-updater 负责平台 fee
 
 | 变更                                     |   CLI    |  Desktop   |
 | ---------------------------------------- | :------: | :--------: |
-| CLI 参数、headless、独立 binary 修复     |   发布   |   不发布   |
+| CLI 参数、cli-only、独立 binary 修复     |   发布   |   不发布   |
 | Desktop UI、Electron、窗口、updater 修复 |  不发布  |    发布    |
 | 共享 Engine/API/数据库变更               |   发布   |    发布    |
 | 新 OpenCode baseline                     | 通常发布 |  通常发布  |
