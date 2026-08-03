@@ -62,4 +62,35 @@ describe("updater: authorizeUpdate policy gate", () => {
     expect(result.authorized).toBe(false)
     expect(result.reason).toMatch(/same|no-op|downgrade/)
   })
+
+  test("rc sorts above beta (compareSemVer rank: stable > rc > beta)", () => {
+    // rc.1 should authorize as an upgrade from beta.5 (rc > beta per SemVer).
+    const result = authorizeUpdate(
+      validInput({
+        currentVersion: "1.17.0-beta.5",
+        currentChannel: "beta",
+        targetVersion: "1.17.0-rc.1",
+        targetChannel: "beta", // same channel for the gate; rc is allowed in beta feed
+        targetManifestVersion: "1.17.0-rc.1",
+      }),
+    )
+    // Note: rc in a beta feed is a channel question; the policy gate treats
+    // targetChannel from the version string. This test asserts the SemVer
+    // precedence (rc > beta) drives the authorization.
+    expect(result.authorized).toBe(true)
+  })
+
+  test("beta does NOT authorize as upgrade from rc (rc > beta)", () => {
+    const result = authorizeUpdate(
+      validInput({
+        currentVersion: "1.17.0-rc.1",
+        currentChannel: "beta",
+        targetVersion: "1.17.0-beta.2",
+        targetChannel: "beta",
+        targetManifestVersion: "1.17.0-beta.2",
+      }),
+    )
+    expect(result.authorized).toBe(false)
+    expect(result.reason).toMatch(/downgrade/)
+  })
 })

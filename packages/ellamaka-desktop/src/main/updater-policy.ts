@@ -27,12 +27,28 @@ function compareSemVer(a: string, b: string): number {
   for (let i = 0; i < 3; i++) {
     if (pa[i] !== pb[i]) return (pa[i] ?? 0) - (pb[i] ?? 0)
   }
-  // prerelease: stable (no 4th part) > prerelease
-  const aPre = a.includes("-")
-  const bPre = b.includes("-")
-  if (!aPre && bPre) return 1
-  if (aPre && !bPre) return -1
-  if (aPre && bPre) return (pa[4] ?? 0) - (pb[4] ?? 0)
+  // prerelease rank: stable > rc > beta. Use the raw string identifier
+  // (Number("rc") and Number("beta") are NaN, so numeric coercion fails).
+  const idOf = (v: string) => {
+    if (!v.includes("-")) return "stable"
+    if (v.includes("-rc.")) return "rc"
+    if (v.includes("-beta.")) return "beta"
+    return "unknown"
+  }
+  const rank = (v: string) => {
+    const id = idOf(v)
+    if (id === "stable") return 3
+    if (id === "rc") return 2
+    if (id === "beta") return 1
+    return 0
+  }
+  const ra = rank(a)
+  const rb = rank(b)
+  if (ra !== rb) return ra - rb
+  // Same rank: if prerelease, compare the prerelease number.
+  if (ra < 3) {
+    return (pa[4] ?? 0) - (pb[4] ?? 0)
+  }
   return 0
 }
 

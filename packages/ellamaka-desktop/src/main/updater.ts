@@ -18,7 +18,7 @@ export function setupAutoUpdater() {
   autoUpdater.logger = logger
   autoUpdater.channel = "latest"
   autoUpdater.allowPrerelease = CHANNEL === "beta"
-  autoUpdater.allowDowngrade = true
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   logger.log("auto updater configured", {
@@ -65,6 +65,22 @@ async function checkAndDownloadUpdate(): Promise<UpdateCheckResult> {
       return { updateAvailable: false }
     }
     logger.log("update available", { version })
+    // Policy gate (docs/RELEASE-IDENTITY.md §10): authorize BEFORE download.
+    // electron-updater only handles platform feed/download/install; the
+    // channel/downgrade/manifest-version authorization is decided here.
+    const targetChannel = version.includes("-beta.") ? "beta" : "stable"
+    const auth = authorizeUpdate({
+      currentVersion: app.getVersion(),
+      currentChannel: CHANNEL === "beta" ? "beta" : "stable",
+      targetVersion: version,
+      targetChannel,
+      targetManifestVersion: version,
+    })
+    if (!auth.authorized) {
+      logger.log("update denied by policy gate", { reason: auth.reason, version })
+      return { updateAvailable: false, failed: true }
+    }
+    logger.log("update authorized", { version, channel: targetChannel })
     await autoUpdater.downloadUpdate()
     downloadedVersion = version
     logger.log("update download completed", { version })
