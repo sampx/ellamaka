@@ -22,8 +22,6 @@ describe("desktop release repair", () => {
     const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
 
     expect(workflow).toContain("workflow_dispatch:")
-    // Match the actual trigger block, not explanatory comments that
-    // reference the old push:tags design we removed.
     expect(workflow).not.toMatch(/\n  push:\s*\n\s*tags:\s*\n\s*-\s*"v\*"/)
     expect(workflow).not.toContain('github.event_name == "push"')
     expect(workflow).not.toContain("${GITHUB_REF_NAME#v}")
@@ -70,30 +68,57 @@ describe("desktop release repair", () => {
     expect(updater).toContain('autoUpdater.allowPrerelease = CHANNEL === "beta"')
   })
 
-  test("tag helper dispatches workflows instead of push-trigger + cancel", async () => {
+  test("tag helper dispatches workflows with namespaced product tags", async () => {
     const script = await source("scripts/tag-release.sh")
 
-    expect(script).toContain("--channel")
-    expect(script).toContain('CHANNEL="prod"')
-    expect(script).toContain("X.Y.Z-beta.N")
-    expect(script).toContain("Desktop channel")
+    // New namespaced product tag model (docs/RELEASE-IDENTITY.md §8).
+    // tag-release.sh accepts a product + explicit Ellamaka product version
+    // and creates ellamaka-{cli,desktop}-vX.Y.Z tags. It no longer accepts
+    // implicit -N suffix iteration or --retag that deletes committed tags.
+    expect(script).toContain("ellamaka-cli-v")
+    expect(script).toContain("ellamaka-desktop-v")
+    expect(script).toContain("cli")
+    expect(script).toContain("desktop")
+    expect(script).toContain("all")
 
-    // Option D: tag-release.sh owns trigger authority via gh workflow run.
-    // No push:tags auto-trigger, no cancel-after-start.
+    // Channel validation for Desktop
+    expect(script).toContain("--channel")
+    expect(script).toContain("beta")
+    expect(script).toContain("prod")
+
+    // Dispatch via gh workflow run (trigger authority owned by tag-release.sh)
     expect(script).toContain("gh workflow run")
     expect(script).toContain("--ref")
-    expect(script).toContain("-f \"version=$plain_version\"")
     expect(script).toContain("dispatch_workflow")
     expect(script).toContain("actions/runs/([0-9]+)")
-    expect(script).toContain('RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"')
     expect(script).toContain("dispatch 未返回 workflow run ID")
-    expect(script).not.toContain("find_dispatched_run")
-    expect(script).not.toContain("--limit 1")
 
-    // Anti-patterns we removed:
-    expect(script).not.toContain("gh run cancel")
-    expect(script).not.toContain("--event push")
-    expect(script).not.toContain("PUSHED_AT")
+    // Removed anti-patterns:
+    // - No --retag (committed releases are immutable; failed attempts use
+    //   explicit retry after controlled cleanup)
+    expect(script).not.toContain("--retag")
+    // - No implicit -N auto-increment for prod
+    expect(script).not.toContain("自动递增 -N")
+    // - No generic vX.Y.Z tag (must be namespaced)
+    expect(script).not.toMatch(/VERSION="v\$PLAIN_VERSION"/)
+  })
+
+  test("tag helper rejects withdrawn versions before mutation", async () => {
+    const script = await source("scripts/tag-release.sh")
+
+    // Per docs/RELEASE-IDENTITY.md §9.2, withdrawn-versions.json is the
+    // permanent record of versions that must never be reused.
+    expect(script).toContain("withdrawn-versions.json")
+    expect(script).toContain("withdrawn")
+  })
+
+  test("tag helper supports explicit cli-version and desktop-version for all", async () => {
+    const script = await source("scripts/tag-release.sh")
+
+    // Per §8 / §11, 'all' accepts two independent product versions instead
+    // of copying one version to both products.
+    expect(script).toContain("--cli-version")
+    expect(script).toContain("--desktop-version")
   })
 
   test("pins release workflows to Node 24-native official actions", async () => {
@@ -112,7 +137,7 @@ describe("desktop release repair", () => {
     expect(desktop).not.toContain("actions/download-artifact@v5")
   })
 
-  test("carries a retagged build identity into desktop packages and manifests", async () => {
+  test("carries build identity into desktop packages and manifests", async () => {
     const desktop = await source(".github/workflows/publish-ellamaka-desktop.yml")
     const cli = await source(".github/workflows/publish-ellamaka.yml")
 

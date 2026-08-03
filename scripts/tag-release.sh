@@ -12,7 +12,12 @@ die() {
 # --- Help ---
 usage() {
   cat <<EOF
-$SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellamaka-desktop，并 watch 至完成
+$SCRIPT — 创建 namespaced product tag 并 dispatch publish workflow
+
+按 docs/RELEASE-IDENTITY.md §8，tag-release 只接收目标 product 和显式
+Ellamaka product version，创建 ellamaka-{cli,desktop}-vX.Y.Z 格式的
+namespaced tag，并 dispatch 对应 workflow。不再支持隐式 -N 自增、
+通用 vX.Y.Z tag 或已提交 release 的 retag/覆盖。
 
 用法:
   $SCRIPT <子命令> <version> [选项]
@@ -20,65 +25,49 @@ $SCRIPT — 打 tag 并推送，按需 dispatch publish-ellamaka / publish-ellam
 ━━━ 子命令 ━━━
   cli        仅发布 CLI（dispatch publish-ellamaka）
   desktop    仅发布 Desktop（dispatch publish-ellamaka-desktop）
-  all        双发：CLI + Desktop
+  all        双发：CLI + Desktop（需 --cli-version 和 --desktop-version）
 
 ━━━ 参数 ━━━
-  version    版本号（必填）
-               CLI / prod Desktop: 任意版本号，如 0.0.1-p1-test、1.15.14
-               beta Desktop:       X.Y.Z 或 X.Y.Z-beta.N（见下方自动行为）
+  version    产品版本号（必填，cli/desktop 子命令）
+               stable:  X.Y.Z
+               beta:    X.Y.Z-beta.N
+               rc:      X.Y.Z-rc.N
 
 ━━━ 选项 ━━━
-  -h, --help        显示此帮助
-  --channel         Desktop 发布渠道: beta | prod（仅 desktop / all 有效，默认 prod）
-  --retag           强制复用已存在的远程 tag（CI 失败后重试）
-                      不加此选项时，远程 tag 已存在则自动递增
+  -h, --help            显示此帮助
+  --channel             Desktop 发布渠道: beta | prod（仅 desktop/all，默认 prod）
+  --cli-version         'all' 子命令的 CLI 版本（必填）
+  --desktop-version     'all' 子命令的 Desktop 版本（必填）
 
-━━━ 自动行为 ━━━
-  tag 自增规则:
-    prod 通道 — 自动递增 -N 后缀（v1.15.13 → v1.15.13-1 → v1.15.13-2 …）
-    beta 通道 — 自动递增 beta 序号（v1.15.14-beta.1 → v1.15.14-beta.2 …）
-
-  beta 版本号自动补全:
-    当 --channel beta 且版本号不含 -beta.N 后缀时（如 1.15.14），
-    自动查询远程已有的 v1.15.14-beta.* tag，取最大序号 +1。
-    若远程无任何 beta tag，则从 beta.1 开始。
-    ⚠️ --retag 模式下必须显式指定完整 beta 版本号，不能自动补全。
-
-  beta 版本号校验:
-    手动指定 -beta.N 时，必须符合 X.Y.Z-beta.N 格式，否则报错。
-
-  版本号 v 前缀自动补齐（输入 1.15.14 等价于 v1.15.14）
+━━━ 校验 ━━━
+  在写入前依次校验：
+  1. 版本符合标准 SemVer 子集（stable/beta/rc）
+  2. version/channel 一致
+  3. 目标版本未列入 release/withdrawn-versions.json
+  4. 目标 namespaced tag 远端不存在（或仅存在无有效 manifest 的 failed attempt）
+  5. 版本高于该产品 migration floor / 已发布最高标准版本
 
 ━━━ 示例 ━━━
-  # CLI 测试版
-  $SCRIPT cli 0.0.1-p1-test
-
   # CLI 正式版
-  $SCRIPT cli 1.15.14
+  $SCRIPT cli 1.17.1
 
-  # Desktop beta（自动补全 beta 序号）
-  $SCRIPT desktop 1.15.14 --channel beta
-
-  # Desktop beta（手动指定序号）
-  $SCRIPT desktop 1.15.14-beta.3 --channel beta
+  # Desktop beta
+  $SCRIPT desktop 1.17.0-beta.1 --channel beta
 
   # Desktop 正式版
-  $SCRIPT desktop 1.15.14 --channel prod
+  $SCRIPT desktop 1.16.2 --channel prod
 
-  # 双发 prod
-  $SCRIPT all 1.15.14
-
-  # CI 失败后重试（显式指定完整版本号）
-  $SCRIPT desktop 1.15.14-beta.1 --channel beta --retag
+  # 双发（独立版本）
+  $SCRIPT all --cli-version 1.17.1 --desktop-version 1.16.2
 EOF
   exit 0
 }
 
 # --- Argument parsing ---
 SUBCOMMAND=""
-RETAG=false
 CHANNEL="prod"
-CHANNEL_EXPLICIT=false
+CLI_VERSION=""
+DESKTOP_VERSION=""
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -89,10 +78,14 @@ while [[ $# -gt 0 ]]; do
         die "--channel 需要 beta 或 prod"
       fi
       CHANNEL="$2"
-      CHANNEL_EXPLICIT=true
       shift 2
       ;;
-    --retag) RETAG=true; shift ;;
+    --cli-version)
+      CLI_VERSION="$2"; shift 2
+      ;;
+    --desktop-version)
+      DESKTOP_VERSION="$2"; shift 2
+      ;;
     cli|desktop|all)
       [ -n "$SUBCOMMAND" ] && die "重复的子命令: $1（已指定 ${SUBCOMMAND}）"
       SUBCOMMAND="$1"
@@ -103,7 +96,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Validate subcommand
 if [ -z "$SUBCOMMAND" ]; then
   echo "错误: 缺少子命令（cli | desktop | all）" >&2
   echo "用法: $SCRIPT <子命令> <version> [选项]" >&2
@@ -111,54 +103,48 @@ if [ -z "$SUBCOMMAND" ]; then
   exit 1
 fi
 
-# Map subcommand to watch flags
+# Map subcommand
 case "$SUBCOMMAND" in
   cli)
     WATCH_CLI=true
-    WATCH_DESKTOP_AUTO=false
+    WATCH_DESKTOP=false
     ;;
   desktop)
     WATCH_CLI=false
-    WATCH_DESKTOP_AUTO=true
+    WATCH_DESKTOP=true
     ;;
   all)
     WATCH_CLI=true
-    WATCH_DESKTOP_AUTO=true
+    WATCH_DESKTOP=true
+    CLI_VERSION="${CLI_VERSION:-}"
+    DESKTOP_VERSION="${DESKTOP_VERSION:-}"
+    if [ -z "$CLI_VERSION" ] || [ -z "$DESKTOP_VERSION" ]; then
+      die "'all' 子命令需要 --cli-version 和 --desktop-version"
+    fi
     ;;
 esac
 
-VERSION="${ARGS[0]:-}"
-
-[ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT $SUBCOMMAND <version> [选项]\n试试: $SCRIPT --help"
-
-# Normalize v prefix
-case "$VERSION" in
-  v*) ;;
-  *) VERSION="v$VERSION" ;;
-esac
-TAG="$VERSION"
+# Resolve versions per product
+if [ "$SUBCOMMAND" = "all" ]; then
+  CLI_VER_INPUT="$CLI_VERSION"
+  DESKTOP_VER_INPUT="$DESKTOP_VERSION"
+else
+  VERSION="${ARGS[0]:-}"
+  [ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT $SUBCOMMAND <version> [选项]\n试试: $SCRIPT --help"
+  if [ "$SUBCOMMAND" = "cli" ]; then
+    CLI_VER_INPUT="$VERSION"
+    DESKTOP_VER_INPUT=""
+  else
+    CLI_VER_INPUT=""
+    DESKTOP_VER_INPUT="$VERSION"
+  fi
+fi
 
 # Validate channel
 case "$CHANNEL" in
   beta|prod) ;;
   *) die "无效 Desktop channel: $CHANNEL (只支持 beta 或 prod)" ;;
 esac
-
-# Validate beta version format
-PLAIN_VERSION="${TAG#v}"
-if [ "$CHANNEL" = "beta" ]; then
-  if ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
-     ! [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
-    die "beta 版本号格式无效: $PLAIN_VERSION (期望 X.Y.Z 或 X.Y.Z-beta.N)"
-  fi
-elif [[ "$PLAIN_VERSION" == *-beta.* ]]; then
-  die "beta 版本号必须指定 --channel beta"
-fi
-
-# --channel scope check: only desktop / all support channel
-if [ "$SUBCOMMAND" = "cli" ] && [ "$CHANNEL_EXPLICIT" = true ]; then
-  die "--channel 仅适用于 desktop / all 子命令，cli 子命令不支持"
-fi
 
 # --- gh availability ---
 HAVE_GH=false
@@ -169,6 +155,8 @@ fi
 # --- Locate repo ---
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WITHDRAWN_FILE="$REPO_ROOT/release/withdrawn-versions.json"
+LEGACY_INVENTORY_FILE="$REPO_ROOT/release/legacy-inventory.json"
 
 # --- Inject CLI Version ---
 if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then
@@ -180,6 +168,98 @@ REPO_URL="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null || echo "")"
 if ! echo "$REPO_URL" | grep -qE '[/:]wopal-cn/ellamaka(\.git)?$'; then
   die "remote 'origin' 不是 wopal-cn/ellamaka\n  remote: $REPO_URL\n  仓库: $REPO_ROOT"
 fi
+
+# --- Version validation helpers ---
+# validate_semver <version> <product-label>
+# Validates that version matches stable X.Y.Z, beta X.Y.Z-beta.N, or rc X.Y.Z-rc.N.
+validate_semver() {
+  local v="$1" label="$2"
+  if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    return 0
+  elif [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+    return 0
+  elif [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+    return 0
+  fi
+  die "$label 版本号格式无效: $v (期望 X.Y.Z / X.Y.Z-beta.N / X.Y.Z-rc.N)"
+}
+
+# validate_channel_version_consistency <channel> <version> <product-label>
+validate_channel_version_consistency() {
+  local channel="$1" v="$2" label="$3"
+  if [ "$channel" = "stable" ] && [[ "$v" == *-* ]]; then
+    die "$label stable 渠道版本不能含 prerelease: $v"
+  fi
+  if [ "$channel" = "beta" ]; then
+    if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
+      die "$label beta 渠道需要 -beta.N 版本，得到: $v"
+    fi
+  fi
+}
+
+# channel_for_version <version> — derive channel from version
+channel_for_version() {
+  local v="$1"
+  if [[ "$v" == *-beta.* ]]; then echo "beta"
+  elif [[ "$v" == *-rc.* ]]; then echo "rc"
+  else echo "stable"
+  fi
+}
+
+# check_withdrawn <product> <version>
+check_withdrawn() {
+  local product="$1" version="$2"
+  if [ ! -f "$WITHDRAWN_FILE" ]; then return 0; fi
+  local listed
+  listed=$(node -e "
+const w = JSON.parse(require('fs').readFileSync('$WITHDRAWN_FILE', 'utf8'));
+const arr = (w.products && w.products['$product']) || [];
+process.stdout.write(arr.includes('$version') ? 'yes' : 'no');
+" 2>/dev/null || echo "no")
+  if [ "$listed" = "yes" ]; then
+    die "版本 $version 已列入 withdrawn-versions.json，永久不得复用"
+  fi
+}
+
+# check_migration_floor <product> <version>
+check_migration_floor() {
+  local product="$1" version="$2"
+  if [ ! -f "$LEGACY_INVENTORY_FILE" ]; then return 0; fi
+  node -e "
+const inv = JSON.parse(require('fs').readFileSync('$LEGACY_INVENTORY_FILE', 'utf8'));
+const entries = inv.products && inv.products['$product'];
+if (!entries) process.exit(0);
+let highest = null;
+for (const t of (entries.tags || [])) {
+  const m = t.name.replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)-(\d+)/);
+  if (!m) continue;
+  const key = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  if (!highest || key.join('.') > highest.join('.')) highest = key;
+}
+if (!highest) process.exit(0);
+// floor = major.(minor+1).0
+const floor = [highest[0], highest[1] + 1, 0];
+const v = '$version'.split(/[.-]/).map(Number);
+const vkey = [v[0], v[1], v[2]];
+if (vkey.join('.') < floor.join('.')) {
+  console.error('版本 ' + '$version' + ' 低于 migration floor ' + floor.join('.'));
+  process.exit(1);
+}
+" || die "版本 $version 低于 migration floor（见 $LEGACY_INVENTORY_FILE）"
+}
+
+# check_tag_absent <tag>
+# Per §8/§9.2, a namespaced tag that exists remotely without an effective
+# versioned manifest is a failed attempt; the operator must use an explicit
+# retry after controlled cleanup. This script does not auto-delete committed
+# tags. We only check that the tag is absent here; failed-attempt retry is
+# handled by the cleanup scripts.
+check_tag_absent() {
+  local tag="$1"
+  if git -C "$REPO_ROOT" ls-remote --tags origin "$tag" 2>/dev/null | grep -q "refs/tags/${tag}$"; then
+    die "namespaced tag $tag 已存在于远端。若为 failed attempt，请先用 cleanup 脚本清理后再用显式 retry；已提交 release 的 tag 不可删除或覆盖。"
+  fi
+}
 
 # --- Pre-flight checks ---
 check_workspace_clean() {
@@ -220,75 +300,12 @@ check_remote_main() {
   fi
 }
 
-# --- Beta version auto-completion ---
-resolve_beta_version() {
-  local base_tag="$1"  # e.g. v1.15.14
-  local max_n=0
-
-  while IFS= read -r line; do
-    if [[ "$line" =~ refs/tags/${base_tag}-beta\.([0-9]+)$ ]]; then
-      local n="${BASH_REMATCH[1]}"
-      [ "$n" -gt "$max_n" ] && max_n="$n"
-    fi
-  done < <(git -C "$REPO_ROOT" ls-remote --tags origin "refs/tags/${base_tag}-beta.*" 2>/dev/null)
-
-  echo "${base_tag}-beta.$((max_n + 1))"
-}
-
-# --- Tag resolution ---
-# Resolves the final tag to use. If the tag already exists remotely:
-#   --retag: delete remote tag and reuse the name
-#   default: auto-increment (-N for prod, beta.N for beta)
-resolve_tag() {
-  local base_tag="$1"
-
-  # Remote doesn't exist → use directly
-  if ! git -C "$REPO_ROOT" ls-remote --tags origin "$base_tag" | grep -q "refs/tags/${base_tag}$"; then
-    echo "$base_tag"
-    return 0
-  fi
-
-  # Remote exists
-  if [ "$RETAG" = true ]; then
-    echo "  ℹ️  --retag 模式：删除远程旧 tag $base_tag" >&2
-    git -C "$REPO_ROOT" push origin ":refs/tags/$base_tag" >&2
-    echo "$base_tag"
-    return 0
-  fi
-
-  local base separator start
-  if [ "$CHANNEL" = "beta" ] && [[ "$base_tag" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+-beta\.)([0-9]+)$ ]]; then
-    base="${BASH_REMATCH[1]}"
-    separator=""
-    start=$(( ${BASH_REMATCH[2]} + 1 ))
-  elif [[ "$base_tag" =~ ^(.*)-([0-9]+)$ ]]; then
-    base="${BASH_REMATCH[1]}"
-    separator="-"
-    start=$(( ${BASH_REMATCH[2]} + 1 ))
-  else
-    base="$base_tag"
-    separator="-"
-    start=1
-  fi
-
-  local n=$start
-  while [ "$n" -le 999 ]; do
-    local candidate="${base}${separator}${n}"
-    if ! git -C "$REPO_ROOT" ls-remote --tags origin "$candidate" | grep -q "refs/tags/${candidate}$"; then
-      echo "$candidate"
-      return 0
-    fi
-    n=$((n + 1))
-  done
-
-  die "无法为 $base_tag 找到可用的递增 tag (已达上限 999)"
-}
-
 # --- Dispatch workflow ---
 dispatch_workflow() {
   local wf="$1"
   local label="$2"
-  local plain_version="${RESOLVED_TAG#v}"
+  local tag="$3"
+  local plain_version="$4"
   local channel_arg=""
 
   if [[ "$wf" == publish-ellamaka-desktop.yml ]]; then
@@ -296,10 +313,10 @@ dispatch_workflow() {
   fi
 
   local output
-  echo "→ dispatch $label workflow: $wf (ref=$RESOLVED_TAG, version=$plain_version${channel_arg:+, channel=$CHANNEL})" >&2
+  echo "→ dispatch $label workflow: $wf (ref=$tag, version=$plain_version${channel_arg:+, channel=$CHANNEL})" >&2
   # shellcheck disable=SC2086
   if ! output=$(gh workflow run "$wf" -R wopal-cn/ellamaka \
-    --ref "$RESOLVED_TAG" \
+    --ref "$tag" \
     -f "version=$plain_version" \
     $channel_arg 2>&1); then
     echo "$output" >&2
@@ -334,38 +351,60 @@ check_workspace_clean
 echo "→ 检查 remote main..."
 check_remote_main
 
-# Beta auto-completion
-if [ "$CHANNEL" = "beta" ] && [[ "$PLAIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  if [ "$RETAG" = true ]; then
-    die "--retag 需要显式指定完整 beta 版本号 (如 1.15.14-beta.3)，不能自动补全"
+# Resolve and validate per-product tags
+CLI_TAG=""
+DESKTOP_TAG=""
+CLI_PLAIN=""
+DESKTOP_PLAIN=""
+
+if [ -n "$CLI_VER_INPUT" ]; then
+  validate_semver "$CLI_VER_INPUT" "CLI"
+  validate_channel_version_consistency "stable" "$CLI_VER_INPUT" "CLI"
+  check_withdrawn "ellamaka-cli" "$CLI_VER_INPUT"
+  check_migration_floor "ellamaka-cli" "$CLI_VER_INPUT"
+  CLI_TAG="ellamaka-cli-v${CLI_VER_INPUT}"
+  CLI_PLAIN="$CLI_VER_INPUT"
+  check_tag_absent "$CLI_TAG"
+  echo "  ℹ️  CLI tag: $CLI_TAG"
+fi
+
+if [ -n "$DESKTOP_VER_INPUT" ]; then
+  validate_semver "$DESKTOP_VER_INPUT" "Desktop"
+  # Desktop channel: prod → stable, beta → beta
+  if [ "$CHANNEL" = "beta" ]; then
+    validate_channel_version_consistency "beta" "$DESKTOP_VER_INPUT" "Desktop"
+  else
+    validate_channel_version_consistency "stable" "$DESKTOP_VER_INPUT" "Desktop"
+    # prod channel must not carry beta/rc
+    if [[ "$DESKTOP_VER_INPUT" == *-beta.* ]]; then
+      die "Desktop beta 版本必须指定 --channel beta"
+    fi
   fi
-  RESOLVED_BETA="$(resolve_beta_version "$TAG")"
-  echo "  ℹ️  自动检测 beta 版本: $TAG → $RESOLVED_BETA"
-  TAG="$RESOLVED_BETA"
-  PLAIN_VERSION="${TAG#v}"
+  check_withdrawn "ellamaka-desktop" "$DESKTOP_VER_INPUT"
+  check_migration_floor "ellamaka-desktop" "$DESKTOP_VER_INPUT"
+  DESKTOP_TAG="ellamaka-desktop-v${DESKTOP_VER_INPUT}"
+  DESKTOP_PLAIN="$DESKTOP_VER_INPUT"
+  check_tag_absent "$DESKTOP_TAG"
+  echo "  ℹ️  Desktop tag: $DESKTOP_TAG"
 fi
 
-# Resolve tag
-echo "→ 解析最终 tag: $TAG"
-RESOLVED_TAG="$(resolve_tag "$TAG")"
-RESOLVED_VERSION="${RESOLVED_TAG#v}"
-if [ "$RESOLVED_TAG" != "$TAG" ] && [ "$RETAG" = false ]; then
-  echo "  ℹ️  $TAG 已存在，自动递增为 $RESOLVED_TAG"
+# Create + push tags
+if [ -n "$CLI_TAG" ]; then
+  echo "→ 创建 tag: $CLI_TAG"
+  git -C "$REPO_ROOT" tag -d "$CLI_TAG" 2>/dev/null || true
+  git -C "$REPO_ROOT" tag -a "$CLI_TAG" -m "Release $CLI_TAG"
+fi
+if [ -n "$DESKTOP_TAG" ]; then
+  echo "→ 创建 tag: $DESKTOP_TAG"
+  git -C "$REPO_ROOT" tag -d "$DESKTOP_TAG" 2>/dev/null || true
+  git -C "$REPO_ROOT" tag -a "$DESKTOP_TAG" -m "Release $DESKTOP_TAG"
 fi
 
-# Clean local tag
-echo "→ 检查本地 tag: $RESOLVED_TAG"
-if git -C "$REPO_ROOT" tag -l "$RESOLVED_TAG" | grep -q "$RESOLVED_TAG"; then
-  echo "  本地 tag 已存在，删除..."
-  git -C "$REPO_ROOT" tag -d "$RESOLVED_TAG"
-fi
-
-# Create tag + push (annotated tag for reliable creation timestamp)
-echo "→ 创建 tag: $RESOLVED_TAG"
-git -C "$REPO_ROOT" tag -a "$RESOLVED_TAG" -m "Release $RESOLVED_TAG"
-
-echo "→ 原子推送 main 和 $RESOLVED_TAG"
-git -C "$REPO_ROOT" push origin main "$RESOLVED_TAG"
+echo "→ 原子推送 main 和 tags"
+PUSH_REFS=("main")
+[ -n "$CLI_TAG" ] && PUSH_REFS+=("$CLI_TAG")
+[ -n "$DESKTOP_TAG" ] && PUSH_REFS+=("$DESKTOP_TAG")
+git -C "$REPO_ROOT" push origin "${PUSH_REFS[@]}"
 
 # Dispatch workflows
 echo ""
@@ -383,7 +422,7 @@ fi
 
 DO_WATCH_CLI=$WATCH_CLI
 DO_WATCH_DESKTOP=false
-if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP_AUTO" = true ]; then
+if [ "$DESKTOP_WF_EXISTS" = true ] && [ "$WATCH_DESKTOP" = true ]; then
   DO_WATCH_DESKTOP=true
 fi
 
@@ -391,14 +430,14 @@ RUN_CLI=""
 RUN_DESKTOP=""
 
 if [ "$DO_WATCH_CLI" = true ]; then
-  if ! RUN_CLI="$(dispatch_workflow publish-ellamaka.yml "CLI")"; then
+  if ! RUN_CLI="$(dispatch_workflow publish-ellamaka.yml "CLI" "$CLI_TAG" "$CLI_PLAIN")"; then
     die "无法确定本次 CLI workflow run"
   fi
   echo "  CLI run id: $RUN_CLI"
 fi
 
 if [ "$DO_WATCH_DESKTOP" = true ]; then
-  if ! RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop")"; then
+  if ! RUN_DESKTOP="$(dispatch_workflow publish-ellamaka-desktop.yml "Desktop" "$DESKTOP_TAG" "$DESKTOP_PLAIN")"; then
     die "无法确定本次 Desktop workflow run"
   fi
   echo "  Desktop run id: $RUN_DESKTOP"
@@ -452,10 +491,9 @@ done
 # Output URLs
 echo ""
 echo "✅ Release complete"
-echo "   Release:     https://github.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"
-[ "$DO_WATCH_CLI" = true ] && echo "   CLI R2:      https://download.coursedao.com/ellamaka/${RESOLVED_TAG}/"
-[ "$DO_WATCH_DESKTOP" = true ] && [ "$CHANNEL" = "prod" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/${RESOLVED_TAG}/"
-[ "$DO_WATCH_DESKTOP" = true ] && [ "$CHANNEL" = "beta" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/beta/${RESOLVED_TAG}/"
-[ "$DO_WATCH_CLI" = true ] && echo "   Ontology:    https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-v${RESOLVED_VERSION}"
-[ "$DO_WATCH_DESKTOP" = true ] && echo "   Ontology Desktop: https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-desktop-v${RESOLVED_VERSION}"
-[ "$DO_WATCH_CLI" = true ] && echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${RESOLVED_TAG}"
+[ -n "$CLI_TAG" ] && echo "   CLI Release:      https://github.com/wopal-cn/ellamaka/releases/tag/${CLI_TAG}"
+[ -n "$DESKTOP_TAG" ] && echo "   Desktop Release:  https://github.com/wopal-cn/ellamaka/releases/tag/${DESKTOP_TAG}"
+[ -n "$CLI_TAG" ] && echo "   CLI R2:      https://download.coursedao.com/ellamaka/v${CLI_PLAIN}/"
+[ -n "$DESKTOP_TAG" ] && [ "$CHANNEL" = "prod" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/v${DESKTOP_PLAIN}/"
+[ -n "$DESKTOP_TAG" ] && [ "$CHANNEL" = "beta" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/beta/v${DESKTOP_PLAIN}/"
+[ -n "$CLI_TAG" ] && echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${CLI_TAG}"
