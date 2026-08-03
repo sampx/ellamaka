@@ -345,11 +345,12 @@ describe("release-identity: legacy reader", () => {
 })
 
 describe("release-identity: migration floor", () => {
-  test("derives migration floor above highest legacy version", () => {
+  test("derives floor as same-base stable above highest legacy prerelease", () => {
     const inventory = loadFixture("legacy/sample-inventory.json")
     const floor = identity.computeMigrationFloor(inventory, "ellamaka-cli")
-    // Highest legacy is 1.15.13-4 → floor is 1.16.0
-    expect(floor).toBe("1.16.0")
+    // Highest legacy is 1.15.13-4; per SemVer 2.0 the same-base stable
+    // 1.15.13 already sorts above it → floor is 1.15.13, not 1.16.0.
+    expect(floor).toBe("1.15.13")
   })
 
   test("migration floor for product with no legacy defaults to 1.0.0", () => {
@@ -364,21 +365,28 @@ describe("release-identity: tag allocator fail-closed", () => {
   test("version below migration floor is rejected", () => {
     const inventory = loadFixture("legacy/sample-inventory.json")
     expect(() =>
-      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.15.14", inventory),
+      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.15.12", inventory),
     ).toThrow(/migration/)
   })
 
-  test("version at migration floor is accepted", () => {
+  test("version at migration floor is accepted (occupancy guard is separate)", () => {
     const inventory = loadFixture("legacy/sample-inventory.json")
     expect(() =>
-      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.16.0", inventory),
+      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.15.13", inventory),
     ).not.toThrow()
   })
 
-  test("version above migration floor is accepted", () => {
+  test("version above migration floor is accepted (v1 follow-upgrade path)", () => {
     const inventory = loadFixture("legacy/sample-inventory.json")
     expect(() =>
-      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.17.0", inventory),
+      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.15.14", inventory),
+    ).not.toThrow()
+  })
+
+  test("version above migration floor is accepted (minor bump)", () => {
+    const inventory = loadFixture("legacy/sample-inventory.json")
+    expect(() =>
+      identity.assertVersionAboveMigrationFloor("ellamaka-cli", "1.16.0", inventory),
     ).not.toThrow()
   })
 })

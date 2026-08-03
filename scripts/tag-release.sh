@@ -245,8 +245,11 @@ for (const t of (entries.tags || [])) {
   if (!highest || key.join('.') > highest.join('.')) highest = key;
 }
 if (!highest) process.exit(0);
-// floor = major.(minor+1).0
-const floor = [highest[0], highest[1] + 1, 0];
+// Legacy shapes are X.Y.Z-N prereleases; per SemVer 2.0 the same-base
+// stable X.Y.Z already sorts above them. Floor = base of the highest
+// legacy version (e.g. 1.15.13-4 → 1.15.13), NOT (X).(Y+1).0. The exact
+// same-base version is additionally guarded by tag/R2 occupancy checks.
+const floor = [highest[0], highest[1], highest[2]];
 const v = '$version'.split(/[.-]/).map(Number);
 const vkey = [v[0], v[1], v[2]];
 if (vkey.join('.') < floor.join('.')) {

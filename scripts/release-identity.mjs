@@ -409,9 +409,13 @@ export function parseLegacyVersion(version) {
  * Compute the migration floor for a product from a legacy inventory.
  *
  * The floor is the lowest standard SemVer that sorts above every legacy
- * release for that product. If the highest legacy version is `X.Y.Z-N`,
- * the floor is `(X).(Y+1).0`. If the product has no legacy entries, the
- * floor defaults to `1.0.0`.
+ * release for that product. Legacy shapes are `X.Y.Z-N` prereleases, so
+ * per SemVer 2.0 the same-base stable `X.Y.Z` already sorts above them.
+ * The floor is therefore the base of the highest legacy version (e.g.
+ * `1.15.13-4` → floor `1.15.13`), not `X.Y.(Z+1).0`. A later patch
+ * (`1.15.14`) passes; the exact same-base version is additionally guarded
+ * by the tag/R2 occupancy checks, which are not the floor's concern.
+ * Products with no legacy entries default to `1.0.0`.
  */
 export function computeMigrationFloor(inventory, product) {
   const entries = inventory?.products?.[product]
@@ -440,7 +444,7 @@ export function computeMigrationFloor(inventory, product) {
   }
 
   if (!highest) return "1.0.0"
-  return `${highest.major}.${highest.minor + 1}.0`
+  return `${highest.major}.${highest.minor}.${highest.patch}`
 }
 
 // Compare two legacy records by (major, minor, patch, iteration, rcN).
