@@ -32,7 +32,7 @@ Ellamaka 发布的 `version` 遵循 SemVer 2.0：
 - MAJOR：Ellamaka 对外公共契约发生不兼容变化。
 - MINOR：新增向后兼容能力，或完成较大的向后兼容上游同步。
 - PATCH：向后兼容的 bug、安全或兼容性修复。
-- prerelease：只使用 `-beta.N` 或 `-rc.N`。
+- prerelease：Desktop 只使用 `-beta.N`。CLI 不发布 prerelease（rc 机制已移除），每次发布直接递增 patch/minor。
 
 Ellamaka 的公共契约至少包括：
 
@@ -45,9 +45,9 @@ Ellamaka 的公共契约至少包括：
 发布版本采用以下规范子集：
 
 ```text
-stable: X.Y.Z
-beta:   X.Y.Z-beta.N
-rc:     X.Y.Z-rc.N
+CLI stable:   X.Y.Z
+Desktop beta: X.Y.Z-beta.N
+Desktop prod: X.Y.Z
 ```
 
 发布版本禁止 `+build` metadata。SemVer 允许 build metadata，但它不参与 precedence；允许它会产生两个不同构建排序相等的问题。构建信息统一放入结构化 `build` 字段。
@@ -84,7 +84,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
     "channel": "stable",
     "upstream": {
       "name": "opencode",
-      "version": "1.18.10",
+      "version": "1.15.13",
       "gitCommit": "<40-char-upstream-commit>"
     },
     "build": {
@@ -125,7 +125,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
     "channel": "stable",
     "upstream": {
       "name": "opencode",
-      "version": "1.18.10",
+      "version": "1.15.13",
       "gitCommit": "<40-char-upstream-commit>"
     },
     "build": {
@@ -147,7 +147,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
       "product": "ellamaka-cli",
       "channel": "stable",
       "engineApi": ">=1.2.0 <2.0.0",
-      "upstreamBaseline": "1.18.10",
+      "upstreamBaseline": "1.15.13",
       "selection": "latest"
     },
     "wopalCli": ">=0.3.8"
@@ -177,7 +177,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
 
 顶层 `version` 是 `releaseIdentity.version` 的兼容别名，二者必须完全相等。无需再增加 `displayVersion`。迁移期可保留旧顶层 `build`，但它必须等于 `releaseIdentity.build.gitCommit`，消费者迁移完成后删除。
 
-`channel` 与 SemVer 必须一致：stable 不含 prerelease；beta 只接受 `-beta.N`；rc 只接受 `-rc.N`。Desktop 内部 feed 名 `prod` 映射为 identity channel `stable`。
+`channel` 与 SemVer 必须一致：stable 不含 prerelease；Desktop beta 只接受 `-beta.N`。Desktop 内部 feed 名 `prod` 映射为 identity channel `stable`。CLI 不发布 prerelease。
 
 ### 5.4 Runtime Identity Surfaces
 
@@ -225,8 +225,8 @@ release/upstreams.lock.json
     "opencode": {
       "relationship": "baseline",
       "repository": "https://github.com/anomalyco/opencode.git",
-      "version": "1.18.10",
-      "gitCommit": "<40-char-upstream-commit>"
+      "version": "1.15.13",
+      "gitCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
     }
   },
   "componentBaselines": {
@@ -246,7 +246,7 @@ release/upstreams.lock.json
 }
 ```
 
-`sources.opencode` 是 Ellamaka Engine 当前正式采用的 OpenCode baseline，也是 v1 外部 CLI 兼容过滤使用的 baseline。`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。这样，Ellamaka 可以把 Engine 合并到 OpenCode `1.18.10`，同时继续明确记录 `packages/app` / `packages/desktop` 暂时冻结在 `1.15.13`；只有主动升级对应复制基线时才修改相应 component entry。
+`sources.opencode` 是 Ellamaka Engine 当前正式采用的 OpenCode baseline，也是 v1 外部 CLI 兼容过滤使用的 baseline。`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。这样，Ellamaka 可以把 Engine 合并到 OpenCode `1.15.13`，同时继续明确记录 `packages/app` / `packages/desktop` 冻结在同一版本；只有主动升级对应复制基线时才修改相应 component entry。当 Engine baseline 升级到更高版本（例如 `1.18.10`）而 component 仍冻结在旧版本时，两者会在 lock 中分别体现。
 
 只有“正式采用新的 OpenCode Engine baseline”时才更新 `sources.opencode`。专用命令接收目标 OpenCode version，解析上游 tag 对应的完整 commit，校验后写入 lock；baseline 更新与上游合并在同一变更中审查和提交。component baseline 使用独立的显式更新动作，禁止被 Engine baseline 升级顺带改写。release workflow 禁止通过 input、环境变量或网络上的“最新 OpenCode tag”覆盖 lock。
 
@@ -301,7 +301,6 @@ Ellamaka v2 不再要求 OpenCode baseline 相等。Desktop 从 `requirements.ex
 
 ```text
 ellamaka-cli-v1.17.1
-ellamaka-cli-v1.18.0-rc.1
 ellamaka-desktop-v1.16.2
 ellamaka-desktop-v1.17.0-beta.1
 ```
@@ -314,9 +313,9 @@ ellamaka-desktop-v1.17.0-beta.1
 
 channel 规则：
 
+- CLI 只有 stable channel：每次发布都是正式版，latest 总是指向最新发布的 CLI 版本。
 - stable latest 只引用无 prerelease 的版本。
-- beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
-- RC 不得进入 stable latest。实现独立 RC feed 前，RC 只发布 versioned manifest，由显式版本安装。
+- Desktop beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
 - 不进行隐式跨 channel 更新或比较。
 
 ## 9. Release Context and Immutability
@@ -340,7 +339,7 @@ versioned manifest 已提交后，mutable latest promotion 可以独立重试，
 版本化 R2 路径不可覆盖。若 source、配置或 artifact 有任何变化：
 
 - stable 增加 PATCH；
-- beta/RC 增加 prerelease 序号；
+- Desktop beta 增加 prerelease 序号；
 - 创建新的 namespaced tag 和 versioned path。
 
 已提交的正式 release 禁止 retag。cleanup 对未知 tag/manifest fail-closed；解析失败的对象报告错误并保留，不默认删除。latest 引用对象在任何 retention 规则之前受到保护；正式 namespaced product tag 不进入普通 retention 删除候选，只有 §9.2 显式 withdrawal 能在健康 aliases 恢复后删除指定失败版本的 tag。
@@ -412,7 +411,7 @@ Coordinator 将 alias 更新视为可恢复的有序操作：每步写入后回�
 
 历史 `X.Y.Z-N` 和 `X.Y.Z-N.rcM` 保持不可变归档。迁移 reader 可以将它们解析为 legacy identity，供识别当前安装和迁移路径使用，但新 publisher 不再生成这些格式，也不把 legacy comparator 用于新 release。
 
-第一批标准 Ellamaka 产品版本必须在 SemVer precedence 上高于所有已发布 legacy 版本。例如当前产品线以 `1.15.13-4` 结束时，可以使用 `1.16.0` 作为迁移 release；实际版本由迁移时的最高已发布版本决定。
+第一批标准 Ellamaka 产品版本必须在 SemVer precedence 上高于所有已发布 legacy 版本。legacy `X.Y.Z-N` 是 prerelease，同 base 的正式版 `X.Y.Z` 在 SemVer 2.0 中天然高于它，因此 migration floor 是最高 legacy 版本的同 base 正式版（如 `1.15.13-4` → floor `1.15.13`）；同 base 版本本身已被 tag/R2 占用检查拦截，后续 patch（`1.15.14`）可跟随 OpenCode baseline 发布。实际版本由迁移时的最高已发布版本决定。
 
 切换前必须生成一次 legacy inventory：记录现存 tag、R2 versioned path、manifest、artifact SHA-256、channel alias 和可确认的 source commit，并从此冻结。若历史上同一个 legacy version 曾被覆盖，只能把切换时仍可验证的 R2 snapshot 归档为当前事实；无法重建的旧 build 不得伪造 identity。检测到本机 legacy binary 与 inventory hash 不一致时，将其标记为 `legacy-unknown-build`，允许迁移到第一批标准版本，但不能据此覆盖或回写历史 release。
 

@@ -37,9 +37,16 @@ export function parseArgs(argv) {
     flags[key] = true
   }
 
-  const required = ["archivesDir", "version", "outputDir", "tag"]
+  // In schema v2 mode (--release-context-path), version and tag are derived
+  // from the release context; they are only required for legacy v1 calls.
+  const required = ["archivesDir", "outputDir"]
   for (const key of required) {
     if (!flags[key]) throw new Error(`Missing required flag: --${key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}`)
+  }
+  if (!flags.releaseContextPath) {
+    for (const key of ["version", "tag"]) {
+      if (!flags[key]) throw new Error(`Missing required flag: --${key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())}`)
+    }
   }
 
   return {
@@ -51,6 +58,8 @@ export function parseArgs(argv) {
       tag: flags.tag,
       baseUrl: flags.baseUrl || "https://download.coursedao.com/ellamaka",
       build: flags.build,
+      releaseContextPath: flags.releaseContextPath,
+      engineApi: flags.engineApi,
     },
   }
 }
@@ -126,10 +135,81 @@ export function buildReleaseNotes(version, artifacts, manifestUrl, checksumsUrl)
   return lines.join("\n")
 }
 
+/**
+ * Build the manifest object. When releaseContextPath is provided, emits
+ * schema v2 with a structured releaseIdentity. Otherwise emits the legacy
+ * v1 shape (version + optional build + artifacts) for backward compat.
+ *
+ * Per docs/RELEASE-IDENTITY.md §5.3, the top-level `version` must equal
+ * `releaseIdentity.version` in schema v2.
+ */
+export function buildManifest({
+  version,
+  tag,
+  artifacts,
+  checksumsUrl,
+  baseUrl,
+  build,
+  releaseContextPath,
+  engineApi,
+}) {
+  if (releaseContextPath) {
+    const ctx = JSON.parse(fs.readFileSync(releaseContextPath, "utf8"))
+    if (ctx.version !== version) {
+      throw new Error(
+        `release context version ${ctx.version} does not match --version ${version}`,
+      )
+    }
+    const manifest = {
+      manifestSchemaVersion: 2,
+      version,
+      releaseIdentity: {
+        schemaVersion: 2,
+        kind: ctx.kind,
+        product: ctx.product,
+        version: ctx.version,
+        channel: ctx.channel,
+        upstream: ctx.upstream,
+        build: ctx.build,
+      },
+      ...(engineApi ? { capabilities: { engineApi } } : {}),
+      artifacts,
+      checksumsUrl,
+    }
+    return manifest
+  }
+  // Legacy v1 shape
+  return {
+    version,
+    ...(build ? { build } : {}),
+    artifacts,
+    checksumsUrl,
+  }
+}
+
 export function manifestCommand(flags) {
   const archivesDir = path.resolve(projectRoot, flags.archivesDir)
   const outputDir = path.resolve(projectRoot, flags.outputDir)
   const baseUrl = flags.baseUrl || "https://download.coursedao.com/ellamaka"
+
+  // Schema v2 (--release-context-path): version/tag are derived from the
+  // release context so the manifest can never desync from the build. An
+  // explicit --version (legacy callers) may only assert equality with the
+  // context — it cannot override it. The versioned path is always v<version>
+  // per RELEASE-IDENTITY.md §9.
+  let version = flags.version
+  let tag = flags.tag
+  if (flags.releaseContextPath) {
+    const ctx = JSON.parse(fs.readFileSync(flags.releaseContextPath, "utf8"))
+    if (!ctx.version) throw new Error(`release context ${flags.releaseContextPath} has no version`)
+    if (version !== undefined && version !== ctx.version) {
+      throw new Error(
+        `release context version ${ctx.version} does not match --version ${version}`,
+      )
+    }
+    version = ctx.version
+    tag = flags.tag ?? `v${ctx.version}`
+  }
 
   if (!fs.existsSync(archivesDir)) throw new Error(`Archives directory not found: ${archivesDir}`)
 
@@ -150,7 +230,7 @@ export function manifestCommand(flags) {
 
   if (files.length === 0) throw new Error("No archive files found matching ellamaka-*-*.{tar.gz,zip,dmg,exe,AppImage,deb,rpm}")
 
-  const versionBaseUrl = `${baseUrl}/${flags.tag}`
+  const versionBaseUrl = `${baseUrl}/v${version}`
   const manifestUrl = `${versionBaseUrl}/manifest.json`
   const checksumsUrl = `${versionBaseUrl}/checksums.txt`
   const artifacts = files.map((file) => {
@@ -169,18 +249,22 @@ export function manifestCommand(flags) {
     }
   })
 
-  const manifest = {
-    version: flags.version,
-    ...(flags.build ? { build: flags.build } : {}),
+  const manifest = buildManifest({
+    version,
+    tag,
     artifacts,
     checksumsUrl,
-  }
+    baseUrl,
+    build: flags.build,
+    releaseContextPath: flags.releaseContextPath,
+    engineApi: flags.engineApi,
+  })
   const checksumLines = artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}`)
 
   fs.mkdirSync(outputDir, { recursive: true })
   fs.writeFileSync(path.join(outputDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n")
   fs.writeFileSync(path.join(outputDir, "checksums.txt"), checksumLines.join("\n") + "\n")
-  fs.writeFileSync(path.join(outputDir, "release-notes.md"), buildReleaseNotes(flags.version, artifacts, manifestUrl, checksumsUrl))
+  fs.writeFileSync(path.join(outputDir, "release-notes.md"), buildReleaseNotes(version, artifacts, manifestUrl, checksumsUrl))
 
   console.log(`Generated: ${path.join(outputDir, "manifest.json")}`)
   console.log(`Generated: ${path.join(outputDir, "checksums.txt")}`)

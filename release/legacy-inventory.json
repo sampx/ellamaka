@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-03T07:01:54Z",
+  "source": "live",
+  "note": "Live capture — review and freeze before switching publisher",
+  "products": {
+    "ellamaka-cli": {
+      "tags": [
+        {
+          "name": "v1.15.13-4",
+          "sha": "667c9ff3025299f0a87942387de622fba37ebe1f",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-3",
+          "sha": "8cd057141317fcf5ba505178340790ae42d961f0",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-2",
+          "sha": "ec33655ee4931d178d7c38c20c4a07c8434398a0",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-1",
+          "sha": "e354090dd29f21d45fbb796b85950a25a053a006",
+          "shape": "stable-iteration"
+        }
+      ],
+      "versionedPaths": [
+        "ellamaka/v1.15.13-4",
+        "ellamaka/v1.15.13-3",
+        "ellamaka/v1.15.13-2",
+        "ellamaka/v1.15.13-1"
+      ],
+      "manifests": [
+        {
+          "version": "1.15.13-4",
+          "url": "https://download.coursedao.com/ellamaka/v1.15.13-4/manifest.json",
+          "sha256": null,
+          "sourceCommit": "667c9ff3025299f0a87942387de622fba37ebe1f"
+        },
+        {
+          "version": "1.15.13-3",
+          "url": "https://download.coursedao.com/ellamaka/v1.15.13-3/manifest.json",
+          "sha256": null,
+          "sourceCommit": "8cd057141317fcf5ba505178340790ae42d961f0"
+        },
+        {
+          "version": "1.15.13-2",
+          "url": "https://download.coursedao.com/ellamaka/v1.15.13-2/manifest.json",
+          "sha256": null,
+          "sourceCommit": null,
+          "note": "manifest not reachable"
+        },
+        {
+          "version": "1.15.13-1",
+          "url": "https://download.coursedao.com/ellamaka/v1.15.13-1/manifest.json",
+          "sha256": null,
+          "sourceCommit": null
+        }
+      ],
+      "channelAliases": {
+        "latest": "1.15.13-4"
+      }
+    },
+    "ellamaka-desktop": {
+      "tags": [
+        {
+          "name": "v1.15.13-4",
+          "sha": "667c9ff3025299f0a87942387de622fba37ebe1f",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-3",
+          "sha": "8cd057141317fcf5ba505178340790ae42d961f0",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-2",
+          "sha": "ec33655ee4931d178d7c38c20c4a07c8434398a0",
+          "shape": "stable-iteration"
+        },
+        {
+          "name": "v1.15.13-1",
+          "sha": "e354090dd29f21d45fbb796b85950a25a053a006",
+          "shape": "stable-iteration"
+        }
+      ],
+      "versionedPaths": [
+        "ellamaka-desktop/vv1.15.13-4",
+        "ellamaka-desktop/vv1.15.13-3",
+        "ellamaka-desktop/vv1.15.13-2",
+        "ellamaka-desktop/vv1.15.13-1",
+        "ellamaka-desktop/v1.15.13-2",
+        "ellamaka-desktop/v1.15.13-beta.4"
+      ],
+      "manifests": [
+        {
+          "version": "v1.15.13-4",
+          "url": "https://download.coursedao.com/ellamaka-desktop/vv1.15.13-4/manifest.json",
+          "sha256": null,
+          "sourceCommit": null,
+          "note": "manifest not reachable"
+        },
+        {
+          "version": "v1.15.13-3",
+          "url": "https://download.coursedao.com/ellamaka-desktop/vv1.15.13-3/manifest.json",
+          "sha256": null,
+          "sourceCommit": null,
+          "note": "manifest not reachable"
+        },
+        {
+          "version": "v1.15.13-2",
+          "url": "https://download.coursedao.com/ellamaka-desktop/vv1.15.13-2/manifest.json",
+          "sha256": null,
+          "sourceCommit": null,
+          "note": "manifest not reachable"
+        },
+        {
+          "version": "v1.15.13-1",
+          "url": "https://download.coursedao.com/ellamaka-desktop/vv1.15.13-1/manifest.json",
+          "sha256": null,
+          "sourceCommit": null,
+          "note": "manifest not reachable"
+        },
+        {
+          "version": "1.15.13-2",
+          "url": "https://download.coursedao.com/ellamaka-desktop/v1.15.13-2/manifest.json",
+          "sha256": null,
+          "sourceCommit": "ec33655ee4931d178d7c38c20c4a07c8434398a0"
+        },
+        {
+          "version": "1.15.13-beta.4",
+          "url": "https://download.coursedao.com/ellamaka-desktop/v1.15.13-beta.4/manifest.json",
+          "note": "manifest not reachable"
+        }
+      ],
+      "channelAliases": {
+        "latest": "1.15.13-2",
+        "beta": "1.15.13-beta.4"
+      }
+    }
+  },
+  "unparsable": [
+    {
+      "name": "v1.15.13",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.15.13-beta.4",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.15.13-beta.3",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.15.13-beta.2",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.15.13-beta.1",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.14.39",
+      "reason": "standard-shape-pre-namespace"
+    },
+    {
+      "name": "v1.14.39-dev",
+      "reason": "not-legacy-shape"
+    }
+  ]
+}

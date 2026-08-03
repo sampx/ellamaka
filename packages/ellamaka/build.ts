@@ -6,6 +6,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 import { BINARY_NAME, CHANNEL_RELEASE, CHANNEL_DEV } from "./branding"
+import { buildReleaseIdentityForBuild } from "./release-identity-build"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -265,6 +266,17 @@ for (const item of targets) {
       OPENCODE_WORKER_PATH: workerPath,
       OPENCODE_CHANNEL: `'${channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
+      // Embed a structured ReleaseIdentity at build time. Release builds
+      // (OPENCODE_RELEASE=1) with a release-context path produce a release
+      // identity; otherwise a development identity is embedded. See
+      // docs/RELEASE-IDENTITY.md §5.4.
+      OPENCODE_RELEASE_IDENTITY: JSON.stringify(
+        buildReleaseIdentityForBuild({
+          isRelease: Script.release,
+          version: Script.version,
+          channel,
+        }),
+      ),
     },
   })
 

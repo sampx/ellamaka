@@ -500,6 +500,8 @@ Setup Center 过程中若 Desktop 意外退出，下次启动重新执行 CLI in
 
 Workbench 模式下，Desktop 在 sidecar 启动前执行版本兼容检查。检查基于 Desktop manifest 内嵌的 ReleaseIdentity、`requirements.externalCli`、`requirements.wopalCli` 与本地实际组件 identity。
 
+Desktop 自身在 `resources/release-identity.json` 中内嵌相同的 ReleaseIdentity（由 `scripts/prebuild.ts` 生成，不进入版本控制）。Main 启动时通过 `validateEmbeddedIdentity` 校验其 product/version/channel 与当前 app package metadata 一致，再用于 updater、兼容门禁和诊断。
+
 **检查流程**：
 
 1. 执行 `ellamaka debug release-info --json --api-version 1` 读取 binary 内嵌 identity，并将 product/version/build identity 与安装收据、目标 manifest 交叉校验；`ellamaka --version` 只作轻量 SemVer 探测。

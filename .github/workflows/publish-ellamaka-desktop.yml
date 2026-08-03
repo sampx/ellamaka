@@ -17,12 +17,8 @@ on:
           - prod
 
 # tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
-# 旧设计同时监听 push:tags 与 dispatch，导致 --cli 时 desktop workflow 仍被 push
-# 自动触发，虽脚本会在启动后 cancel，但浪费 runner 配额且令用户困惑。
-# 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
-
-# Desktop 创建 ellamaka + wopal-space-ontology GitHub/Gitee Release（与 CLI workflow 一致），
-# tag 前缀 ellamaka-desktop-v 以区分 CLI 的 ellamaka-v。
+# Per docs/RELEASE-IDENTITY.md §8-§9, releases are immutable: versioned R2
+# paths are never cleared, committed releases are never overwritten.
 permissions:
   contents: write
 
@@ -110,12 +106,56 @@ jobs:
 
       - run: bun install
 
+      - name: Generate release context (shared across matrix)
+        if: needs.version.outputs.release != ''
+        shell: bash
+        run: |
+          # Per docs/RELEASE-IDENTITY.md §9, the release context is assembled
+          # from the namespaced tag + upstream lock + github.sha + github.run_id.
+          # It is shared across the matrix via artifact.
+          node -e '
+            const fs = require("fs");
+            const tag = process.env.GITHUB_REF_NAME;
+            const lock = JSON.parse(fs.readFileSync("release/upstreams.lock.json", "utf8"));
+            const m = tag.match(/^ellamaka-desktop-v(.+)$/);
+            if (!m) { console.error("not a namespaced ellamaka-desktop tag: " + tag); process.exit(1); }
+            const version = m[1];
+            const ctx = {
+              schemaVersion: 2,
+              kind: "release",
+              product: "ellamaka-desktop",
+              version,
+              channel: version.includes("-beta.") ? "beta" : "stable",
+              upstream: { name: "opencode", version: lock.sources.opencode.version, gitCommit: lock.sources.opencode.gitCommit },
+              build: {
+                sourceTag: tag,
+                gitCommit: process.env.GITHUB_SHA,
+                builtAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+                workflowRunId: process.env.GITHUB_RUN_ID,
+              },
+            };
+            fs.writeFileSync("release-context.json", JSON.stringify(ctx, null, 2) + "\n");
+            console.log("Generated release-context.json for " + tag);
+          '
+
+      - name: Upload release context
+        if: needs.version.outputs.release != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-context
+          path: release-context.json
+          if-no-files-found: error
+
       - name: Build desktop (electron-vite)
         working-directory: packages/ellamaka-desktop
+        env:
+          ELLAMAKA_RELEASE_CONTEXT_PATH: ${{ github.workspace }}/release-context.json
         run: bun run build
 
       - name: Package desktop (electron-builder)
         working-directory: packages/ellamaka-desktop
+        env:
+          ELLAMAKA_RELEASE_CONTEXT_PATH: ${{ github.workspace }}/release-context.json
         run: bun run ${{ matrix.package_cmd }} --publish never
 
       - name: Upload artifacts
@@ -145,13 +185,19 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Download release context
+        uses: actions/download-artifact@v8
+        with:
+          name: release-context
+          path: .
+
       - name: Download all desktop artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
-      - name: Generate manifest, checksums, and release notes
+      - name: Generate schema v2 manifest from release context
         run: |
           if [ "$CHANNEL" = "beta" ]; then
             BASE_URL="https://download.coursedao.com/ellamaka-desktop/beta"
@@ -160,11 +206,10 @@ jobs:
           fi
           node scripts/package-release.mjs manifest \
             --archives-dir dist \
-            --version "$VERSION" \
             --output-dir release-output \
-            --tag v"$VERSION" \
-            --build "$BUILD" \
-            --base-url "$BASE_URL"
+            --release-context-path release-context.json \
+            --base-url "$BASE_URL" \
+            --engine-api "1.2.0"
 
       - name: Upload binaries and metadata to Cloudflare R2
         run: |
@@ -176,31 +221,23 @@ jobs:
           fi
           VERSION_PREFIX="${R2_ROOT}/v${VERSION}"
           LATEST_PREFIX="${R2_ROOT}/latest"
-          OLD_OBJECTS="${RUNNER_TEMP}/old-release-objects.json"
-          OLD_URLS="${RUNNER_TEMP}/old-release-urls.txt"
 
-          aws s3api list-objects-v2 \
+          # Per docs/RELEASE-IDENTITY.md §9: versioned R2 paths are immutable.
+          # If an effective manifest already exists at the target path, fail
+          # closed — do not clear, overwrite, or proceed.
+          EXISTING_MANIFEST=$(aws s3api head-object \
             --bucket wopal-release \
-            --prefix "${VERSION_PREFIX}/" \
-            --endpoint-url "$R2_URL" \
-            --output json > "$OLD_OBJECTS"
-          node - "$OLD_OBJECTS" "$OLD_URLS" <<'NODE'
-          const fs = require("fs")
-          const [input, output] = process.argv.slice(2)
-          const data = JSON.parse(fs.readFileSync(input, "utf8"))
-          const urls = (data.Contents ?? []).map((entry) => `https://download.coursedao.com/${entry.Key}`)
-          fs.writeFileSync(output, urls.join("\n") + (urls.length ? "\n" : ""))
-          NODE
-          aws s3 rm "s3://wopal-release/${VERSION_PREFIX}/" \
-            --recursive \
-            --endpoint-url "$R2_URL"
+            --key "${VERSION_PREFIX}/manifest.json" \
+            --endpoint-url "$R2_URL" 2>/dev/null || echo "")
+          if [ -n "$EXISTING_MANIFEST" ]; then
+            echo "ERROR: effective manifest already exists at ${VERSION_PREFIX}/manifest.json"
+            echo "Committed releases are immutable. Use a higher version, or whole-version withdrawal."
+            exit 1
+          fi
+          echo "No existing manifest at ${VERSION_PREFIX} — proceeding."
 
           put_with_cache() {
             local file="$1" key="$2" cache="$3" ct="$4"
-            aws s3api delete-object \
-              --bucket wopal-release \
-              --key "$key" \
-              --endpoint-url ${R2_URL} >/dev/null 2>&1 || true
             for attempt in 1 2 3; do
               if aws s3api put-object \
                 --bucket wopal-release \
@@ -237,9 +274,10 @@ jobs:
             put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
           done
 
-          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
+          # Metadata — manifest is written LAST as the release commit point.
           put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000, immutable" "text/plain"
           put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
+          put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
 
           put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
           echo "  uploaded manifest: ${LATEST_PREFIX}/manifest.json"
@@ -333,8 +371,6 @@ jobs:
           fi
           VERSION_BASE="${CDN_ROOT}/v${VERSION}"
           LATEST_BASE="${CDN_ROOT}/latest"
-          # Note: We purge latest alias binaries & feeds for auto-updater freshness,
-          # but do NOT purge newly uploaded versioned binaries (VERSION_BASE) to avoid CDN cold-starts.
           PURGE_URLS=(
             "${LATEST_BASE}/manifest.json"
             "${LATEST_BASE}/latest-mac.yml"
@@ -344,13 +380,6 @@ jobs:
             "${VERSION_BASE}/checksums.txt"
             "${VERSION_BASE}/release-notes.md"
           )
-
-          OLD_URLS="${RUNNER_TEMP}/old-release-urls.txt"
-          if [ -f "$OLD_URLS" ]; then
-            while IFS= read -r url; do
-              [ -n "$url" ] && PURGE_URLS+=("$url")
-            done < "$OLD_URLS"
-          fi
 
           for f in dist/ellamaka-desktop-*; do
             [ -f "$f" ] || continue
@@ -415,7 +444,7 @@ jobs:
           done
           echo "CDN cache warmup complete."
 
-      - name: Create or update ellamaka GitHub release
+      - name: Create ellamaka GitHub release (idempotent create, no overwrite)
         if: needs.version.outputs.release != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -424,11 +453,7 @@ jobs:
           version="$VERSION"
           tag="ellamaka-desktop-v${version}"
           if gh release view "$tag" --repo wopal-cn/ellamaka >/dev/null 2>&1; then
-            gh release edit "$tag" \
-              --repo wopal-cn/ellamaka \
-              --draft=false \
-              --notes-file release-output/release-notes.md
-            echo "Updated ellamaka release $tag"
+            echo "Release $tag already exists — committed releases are immutable, skipping (no edit/overwrite)."
           else
             gh release create "$tag" \
               --repo wopal-cn/ellamaka \
@@ -437,7 +462,7 @@ jobs:
             echo "Created ellamaka release $tag"
           fi
 
-      - name: Create or update ontology GitHub release
+      - name: Create ontology GitHub release (idempotent create)
         if: needs.version.outputs.release != ''
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -451,10 +476,7 @@ jobs:
           version="$VERSION"
           tag="ellamaka-desktop-v${version}"
           if gh release view "$tag" --repo wopal-cn/wopal-space-ontology >/dev/null 2>&1; then
-            gh release edit "$tag" \
-              --repo wopal-cn/wopal-space-ontology \
-              --notes-file release-output/release-notes.md
-            echo "Updated ontology release $tag"
+            echo "Release $tag already exists — committed releases are immutable, skipping."
           else
             gh release create "$tag" \
               --repo wopal-cn/wopal-space-ontology \
@@ -463,7 +485,7 @@ jobs:
             echo "Created ontology release $tag"
           fi
 
-      - name: Create or update ellamaka Gitee release
+      - name: Create ellamaka Gitee release (idempotent create)
         if: needs.version.outputs.release != ''
         continue-on-error: true
         env:
@@ -472,7 +494,7 @@ jobs:
         run: |
           node scripts/create-gitee-release.mjs --version "$VERSION" --repo wopal-cn/ellamaka --tag ellamaka-desktop-v"$VERSION" --notes-file release-output/release-notes.md
 
-      - name: Create or update ontology Gitee release
+      - name: Create ontology Gitee release (idempotent create)
         if: needs.version.outputs.release != ''
         continue-on-error: true
         env:
@@ -502,28 +524,3 @@ jobs:
             echo "- GitHub (ontology): https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-desktop-v${VERSION}"
             echo "- Gitee (ontology): https://gitee.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-desktop-v${VERSION}"
           } >> $GITHUB_STEP_SUMMARY
-
-  cleanup:
-    name: Prune historical desktop releases
-    needs: [version, release]
-    runs-on: ubuntu-latest
-    if: github.repository == 'wopal-cn/ellamaka' && needs.version.outputs.release != ''
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
-      - name: Prune releases beyond keep-count (R2 + GitHub + Gitee)
-        env:
-          # aws s3api reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          # Cross-repo delete on wopal-space-ontology needs the RELEASE_TOKEN PAT.
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
-        run: |
-          node scripts/cleanup-desktop-releases.mjs --keep-prod 3 --keep-beta 2

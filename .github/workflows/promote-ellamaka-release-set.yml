@@ -1,0 +1,52 @@
+name: promote-ellamaka-release-set
+
+# Independent release-set coordinator. Per docs/RELEASE-IDENTITY.md §11,
+# when a baseline change requires both CLI and Desktop to move, each
+# product publish workflow only commits its own immutable versioned
+# release. This workflow reads already-committed versioned manifests,
+# validates the final alias set, and promotes aliases in a resumable,
+# idempotent order. It does NOT rebuild or generate a second release
+# context.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cli-version:
+        description: "Committed CLI version to promote"
+        required: true
+        type: string
+      desktop-stable-version:
+        description: "Committed Desktop stable version to promote (optional)"
+        required: false
+        type: string
+      desktop-beta-version:
+        description: "Committed Desktop beta version to promote (optional)"
+        required: false
+        type: string
+      apply:
+        description: "Apply mutations (default: plan only / dry-run)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    if: github.repository == 'wopal-cn/ellamaka'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Promote release set
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          MODE="plan"
+          if [ "${{ inputs.apply }}" = "true" ]; then MODE="apply"; fi
+          node scripts/promote-release-set.mjs "$MODE" \
+            --cli-version "${{ inputs.cli-version }}" \
+            ${{ inputs.desktop-stable-version && format('--desktop-stable-version "{0}"', inputs.desktop-stable-version) || '' }} \
+            ${{ inputs.desktop-beta-version && format('--desktop-beta-version "{0}"', inputs.desktop-beta-version) || '' }}

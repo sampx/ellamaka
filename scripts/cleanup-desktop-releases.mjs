@@ -3,31 +3,27 @@
 /**
  * cleanup-desktop-releases.mjs
  *
- * Prunes historical ellamaka-desktop releases across three platforms,
- * keeping the N most recent stable releases plus the M most recent beta
- * releases.
+ * Protection-model cleanup for ellamaka-desktop releases. Per
+ * docs/RELEASE-IDENTITY.md §9.1, this script does not use shell version
+ * sort, mtime, or legacy numeric-suffix comparators. It builds a reference
+ * graph (stable and beta latest aliases are protected), and only standard
+ * SemVer releases within the same product/channel become retention
+ * candidates. Legacy and unknown objects fail closed (retained, never
+ * auto-deleted).
  *
- * Platforms cleaned:
- *   1. Cloudflare R2 — delete ellamaka-desktop/v<VERSION>/ (prod) and
- *      ellamaka-desktop/beta/v<VERSION>/ (beta) prefixes. Never touches
- *      latest/ aliases.
- *   2. GitHub (wopal-cn/ellamaka) — delete releases tagged
- *      ellamaka-desktop-v<VERSION>. Leaves v* and ellamaka-v* alone.
- *   3. GitHub (wopal-cn/wopal-space-ontology) — delete releases tagged
- *      ellamaka-desktop-v<VERSION>. Leaves cli-v* and ellamaka-v* alone.
- *   4. Gitee (wopal-cn/ellamaka) — same tag filter.
- *   5. Gitee (wopal-cn/wopal-space-ontology) — same tag filter.
- *
- * Tag → version parsing:
- *   ellamaka-desktop-v1.15.13-2      → { version: "1.15.13-2",      channel: "prod" }
- *   ellamaka-desktop-v1.15.13-beta.3 → { version: "1.15.13-beta.3", channel: "beta" }
- *
- * Sorting: version string descending (natural lexicographic order works
- * because the format is zero-padded enough for practical comparison).
- * Prod and beta are tracked in separate buckets.
+ * Modes:
+ *   retention: `--keep-prod N --keep-beta M` keeps the N newest stable and
+ *     M newest beta standard-SemVer releases; deletes older non-protected
+ *     standard releases; never touches legacy. Applies with a fresh re-read
+ *     of aliases to skip candidates that became protected since the plan.
+ *   withdraw: `--withdraw <version> --fallback <v>` performs whole-version
+ *     withdrawal per §9.2. The version must be recorded in
+ *     release/withdrawn-versions.json. Steps: restore aliases → delete
+ *     versioned R2 path → delete GitHub/Gitee Release + tag.
  *
  * Usage:
  *   node scripts/cleanup-desktop-releases.mjs --keep-prod 3 --keep-beta 2 [--dry-run]
+ *   node scripts/cleanup-desktop-releases.mjs --withdraw 1.16.0 --fallback 1.17.0 [--dry-run]
  *
  * Environment variables:
  *   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / R2_ENDPOINT — R2 credentials
@@ -36,94 +32,244 @@
  */
 
 import { execSync } from "child_process";
+import { compareSemVer, parseReleaseVersion, parseLegacyVersion } from "./release-identity.mjs";
 
-// --- Exported helpers (for unit testing) ---
+// ===========================================================================
+// Task 5: protection model (docs/RELEASE-IDENTITY.md §9.1)
+// ===========================================================================
 
-const TAG_PREFIX = "ellamaka-desktop-v";
+const PRODUCT = "ellamaka-desktop";
 
-export function parseTag(tag) {
-  if (!tag.startsWith(TAG_PREFIX)) return null;
-  const version = tag.slice(TAG_PREFIX.length);
-  if (!version) return null;
-  const isBeta = version.includes("-beta.");
-  return { tag, version, channel: isBeta ? "beta" : "prod" };
+/**
+ * @typedef {Object} ReleaseSnapshot
+ * @property {string[]} versionedPaths
+ * @property {string[]} tags
+ */
+/**
+ * @typedef {Record<string, string>} AliasMap
+ */
+/**
+ * @typedef {Object} ReferenceGraph
+ * @property {Set<string>} protected
+ * @property {Map<string, string>} protectedReason
+ * @property {Set<string>} legacy
+ * @property {Set<string>} standard
+ */
+
+export function parseReleaseTag(tag) {
+  const m = tag.match(/^ellamaka-desktop-v(.+)$/);
+  if (!m) return null;
+  const version = m[1];
+  try {
+    const parsed = parseReleaseVersion(version);
+    return {
+      product: PRODUCT,
+      version,
+      channel: parsed.channel,
+      kind: "standard",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseLegacyTag(tag) {
+  if (!tag.startsWith("ellamaka-desktop-v")) return null;
+  const version = tag.slice("ellamaka-desktop-v".length);
+  try {
+    const legacy = parseLegacyVersion(version);
+    // Desktop legacy beta: X.Y.Z-beta.N (legacyShape "beta-iteration" if -N.beta.M, else standard beta retained as legacy)
+    return {
+      product: PRODUCT,
+      version,
+      kind: "legacy",
+      legacyShape: legacy.legacyShape,
+    };
+  } catch {
+    // Desktop legacy beta shape: X.Y.Z-beta.N where N is numeric (older format
+    // used -beta.N). parseLegacyVersion rejects this as standard beta, but for
+    // desktop cleanup we classify the ontology-tagged beta as legacy if it
+    // matches the old desktop beta iteration pattern.
+    if (/^\d+\.\d+\.\d+-beta\.\d+$/.test(version)) {
+      return { product: PRODUCT, version, kind: "legacy", legacyShape: "beta-iteration" };
+    }
+    return null;
+  }
+}
+
+function versionFromPath(p) {
+  const m = p.match(/^ellamaka-desktop\/(?:beta\/)?v(.+)$/);
+  return m ? m[1] : null;
+}
+
+function channelFromPath(p) {
+  return p.includes("/beta/") ? "beta" : "stable";
+}
+
+function pathForVersion(version, channel) {
+  return channel === "beta"
+    ? `ellamaka-desktop/beta/v${version}`
+    : `ellamaka-desktop/v${version}`;
+}
+
+export function buildReferenceGraph(snapshot, aliases) {
+  const protected_ = new Set();
+  const protectedReason = new Map();
+  const legacy = new Set();
+  const standard = new Set();
+
+  for (const [alias, version] of Object.entries(aliases)) {
+    if (!alias.includes("ellamaka-desktop") || !alias.includes("latest")) continue;
+    const channel = alias.includes("/beta/") ? "beta" : "stable";
+    const path = pathForVersion(version, channel);
+    if (snapshot.versionedPaths.includes(path)) {
+      protected_.add(path);
+      protectedReason.set(path, `latest alias ${alias}`);
+    }
+  }
+
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    try {
+      parseReleaseVersion(version);
+      standard.add(p);
+      continue;
+    } catch {}
+    try {
+      parseLegacyVersion(version);
+      legacy.add(p);
+      continue;
+    } catch {
+      legacy.add(p);
+    }
+  }
+
+  return { protected: protected_, protectedReason, legacy, standard };
 }
 
 /**
- * Compare two version strings for descending sort.
- * Versions share a core like "1.15.13"; prod appends "-N", beta appends "-beta.N".
- * We compare core numerically, then suffix with beta < prod (so for the same
- * core, beta.3 < 2 i.e. beta sorts after prod in descending order).
- *
- * Returns negative if a should sort before b (a is newer/higher).
+ * @typedef {Object} RetentionPlan
+ * @property {Array<{version: string, path: string, protected: boolean}>} deleteCandidates
+ * @property {string[]} legacyRetained
+ * @property {boolean} dryRun
  */
-export function compareVersions(a, b) {
-  const parseCore = (v) => v.split(/[-]/)[0].split(".").map((n) => parseInt(n, 10) || 0);
-  const aCore = parseCore(a.version);
-  const bCore = parseCore(b.version);
-  const maxLen = Math.max(aCore.length, bCore.length);
-  for (let i = 0; i < maxLen; i++) {
-    const diff = (bCore[i] || 0) - (aCore[i] || 0);
-    if (diff !== 0) return diff; // descending
+
+export function planRetention({
+  product,
+  channel,
+  snapshot,
+  aliases,
+  keepStable,
+  dryRun = false,
+}) {
+  const graph = buildReferenceGraph(snapshot, aliases);
+  const candidates = [];
+  const legacyRetained = [];
+
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    if (graph.legacy.has(p)) {
+      legacyRetained.push(version);
+      continue;
+    }
+    if (!graph.standard.has(p)) continue;
+    if (channelFromPath(p) !== channel) continue;
+    try {
+      const parsed = parseReleaseVersion(version);
+      if (parsed.channel !== channel) continue;
+    } catch {
+      continue;
+    }
+    candidates.push({ version, path: p, protected: graph.protected.has(p) });
   }
-  // Same core: compare suffix. prod "-N" vs beta "-beta.N"
-  // beta should sort after prod (prod is "higher" / newer in practice).
-  if (a.channel === b.channel) {
-    // Same channel: compare suffix numbers
-    const aNum = parseInt(a.version.match(/(\d+)$/)?.[1] || "0", 10);
-    const bNum = parseInt(b.version.match(/(\d+)$/)?.[1] || "0", 10);
-    return bNum - aNum; // descending
+
+  candidates.sort((a, b) => compareSemVer(b.version, a.version));
+
+  const deleteCandidates = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c.protected) continue;
+    if (i < keepStable) continue;
+    deleteCandidates.push(c);
   }
-  // prod sorts before beta in descending order (prod is higher)
-  return a.channel === "prod" ? -1 : 1;
+
+  return { deleteCandidates, legacyRetained, dryRun };
 }
 
-export function partitionTags(tags) {
-  const prod = [];
-  const beta = [];
-  for (const tag of tags) {
-    const parsed = parseTag(tag);
-    if (!parsed) continue;
-    if (parsed.channel === "beta") beta.push(parsed);
-    else prod.push(parsed);
+/**
+ * W-06: Re-validate a plan's delete candidates against a FRESH reference
+ * graph right before apply. If a candidate became protected (e.g. latest
+ * alias was concurrently moved to it), skip it and record a warning.
+ */
+export function applyRetentionWithRecheck(plan, freshGraph) {
+  const kept = []
+  const skipped = []
+  for (const c of plan.deleteCandidates) {
+    if (freshGraph.protected.has(c.path)) {
+      const reason = freshGraph.protectedReason.get(c.path) ?? "protected"
+      skipped.push({ ...c, reason })
+      continue
+    }
+    kept.push(c)
   }
-  prod.sort(compareVersions);
-  beta.sort(compareVersions);
-  return { prod, beta };
+  return { kept, skipped }
 }
 
-export function selectForDeletion(tags, keepProd, keepBeta) {
-  const { prod, beta } = partitionTags(tags);
-  const keepSet = new Set();
-  for (const v of prod.slice(0, keepProd)) keepSet.add(v.tag);
-  for (const v of beta.slice(0, keepBeta)) keepSet.add(v.tag);
-  return tags.filter((t) => !keepSet.has(t));
-}
+/**
+ * @typedef {Object} WithdrawPlan
+ * @property {boolean} allowed
+ * @property {string} [reason]
+ * @property {Array<{action: string, target: string}>} steps
+ */
 
-// --- Args ---
-
-function parseArgs(argv) {
-  const args = argv.slice(2);
-  const flags = { keepProd: 3, keepBeta: 2, dryRun: false };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === "--keep-prod") flags.keepProd = parseInt(args[++i], 10);
-    else if (a === "--keep-beta") flags.keepBeta = parseInt(args[++i], 10);
-    else if (a === "--dry-run") flags.dryRun = true;
+export function planWithdraw({
+  product,
+  version,
+  snapshot,
+  aliases,
+  withdrawn,
+  fallbackVersion,
+}) {
+  const withdrawnList = (withdrawn?.products?.[product]) || [];
+  if (!withdrawnList.includes(version)) {
+    return { allowed: false, reason: `version ${version} not in withdrawn-versions.json`, steps: [] };
   }
-  return flags;
+
+  // Determine channel from the version.
+  const channel = version.includes("-beta.") ? "beta" : "stable";
+  const fallbackPath = pathForVersion(fallbackVersion, channel);
+  if (!snapshot.versionedPaths.includes(fallbackPath)) {
+    return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
+  }
+
+  const steps = [];
+  for (const [alias, aliasVersion] of Object.entries(aliases)) {
+    if (aliasVersion === version) {
+      steps.push({ action: "restore-alias", target: alias });
+    }
+  }
+  steps.push({ action: "delete-versioned-path", target: pathForVersion(version, channel) });
+  steps.push({ action: "delete-tag", target: `ellamaka-desktop-v${version}` });
+
+  return { allowed: true, steps };
 }
 
-// --- R2 cleanup ---
+// ===========================================================================
+// Execution layer: R2 / GitHub / Gitee probes + plan/apply
+//
+// Per Task 5 B-01: main() uses buildReferenceGraph + planRetention (NOT
+// the removed parseTag/compareVersions/selectForDeletion). Legacy and
+// unknown objects fail closed (retained, never auto-deleted). Whole-version
+// withdrawal uses planWithdraw.
+// ===========================================================================
+
+import fs from "node:fs";
 
 const R2_BUCKET = "wopal-release";
 
-/**
- * List all v* versioned prefixes under a given R2 root path.
- * Returns tag strings like "ellamaka-desktop-v1.15.13-2".
- */
-function listR2VersionedPrefixes(r2Url, r2Root) {
-  // List with delimiter to get common prefixes (subdirectories)
+function listR2VersionedPaths(r2Url, r2Root) {
   const cmd = `aws s3api list-objects-v2 \
     --bucket ${R2_BUCKET} \
     --prefix "${r2Root}/" \
@@ -134,19 +280,15 @@ function listR2VersionedPrefixes(r2Url, r2Root) {
   const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
   const prefixes = JSON.parse(output);
   return prefixes
+    .map((p) => p.replace(/\/$/, ""))
     .filter((p) => {
-      // Extract the subdirectory name: "ellamaka-desktop/v1.15.13-2/" → "v1.15.13-2"
-      const name = p.replace(r2Root + "/", "").replace(/\/$/, "");
+      const name = p.replace(r2Root + "/", "");
       return name.startsWith("v");
-    })
-    .map((p) => {
-      const name = p.replace(r2Root + "/", "").replace(/\/$/, "");
-      return `${TAG_PREFIX}${name.slice(1)}`; // "v1.15.13-2" → "ellamaka-desktop-v1.15.13-2"
     });
 }
 
-function deleteR2Prefix(r2Url, r2Root, version, dryRun) {
-  const s3Key = `s3://${R2_BUCKET}/${r2Root}/v${version}/`;
+function deleteR2Prefix(r2Url, versionedPath, dryRun) {
+  const s3Key = `s3://${R2_BUCKET}/${versionedPath}/`;
   if (dryRun) {
     console.log(`  [DRY RUN] would delete ${s3Key}`);
     return;
@@ -157,15 +299,28 @@ function deleteR2Prefix(r2Url, r2Root, version, dryRun) {
   console.log(`  deleted ${s3Key}`);
 }
 
-// --- GitHub cleanup ---
+function readLatestAlias(r2Url, latestPrefix) {
+  const cmd = `aws s3api get-object \
+    --bucket ${R2_BUCKET} \
+    --key "${latestPrefix}/manifest.json" \
+    --endpoint-url "${r2Url}" \
+    /dev/stdout 2>/dev/null`;
+  try {
+    const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    const manifest = JSON.parse(output);
+    return manifest.version;
+  } catch {
+    return null;
+  }
+}
 
 const GH_REPO = "wopal-cn/wopal-space-ontology";
 const ELLAMAKA_REPO = "wopal-cn/ellamaka";
 
 function listGithubReleases(repo) {
-  const cmd = `gh api repos/${repo}/releases --paginate --jq '[.[] | select(.tag_name | startswith("${TAG_PREFIX}"))] | .[].tag_name'`;
+  const cmd = `gh api repos/${repo}/releases --paginate --jq '[.[] | select(.tag_name | startswith("ellamaka-desktop-v"))] | .[].tag_name'`;
   const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
-  return output.trim().split("\n").filter((t) => t.startsWith(TAG_PREFIX));
+  return output.trim().split("\n").filter(Boolean).filter((t) => t.startsWith("ellamaka-desktop-v"));
 }
 
 function deleteGithubRelease(repo, tag, dryRun) {
@@ -190,8 +345,6 @@ function deleteGithubRelease(repo, tag, dryRun) {
   }
 }
 
-// --- Gitee cleanup ---
-
 const GITEE_BASE = "https://gitee.com/api/v5";
 
 function listGiteeReleases(token, repo) {
@@ -201,7 +354,7 @@ function listGiteeReleases(token, repo) {
   const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
   const releases = JSON.parse(output);
   return releases
-    .filter((r) => r.tag_name && r.tag_name.startsWith(TAG_PREFIX))
+    .filter((r) => r.tag_name && r.tag_name.startsWith("ellamaka-desktop-v"))
     .map((r) => ({ id: r.id, tag_name: r.tag_name }));
 }
 
@@ -220,6 +373,22 @@ function deleteGiteeRelease(token, repo, release, dryRun) {
   } catch {
     console.log(`  deleted Gitee release ${repo}:${release.tag_name} (id=${release.id}) (tag deletion skipped)`);
   }
+}
+
+// --- Args ---
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  const flags = { mode: "retention", keepProd: 3, keepBeta: 2, dryRun: false, withdrawVersion: null, fallback: null };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--keep-prod") flags.keepProd = parseInt(args[++i], 10);
+    else if (a === "--keep-beta") flags.keepBeta = parseInt(args[++i], 10);
+    else if (a === "--dry-run") flags.dryRun = true;
+    else if (a === "--withdraw") { flags.mode = "withdraw"; flags.withdrawVersion = args[++i]; }
+    else if (a === "--fallback") flags.fallback = args[++i];
+  }
+  return flags;
 }
 
 // --- Main ---
@@ -241,150 +410,223 @@ async function main() {
 
   const r2Url = `https://${r2Endpoint}`;
   const mode = flags.dryRun ? "[DRY RUN] " : "";
-  console.log(
-    `\n${mode}Cleaning up old desktop releases (keep ${flags.keepProd} prod + ${flags.keepBeta} beta)\n`,
-  );
 
-  // --- R2 prod ---
+  if (flags.mode === "withdraw") {
+    await runWithdraw({ flags, r2Url, ghToken, giteeToken });
+    return;
+  }
+
+  await runRetention({ flags, r2Url, ghToken, giteeToken, mode });
+}
+
+async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
+  console.log(`\n${mode}Cleaning up old ellamaka-desktop releases (protection model, keep ${flags.keepProd} prod + ${flags.keepBeta} beta)\n`);
+
   const PROD_ROOT = "ellamaka-desktop";
+  const BETA_ROOT = "ellamaka-desktop/beta";
+
+  // 1. Build snapshot from R2 prod + beta prefixes.
+  let versionedPaths = [];
   console.log("=== R2 (prod): listing versioned prefixes ===");
-  let r2ProdTags = [];
   try {
-    r2ProdTags = listR2VersionedPrefixes(r2Url, PROD_ROOT);
-    console.log(`  found ${r2ProdTags.length} prod versioned prefixes`);
+    const prodPaths = listR2VersionedPaths(r2Url, PROD_ROOT);
+    console.log(`  found ${prodPaths.length} prod versioned prefixes`);
+    versionedPaths.push(...prodPaths);
   } catch (err) {
     console.error(`  R2 prod list failed: ${err.message}`);
   }
-  const r2ProdDelete = selectForDeletion(r2ProdTags, flags.keepProd, 0);
-  if (r2ProdDelete.length > 0) {
-    console.log(`  deleting ${r2ProdDelete.length} prod R2 prefixes:`);
-    for (const tag of r2ProdDelete) {
-      const parsed = parseTag(tag);
-      try {
-        deleteR2Prefix(r2Url, PROD_ROOT, parsed.version, flags.dryRun);
-      } catch (err) {
-        console.error(`  failed to delete ${tag}: ${err.message}`);
-      }
-    }
-  } else {
-    console.log("  nothing to delete");
-  }
 
-  // --- R2 beta ---
-  const BETA_ROOT = "ellamaka-desktop/beta";
   console.log("\n=== R2 (beta): listing versioned prefixes ===");
-  let r2BetaTags = [];
   try {
-    r2BetaTags = listR2VersionedPrefixes(r2Url, BETA_ROOT);
-    console.log(`  found ${r2BetaTags.length} beta versioned prefixes`);
+    const betaPaths = listR2VersionedPaths(r2Url, BETA_ROOT);
+    console.log(`  found ${betaPaths.length} beta versioned prefixes`);
+    versionedPaths.push(...betaPaths);
   } catch (err) {
     console.error(`  R2 beta list failed: ${err.message}`);
   }
-  const r2BetaDelete = selectForDeletion(r2BetaTags, 0, flags.keepBeta);
-  if (r2BetaDelete.length > 0) {
-    console.log(`  deleting ${r2BetaDelete.length} beta R2 prefixes:`);
-    for (const tag of r2BetaDelete) {
-      const parsed = parseTag(tag);
-      try {
-        deleteR2Prefix(r2Url, BETA_ROOT, parsed.version, flags.dryRun);
-      } catch (err) {
-        console.error(`  failed to delete ${tag}: ${err.message}`);
-      }
-    }
-  } else {
-    console.log("  nothing to delete");
+
+  // 2. Read current aliases.
+  const prodLatest = readLatestAlias(r2Url, `${PROD_ROOT}/latest`);
+  const betaLatest = readLatestAlias(r2Url, `${BETA_ROOT}/latest`);
+  const aliases = {
+    ...(prodLatest ? { "ellamaka-desktop/latest/manifest.json": prodLatest } : {}),
+    ...(betaLatest ? { "ellamaka-desktop/beta/latest/manifest.json": betaLatest } : {}),
+  };
+  console.log(`  prod latest → ${prodLatest ?? "none"}, beta latest → ${betaLatest ?? "none"}`);
+
+  const snapshot = { versionedPaths, tags: [] };
+
+  // 3. Plan retention for prod (stable) and beta separately.
+  const allDeleteCandidates = [];
+  const allLegacyRetained = new Set();
+  for (const channel of ["stable", "beta"]) {
+    const keep = channel === "stable" ? flags.keepProd : flags.keepBeta;
+    const plan = planRetention({
+      product: PRODUCT,
+      channel,
+      snapshot,
+      aliases,
+      keepStable: keep,
+      dryRun: flags.dryRun,
+    });
+    allDeleteCandidates.push(...plan.deleteCandidates);
+    for (const v of plan.legacyRetained) allLegacyRetained.add(v);
   }
 
-  // --- GitHub: wopal-cn/ellamaka ---
-  console.log(`\n=== GitHub (${ELLAMAKA_REPO}): listing ellamaka-desktop-v* releases ===`);
-  const ghEllamakaTags = listGithubReleases(ELLAMAKA_REPO);
-  console.log(`  found ${ghEllamakaTags.length} ellamaka-desktop-v* releases`);
-  const ghEllamakaDelete = selectForDeletion(ghEllamakaTags, flags.keepProd, flags.keepBeta);
-  if (ghEllamakaDelete.length > 0) {
-    console.log(`  deleting ${ghEllamakaDelete.length} releases:`);
-    for (const tag of ghEllamakaDelete) {
-      try {
-        deleteGithubRelease(ELLAMAKA_REPO, tag, flags.dryRun);
-      } catch (err) {
-        console.error(`  failed to delete ${tag}: ${err.message}`);
-      }
-    }
-  } else {
-    console.log("  nothing to delete");
+  if (allLegacyRetained.size > 0) {
+    console.log(`  legacy/unknown retained (fail-closed): ${[...allLegacyRetained].join(", ")}`);
   }
 
-  // --- GitHub: wopal-cn/wopal-space-ontology ---
-  console.log(`\n=== GitHub (${GH_REPO}): listing ellamaka-desktop-v* releases ===`);
-  const ghTags = listGithubReleases(GH_REPO);
-  console.log(`  found ${ghTags.length} ellamaka-desktop-v* releases`);
-  const ghDelete = selectForDeletion(ghTags, flags.keepProd, flags.keepBeta);
-  if (ghDelete.length > 0) {
-    console.log(`  deleting ${ghDelete.length} releases:`);
-    for (const tag of ghDelete) {
-      try {
-        deleteGithubRelease(GH_REPO, tag, flags.dryRun);
-      } catch (err) {
-        console.error(`  failed to delete ${tag}: ${err.message}`);
-      }
+  // 4. W-06: re-read aliases and rebuild reference graph right before apply.
+  //    Skip any candidate that became protected since the plan.
+  const freshProdLatest = readLatestAlias(r2Url, `${PROD_ROOT}/latest`);
+  const freshBetaLatest = readLatestAlias(r2Url, `${BETA_ROOT}/latest`);
+  const freshAliases = {
+    ...(freshProdLatest ? { "ellamaka-desktop/latest/manifest.json": freshProdLatest } : {}),
+    ...(freshBetaLatest ? { "ellamaka-desktop/beta/latest/manifest.json": freshBetaLatest } : {}),
+  };
+  const freshGraph = buildReferenceGraph(snapshot, freshAliases);
+  const provisionalPlan = { deleteCandidates: allDeleteCandidates };
+  const { kept, skipped } = applyRetentionWithRecheck(provisionalPlan, freshGraph);
+  if (skipped.length > 0) {
+    console.log(`  ${skipped.length} candidate(s) skipped (became protected since plan):`);
+    for (const s of skipped) {
+      console.log(`    skip ${s.path} — ${s.reason}`);
     }
-  } else {
-    console.log("  nothing to delete");
   }
 
-  // --- Gitee ---
-  if (giteeToken) {
-    console.log(`\n=== Gitee (${ELLAMAKA_REPO}): listing ellamaka-desktop-v* releases ===`);
-    let giteeEllamakaReleases = [];
+  const allDeleteVersions = new Set();
+  if (kept.length > 0) {
+    console.log(`  deleting ${kept.length} R2 prefixes:`);
+    for (const c of kept) {
+      try {
+        deleteR2Prefix(r2Url, c.path, flags.dryRun);
+        allDeleteVersions.add(c.version);
+      } catch (err) {
+        console.error(`  failed to delete ${c.path}: ${err.message}`);
+      }
+    }
+  }
+
+  // 5. GitHub + Gitee release pages: delete matching tags.
+  if (allDeleteVersions.size > 0) {
+    console.log(`\n=== GitHub (${ELLAMAKA_REPO}): matching ellamaka-desktop-v* releases ===`);
     try {
-      giteeEllamakaReleases = listGiteeReleases(giteeToken, ELLAMAKA_REPO);
-      console.log(`  found ${giteeEllamakaReleases.length} ellamaka-desktop-v* releases`);
-    } catch (err) {
-      console.error(`  Gitee list failed: ${err.message}`);
-    }
-    const giteeEllamakaTags = giteeEllamakaReleases.map((r) => r.tag_name);
-    const giteeEllamakaDeleteTags = selectForDeletion(giteeEllamakaTags, flags.keepProd, flags.keepBeta);
-    const giteeEllamakaDelete = giteeEllamakaReleases.filter((r) => giteeEllamakaDeleteTags.includes(r.tag_name));
-    if (giteeEllamakaDelete.length > 0) {
-      console.log(`  deleting ${giteeEllamakaDelete.length} releases:`);
-      for (const release of giteeEllamakaDelete) {
-        try {
-          deleteGiteeRelease(giteeToken, ELLAMAKA_REPO, release, flags.dryRun);
-        } catch (err) {
-          console.error(`  failed to delete ${release.tag_name}: ${err.message}`);
+      const ghTags = listGithubReleases(ELLAMAKA_REPO);
+      for (const tag of ghTags) {
+        const parsed = parseReleaseTag(tag);
+        if (parsed && allDeleteVersions.has(parsed.version)) {
+          deleteGithubRelease(ELLAMAKA_REPO, tag, flags.dryRun);
         }
       }
-    } else {
-      console.log("  nothing to delete");
+    } catch (err) {
+      console.error(`  GitHub list failed: ${err.message}`);
     }
 
-    console.log(`\n=== Gitee (${GH_REPO}): listing ellamaka-desktop-v* releases ===`);
-    let giteeReleases = [];
-    try {
-      giteeReleases = listGiteeReleases(giteeToken, GH_REPO);
-      console.log(`  found ${giteeReleases.length} ellamaka-desktop-v* releases`);
-    } catch (err) {
-      console.error(`  Gitee list failed: ${err.message}`);
-    }
-    const giteeTags = giteeReleases.map((r) => r.tag_name);
-    const giteeDeleteTags = selectForDeletion(giteeTags, flags.keepProd, flags.keepBeta);
-    const giteeDelete = giteeReleases.filter((r) => giteeDeleteTags.includes(r.tag_name));
-    if (giteeDelete.length > 0) {
-      console.log(`  deleting ${giteeDelete.length} releases:`);
-      for (const release of giteeDelete) {
-        try {
-          deleteGiteeRelease(giteeToken, GH_REPO, release, flags.dryRun);
-        } catch (err) {
-          console.error(`  failed to delete ${release.tag_name}: ${err.message}`);
+    if (giteeToken) {
+      console.log(`\n=== Gitee (${ELLAMAKA_REPO}): matching ellamaka-desktop-v* releases ===`);
+      try {
+        const giteeReleases = listGiteeReleases(giteeToken, ELLAMAKA_REPO);
+        for (const release of giteeReleases) {
+          const parsed = parseReleaseTag(release.tag_name);
+          if (parsed && allDeleteVersions.has(parsed.version)) {
+            deleteGiteeRelease(giteeToken, ELLAMAKA_REPO, release, flags.dryRun);
+          }
         }
+      } catch (err) {
+        console.error(`  Gitee list failed: ${err.message}`);
       }
-    } else {
-      console.log("  nothing to delete");
     }
-  } else {
-    console.log("\n=== Gitee: skipped (GITEE_TOKEN not set) ===");
   }
 
   console.log(`\n${mode}Cleanup complete.\n`);
+}
+
+async function runWithdraw({ flags, r2Url, ghToken, giteeToken }) {
+  if (!flags.withdrawVersion) {
+    console.error("Error: --withdraw requires a version argument");
+    process.exit(2);
+  }
+  if (!flags.fallback) {
+    console.error("Error: --withdraw requires --fallback <version>");
+    process.exit(2);
+  }
+
+  console.log(`\nWithdrawing ellamaka-desktop v${flags.withdrawVersion} (fallback: ${flags.fallback})\n`);
+
+  const withdrawn = JSON.parse(fs.readFileSync("release/withdrawn-versions.json", "utf8"));
+
+  const PROD_ROOT = "ellamaka-desktop";
+  const BETA_ROOT = "ellamaka-desktop/beta";
+  const channel = flags.withdrawVersion.includes("-beta.") ? "beta" : "stable";
+  const r2Root = channel === "beta" ? BETA_ROOT : PROD_ROOT;
+
+  let versionedPaths = [];
+  try {
+    versionedPaths = listR2VersionedPaths(r2Url, r2Root);
+  } catch (err) {
+    console.error(`  R2 list failed: ${err.message}`);
+  }
+
+  const latestPrefix = `${r2Root}/latest`;
+  const latestVersion = readLatestAlias(r2Url, latestPrefix);
+  const aliases = latestVersion ? { [`${latestPrefix}/manifest.json`]: latestVersion } : {};
+  const snapshot = { versionedPaths, tags: [] };
+
+  const plan = planWithdraw({
+    product: PRODUCT,
+    version: flags.withdrawVersion,
+    snapshot,
+    aliases,
+    withdrawn,
+    fallbackVersion: flags.fallback,
+  });
+
+  if (!plan.allowed) {
+    console.error(`Error: withdrawal denied: ${plan.reason}`);
+    process.exit(1);
+  }
+
+  console.log(`Plan: ${plan.steps.length} steps`);
+  for (const step of plan.steps) {
+    console.log(`  ${step.action}: ${step.target}`);
+  }
+
+  if (flags.dryRun) {
+    console.log("\n[DRY RUN] no mutations performed.");
+    return;
+  }
+
+  for (const step of plan.steps) {
+    if (step.action === "restore-alias") {
+      console.log(`  restoring alias ${step.target} → ${flags.fallback}`);
+      const fallbackManifestKey = `${r2Root}/v${flags.fallback}/manifest.json`;
+      execSync(
+        `aws s3 cp "s3://${R2_BUCKET}/${fallbackManifestKey}" "s3://${R2_BUCKET}/${step.target}" --endpoint-url "${r2Url}"`,
+        { stdio: "inherit" },
+      );
+    } else if (step.action === "delete-versioned-path") {
+      deleteR2Prefix(r2Url, step.target, false);
+    } else if (step.action === "delete-tag") {
+      try {
+        deleteGithubRelease(ELLAMAKA_REPO, step.target, false);
+      } catch (err) {
+        console.error(`  failed to delete tag on GitHub: ${err.message}`);
+      }
+      if (giteeToken) {
+        try {
+          const giteeReleases = listGiteeReleases(giteeToken, ELLAMAKA_REPO);
+          const match = giteeReleases.find((r) => r.tag_name === step.target);
+          if (match) deleteGiteeRelease(giteeToken, ELLAMAKA_REPO, match, false);
+        } catch (err) {
+          console.error(`  Gitee tag delete failed: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  console.log("  CDN purge of restored alias is operator's responsibility (run purge separately).");
+  console.log(`\nWithdrawal of v${flags.withdrawVersion} complete.\n`);
 }
 
 const invokedDirectly = import.meta.url === `file://${process.argv[1]}`;

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "opencode": {
+      "relationship": "baseline",
+      "repository": "https://github.com/anomalyco/opencode.git",
+      "version": "1.15.13-beta.1",
+      "gitCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
+    }
+  },
+  "componentBaselines": {}
+}

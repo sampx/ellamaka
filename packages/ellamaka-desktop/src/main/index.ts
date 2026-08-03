@@ -39,7 +39,9 @@ import { enableQuitGuard, interceptWindowClose } from "./quit-guard"
 import { getReleaseInfo } from "./release-info"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { resolveOnboardingMode, probeWopalHomeFromShell } from "./onboarding-gate"
-import { checkVersionCompatibility } from "./version-compat"
+// version-compat gate is exercised by the updater policy path (B-04):
+// updater.ts calls authorizeUpdate; version-compat's checkVersionCompatibility
+// is the shared CLI/Desktop compatibility validator used by the coordinator.
 import { Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
@@ -191,7 +193,6 @@ interface StartWorkbenchOpts {
 // env vars are preserved across the transition.
 const startWorkbench = (opts: StartWorkbenchOpts = {}) =>
   Effect.gen(function* () {
-    void checkVersionCompatibility()
     if (!TEST_ONBOARDING) migrate()
     app.setAsDefaultProtocolClient("ellamaka")
     registerRendererProtocol()
@@ -557,8 +558,6 @@ const main = Effect.gen(function* () {
 
     return
   }
-
-  void checkVersionCompatibility()
 
   // Fresh-boot workbench path: allocate port, start sidecar, await
   // readiness, then show a fresh window. The onboarding branch above also
