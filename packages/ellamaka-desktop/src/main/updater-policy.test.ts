@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { authorizeUpdate, type UpdateAuthorizationInput } from "./updater-policy"
+import {
+  authorizeUpdate,
+  authorizeUpdateFromFeed,
+  type UpdateAuthorizationInput,
+} from "./updater-policy"
 
 function validInput(overrides: Partial<UpdateAuthorizationInput> = {}): UpdateAuthorizationInput {
   return {
@@ -92,5 +96,95 @@ describe("updater: authorizeUpdate policy gate", () => {
     )
     expect(result.authorized).toBe(false)
     expect(result.reason).toMatch(/downgrade/)
+  })
+})
+
+// W-07: the gate must fetch the feed manifest independently and use its
+// releaseIdentity.version as targetManifestVersion — NOT the updater-reported
+// version, which would make the third gate self-proving.
+describe("updater: authorizeUpdateFromFeed (manifest-backed gate)", () => {
+  function makeFetch(manifestVersion: string | null) {
+    return async (_url: string) => {
+      if (manifestVersion === null) {
+        throw new Error("network error")
+      }
+      return new Response(
+        JSON.stringify({
+          manifestSchemaVersion: 2,
+          version: manifestVersion,
+          releaseIdentity: { version: manifestVersion, product: "ellamaka-desktop" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }
+  }
+
+  test("authorizes when feed manifest version equals updater version", async () => {
+    const result = await authorizeUpdateFromFeed({
+      fetch: makeFetch("1.17.0"),
+      feedManifestUrl: "https://download.coursedao.com/ellamaka-desktop/latest/manifest.json",
+      currentVersion: "1.16.2",
+      currentChannel: "stable",
+      targetVersion: "1.17.0",
+      targetChannel: "stable",
+    })
+    expect(result.authorized).toBe(true)
+  })
+
+  test("rejects when feed manifest version mismatches updater version", async () => {
+    // Updater says 1.17.0 but the feed manifest says 1.17.1 — the gate must
+    // reject because the updater-reported version is not the same as the
+    // authoritative manifest version.
+    const result = await authorizeUpdateFromFeed({
+      fetch: makeFetch("1.17.1"),
+      feedManifestUrl: "https://download.coursedao.com/ellamaka-desktop/latest/manifest.json",
+      currentVersion: "1.16.2",
+      currentChannel: "stable",
+      targetVersion: "1.17.0",
+      targetChannel: "stable",
+    })
+    expect(result.authorized).toBe(false)
+    expect(result.reason).toMatch(/manifest/)
+  })
+
+  test("fail closed when feed manifest fetch fails", async () => {
+    const result = await authorizeUpdateFromFeed({
+      fetch: makeFetch(null),
+      feedManifestUrl: "https://download.coursedao.com/ellamaka-desktop/latest/manifest.json",
+      currentVersion: "1.16.2",
+      currentChannel: "stable",
+      targetVersion: "1.17.0",
+      targetChannel: "stable",
+    })
+    expect(result.authorized).toBe(false)
+    expect(result.failed).toBe(true)
+    expect(result.reason).toMatch(/manifest fetch|fetch/)
+  })
+
+  test("fail closed when feed manifest is not valid JSON", async () => {
+    const fetch = async () =>
+      new Response("{not json", { status: 200, headers: { "content-type": "application/json" } })
+    const result = await authorizeUpdateFromFeed({
+      fetch,
+      feedManifestUrl: "https://download.coursedao.com/ellamaka-desktop/latest/manifest.json",
+      currentVersion: "1.16.2",
+      currentChannel: "stable",
+      targetVersion: "1.17.0",
+      targetChannel: "stable",
+    })
+    expect(result.authorized).toBe(false)
+    expect(result.failed).toBe(true)
+  })
+
+  test("authorizes beta upgrade with matching beta feed manifest", async () => {
+    const result = await authorizeUpdateFromFeed({
+      fetch: makeFetch("1.16.0-beta.2"),
+      feedManifestUrl: "https://download.coursedao.com/ellamaka-desktop/beta/latest/manifest.json",
+      currentVersion: "1.16.0-beta.1",
+      currentChannel: "beta",
+      targetVersion: "1.16.0-beta.2",
+      targetChannel: "beta",
+    })
+    expect(result.authorized).toBe(true)
   })
 })

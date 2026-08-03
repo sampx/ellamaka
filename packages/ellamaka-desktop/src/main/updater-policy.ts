@@ -21,6 +21,12 @@ export type UpdateAuthorization = {
   reason?: string
 }
 
+export type UpdateAuthorizationResult = UpdateAuthorization & {
+  // true when the decision is "do not proceed" due to a fetch/parse failure
+  // (distinct from a policy rejection). Callers map this to {failed:true}.
+  failed?: boolean
+}
+
 function compareSemVer(a: string, b: string): number {
   const pa = a.split(/[.-]/).map((n) => Number(n))
   const pb = b.split(/[.-]/).map((n) => Number(n))
@@ -71,4 +77,67 @@ export function authorizeUpdate(input: UpdateAuthorizationInput): UpdateAuthoriz
     }
   }
   return { authorized: true }
+}
+
+// ---------------------------------------------------------------------------
+// W-07: manifest-backed authorization.
+//
+// The third gate (updater-reported version must equal the authoritative
+// manifest version) must fetch the feed manifest independently. Passing
+// the updater-reported version as targetManifestVersion makes the gate
+// self-proving. This function fetches the manifest, extracts
+// releaseIdentity.version, and delegates to authorizeUpdate.
+// ---------------------------------------------------------------------------
+
+export type AuthorizeFromFeedInput = {
+  fetch: typeof globalThis.fetch
+  feedManifestUrl: string
+  currentVersion: string
+  currentChannel: string
+  targetVersion: string
+  targetChannel: string
+}
+
+/**
+ * Fetch the feed manifest, extract its releaseIdentity.version, and
+ * authorize the update. If the fetch fails or the manifest is not valid
+ * JSON, fail closed (authorized=false, failed=true).
+ */
+export async function authorizeUpdateFromFeed(
+  input: AuthorizeFromFeedInput,
+): Promise<UpdateAuthorizationResult> {
+  let manifestVersion: string
+  try {
+    const resp = await input.fetch(input.feedManifestUrl)
+    if (!resp.ok) {
+      return {
+        authorized: false,
+        failed: true,
+        reason: `manifest fetch failed: HTTP ${resp.status}`,
+      }
+    }
+    const manifest = await resp.json()
+    const ri = manifest?.releaseIdentity
+    manifestVersion = ri?.version ?? manifest?.version
+    if (typeof manifestVersion !== "string" || !manifestVersion) {
+      return {
+        authorized: false,
+        failed: true,
+        reason: "manifest fetch: releaseIdentity.version missing",
+      }
+    }
+  } catch (err) {
+    return {
+      authorized: false,
+      failed: true,
+      reason: `manifest fetch error: ${(err as Error).message}`,
+    }
+  }
+  return authorizeUpdate({
+    currentVersion: input.currentVersion,
+    currentChannel: input.currentChannel,
+    targetVersion: input.targetVersion,
+    targetChannel: input.targetChannel,
+    targetManifestVersion: manifestVersion,
+  })
 }

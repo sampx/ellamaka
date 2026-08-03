@@ -2,7 +2,7 @@ import { app, dialog } from "electron"
 import pkg from "electron-updater"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { getLogger } from "./logging"
-import { authorizeUpdate } from "./updater-policy"
+import { authorizeUpdate, authorizeUpdateFromFeed } from "./updater-policy"
 
 export { authorizeUpdate } from "./updater-policy"
 export type { UpdateAuthorizationInput, UpdateAuthorization } from "./updater-policy"
@@ -68,16 +68,30 @@ async function checkAndDownloadUpdate(): Promise<UpdateCheckResult> {
     // Policy gate (docs/RELEASE-IDENTITY.md §10): authorize BEFORE download.
     // electron-updater only handles platform feed/download/install; the
     // channel/downgrade/manifest-version authorization is decided here.
+    //
+    // W-07: fetch the feed manifest independently and use its
+    // releaseIdentity.version as the authoritative targetManifestVersion.
+    // Passing the updater-reported version directly would make the third
+    // gate (manifest mismatch) self-proving.
     const targetChannel = version.includes("-beta.") ? "beta" : "stable"
-    const auth = authorizeUpdate({
+    const feedManifestUrl =
+      CHANNEL === "beta"
+        ? "https://download.coursedao.com/ellamaka-desktop/beta/latest/manifest.json"
+        : "https://download.coursedao.com/ellamaka-desktop/latest/manifest.json"
+    const auth = await authorizeUpdateFromFeed({
+      fetch: globalThis.fetch,
+      feedManifestUrl,
       currentVersion: app.getVersion(),
       currentChannel: CHANNEL === "beta" ? "beta" : "stable",
       targetVersion: version,
       targetChannel,
-      targetManifestVersion: version,
     })
     if (!auth.authorized) {
-      logger.log("update denied by policy gate", { reason: auth.reason, version })
+      logger.log("update denied by policy gate", {
+        reason: auth.reason,
+        version,
+        failed: auth.failed ?? false,
+      })
       return { updateAvailable: false, failed: true }
     }
     logger.log("update authorized", { version, channel: targetChannel })
