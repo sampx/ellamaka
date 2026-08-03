@@ -27,14 +27,16 @@ describe("desktop release repair", () => {
     expect(workflow).not.toContain("${GITHUB_REF_NAME#v}")
   })
 
-  test("isolates beta storage and replaces repeated releases", async () => {
+  test("isolates beta storage and fails closed on existing manifest", async () => {
     const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
 
     expect(workflow).toContain('CHANNEL" = "beta"')
     expect(workflow).toContain("ellamaka-desktop/beta")
-    expect(workflow).toContain("list-objects-v2")
-    expect(workflow).toContain("aws s3 rm")
-    expect(workflow).toContain("old-release-urls")
+    // Per §9, use head-object to check for existing manifest (fail-closed),
+    // not list-objects-v2 for recursive clear.
+    expect(workflow).toContain("head-object")
+    expect(workflow).not.toContain('aws s3 rm "s3://wopal-release/${VERSION_PREFIX}/"')
+    expect(workflow).toContain("effective manifest already exists")
     expect(workflow).toContain(".zip.blockmap")
     expect(workflow).toContain(".exe.blockmap")
     // Latest manifest upload
@@ -137,14 +139,14 @@ describe("desktop release repair", () => {
     expect(desktop).not.toContain("actions/download-artifact@v5")
   })
 
-  test("carries build identity into desktop packages and manifests", async () => {
+  test("carries build identity via release context into packages and manifests", async () => {
     const desktop = await source(".github/workflows/publish-ellamaka-desktop.yml")
     const cli = await source(".github/workflows/publish-ellamaka.yml")
 
     expect(desktop).toContain("OPENCODE_BUILD_ID: ${{ github.sha }}")
-    expect(desktop).toContain("BUILD: ${{ github.sha }}")
-    expect(desktop).toContain('--build "$BUILD"')
-    expect(cli).toContain("BUILD: ${{ github.sha }}")
-    expect(cli).toContain('--build "$BUILD"')
+    expect(desktop).toContain("ELLAMAKA_RELEASE_CONTEXT_PATH")
+    expect(desktop).toContain("--release-context-path release-context.json")
+    expect(cli).toContain("ELLAMAKA_RELEASE_CONTEXT_PATH")
+    expect(cli).toContain("--release-context-path release-context.json")
   })
 })
