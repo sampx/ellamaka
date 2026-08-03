@@ -23,6 +23,11 @@ on:
         description: "Committed Desktop beta version to promote (optional)"
         required: false
         type: string
+      apply:
+        description: "Apply mutations (default: plan only / dry-run)"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   promote:
@@ -33,9 +38,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - name: Build promotion plan
+      - name: Promote release set
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
-          node scripts/promote-release-set.mjs plan \
+          MODE="plan"
+          if [ "${{ inputs.apply }}" = "true" ]; then MODE="apply"; fi
+          node scripts/promote-release-set.mjs "$MODE" \
             --cli-version "${{ inputs.cli-version }}" \
             ${{ inputs.desktop-stable-version && format('--desktop-stable-version "{0}"', inputs.desktop-stable-version) || '' }} \
             ${{ inputs.desktop-beta-version && format('--desktop-beta-version "{0}"', inputs.desktop-beta-version) || '' }}
