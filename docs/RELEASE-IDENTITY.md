@@ -84,7 +84,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
     "channel": "stable",
     "upstream": {
       "name": "opencode",
-      "version": "1.18.10",
+      "version": "1.15.13",
       "gitCommit": "<40-char-upstream-commit>"
     },
     "build": {
@@ -125,7 +125,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
     "channel": "stable",
     "upstream": {
       "name": "opencode",
-      "version": "1.18.10",
+      "version": "1.15.13",
       "gitCommit": "<40-char-upstream-commit>"
     },
     "build": {
@@ -147,7 +147,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
       "product": "ellamaka-cli",
       "channel": "stable",
       "engineApi": ">=1.2.0 <2.0.0",
-      "upstreamBaseline": "1.18.10",
+      "upstreamBaseline": "1.15.13",
       "selection": "latest"
     },
     "wopalCli": ">=0.3.8"
@@ -225,8 +225,8 @@ release/upstreams.lock.json
     "opencode": {
       "relationship": "baseline",
       "repository": "https://github.com/anomalyco/opencode.git",
-      "version": "1.18.10",
-      "gitCommit": "<40-char-upstream-commit>"
+      "version": "1.15.13",
+      "gitCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
     }
   },
   "componentBaselines": {
@@ -246,7 +246,7 @@ release/upstreams.lock.json
 }
 ```
 
-`sources.opencode` 是 Ellamaka Engine 当前正式采用的 OpenCode baseline，也是 v1 外部 CLI 兼容过滤使用的 baseline。`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。这样，Ellamaka 可以把 Engine 合并到 OpenCode `1.18.10`，同时继续明确记录 `packages/app` / `packages/desktop` 暂时冻结在 `1.15.13`；只有主动升级对应复制基线时才修改相应 component entry。
+`sources.opencode` 是 Ellamaka Engine 当前正式采用的 OpenCode baseline，也是 v1 外部 CLI 兼容过滤使用的 baseline。`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。这样，Ellamaka 可以把 Engine 合并到 OpenCode `1.15.13`，同时继续明确记录 `packages/app` / `packages/desktop` 冻结在同一版本；只有主动升级对应复制基线时才修改相应 component entry。当 Engine baseline 升级到更高版本（例如 `1.18.10`）而 component 仍冻结在旧版本时，两者会在 lock 中分别体现。
 
 只有“正式采用新的 OpenCode Engine baseline”时才更新 `sources.opencode`。专用命令接收目标 OpenCode version，解析上游 tag 对应的完整 commit，校验后写入 lock；baseline 更新与上游合并在同一变更中审查和提交。component baseline 使用独立的显式更新动作，禁止被 Engine baseline 升级顺带改写。release workflow 禁止通过 input、环境变量或网络上的“最新 OpenCode tag”覆盖 lock。
 

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-03T00:00:00Z",
+  "source": "fixture",
+  "note": "FIXTURE — 待真实远端盘点后替换。当前内容由 scripts/capture-legacy-release-inventory.mjs dry-run 生成示例，需用户用真实 R2/GitHub 凭证执行真实盘点后冻结。",
+  "products": {
+    "ellamaka-cli": {
+      "tags": [
+        { "name": "v1.15.13-4", "sha": "385cb694419f98103af0e8fc6187ddcbcbb6eecb" },
+        { "name": "v1.15.13-3", "sha": "385cb694419f98103af0e8fc6187ddcbcbb6eecb" }
+      ],
+      "versionedPaths": [
+        "ellamaka/v1.15.13-4",
+        "ellamaka/v1.15.13-3"
+      ],
+      "manifests": [
+        {
+          "version": "1.15.13-4",
+          "url": "https://download.coursedao.com/ellamaka/v1.15.13-4/manifest.json",
+          "sha256": "fixture-cli-1.15.13-4-sha256",
+          "sourceCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
+        }
+      ],
+      "channelAliases": {
+        "latest": "1.15.13-4"
+      }
+    },
+    "ellamaka-desktop": {
+      "tags": [],
+      "versionedPaths": [],
+      "manifests": [],
+      "channelAliases": {}
+    }
+  },
+  "unparsable": []
+}
