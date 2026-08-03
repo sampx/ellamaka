@@ -307,6 +307,45 @@ describe("package-release.mjs", () => {
     expect(manifest.version).toBe(manifest.releaseIdentity.version)
   })
 
+  test("schema v2 manifest derives version from context when no --version passed (workflow call)", () => {
+    const ctxDir = makeTempdir()
+    const ctxPath = join(ctxDir, "release-context.json")
+    writeFileSync(
+      ctxPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        kind: "release",
+        product: "ellamaka-cli",
+        version: "1.17.1",
+        channel: "stable",
+        upstream: { name: "opencode", version: "1.15.13", gitCommit: "385cb694419f98103af0e8fc6187ddcbcbb6eecb" },
+        build: {
+          sourceTag: "ellamaka-cli-v1.17.1",
+          gitCommit: "91a7db1f22a2007588ee2a62e5d738b7d8e80291",
+          builtAt: "2026-08-03T08:30:00Z",
+          workflowRunId: "123456789",
+        },
+      }),
+    )
+    const outputDir = resolve(makeTempdir(), "output")
+    const { manifest } = script.manifestCommand({
+      archivesDir: fixturesDir,
+      outputDir,
+      releaseContextPath: ctxPath,
+      engineApi: "1.2.0",
+    })
+
+    expect(manifest.manifestSchemaVersion).toBe(2)
+    expect(manifest.version).toBe("1.17.1")
+    expect(manifest.releaseIdentity.version).toBe("1.17.1")
+    expect(manifest.capabilities.engineApi).toBe("1.2.0")
+    // Versioned artifact URLs use v<version> paths per §9.
+    for (const artifact of manifest.artifacts) {
+      expect(artifact.url).toContain("/v1.17.1/")
+    }
+    expect(manifest.checksumsUrl).toContain("/v1.17.1/checksums.txt")
+  })
+
   test("schema v2 manifest rejects identity/version mismatch", () => {
     const ctxDir = makeTempdir()
     const ctxPath = join(ctxDir, "release-context.json")
