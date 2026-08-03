@@ -51,6 +51,8 @@ export function parseArgs(argv) {
       tag: flags.tag,
       baseUrl: flags.baseUrl || "https://download.coursedao.com/ellamaka",
       build: flags.build,
+      releaseContextPath: flags.releaseContextPath,
+      engineApi: flags.engineApi,
     },
   }
 }
@@ -126,6 +128,58 @@ export function buildReleaseNotes(version, artifacts, manifestUrl, checksumsUrl)
   return lines.join("\n")
 }
 
+/**
+ * Build the manifest object. When releaseContextPath is provided, emits
+ * schema v2 with a structured releaseIdentity. Otherwise emits the legacy
+ * v1 shape (version + optional build + artifacts) for backward compat.
+ *
+ * Per docs/RELEASE-IDENTITY.md §5.3, the top-level `version` must equal
+ * `releaseIdentity.version` in schema v2.
+ */
+export function buildManifest({
+  version,
+  tag,
+  artifacts,
+  checksumsUrl,
+  baseUrl,
+  build,
+  releaseContextPath,
+  engineApi,
+}) {
+  if (releaseContextPath) {
+    const ctx = JSON.parse(fs.readFileSync(releaseContextPath, "utf8"))
+    if (ctx.version !== version) {
+      throw new Error(
+        `release context version ${ctx.version} does not match --version ${version}`,
+      )
+    }
+    const manifest = {
+      manifestSchemaVersion: 2,
+      version,
+      releaseIdentity: {
+        schemaVersion: 2,
+        kind: ctx.kind,
+        product: ctx.product,
+        version: ctx.version,
+        channel: ctx.channel,
+        upstream: ctx.upstream,
+        build: ctx.build,
+      },
+      ...(engineApi ? { capabilities: { engineApi } } : {}),
+      artifacts,
+      checksumsUrl,
+    }
+    return manifest
+  }
+  // Legacy v1 shape
+  return {
+    version,
+    ...(build ? { build } : {}),
+    artifacts,
+    checksumsUrl,
+  }
+}
+
 export function manifestCommand(flags) {
   const archivesDir = path.resolve(projectRoot, flags.archivesDir)
   const outputDir = path.resolve(projectRoot, flags.outputDir)
@@ -169,12 +223,16 @@ export function manifestCommand(flags) {
     }
   })
 
-  const manifest = {
+  const manifest = buildManifest({
     version: flags.version,
-    ...(flags.build ? { build: flags.build } : {}),
+    tag: flags.tag,
     artifacts,
     checksumsUrl,
-  }
+    baseUrl,
+    build: flags.build,
+    releaseContextPath: flags.releaseContextPath,
+    engineApi: flags.engineApi,
+  })
   const checksumLines = artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}`)
 
   fs.mkdirSync(outputDir, { recursive: true })

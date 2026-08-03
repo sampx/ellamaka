@@ -2,6 +2,10 @@ import { app, dialog } from "electron"
 import pkg from "electron-updater"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { getLogger } from "./logging"
+import { authorizeUpdate } from "./updater-policy"
+
+export { authorizeUpdate } from "./updater-policy"
+export type { UpdateAuthorizationInput, UpdateAuthorization } from "./updater-policy"
 
 const { autoUpdater } = pkg
 type UpdateCheckResult = { updateAvailable: boolean; version?: string; failed?: boolean }
