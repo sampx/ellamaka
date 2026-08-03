@@ -11,18 +11,17 @@
  * Legacy and unknown objects fail closed (retained, never auto-deleted).
  *
  * Modes:
- *   retention: `--keep N --keep-prerelease M` keeps the N newest stable and
- *     M newest prerelease (beta/rc) standard-SemVer releases; deletes older
- *     non-protected standard releases; never touches legacy. Applies with a
- *     fresh re-read of aliases to skip candidates that became protected
- *     since the plan.
+ *   retention: `--keep N` keeps the N newest stable standard-SemVer
+ *     releases; deletes older non-protected standard releases; never
+ *     touches legacy. Applies with a fresh re-read of aliases to skip
+ *     candidates that became protected since the plan.
  *   withdraw: `--withdraw <version> --fallback <v>` performs whole-version
  *     withdrawal per §9.2. The version must be recorded in
  *     release/withdrawn-versions.json. Steps: restore aliases → delete
  *     versioned R2 path → delete GitHub/Gitee Release + tag.
  *
  * Usage:
- *   node scripts/cleanup-ellamaka-releases.mjs --keep 5 --keep-prerelease 1 [--dry-run]
+ *   node scripts/cleanup-ellamaka-releases.mjs --keep 5 [--dry-run]
  *   node scripts/cleanup-ellamaka-releases.mjs --withdraw 1.16.0 --fallback 1.17.0 [--dry-run]
  *
  * Environment variables:
@@ -405,11 +404,10 @@ function deleteGiteeRelease(token, repo, release, dryRun) {
 
 function parseArgs(argv) {
   const args = argv.slice(2);
-  const flags = { mode: "retention", keep: 5, keepPrerelease: 1, dryRun: false, withdrawVersion: null, fallback: null };
+  const flags = { mode: "retention", keep: 5, dryRun: false, withdrawVersion: null, fallback: null };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--keep") flags.keep = parseInt(args[++i], 10);
-    else if (a === "--keep-prerelease") flags.keepPrerelease = parseInt(args[++i], 10);
     else if (a === "--dry-run") flags.dryRun = true;
     else if (a === "--withdraw") { flags.mode = "withdraw"; flags.withdrawVersion = args[++i]; }
     else if (a === "--fallback") flags.fallback = args[++i];
@@ -446,7 +444,7 @@ async function main() {
 }
 
 async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
-  console.log(`\n${mode}Cleaning up old ellamaka-cli releases (protection model, keep ${flags.keep} stable + ${flags.keepPrerelease} prerelease)\n`);
+  console.log(`\n${mode}Cleaning up old ellamaka-cli releases (protection model, keep ${flags.keep} stable)\n`);
 
   // 1. Build snapshot from R2 + GitHub tags.
   console.log("=== R2: listing ellamaka/v* prefixes ===");
@@ -463,13 +461,11 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
   const aliases = latestVersion ? { "ellamaka/latest/manifest.json": latestVersion } : {};
   console.log(`  latest alias → ${latestVersion ?? "none"}`);
 
-  // 3. Plan retention per channel (W-05: cover stable + beta + rc, not
-  //    just stable). beta/rc use keepPrerelease as the keep count.
+  // 3. Plan retention for the stable channel only. CLI publishes stable
+  //    only (rc mechanism removed); beta/rc are not CLI release channels.
   const snapshot = { versionedPaths: r2Paths, tags: [] };
   const channels = [
     { channel: "stable", keep: flags.keep },
-    { channel: "beta", keep: flags.keepPrerelease },
-    { channel: "rc", keep: flags.keepPrerelease },
   ];
   const allDeleteCandidates = [];
   const allLegacyRetained = new Set();

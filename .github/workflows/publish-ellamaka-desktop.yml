@@ -492,7 +492,7 @@ jobs:
           GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          node scripts/create-gitee-release.mjs --version "$VERSION" --repo wopal-cn/ellamaka --tag ellamaka-desktop-v"$VERSION" --notes-file release-output/release-notes.md
+          node scripts/create-gitee-release.mjs --version "$VERSION" --repo wopal-cn/ellamaka --tag ellamaka-desktop-v"$VERSION" --product-name "ellamaka-desktop" --notes-file release-output/release-notes.md
 
       - name: Create ontology Gitee release (idempotent create)
         if: needs.version.outputs.release != ''
@@ -505,6 +505,7 @@ jobs:
             --version "$VERSION" \
             --repo wopal-cn/wopal-space-ontology \
             --tag ellamaka-desktop-v"$VERSION" \
+            --product-name "ellamaka-desktop" \
             --notes-file release-output/release-notes.md
 
       - name: Summary

@@ -356,13 +356,13 @@ jobs:
           fi
 
           version="$VERSION"
-          tag="ellamaka-v${version}"
+          tag="ellamaka-cli-v${version}"
           if gh release view "$tag" --repo wopal-cn/wopal-space-ontology >/dev/null 2>&1; then
             echo "Release $tag already exists — committed releases are immutable, skipping."
           else
             gh release create "$tag" \
               --repo wopal-cn/wopal-space-ontology \
-              --title "ellamaka v${version}" \
+              --title "ellamaka-cli v${version}" \
               --notes-file release-output/release-notes.md
             echo "Created ontology release $tag"
           fi
@@ -378,6 +378,7 @@ jobs:
             --version "$VERSION" \
             --repo wopal-cn/ellamaka \
             --tag ellamaka-cli-v"$VERSION" \
+            --product-name "ellamaka-cli" \
             --notes-file release-output/release-notes.md
 
       - name: Create ontology Gitee release (idempotent create)
@@ -390,7 +391,8 @@ jobs:
           node scripts/create-gitee-release.mjs \
             --version "$VERSION" \
             --repo wopal-cn/wopal-space-ontology \
-            --tag ellamaka-v"$VERSION" \
+            --tag ellamaka-cli-v"$VERSION" \
+            --product-name "ellamaka-cli" \
             --notes-file release-output/release-notes.md
 
       - name: Summary
@@ -403,7 +405,7 @@ jobs:
             echo ""
             echo "- R2 (CDN): https://download.coursedao.com/ellamaka/v${VERSION}/"
             echo "- GitHub (ellamaka): https://github.com/wopal-cn/ellamaka/releases/tag/ellamaka-cli-v${VERSION}"
-            echo "- GitHub (ontology): https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-v${VERSION}"
+            echo "- GitHub (ontology): https://github.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-cli-v${VERSION}"
             echo "- Gitee (ellamaka): https://gitee.com/wopal-cn/ellamaka/releases/tag/ellamaka-cli-v${VERSION}"
-            echo "- Gitee (ontology): https://gitee.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-v${VERSION}"
+            echo "- Gitee (ontology): https://gitee.com/wopal-cn/wopal-space-ontology/releases/tag/ellamaka-cli-v${VERSION}"
           } >> $GITHUB_STEP_SUMMARY

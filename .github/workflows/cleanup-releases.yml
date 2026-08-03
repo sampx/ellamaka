@@ -27,6 +27,11 @@ on:
         options:
           - ellamaka-cli
           - ellamaka-desktop
+      apply:
+        description: "Apply deletions (default: dry-run plan only)"
+        required: false
+        type: boolean
+        default: false
       keep-stable:
         description: "Number of stable releases to keep (retention mode)"
         required: false
@@ -66,10 +71,15 @@ jobs:
           PRODUCT="${{ inputs.product }}"
           MODE="${{ inputs.mode }}"
           if [ "$MODE" = "retention" ]; then
-            if [ "$PRODUCT" = "ellamaka-cli" ]; then
-              node scripts/cleanup-ellamaka-releases.mjs --keep "${{ inputs.keep-stable }}" --dry-run
+            if [ "${{ inputs.apply }}" = "true" ]; then
+              DRY_FLAG=""
             else
-              node scripts/cleanup-desktop-releases.mjs --keep-prod "${{ inputs.keep-stable }}" --keep-beta "${{ inputs.keep-beta }}" --dry-run
+              DRY_FLAG="--dry-run"
+            fi
+            if [ "$PRODUCT" = "ellamaka-cli" ]; then
+              node scripts/cleanup-ellamaka-releases.mjs --keep "${{ inputs.keep-stable }}" $DRY_FLAG
+            else
+              node scripts/cleanup-desktop-releases.mjs --keep-prod "${{ inputs.keep-stable }}" --keep-beta "${{ inputs.keep-beta }}" $DRY_FLAG
             fi
           else
             # Withdraw mode: real execution (R2 + GitHub + Gitee mutation).

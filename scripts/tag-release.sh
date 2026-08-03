@@ -16,8 +16,14 @@ $SCRIPT — 创建 namespaced product tag 并 dispatch publish workflow
 
 按 docs/RELEASE-IDENTITY.md §8，tag-release 只接收目标 product 和显式
 Ellamaka product version，创建 ellamaka-{cli,desktop}-vX.Y.Z 格式的
-namespaced tag，并 dispatch 对应 workflow。不再支持隐式 -N 自增、
-通用 vX.Y.Z tag 或已提交 release 的 retag/覆盖。
+namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
+触发独立 cleanup workflow（retention 清理历史 release）。
+
+版本号必须显式输入完整（无自动递增）：
+  cli:     仅接受 X.Y.Z（每次发布递增 patch/minor）
+  desktop: X.Y.Z（prod）或 X.Y.Z-beta.N（beta）
+
+不支持：隐式 -N 自增、通用 vX.Y.Z tag、已提交 release 的 retag/覆盖。
 
 用法:
   $SCRIPT <子命令> <version> [选项]
@@ -29,18 +35,17 @@ namespaced tag，并 dispatch 对应 workflow。不再支持隐式 -N 自增、
 
 ━━━ 参数 ━━━
   version    产品版本号（必填，cli/desktop 子命令）
-               cli:     X.Y.Z（stable，patch/minor 递增）
-               desktop: X.Y.Z（prod）或 X.Y.Z-beta.N（beta）
 
 ━━━ 选项 ━━━
   -h, --help            显示此帮助
   --channel             Desktop 发布渠道: beta | prod（仅 desktop/all，默认 prod）
   --cli-version         'all' 子命令的 CLI 版本（必填）
   --desktop-version     'all' 子命令的 Desktop 版本（必填）
+  --no-cleanup          发布成功后跳过 cleanup workflow 触发（默认自动触发）
 
 ━━━ 校验 ━━━
   在写入前依次校验：
-  1. 版本符合标准 SemVer 子集（stable/beta/rc）
+  1. 版本符合标准 SemVer 子集（cli: X.Y.Z；desktop: X.Y.Z 或 X.Y.Z-beta.N）
   2. version/channel 一致
   3. 目标版本未列入 release/withdrawn-versions.json
   4. 目标 namespaced tag 远端不存在（或仅存在无有效 manifest 的 failed attempt）
@@ -58,6 +63,9 @@ namespaced tag，并 dispatch 对应 workflow。不再支持隐式 -N 自增、
 
   # 双发（独立版本）
   $SCRIPT all --cli-version 1.17.1 --desktop-version 1.16.2
+
+  # 发布但跳过自动清理
+  $SCRIPT cli 1.17.2 --no-cleanup
 EOF
   exit 0
 }
@@ -67,11 +75,13 @@ SUBCOMMAND=""
 CHANNEL="prod"
 CLI_VERSION=""
 DESKTOP_VERSION=""
+NO_CLEANUP=""
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
+    --no-cleanup) NO_CLEANUP="true"; shift ;;
     --channel)
       if [[ $# -lt 2 || "$2" == --* ]]; then
         die "--channel 需要 beta 或 prod"
@@ -520,3 +530,28 @@ echo "✅ Release complete"
 [ -n "$DESKTOP_TAG" ] && [ "$CHANNEL" = "prod" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/v${DESKTOP_PLAIN}/"
 [ -n "$DESKTOP_TAG" ] && [ "$CHANNEL" = "beta" ] && echo "   Desktop R2:  https://download.coursedao.com/ellamaka-desktop/beta/v${DESKTOP_PLAIN}/"
 [ -n "$CLI_TAG" ] && echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${CLI_TAG}"
+
+# --- Auto-trigger retention cleanup (separate workflow) ---
+# Per docs/RELEASE-IDENTITY.md §9.1, cleanup uses the protection model and
+# lives in its own workflow. After a successful release, dispatch it for
+# the released product(s) so historical releases are pruned automatically
+# (mirrors the old inline cleanup convention). --no-cleanup skips this.
+if [ "$HAVE_GH" = true ] && [ "$NO_CLEANUP" != "true" ]; then
+  if [ -n "$CLI_TAG" ]; then
+    echo "→ 触发 cleanup workflow (ellamaka-cli, retention apply)..."
+    gh workflow run cleanup-releases.yml -R wopal-cn/ellamaka \
+      -f mode=retention \
+      -f product=ellamaka-cli \
+      -f apply=true \
+      -f keep-stable=5 || echo "⚠️  cleanup workflow 触发失败（可手动触发）"
+  fi
+  if [ -n "$DESKTOP_TAG" ]; then
+    echo "→ 触发 cleanup workflow (ellamaka-desktop, retention apply)..."
+    gh workflow run cleanup-releases.yml -R wopal-cn/ellamaka \
+      -f mode=retention \
+      -f product=ellamaka-desktop \
+      -f apply=true \
+      -f keep-stable=3 \
+      -f keep-beta=2 || echo "⚠️  cleanup workflow 触发失败（可手动触发）"
+  fi
+fi
