@@ -8,6 +8,7 @@ import {
   buildReferenceGraph,
   planRetention,
   planWithdraw,
+  applyRetentionWithRecheck,
   type ReleaseSnapshot,
   type AliasMap,
 } from "../scripts/cleanup-desktop-releases.mjs"
@@ -170,6 +171,39 @@ describe("cleanup-desktop: withdraw plan", () => {
       fallbackVersion: "1.17.0",
     })
     expect(plan.allowed).toBe(false)
+  })
+})
+
+describe("cleanup-desktop: W-06 apply-time recheck", () => {
+  test("skips candidates that became protected since plan", () => {
+    const snapshot: ReleaseSnapshot = {
+      versionedPaths: [
+        "ellamaka-desktop/v1.16.2",
+        "ellamaka-desktop/v1.15.0",
+      ],
+      tags: [],
+    }
+    const planAliases: AliasMap = {
+      "ellamaka-desktop/latest/manifest.json": "1.16.2",
+    }
+    const plan = planRetention({
+      product: "ellamaka-desktop",
+      channel: "stable",
+      snapshot,
+      aliases: planAliases,
+      keepStable: 1,
+    })
+    expect(plan.deleteCandidates.map((c) => c.version)).toEqual(["1.15.0"])
+
+    // Concurrent move: latest now points to 1.15.0 → must skip.
+    const freshAliases: AliasMap = {
+      "ellamaka-desktop/latest/manifest.json": "1.15.0",
+    }
+    const freshGraph = buildReferenceGraph(snapshot, freshAliases)
+    const { kept, skipped } = applyRetentionWithRecheck(plan, freshGraph)
+    expect(kept).toEqual([])
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0].version).toBe("1.15.0")
   })
 })
 

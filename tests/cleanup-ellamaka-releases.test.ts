@@ -8,6 +8,7 @@ import {
   buildReferenceGraph,
   planRetention,
   planWithdraw,
+  applyRetentionWithRecheck,
   type ReleaseSnapshot,
   type AliasMap,
 } from "../scripts/cleanup-ellamaka-releases.mjs"
@@ -171,6 +172,38 @@ describe("cleanup-ellamaka: retention plan", () => {
     expect(plan.deleteCandidates.length).toBeGreaterThan(0)
     expect(plan.dryRun).toBe(true)
   })
+
+  test("W-05: beta channel releases above keepPrerelease become candidates", () => {
+    // CLI cleanup must cover beta/rc channels, not only stable. Otherwise
+    // beta releases accumulate forever.
+    const betaSnapshot: ReleaseSnapshot = {
+      versionedPaths: [
+        "ellamaka/v1.17.0-beta.1",
+        "ellamaka/v1.17.0-beta.2",
+        "ellamaka/v1.17.0-beta.3",
+        "ellamaka/v1.17.0-beta.4",
+      ],
+      tags: [],
+    }
+    const betaAliases: AliasMap = {
+      // latest alias points to a stable release, so beta releases are unprotected
+      "ellamaka/latest/manifest.json": "1.16.0",
+    }
+    const plan = planRetention({
+      product: "ellamaka-cli",
+      channel: "beta",
+      snapshot: betaSnapshot,
+      aliases: betaAliases,
+      keepStable: 1, // keepPrerelease=1
+    })
+    // Descending: beta.4, beta.3, beta.2, beta.1. Keep 1 → keep beta.4,
+    // delete beta.3, beta.2, beta.1.
+    expect(plan.deleteCandidates.map((c) => c.version).sort()).toEqual([
+      "1.17.0-beta.1",
+      "1.17.0-beta.2",
+      "1.17.0-beta.3",
+    ])
+  })
 })
 
 describe("cleanup-ellamaka: withdraw plan", () => {
@@ -236,6 +269,54 @@ describe("cleanup-ellamaka: withdraw plan", () => {
     const restoreIdx = plan.steps.findIndex((s) => s.action === "restore-alias")
     const deleteIdx = plan.steps.findIndex((s) => s.action === "delete-versioned-path")
     expect(restoreIdx).toBeLessThan(deleteIdx)
+  })
+})
+
+describe("cleanup-ellamaka: W-06 apply-time recheck", () => {
+  test("skips candidates that became protected since plan", () => {
+    // Plan generated with latest → 1.17.0; candidate 1.15.0 unprotected.
+    const snapshot: ReleaseSnapshot = {
+      versionedPaths: ["ellamaka/v1.17.0", "ellamaka/v1.15.0"],
+      tags: [],
+    }
+    const planAliases: AliasMap = { "ellamaka/latest/manifest.json": "1.17.0" }
+    const plan = planRetention({
+      product: "ellamaka-cli",
+      channel: "stable",
+      snapshot,
+      aliases: planAliases,
+      keepStable: 1,
+    })
+    expect(plan.deleteCandidates.map((c) => c.version)).toEqual(["1.15.0"])
+
+    // Concurrent move: latest alias now points to 1.15.0 (the deletion
+    // candidate). Apply-time recheck must skip it.
+    const freshAliases: AliasMap = { "ellamaka/latest/manifest.json": "1.15.0" }
+    const freshGraph = buildReferenceGraph(snapshot, freshAliases)
+    const { kept, skipped } = applyRetentionWithRecheck(plan, freshGraph)
+    expect(kept).toEqual([])
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0].version).toBe("1.15.0")
+    expect(skipped[0].reason).toMatch(/latest/)
+  })
+
+  test("keeps candidates that remain unprotected", () => {
+    const snapshot: ReleaseSnapshot = {
+      versionedPaths: ["ellamaka/v1.17.0", "ellamaka/v1.16.0", "ellamaka/v1.15.0"],
+      tags: [],
+    }
+    const aliases: AliasMap = { "ellamaka/latest/manifest.json": "1.17.0" }
+    const plan = planRetention({
+      product: "ellamaka-cli",
+      channel: "stable",
+      snapshot,
+      aliases,
+      keepStable: 1,
+    })
+    const freshGraph = buildReferenceGraph(snapshot, aliases)
+    const { kept, skipped } = applyRetentionWithRecheck(plan, freshGraph)
+    expect(skipped).toEqual([])
+    expect(kept.length).toBe(plan.deleteCandidates.length)
   })
 })
 

@@ -221,6 +221,27 @@ export function planRetention({
 }
 
 /**
+ * W-06: Re-validate a plan's delete candidates against a FRESH reference
+ * graph right before apply. If a candidate became protected (e.g. latest
+ * alias was concurrently moved to it), skip it and record a warning.
+ *
+ * Returns { kept, skipped } where skipped items carry the protection reason.
+ */
+export function applyRetentionWithRecheck(plan, freshGraph) {
+  const kept = []
+  const skipped = []
+  for (const c of plan.deleteCandidates) {
+    if (freshGraph.protected.has(c.path)) {
+      const reason = freshGraph.protectedReason.get(c.path) ?? "protected"
+      skipped.push({ ...c, reason })
+      continue
+    }
+    kept.push(c)
+  }
+  return { kept, skipped }
+}
+
+/**
  * @typedef {Object} WithdrawPlan
  * @property {boolean} allowed
  * @property {string} [reason]
@@ -443,25 +464,52 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
   const aliases = latestVersion ? { "ellamaka/latest/manifest.json": latestVersion } : {};
   console.log(`  latest alias → ${latestVersion ?? "none"}`);
 
-  // 3. Build reference graph + plan retention using standard SemVer.
+  // 3. Plan retention per channel (W-05: cover stable + beta + rc, not
+  //    just stable). beta/rc use keepPrerelease as the keep count.
   const snapshot = { versionedPaths: r2Paths, tags: [] };
-  const plan = planRetention({
-    product: PRODUCT,
-    channel: "stable",
-    snapshot,
-    aliases,
-    keepStable: flags.keep,
-    dryRun: flags.dryRun,
-  });
-
-  if (plan.legacyRetained.length > 0) {
-    console.log(`  legacy/unknown retained (fail-closed): ${plan.legacyRetained.join(", ")}`);
+  const channels = [
+    { channel: "stable", keep: flags.keep },
+    { channel: "beta", keep: flags.keepPrerelease },
+    { channel: "rc", keep: flags.keepPrerelease },
+  ];
+  const allDeleteCandidates = [];
+  const allLegacyRetained = new Set();
+  for (const { channel, keep } of channels) {
+    const plan = planRetention({
+      product: PRODUCT,
+      channel,
+      snapshot,
+      aliases,
+      keepStable: keep,
+      dryRun: flags.dryRun,
+    });
+    allDeleteCandidates.push(...plan.deleteCandidates);
+    for (const v of plan.legacyRetained) allLegacyRetained.add(v);
   }
 
-  // 4. Execute deletion on R2 versioned paths.
-  if (plan.deleteCandidates.length > 0) {
-    console.log(`  deleting ${plan.deleteCandidates.length} R2 prefixes:`);
-    for (const c of plan.deleteCandidates) {
+  if (allLegacyRetained.size > 0) {
+    console.log(`  legacy/unknown retained (fail-closed): ${[...allLegacyRetained].join(", ")}`);
+  }
+
+  // 4. W-06: re-read aliases and rebuild reference graph right before
+  //    apply. Skip any candidate that became protected since the plan.
+  const freshLatest = readLatestAlias(r2Url);
+  const freshAliases = freshLatest ? { "ellamaka/latest/manifest.json": freshLatest } : {};
+  const freshSnapshot = { versionedPaths: r2Paths, tags: [] };
+  const freshGraph = buildReferenceGraph(freshSnapshot, freshAliases);
+  const provisionalPlan = { deleteCandidates: allDeleteCandidates };
+  const { kept, skipped } = applyRetentionWithRecheck(provisionalPlan, freshGraph);
+  if (skipped.length > 0) {
+    console.log(`  ${skipped.length} candidate(s) skipped (became protected since plan):`);
+    for (const s of skipped) {
+      console.log(`    skip ${s.path} — ${s.reason}`);
+    }
+  }
+
+  // 5. Execute deletion on R2 versioned paths.
+  if (kept.length > 0) {
+    console.log(`  deleting ${kept.length} R2 prefixes:`);
+    for (const c of kept) {
       try {
         deleteR2Prefix(r2Url, c.path, flags.dryRun);
       } catch (err) {
@@ -472,8 +520,8 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
     console.log("  nothing to delete (R2)");
   }
 
-  // 5. GitHub + Gitee release pages: delete matching tags for deleted versions.
-  const deletedVersions = new Set(plan.deleteCandidates.map((c) => c.version));
+  // 6. GitHub + Gitee release pages: delete matching tags for deleted versions.
+  const deletedVersions = new Set(kept.map((c) => c.version));
   if (deletedVersions.size > 0) {
     console.log("\n=== GitHub (wopal-cn/ellamaka): matching ellamaka-cli-v* releases ===");
     try {

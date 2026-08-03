@@ -200,6 +200,25 @@ export function planRetention({
 }
 
 /**
+ * W-06: Re-validate a plan's delete candidates against a FRESH reference
+ * graph right before apply. If a candidate became protected (e.g. latest
+ * alias was concurrently moved to it), skip it and record a warning.
+ */
+export function applyRetentionWithRecheck(plan, freshGraph) {
+  const kept = []
+  const skipped = []
+  for (const c of plan.deleteCandidates) {
+    if (freshGraph.protected.has(c.path)) {
+      const reason = freshGraph.protectedReason.get(c.path) ?? "protected"
+      skipped.push({ ...c, reason })
+      continue
+    }
+    kept.push(c)
+  }
+  return { kept, skipped }
+}
+
+/**
  * @typedef {Object} WithdrawPlan
  * @property {boolean} allowed
  * @property {string} [reason]
@@ -439,7 +458,8 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
   const snapshot = { versionedPaths, tags: [] };
 
   // 3. Plan retention for prod (stable) and beta separately.
-  const allDeleteVersions = new Set();
+  const allDeleteCandidates = [];
+  const allLegacyRetained = new Set();
   for (const channel of ["stable", "beta"]) {
     const keep = channel === "stable" ? flags.keepProd : flags.keepBeta;
     const plan = planRetention({
@@ -450,25 +470,46 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
       keepStable: keep,
       dryRun: flags.dryRun,
     });
+    allDeleteCandidates.push(...plan.deleteCandidates);
+    for (const v of plan.legacyRetained) allLegacyRetained.add(v);
+  }
 
-    if (plan.legacyRetained.length > 0) {
-      console.log(`  ${channel} legacy/unknown retained (fail-closed): ${plan.legacyRetained.join(", ")}`);
+  if (allLegacyRetained.size > 0) {
+    console.log(`  legacy/unknown retained (fail-closed): ${[...allLegacyRetained].join(", ")}`);
+  }
+
+  // 4. W-06: re-read aliases and rebuild reference graph right before apply.
+  //    Skip any candidate that became protected since the plan.
+  const freshProdLatest = readLatestAlias(r2Url, `${PROD_ROOT}/latest`);
+  const freshBetaLatest = readLatestAlias(r2Url, `${BETA_ROOT}/latest`);
+  const freshAliases = {
+    ...(freshProdLatest ? { "ellamaka-desktop/latest/manifest.json": freshProdLatest } : {}),
+    ...(freshBetaLatest ? { "ellamaka-desktop/beta/latest/manifest.json": freshBetaLatest } : {}),
+  };
+  const freshGraph = buildReferenceGraph(snapshot, freshAliases);
+  const provisionalPlan = { deleteCandidates: allDeleteCandidates };
+  const { kept, skipped } = applyRetentionWithRecheck(provisionalPlan, freshGraph);
+  if (skipped.length > 0) {
+    console.log(`  ${skipped.length} candidate(s) skipped (became protected since plan):`);
+    for (const s of skipped) {
+      console.log(`    skip ${s.path} — ${s.reason}`);
     }
+  }
 
-    if (plan.deleteCandidates.length > 0) {
-      console.log(`  deleting ${plan.deleteCandidates.length} ${channel} R2 prefixes:`);
-      for (const c of plan.deleteCandidates) {
-        try {
-          deleteR2Prefix(r2Url, c.path, flags.dryRun);
-          allDeleteVersions.add(c.version);
-        } catch (err) {
-          console.error(`  failed to delete ${c.path}: ${err.message}`);
-        }
+  const allDeleteVersions = new Set();
+  if (kept.length > 0) {
+    console.log(`  deleting ${kept.length} R2 prefixes:`);
+    for (const c of kept) {
+      try {
+        deleteR2Prefix(r2Url, c.path, flags.dryRun);
+        allDeleteVersions.add(c.version);
+      } catch (err) {
+        console.error(`  failed to delete ${c.path}: ${err.message}`);
       }
     }
   }
 
-  // 4. GitHub + Gitee release pages: delete matching tags.
+  // 5. GitHub + Gitee release pages: delete matching tags.
   if (allDeleteVersions.size > 0) {
     console.log(`\n=== GitHub (${ELLAMAKA_REPO}): matching ellamaka-desktop-v* releases ===`);
     try {
