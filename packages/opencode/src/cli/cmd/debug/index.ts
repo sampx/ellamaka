@@ -17,6 +17,7 @@ import { SnapshotCommand } from "./snapshot"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
 import { VERSION_PREFIX } from "../../../../../ellamaka/branding"
+import { ReleaseInfoCommand } from "./release-info"
 import { V2Command } from "./v2"
 
 export const DebugCommand = cmd({
@@ -34,6 +35,7 @@ export const DebugCommand = cmd({
       .command(StartupCommand)
       .command(AgentCommand)
       .command(V2Command)
+      .command(ReleaseInfoCommand)
       .command(InfoCommand)
       .command(PathsCommand)
       .command(WaitCommand)
