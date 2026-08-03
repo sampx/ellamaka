@@ -283,9 +283,9 @@ https://download.coursedao.com/ellamaka/latest/manifest.json
 
 因此发布系统必须保证：
 
-1. CLI stable latest 与每个仍公开的 Desktop latest requirements 兼容。
-2. 只发布 CLI 修复时，promotion gate 先用当前 Desktop stable/beta latest 验证新 CLI；任何一个不兼容都不得移动 CLI latest。
-3. OpenCode baseline 或 engine API breaking boundary 变化时，先构建并验证新的 CLI 与所有受影响 Desktop channel 的不可变版本，再协调提升对应 latest aliases。
+1. CLI stable latest 是独立发布面：CLI 发布不受任何 Desktop 版本约束，latest 直接更新。
+2. 发布 Desktop 时，其 requirements 必须与当前 CLI stable latest 兼容；不兼容时 fail closed，先发布兼容的 CLI。
+3. OpenCode baseline 或 engine API breaking boundary 变化时，CLI 先行发布并更新 latest；Desktop 随后发布并校验 CLI latest 满足 requirements。
 4. aliases 顺序更新产生的短暂不一致由 consumer fail-closed 并提示重试，不通过历史版本搜索掩盖发布事务错误。
 5. 较旧 Desktop 若已不符合当前 CLI latest，必须先更新 Desktop；自动 repair 不为它回退安装旧 CLI。
 
@@ -401,11 +401,16 @@ Desktop 保留自己的 manifest policy gate。electron-updater 负责平台 fee
 | Desktop beta UI 验证                     |  不发布  | 发布 beta  |
 | Electron/Chromium 紧急安全更新           |  不发布  | 发布 patch |
 
-每个产品 publish workflow 只负责构建并提交自己的 immutable versioned release；它不得在需要另一产品新版本的场景中提前移动 latest。独立的 release-set coordinator 接收一个 CLI version、各受影响 Desktop channel 的独立 version，以及明确的 channel 集合，直接读取已经提交的 versioned manifests，验证最终组合后才更新 aliases。这样即使“当前 aliases 彼此兼容、但任一新产品与当前另一方不兼容，只有新 CLI + 新 Desktop 组合兼容”，两个 publish workflow 也不会互相等待。
+每个产品 publish workflow 只负责构建并提交自己的 immutable versioned release，并更新自己的 latest 别名。CLI 是独立产品，发布与最新版本从不依赖 Desktop；Desktop 是 CLI 的消费者，其发布必须保证 CLI stable latest 满足自己的 requirements。
 
-promotion gate 覆盖两个方向：Desktop stable/beta 单独提升前验证 CLI stable latest；CLI-only stable 提升前验证当前 Desktop stable 与 beta；CLI prerelease 只保留 versioned manifest，绝不进入 stable latest；Desktop stable 只能进入 stable alias，beta 只能进入 beta alias。协调提升以新 CLI + 新 Desktop versioned manifests 形成最终 alias set 并验证全部 requirements。
+发布顺序约定为 CLI 先行、Desktop 后发：
 
-Coordinator 将 alias 更新视为可恢复的有序操作：每步写入后回读校验，记录已完成 alias；重试时重新读取 immutable manifests 和当前 aliases，已等于目标的步骤幂等跳过，未完成步骤继续。更新间隙 consumer fail-closed 并提示重试；任何失败不回滚或重建 immutable release，也不能让 promotion job 改用当前 alias 代替指定 versioned manifest。两者属于同一次协调 release set，但各自保留独立 SemVer。release set/BOM 只使用不可排序的标识符，不增加第三套“Ellamaka Suite SemVer”。
+- CLI 发布时直接更新 CLI stable latest，不受任何 Desktop 版本约束。
+- Desktop stable/beta 发布前校验当前 CLI stable latest 满足自身 requirements（product、channel、upstream baseline、engine API range）；不满足时 fail closed 并提示先发布兼容的 CLI。
+- 旧 Desktop 用户启动时若发现 CLI 不兼容，通过 Setup Center 的 `install-engine` 下载并校验 CLI stable latest；仍不满足则提示更新 Desktop，不搜索历史 CLI，不静默回退。
+- CLI stable 只能进入 stable alias；Desktop stable 只能进入 stable alias，beta 只能进入 beta alias。
+
+不存在跨产品的 latest 协调流程：CLI 永不等待 Desktop，Desktop 永远自我适配。短暂的不一致窗口由 consumer fail-closed 并提示重试，不通过历史版本搜索掩盖发布事务错误。
 
 ## 12. Legacy Migration
 

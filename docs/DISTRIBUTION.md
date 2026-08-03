@@ -159,7 +159,7 @@ dist/ellamaka-windows-x64-baseline.zip
    - `release-notes.md` 包含平台下载表的 markdown 表格
 4. 先上传全部文件到 workflow-run staging prefix 并回读校验，再以禁止覆盖的写入复制 artifacts、checksums 和 release notes 到 `s3://wopal-release/ellamaka/v$VERSION/`；最后写入 `manifest.json` 作为正式发布提交点
 5. 回读 versioned manifest/artifacts 并校验 identity、SHA-256 和完整性；有效 manifest 已存在时 fail closed，禁止覆盖。只有 partial objects、没有 manifest/latest/updater/Release 页面引用且能证明 attempt ownership 时，可显式清理后从修复 commit 同版本重试
-6. CLI-only promotion gate 读取当前 Desktop stable/beta latest（若存在），验证新 CLI 与所有公开 Desktop requirements 兼容；不兼容时保留现有 CLI latest。需要新 CLI + 新 Desktop 才兼容时，产品 workflow 只提交 immutable release，交给独立 release-set coordinator 读取指定 versioned manifests 后联合提升
+6. 直接更新 CLI stable latest——CLI 是独立产品，发布不受任何 Desktop 版本约束（见 RELEASE-IDENTITY.md §11）
 7. 整对象替换 headless/full-product 共用的 stable latest `s3://wopal-release/ellamaka/latest/manifest.json`
 8. 主动 purge latest 的 CDN cache；mutable alias 更新失败时 workflow 失败，但不得回滚或覆盖 versioned release，只能基于已提交 manifest 单独重试 promotion
 9. 创建 4 个 release 条目（均使用本次 CLI 的 `release-notes.md`，**不挂 binary**）：
@@ -202,7 +202,7 @@ bun packages/ellamaka/build.ts --web-ui ellamaka-app
 | manifest 生成                           | `manifest.json` 包含 7 个 artifact，`url` 指向 `download.coursedao.com/ellamaka/v$VERSION/`                                                                                                                           |
 | checksums 正确                          | `sha256sum dist/ellamaka-*.tar.gz dist/ellamaka-*.zip` 与 `checksums.txt` 对比                                                                                                                                        |
 | R2 上传成功                             | `aws s3 ls s3://wopal-release/ellamaka/v$VERSION/` 可见全部产物                                                                                                                                                       |
-| latest promotion gate                   | 新 CLI manifest 与当前公开 Desktop stable/beta latest requirements 均兼容；latest 内容与 versioned manifest 完全一致                                                                                                  |
+| latest promotion gate                   | CLI 独立发布，latest 直接更新；Desktop 发布前校验 CLI stable latest 满足其 requirements；latest 内容与 versioned manifest 完全一致                                                                                  |
 | immutable guard                         | 重跑同一 product tag/version 时在上传前失败，不删除或覆盖既有 versioned objects                                                                                                                                       |
 | failed attempt retry                    | 无有效 manifest/alias/Release 页面引用时，只清理可证明 ownership 的 partial objects/tag，并允许修复 commit 后同版本重试                                                                                               |
 | whole-version withdrawal                | 版本先记入 `release/withdrawn-versions.json`，再恢复并验证健康 aliases、purge CDN，最后删除该版本 R2 prefix、Release 页面和 product tag；版本永久禁用                                                                 |
@@ -439,7 +439,7 @@ Contract：
 
 ### 9.4 CI 构建（matrix）
 
-新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（仅 `workflow_dispatch`，由 `tag-release.sh` dispatch），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。产品 publish workflow 只保证 immutable release；`promote-ellamaka-release-set.yml` 接收 CLI version、受影响 Desktop channel/version 集合，直接读取 versioned manifests、验证最终组合，并以可回读、可幂等重试的顺序更新 aliases。它不重新 build，也不从当前 aliases 反推目标版本。
+新增 `publish-ellamaka-desktop.yml`，触发条件与 CLI 一致（仅 `workflow_dispatch`，由 `tag-release.sh` dispatch），仓库守卫 `if: github.repository == 'wopal-cn/ellamaka'`。Desktop workflow 在发布前验证 CLI stable latest 满足自身 requirements；不满足时 fail closed。不存在跨产品 release-set 协调流程——CLI 独立发布，Desktop 自我适配（见 RELEASE-IDENTITY.md §11）。
 
 原生安装包无法在单一 runner 跨平台生成，必须用 matrix：
 
