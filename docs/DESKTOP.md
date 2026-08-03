@@ -1,10 +1,10 @@
 # ellamaka-desktop 设计
 
 > **状态**: Draft
-> **更新时间**: 2026-07-30
+> **更新时间**: 2026-08-03
 > **目标包**: `packages/ellamaka-desktop`
-> **上游基线**: OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
-> **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`
+> **上游基线**: Engine baseline 与冻结 component baselines 均以 `release/upstreams.lock.json` 为准；当前 `packages/desktop` 复制参照为 OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
+> **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`、`RELEASE-IDENTITY.md`
 
 本文档描述 ellamaka 官方桌面应用的目标架构。桌面应用承载 `ellamaka-app` Workbench。Electron 主进程管理窗口和本地 sidecar，sidecar 统一管理 Web 与 Desktop 的 PTY 生命周期。
 
@@ -16,7 +16,7 @@
 - Panel 和 Space 主动关闭时立即释放对应 PTY；页面或窗口关闭后由 sidecar 在宽限期结束时回收 PTY。
 - 应用退出时，系统终止全部 sidecar 和子进程。
 - `ellamaka-app` 同时服务浏览器和桌面端，两种环境共享产品能力与 PTY 生命周期，并分别接入浏览器和 Electron 系统能力。
-- 桌面包与 ellamaka 引擎、SDK 和 app 保持同一 OpenCode 版本基线。
+- 一次 Desktop build 内的桌面包、Engine sidecar、SDK 和 app 使用同一 Ellamaka source commit；各自的 OpenCode 来源由 upstream lock 分别记录，冻结 component baseline 不必与 Engine baseline 相同。
 
 ## 2. 包定位与版本基线
 
@@ -24,38 +24,38 @@
 
 本项目同时保留两个 `packages/desktop/` 目录，各司其职：
 
-| 包 | 路径 | 角色 | 修改规则 |
-|------|------|------|----------|
-| 上游基线 | `packages/desktop/` | 冻结的 OpenCode v1.15.13 参照源 | **禁止修改**。仅通过 `git diff` 读取，作为安全/兼容修复的评估基准 |
-| 品牌产品 | `packages/ellamaka-desktop/` | 可编辑的 Ellamaka 桌面应用 | 正常开发、修改、定制 |
+| 包       | 路径                         | 角色                            | 修改规则                                                          |
+| -------- | ---------------------------- | ------------------------------- | ----------------------------------------------------------------- |
+| 上游基线 | `packages/desktop/`          | 冻结的 OpenCode v1.15.13 参照源 | **禁止修改**。仅通过 `git diff` 读取，作为安全/兼容修复的评估基准 |
+| 品牌产品 | `packages/ellamaka-desktop/` | 可编辑的 Ellamaka 桌面应用      | 正常开发、修改、定制                                              |
 
 **基线使用规则**：
 
 - `packages/desktop/` 是只读参照，不作为产品包或运行时依赖。
-- 上游安全修复或兼容修复通过 `git diff 385cb694419f98103af0e8fc6187ddcbcbb6eecb -- packages/desktop/` 评估后，手工移植到 `packages/ellamaka-desktop/`。
-- 基线完整性由 `scripts/check-desktop-baseline.sh` 守护，任何对 `packages/desktop/` 的误修改均被检测为 drift 并阻止提交。
+- 上游安全修复或兼容修复以 `release/upstreams.lock.json` 中 `componentBaselines["packages/desktop"].gitCommit` 为比较起点，评估后手工移植到 `packages/ellamaka-desktop/`。
+- 基线完整性由 `scripts/check-desktop-baseline.sh` 守护；脚本读取该 component entry，任何对 `packages/desktop/` 的误修改均被检测为 drift 并阻止提交。
 - `packages/desktop/` 不在 `CLEANUP_PATHS` 中，不在构建图中，turbo 不为其编排 Task。
 
 ### 2.2 独立复制模式
 
 `packages/ellamaka-desktop` 从 OpenCode v1.15.13 的 `packages/desktop` 独立复制。它与 `ellamaka-app` 采用相同的品牌包模式，集中承载 Ellamaka 桌面定制。
 
-| 维度 | 上游基线 | ellamaka-desktop |
-|------|----------|-------------------|
-| 包路径 | `packages/desktop` | `packages/ellamaka-desktop` |
-| 包名 | `@opencode-ai/desktop` | `@opencode-ai/ellamaka-desktop` |
-| 桌面框架 | Electron 41.2.1 | Electron，与 v1.15.13 保持兼容 |
-| 渲染应用 | `@opencode-ai/app` | `@opencode-ai/ellamaka-app` |
-| 本地服务 | OpenCode node sidecar | Ellamaka/WopalSpace node sidecar |
-| 默认界面 | OpenCode 主界面 | Ellamaka Workbench `/workbench` |
+| 维度     | 上游基线                     | ellamaka-desktop                                |
+| -------- | ---------------------------- | ----------------------------------------------- |
+| 包路径   | `packages/desktop`           | `packages/ellamaka-desktop`                     |
+| 包名     | `@opencode-ai/desktop`       | `@opencode-ai/ellamaka-desktop`                 |
+| 桌面框架 | 初始复制时为 Electron 41.2.1 | Electron；具体版本由 Desktop 自身依赖与测试决定 |
+| 渲染应用 | `@opencode-ai/app`           | `@opencode-ai/ellamaka-app`                     |
+| 本地服务 | OpenCode node sidecar        | Ellamaka/WopalSpace node sidecar                |
+| 默认界面 | OpenCode 主界面              | Ellamaka Workbench `/workbench`                 |
 
 OpenCode v1.15.13 的 desktop 已经采用 Electron。Tauri 运行时不属于 ellamaka-desktop 的基线。
 
-### 2.3 版本协同
+### 2.3 Source 协同与产品版本
 
-`ellamaka-desktop`、`ellamaka-app`、`packages/opencode` 和 JS SDK 共同组成一套版本单元。桌面包消费同版本的 app 公共接口和 node sidecar，不跨版本引入 1.17 desktop 实现。
+`ellamaka-desktop`、`ellamaka-app`、`packages/opencode` 和 JS SDK 在一次 Desktop build 内使用同一 source commit 和 OpenCode upstream lock，避免跨源码快照组合。这个 source 一致性不等于产品版本锁步：`ellamaka-desktop` 与外部 `ellamaka-cli` 各自使用独立 SemVer 和 release tag。
 
-Electron 安全修复、生命周期修复和平台兼容修复可以独立回移。每次回移保持 v1.15.13 的接口边界，并通过桌面测试验证。
+Electron 安全修复、生命周期修复和平台兼容修复可以只发布 Desktop patch。共享 Engine/API 变化或 OpenCode baseline 升级通常协调发布 CLI 与 Desktop，但两个产品版本无需相同。兼容性由 upstream baseline、engine API range 和 CLI stable latest promotion gate 决定，详见 `RELEASE-IDENTITY.md`。
 
 ## 3. 系统架构
 
@@ -102,9 +102,11 @@ Renderer 通过 `PlatformProvider` 获得 `platform: "desktop"`，用于文件�
 `ellamaka-app` 在浏览器和 Electron 中使用相同的 PTY 创建、探测、重连和显式删除逻辑。Electron Renderer 只增加桌面平台适配，不维护独立的 PTY 所有权副本。
 
 **桌面快捷键规约**：
+
 - 桌面环境（Electron）中，`Cmd + W` 快捷键受受控拦截保护：允许关闭未钉住的临时 Space Tab 或当前选中的 Panel；**凡处于钉住 (Pinned) 状态的 Tab（包括 General 日常对话 Tab 及已 Pin 的物理 Space Tab）严禁通过 `Cmd + W` 误操作关闭**。
 
 **macOS 窗口标题栏与红绿灯避让规约**：
+
 - 在 macOS Desktop 环境中，`BrowserWindow` 设置 `titleBarStyle: "hidden"` 及 `trafficLightPosition: { x: 12, y: 14 }`。
 - `ellamaka-app` 的 Topbar组件必须保持 `flex-col` 结构，将 28px 高度的拖拽占位区 (`workbench-macos-window-chrome`) 放在最上方，Logo 与交互元素放置于下方的 toolbar 容器中，严禁在全局重构中将顶栏平铺混叠导致视觉撞车。
 
@@ -124,13 +126,13 @@ PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subs
 
 桌面应用将持久化界面状态、临时运行时状态和后台进程分层管理。
 
-| 状态 | 权威所有者 | 生命周期 |
-|------|------------|----------|
-| Panel 布局、宽度、绑定 Session、directory、PTY ID 提示 | `ellamaka-app` / `localStorage` | 跨刷新、跨应用启动 |
-| PTY session、subscriber、断连回收计时 | Ellamaka sidecar | 当前 sidecar 运行期 |
-| PTY/TUI 操作系统进程 | Ellamaka sidecar | 当前 sidecar 运行期 |
-| Directory WopalSpace context | Ellamaka sidecar `InstanceState` | 当前 directory instance；空间根和子目录共享 root |
-| Sidecar 连接凭据 | Electron Main Process | 当前应用进程 |
+| 状态                                                   | 权威所有者                       | 生命周期                                         |
+| ------------------------------------------------------ | -------------------------------- | ------------------------------------------------ |
+| Panel 布局、宽度、绑定 Session、directory、PTY ID 提示 | `ellamaka-app` / `localStorage`  | 跨刷新、跨应用启动                               |
+| PTY session、subscriber、断连回收计时                  | Ellamaka sidecar                 | 当前 sidecar 运行期                              |
+| PTY/TUI 操作系统进程                                   | Ellamaka sidecar                 | 当前 sidecar 运行期                              |
+| Directory WopalSpace context                           | Ellamaka sidecar `InstanceState` | 当前 directory instance；空间根和子目录共享 root |
+| Sidecar 连接凭据                                       | Electron Main Process            | 当前应用进程                                     |
 
 `localStorage` 继续负责 Workbench 布局，并将 PTY ID 作为重连提示保存。Sidecar 的 PTY Session Registry 是进程存活状态的真相源。Renderer 每次使用持久化 PTY ID 前都通过 `ptyManager.ensure()` 探测；2xx 表示存活并复用，明确 404 表示已回收并清除旧 ID，传输失败或非权威响应表示状态未知并保留旧 ID。只有 `dead` 结果才能触发 PTY 重建。
 
@@ -138,11 +140,11 @@ PTY Service 是 PTY 生命周期的权威所有者。最后一个 WebSocket subs
 
 每个 PTY Session 维护当前 WebSocket subscribers 和一个可取消的回收任务。默认断连宽限期为 10 秒。
 
-| 状态 | 进入条件 | 行为 |
-|------|----------|------|
-| Connected | 至少一个 subscriber 已连接 | PTY 正常运行，回收任务保持取消状态 |
-| Grace | PTY 创建后尚未连接，或最后一个 subscriber 断开 | PTY 继续运行并开始 10 秒倒计时 |
-| Disposed | 宽限期结束仍无 subscriber，或收到显式 DELETE | 终止进程、关闭连接并从 Session Registry 删除 |
+| 状态      | 进入条件                                       | 行为                                         |
+| --------- | ---------------------------------------------- | -------------------------------------------- |
+| Connected | 至少一个 subscriber 已连接                     | PTY 正常运行，回收任务保持取消状态           |
+| Grace     | PTY 创建后尚未连接，或最后一个 subscriber 断开 | PTY 继续运行并开始 10 秒倒计时               |
+| Disposed  | 宽限期结束仍无 subscriber，或收到显式 DELETE   | 终止进程、关闭连接并从 Session Registry 删除 |
 
 新连接进入时取消该 PTY 的回收任务。多个 subscribers 共享同一 PTY 时，只有最后一个连接断开才进入 Grace。
 
@@ -177,6 +179,12 @@ PTY 连接建立后，Renderer 刷新不会改变其后台进程所有权。
 
 刷新前后复用同一个 PTY ID 和操作系统进程。
 
+### 6.2.1 运行中进入 Setup Center
+
+冷启动直接进入 Setup Center 时不挂载 Workbench，也不启动 sidecar。已经运行的 Workbench 收到 setup request 时则属于 route surface 切换，不是 Renderer 刷新或销毁：`AppInterface`/Workbench subtree、PTY WebSocket subscriber 和 panel bindings 必须保持 mounted；Setup Center 用 overlay/surface 覆盖，并通过 `visibility`、`inert` 与绝对定位隔离交互。禁止 unmount 或 `display:none`，因为前者会触发 WebSocket 断连并在 10 秒 grace 后回收 PTY，后者会破坏终端尺寸计算。
+
+在 Setup Center 停留超过 10 秒后，原 PTY ID、操作系统进程 PID 与期间产生的输出仍应连续；返回 Workbench 只恢复可见性和交互，不重新创建 PTY。只有用户明确确认的 `desktopSidecar` restart 才允许结束这些 PTY。外部 Bun CLI 更新属于 `externalCli` 影响，不得停止由 `SidecarSupervisor` 管理的内嵌 sidecar。
+
 ### 6.3 Panel 或 Space 关闭
 
 1. Renderer 使用真实 directory 请求 sidecar 终止 PTY。
@@ -208,13 +216,13 @@ Renderer 崩溃不会立即终止 PTY。Sidecar 将断开的 PTY 置为 Grace，
 
 ## 7. Web 与 Desktop 生命周期
 
-| 场景 | 浏览器 Workbench | ellamaka-desktop |
-|------|-------------------|-------------------|
-| Renderer/页面刷新 | 宽限期内重连并保留 PTY | 宽限期内重连并保留 PTY |
-| 浏览器 Tab 关闭 | 宽限期结束后回收 PTY | 不适用 |
-| Panel/Space 关闭 | 立即终止对应 PTY | 立即终止对应 PTY |
-| 桌面窗口关闭 | 不适用 | 宽限期结束后回收 PTY |
-| 应用退出 | 不适用 | 终止全部 PTY 和 sidecar |
+| 场景              | 浏览器 Workbench       | ellamaka-desktop        |
+| ----------------- | ---------------------- | ----------------------- |
+| Renderer/页面刷新 | 宽限期内重连并保留 PTY | 宽限期内重连并保留 PTY  |
+| 浏览器 Tab 关闭   | 宽限期结束后回收 PTY   | 不适用                  |
+| Panel/Space 关闭  | 立即终止对应 PTY       | 立即终止对应 PTY        |
+| 桌面窗口关闭      | 不适用                 | 宽限期结束后回收 PTY    |
+| 应用退出          | 不适用                 | 终止全部 PTY 和 sidecar |
 
 两种环境共享 `PtyManager` 的创建、探测、重连和显式删除能力，也共享 sidecar 的断连宽限机制。Electron 只提供桌面外壳和 sidecar 生命周期。
 
@@ -281,12 +289,12 @@ Sidecar 生命周期由 `SidecarSupervisor`（§13）管理，提供自动重启
 
 ## 12. 上游同步
 
-`ellamaka-desktop` 记录 OpenCode v1.15.13 基线及其来源 commit。后续同步以选择性移植为主：
+`ellamaka-desktop` 在 upstream lock 中记录历史复制基线及其来源 commit。后续同步以选择性移植为主：
 
 - 同版本 desktop 修复可以直接评估和移植。
 - 跨版本修复按依赖、接口和行为逐项回移。
 - Electron 安全更新保持优先级，并通过完整桌面回归验证。
-- ellamaka 升级 OpenCode 基线时，desktop、app、engine 和 SDK 共同升级。
+- Ellamaka 升级 OpenCode Engine baseline 时，sidecar 与 Engine API 共同升级评估；desktop/app component baseline 是否前进是独立、显式决定。
 
 包级 `AGENTS.md` 维护开发命令、测试方式、生命周期规则和上游基线。`BRANDING.md` 继续记录品牌差异与分发身份，本文件维护桌面架构和运行时行为。
 
@@ -296,14 +304,14 @@ Sidecar 生命周期由 `SidecarSupervisor`（§13）管理，提供自动重启
 
 ### 13.1 状态定义
 
-| 状态 | 含义 |
-|------|------|
-| `starting` | 正在启动 sidecar 进程，等待健康检查通过 |
-| `ready` | Sidecar 正常运行，健康检查通过 |
-| `lost` | Sidecar 进程退出或启动失败，等待自动重试 |
-| `restarting` | 正在执行自动重启（spawn 新进程） |
-| `failed` | 连续 3 次重启失败，停止自动重试 |
-| `stopped` | 应用退出或用户主动停止，不触发自动重启 |
+| 状态         | 含义                                     |
+| ------------ | ---------------------------------------- |
+| `starting`   | 正在启动 sidecar 进程，等待健康检查通过  |
+| `ready`      | Sidecar 正常运行，健康检查通过           |
+| `lost`       | Sidecar 进程退出或启动失败，等待自动重试 |
+| `restarting` | 正在执行自动重启（spawn 新进程）         |
+| `failed`     | 连续 3 次重启失败，停止自动重试          |
+| `stopped`    | 应用退出或用户主动停止，不触发自动重启   |
 
 ### 13.2 状态转换
 
@@ -344,11 +352,11 @@ class SidecarSupervisor {
 
 ### 14.1 新增 IPC 通道
 
-| 通道 | 方向 | 用途 |
-|------|------|------|
-| `get-sidecar-state` | Renderer → Main (invoke) | 获取当前 SidecarRuntimeState |
-| `restart-sidecar` | Renderer → Main (invoke) | 用户手动重启 sidecar |
-| `sidecar-state` | Main → Renderer (send) | Supervisor 状态变化时广播到所有窗口 |
+| 通道                | 方向                     | 用途                                |
+| ------------------- | ------------------------ | ----------------------------------- |
+| `get-sidecar-state` | Renderer → Main (invoke) | 获取当前 SidecarRuntimeState        |
+| `restart-sidecar`   | Renderer → Main (invoke) | 用户手动重启 sidecar                |
+| `sidecar-state`     | Main → Renderer (send)   | Supervisor 状态变化时广播到所有窗口 |
 
 ### 14.2 Preload API
 
@@ -373,11 +381,11 @@ restartSidecar: () => Promise<void>
 
 ### 15.1 退避参数
 
-| 参数 | 值 |
-|------|-----|
-| 退避序列 | 1s → 2s → 5s |
-| 最大连续失败次数 | 3 |
-| 稳定窗口 | 60s |
+| 参数             | 值           |
+| ---------------- | ------------ |
+| 退避序列         | 1s → 2s → 5s |
+| 最大连续失败次数 | 3            |
+| 稳定窗口         | 60s          |
 
 ### 15.2 退避行为
 
@@ -412,91 +420,98 @@ Desktop 的选择键保持稳定别名 `sidecar`，不能用于判断 sidecar �
 
 ### 16.3 三种场景对比
 
-| 场景 | generation 变化 | PTY 行为 |
-|------|----------------|---------|
-| Sidecar 崩溃重启 | 是 | 立即清理所有 PTY 状态，TUI→Chat，Split 关闭 |
-| SSE 断线重连 | 否 | 保留 PTY，10s Grace 内重连复用 |
-| Renderer 刷新 | 否 | 保留 PTY，10s Grace 内重连复用 |
+| 场景             | generation 变化 | PTY 行为                                    |
+| ---------------- | --------------- | ------------------------------------------- |
+| Sidecar 崩溃重启 | 是              | 立即清理所有 PTY 状态，TUI→Chat，Split 关闭 |
+| SSE 断线重连     | 否              | 保留 PTY，10s Grace 内重连复用              |
+| Renderer 刷新    | 否              | 保留 PTY，10s Grace 内重连复用              |
 
 ### 16.4 不自动恢复
 
 PTY 清理后不自动创建 Session 或 PTY 伪装恢复。用户点击 TUI/Terminal 后按正常 Action 创建新 PTY。Session 绑定和草稿保留。
 
-## 17. Onboarding 模式启动行为
+## 17. Setup Center 启动行为
 
 ### 17.1 模式判定
 
-Desktop Main Process 在 `app.whenReady()` 之后，创建窗口之前，必须完成模式判定：
+Desktop Main Process 在 `app.whenReady()` 之后、创建窗口之前，完成 Wopal CLI bootstrap、只读 inspect 和一次性 setup request 判定。`wopal setup` 不向 Desktop 添加 `--setup` 参数；它在 `setup-request.lock` 内原子更新 `$WOPAL_HOME/ellamaka/state/setup-request.json` 后正常启动或唤醒 Desktop。request 包含 schema version、唯一 `requestId`、创建时间、目标 `setup-center` 和 `desktopChannel`，只表达一次导航请求，不保存机器健康结论。Desktop 只接受与自身 release channel/appId 匹配的 request；另一 channel 的进程必须忽略且不得删除。
 
 ```
-读 $WOPAL_HOME/ellamaka/state/onboarding.json
-  ├── 文件不存在 或 completed !== true → Onboarding 模式
-  │     ├── 跳过 SidecarSupervisor 启动
-  │     ├── 跳过 migrate()
-  │     ├── 创建 Onboarding 窗口（OnboardingRoot）
-  │     └── 等待用户完成 8 步流程
-  │
-  └── completed === true → Workbench 模式
-        ├── 执行版本兼容检查（§17.7）
-        │     ├── 通过 → 继续
-        │     └── 阻断 → 展示兼容错误页面 / 触发升级流程
-        ├── 正常启动 SidecarSupervisor
-        ├── 执行 migrate()
-        ├── 创建 Workbench 窗口
-        └── 加载 ellamaka-app Workbench
+bootstrap Wopal CLI → read setup request → setup.operation inspect
+  ├── 有 channel 匹配且未消费的 setup request → Setup Center
+  ├── fresh / partial / broken → Setup Center
+  ├── bootstrap / inspect failed → Setup Center 诊断
+  └── healthy → Workbench
+
+Setup Center（冷启动）
+  ├── 跳过 SidecarSupervisor 启动
+  ├── 跳过 migrate()
+  ├── 创建 Setup Center 窗口
+  └── 完成健康门禁后在当前进程转换到 Workbench
+
+Workbench
+  ├── 执行版本兼容检查（§17.7）
+  ├── 启动 SidecarSupervisor
+  ├── 执行 migrate()
+  └── 加载 ellamaka-app Workbench
 ```
+
+Desktop 已运行时，正常的 single-instance activation 唤醒现有进程；Main 重新读取 request，并在当前窗口进入 Setup Center。已有健康 sidecar 与 PTY 现场默认保留，避免一次导航请求直接中断正在运行的任务；需要停止或重启 runtime 的 setup operation 必须由 Main 提示影响并取得用户确认。Main 通过 typed IPC 向 Renderer 交付 `requestId`，只有 Renderer 确认 Setup Center 已真实可见，且 Main 在跨进程锁内确认活动 ID 仍匹配时，才写入该 ID 的 `accepted` result 并删除活动 request。启动或切换中途失败时保留 request，供下次启动重试。重复观察和 ack 同一 `requestId` 必须幂等。Wopal CLI 不修改 Desktop 拥有的 `setup-center.json` UI 状态。
+
+并发协议由 `setup-request.lock`、唯一活动 `setup-request.json` 和 `setup-request-results/<requestId>.json` 组成。新 CLI writer 在锁内先为旧活动 ID 写入 `superseded` result，再替换活动请求；每个 CLI 只等待自己的 result。旧 Renderer ack 不得删除或完成新活动请求，活动文件消失也不得被任何 consumer 推断为成功。
 
 ### 17.2 与正常启动的关键差异
 
-| 行为 | Workbench 模式 | Onboarding 模式 |
-|------|---------------|----------------|
-| Sidecar 启动 | 立即启动 | 不启动 |
-| migrate() | 执行 | 跳过 |
-| 窗口类型 | Workbench 窗口 | Onboarding 窗口（无 sidecar 依赖） |
-| PTY 连接 | 建立 sidecar PTY | 无 PTY |
-| 完成后 | — | 写入 `onboarding.json` 的 `completed: true`，relaunch |
-| 重启策略 | SidecarSupervisor 退避重试 | 不适用（无 sidecar） |
+| 行为         | Workbench 模式             | Setup Center 模式                                                   |
+| ------------ | -------------------------- | ------------------------------------------------------------------- |
+| Sidecar 启动 | 立即启动                   | 冷启动不启动；从运行中 Workbench 切入时保留健康 sidecar             |
+| migrate()    | 执行                       | 跳过                                                                |
+| 窗口类型     | Workbench 窗口             | Setup Center 窗口（无 sidecar 依赖）                                |
+| PTY 连接     | 建立 sidecar PTY           | 无 PTY                                                              |
+| 完成后       | —                          | 最终 inspect healthy，在当前进程复用或启动 sidecar 并切换 Workbench |
+| 重启策略     | SidecarSupervisor 退避重试 | 不适用（无 sidecar）                                                |
 
 ### 17.3 开发模式快速跳过
 
-`WOPAL_DEV=1` + `WOPAL_DEV_SKIP_ONBOARDING=1` 时，即使 onboarding 未完成，也跳过 Onboarding 模式直接进入 Workbench。
+`WOPAL_DEV=1` + `WOPAL_DEV_SKIP_ONBOARDING=1` 时，开发环境可跳过 Setup Center 入口判定直接进入 Workbench。该开关不进入 release build。
 
-### 17.4 Onboarding 完成后的 relaunch
+### 17.4 Setup Center 完成后的转换
 
-Onboarding 最后一步 `done` 的行为：
+Setup Center 最后一步 `done` 的行为：
 
-1. Desktop Main 写 `onboarding.json`：`{ completed: true, completedAt: <ISO timestamp> }`
-2. Desktop Main 调用 `app.relaunch()`
-3. Desktop Main 调用 `app.quit()`
-4. 新进程启动 → 读 `onboarding.json` → `completed === true` → Workbench 模式
+1. Desktop Main 调用 CLI `inspect`。
+2. `verdict === "healthy"` 时保存 `$WOPAL_HOME/ellamaka/state/setup-center.json` 的 UI 完成状态。
+3. Desktop Main 确保 SidecarSupervisor ready：已有健康 sidecar 则复用，否则启动并等待 ready。
+4. 当前窗口从 Setup Center 切换到 Workbench。
 
-relaunch 必须成功；若失败（如 `app.relaunch()` 不可用），须提示用户手动重启应用并提供清晰指引。
+转换失败时保留 Setup Center 和诊断信息。用户修复后可再次执行完成动作。完成流程不依赖应用 relaunch。
 
 ### 17.5 失败回退
 
-Onboarding 过程中若 Desktop 意外退出（崩溃或被 kill），下次启动仍读 `onboarding.json`，`completed !== true` 则重新进入 Onboarding 模式。已完成步骤不丢失（状态文件独立持久化），但当前步骤执行中产生的副作用不保证回滚。
+Setup Center 过程中若 Desktop 意外退出，下次启动重新执行 CLI inspect。已健康的幂等资源被复用。UI 状态用于恢复导航与展示，真实机器状态决定下一步。
 
 ### 17.6 相关文档
 
-- 完整 Onboarding 架构与步骤行为：`DESIGN-onboarding.md`（产品层）
-- 错误处理矩阵与组件 props：`DESKTOP-ONBOARDING.md`（本目录）
-- Machine capability 契约：`DESIGN-onboarding.md` §3.2
+- 完整 Setup Center 架构与步骤行为：`../../../docs/products/wopal-space/DESIGN-onboarding.md`
+- 状态、阶段、IPC 与组件规范：`DESKTOP-ONBOARDING.md`（本目录）
+- Machine capability 契约：`../../wopal-cli/docs/CAPABILITY-PROTOCOL.md`
 
 ### 17.7 启动时版本兼容检查
 
-Workbench 模式下，Desktop 在 sidecar 启动前须执行版本兼容检查。检查基于本地已安装组件版本，不需要网络请求。（详细逻辑见 `DESIGN-onboarding.md` §7.3。）
+Workbench 模式下，Desktop 在 sidecar 启动前执行版本兼容检查。检查基于 Desktop manifest 内嵌的 ReleaseIdentity、`requirements.externalCli`、`requirements.wopalCli` 与本地实际组件 identity。
 
 **检查流程**：
 
-1. 执行 `ellamaka --version`、`wopal --version`
-2. 提取 ellamaka CLI 版本 `X.Y.Z` 前缀 → 与 Desktop 自身版本号 `X.Y.Z` 前缀精确匹配
-3. wopal-cli 版本 → 与 ellamaka binary 内置的 `MIN_WOPAL_CLI_VERSION`（构建注入）做 semver 比较
+1. 执行 `ellamaka debug release-info --json --api-version 1` 读取 binary 内嵌 identity，并将 product/version/build identity 与安装收据、目标 manifest 交叉校验；`ellamaka --version` 只作轻量 SemVer 探测。
+2. v1 要求外部 CLI 的 `releaseIdentity.upstream.version` 与 Desktop `requirements.externalCli.upstreamBaseline` 完整相等。
+3. 要求外部 CLI `capabilities.engineApi` 满足 Desktop 声明的 SemVer range；不要求 Desktop 与 CLI 产品版本相同。
+4. Wopal CLI 版本满足 `requirements.wopalCli` SemVer range。
 
 **失败处理**：
 
-| 严重度 | 行为 |
-|--------|------|
-| 🔴 阻断（基线不一致） | 不启动 sidecar。从 R2 manifest 读取本基线最新完整版本号，调用 `wopal ellamaka install --version <完整版本号>`。安装后 relaunch |
-| 🔴 阻断（wopal-cli 版本过低） | 弹窗提示升级指引，提供"立即升级"按钮 |
+| 严重度                     | 行为                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 Setup Center，并调用 `install-engine` 读取、校验并安装 CLI stable latest；仍不兼容则提示更新 Desktop 或稍后重试 |
+| 阻断（Wopal CLI 版本过低） | Setup Center 调用第一方 installer 的 install-only 模式，完成后重新 inspect                                                           |
 
-**与自动更新的协作**：自动更新检测到新版本后，在下载应用前先执行 `DESIGN-onboarding.md` §7.4 的更新前兼容检查。检查通过才下载和安装。
+**与自动更新的协作**：Desktop 先校验 manifest ReleaseIdentity 并使用标准 SemVer 授权同 channel 更新，electron-updater 负责下载和安装。新版本首次启动时，在 sidecar 前按 compatibility requirements 准备外部 CLI，然后进入 Workbench。
