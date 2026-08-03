@@ -93,7 +93,7 @@ jobs:
               kind: "release",
               product: "ellamaka-cli",
               version,
-              channel: version.includes("-beta.") ? "beta" : version.includes("-rc.") ? "rc" : "stable",
+              channel: "stable",
               upstream: { name: "opencode", version: lock.sources.opencode.version, gitCommit: lock.sources.opencode.gitCommit },
               build: {
                 sourceTag: tag,
@@ -206,7 +206,9 @@ jobs:
           put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
           put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
 
-          # Latest alias: manifest only (60-second TTL)
+          # Latest alias: manifest only (60-second TTL).
+          # CLI publishes stable only (rc mechanism removed); every release
+          # updates the stable alias.
           put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=60" "application/json"
 
           # Verify: head-object for size first (fast), full download only if

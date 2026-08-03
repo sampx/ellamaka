@@ -29,9 +29,8 @@ namespaced tag，并 dispatch 对应 workflow。不再支持隐式 -N 自增、
 
 ━━━ 参数 ━━━
   version    产品版本号（必填，cli/desktop 子命令）
-               stable:  X.Y.Z
-               beta:    X.Y.Z-beta.N
-               rc:      X.Y.Z-rc.N
+               cli:     X.Y.Z（stable，patch/minor 递增）
+               desktop: X.Y.Z（prod）或 X.Y.Z-beta.N（beta）
 
 ━━━ 选项 ━━━
   -h, --help            显示此帮助
@@ -171,17 +170,23 @@ fi
 
 # --- Version validation helpers ---
 # validate_semver <version> <product-label>
-# Validates that version matches stable X.Y.Z, beta X.Y.Z-beta.N, or rc X.Y.Z-rc.N.
+# CLI releases are stable-only (X.Y.Z, monotonic patch/minor bumps).
+# Desktop accepts stable X.Y.Z or beta X.Y.Z-beta.N via --channel beta.
+# rc is not a release shape for either product (see RELEASE-IDENTITY.md §3).
 validate_semver() {
   local v="$1" label="$2"
+  if [ "$label" = "CLI" ]; then
+    if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      return 0
+    fi
+    die "CLI 版本号格式无效: $v (CLI 只发布 stable X.Y.Z，每次发布递增 patch/minor)"
+  fi
   if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     return 0
   elif [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then
     return 0
-  elif [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
-    return 0
   fi
-  die "$label 版本号格式无效: $v (期望 X.Y.Z / X.Y.Z-beta.N / X.Y.Z-rc.N)"
+  die "$label 版本号格式无效: $v (期望 X.Y.Z / X.Y.Z-beta.N)"
 }
 
 # validate_channel_version_consistency <channel> <version> <product-label>
@@ -197,11 +202,11 @@ validate_channel_version_consistency() {
   fi
 }
 
-# channel_for_version <version> — derive channel from version
+# channel_for_version <version> — derive channel from version.
+# CLI is always stable (rc removed). Desktop: beta → beta, else stable.
 channel_for_version() {
   local v="$1"
   if [[ "$v" == *-beta.* ]]; then echo "beta"
-  elif [[ "$v" == *-rc.* ]]; then echo "rc"
   else echo "stable"
   fi
 }
@@ -376,13 +381,14 @@ DESKTOP_PLAIN=""
 
 if [ -n "$CLI_VER_INPUT" ]; then
   validate_semver "$CLI_VER_INPUT" "CLI"
+  # CLI is stable-only; channel is always stable (rc mechanism removed).
   validate_channel_version_consistency "stable" "$CLI_VER_INPUT" "CLI"
   check_withdrawn "ellamaka-cli" "$CLI_VER_INPUT"
   check_migration_floor "ellamaka-cli" "$CLI_VER_INPUT"
   CLI_TAG="ellamaka-cli-v${CLI_VER_INPUT}"
   CLI_PLAIN="$CLI_VER_INPUT"
   check_tag_absent "$CLI_TAG"
-  echo "  ℹ️  CLI tag: $CLI_TAG"
+  echo "  ℹ️  CLI tag: $CLI_TAG (channel=stable)"
 fi
 
 if [ -n "$DESKTOP_VER_INPUT" ]; then

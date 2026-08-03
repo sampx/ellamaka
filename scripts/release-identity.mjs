@@ -19,15 +19,15 @@ import fs from "fs"
 // ---------------------------------------------------------------------------
 
 const PRODUCTS = ["ellamaka-cli", "ellamaka-desktop"]
-const RELEASE_CHANNELS = ["stable", "beta", "rc"]
+const RELEASE_CHANNELS = ["stable", "beta"]
 const DEV_CHANNELS = ["local", "main"]
 const COMMIT_RE = /^[0-9a-f]{40}$/
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/
 
 // SemVer 2.0 subset used for Ellamaka product versions.
-//   stable: X.Y.Z
-//   beta:   X.Y.Z-beta.N
-//   rc:     X.Y.Z-rc.N
+//   CLI stable: X.Y.Z
+//   Desktop beta: X.Y.Z-beta.N
+// rc is not a release shape for either product (rc mechanism removed).
 // +build metadata and the legacy X.Y.Z-N / X.Y.Z-N.rcM shapes are not
 // accepted by the new publisher. The legacy reader (parseLegacyVersion)
 // owns the legacy shapes.
@@ -85,15 +85,11 @@ export function parseReleaseVersion(version) {
     }
   }
 
+  // rc is not a release shape (rc mechanism removed). Diagnose it clearly
+  // so a stale rc version is rejected rather than mis-classified.
   m = version.match(SEMVER_RC_RE)
   if (m) {
-    return {
-      major: Number(m[1]),
-      minor: Number(m[2]),
-      patch: Number(m[3]),
-      prerelease: { kind: "rc", n: Number(m[4]) },
-      channel: "rc",
-    }
+    fail("ERC", `version ${version} is an rc shape; rc releases are removed — use a stable X.Y.Z`)
   }
 
   m = version.match(SEMVER_RE)
@@ -128,15 +124,15 @@ export function normalizeFeedChannel(feed) {
 
 /** Assert that a channel and a standard version are consistent. */
 export function assertChannelVersionConsistent(channel, version) {
+  if (!RELEASE_CHANNELS.includes(channel)) {
+    fail("ECHANNEL", `unknown release channel ${channel}; release channels are ${RELEASE_CHANNELS.join(", ")}`)
+  }
   const parsed = parseReleaseVersion(version)
   if (channel === "stable" && parsed.channel !== "stable") {
     fail("ECHANNEL", `stable channel cannot carry prerelease version ${version}`)
   }
   if (channel === "beta" && parsed.channel !== "beta") {
     fail("ECHANNEL", `beta channel requires -beta.N version, got ${version}`)
-  }
-  if (channel === "rc" && parsed.channel !== "rc") {
-    fail("ECHANNEL", `rc channel requires -rc.N version, got ${version}`)
   }
 }
 

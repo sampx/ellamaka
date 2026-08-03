@@ -32,7 +32,7 @@ Ellamaka 发布的 `version` 遵循 SemVer 2.0：
 - MAJOR：Ellamaka 对外公共契约发生不兼容变化。
 - MINOR：新增向后兼容能力，或完成较大的向后兼容上游同步。
 - PATCH：向后兼容的 bug、安全或兼容性修复。
-- prerelease：只使用 `-beta.N` 或 `-rc.N`。
+- prerelease：Desktop 只使用 `-beta.N`。CLI 不发布 prerelease（rc 机制已移除），每次发布直接递增 patch/minor。
 
 Ellamaka 的公共契约至少包括：
 
@@ -45,9 +45,9 @@ Ellamaka 的公共契约至少包括：
 发布版本采用以下规范子集：
 
 ```text
-stable: X.Y.Z
-beta:   X.Y.Z-beta.N
-rc:     X.Y.Z-rc.N
+CLI stable:   X.Y.Z
+Desktop beta: X.Y.Z-beta.N
+Desktop prod: X.Y.Z
 ```
 
 发布版本禁止 `+build` metadata。SemVer 允许 build metadata，但它不参与 precedence；允许它会产生两个不同构建排序相等的问题。构建信息统一放入结构化 `build` 字段。
@@ -177,7 +177,7 @@ Desktop sidecar 是从当前 Ellamaka source commit 构建的 Node runtime，不
 
 顶层 `version` 是 `releaseIdentity.version` 的兼容别名，二者必须完全相等。无需再增加 `displayVersion`。迁移期可保留旧顶层 `build`，但它必须等于 `releaseIdentity.build.gitCommit`，消费者迁移完成后删除。
 
-`channel` 与 SemVer 必须一致：stable 不含 prerelease；beta 只接受 `-beta.N`；rc 只接受 `-rc.N`。Desktop 内部 feed 名 `prod` 映射为 identity channel `stable`。
+`channel` 与 SemVer 必须一致：stable 不含 prerelease；Desktop beta 只接受 `-beta.N`。Desktop 内部 feed 名 `prod` 映射为 identity channel `stable`。CLI 不发布 prerelease。
 
 ### 5.4 Runtime Identity Surfaces
 
@@ -301,7 +301,6 @@ Ellamaka v2 不再要求 OpenCode baseline 相等。Desktop 从 `requirements.ex
 
 ```text
 ellamaka-cli-v1.17.1
-ellamaka-cli-v1.18.0-rc.1
 ellamaka-desktop-v1.16.2
 ellamaka-desktop-v1.17.0-beta.1
 ```
@@ -314,9 +313,9 @@ ellamaka-desktop-v1.17.0-beta.1
 
 channel 规则：
 
+- CLI 只有 stable channel：每次发布都是正式版，latest 总是指向最新发布的 CLI 版本。
 - stable latest 只引用无 prerelease 的版本。
-- beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
-- RC 不得进入 stable latest。实现独立 RC feed 前，RC 只发布 versioned manifest，由显式版本安装。
+- Desktop beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
 - 不进行隐式跨 channel 更新或比较。
 
 ## 9. Release Context and Immutability
@@ -340,7 +339,7 @@ versioned manifest 已提交后，mutable latest promotion 可以独立重试，
 版本化 R2 路径不可覆盖。若 source、配置或 artifact 有任何变化：
 
 - stable 增加 PATCH；
-- beta/RC 增加 prerelease 序号；
+- Desktop beta 增加 prerelease 序号；
 - 创建新的 namespaced tag 和 versioned path。
 
 已提交的正式 release 禁止 retag。cleanup 对未知 tag/manifest fail-closed；解析失败的对象报告错误并保留，不默认删除。latest 引用对象在任何 retention 规则之前受到保护；正式 namespaced product tag 不进入普通 retention 删除候选，只有 §9.2 显式 withdrawal 能在健康 aliases 恢复后删除指定失败版本的 tag。
