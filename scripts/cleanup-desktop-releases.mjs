@@ -36,6 +36,214 @@
  */
 
 import { execSync } from "child_process";
+import { compareSemVer, parseReleaseVersion, parseLegacyVersion } from "./release-identity.mjs";
+
+// ===========================================================================
+// Task 5: protection model (docs/RELEASE-IDENTITY.md §9.1)
+// ===========================================================================
+
+const PRODUCT = "ellamaka-desktop";
+
+/**
+ * @typedef {Object} ReleaseSnapshot
+ * @property {string[]} versionedPaths
+ * @property {string[]} tags
+ */
+/**
+ * @typedef {Record<string, string>} AliasMap
+ */
+/**
+ * @typedef {Object} ReferenceGraph
+ * @property {Set<string>} protected
+ * @property {Map<string, string>} protectedReason
+ * @property {Set<string>} legacy
+ * @property {Set<string>} standard
+ */
+
+export function parseReleaseTag(tag) {
+  const m = tag.match(/^ellamaka-desktop-v(.+)$/);
+  if (!m) return null;
+  const version = m[1];
+  try {
+    const parsed = parseReleaseVersion(version);
+    return {
+      product: PRODUCT,
+      version,
+      channel: parsed.channel,
+      kind: "standard",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseLegacyTag(tag) {
+  if (!tag.startsWith("ellamaka-desktop-v")) return null;
+  const version = tag.slice("ellamaka-desktop-v".length);
+  try {
+    const legacy = parseLegacyVersion(version);
+    // Desktop legacy beta: X.Y.Z-beta.N (legacyShape "beta-iteration" if -N.beta.M, else standard beta retained as legacy)
+    return {
+      product: PRODUCT,
+      version,
+      kind: "legacy",
+      legacyShape: legacy.legacyShape,
+    };
+  } catch {
+    // Desktop legacy beta shape: X.Y.Z-beta.N where N is numeric (older format
+    // used -beta.N). parseLegacyVersion rejects this as standard beta, but for
+    // desktop cleanup we classify the ontology-tagged beta as legacy if it
+    // matches the old desktop beta iteration pattern.
+    if (/^\d+\.\d+\.\d+-beta\.\d+$/.test(version)) {
+      return { product: PRODUCT, version, kind: "legacy", legacyShape: "beta-iteration" };
+    }
+    return null;
+  }
+}
+
+function versionFromPath(p) {
+  const m = p.match(/^ellamaka-desktop\/(?:beta\/)?v(.+)$/);
+  return m ? m[1] : null;
+}
+
+function channelFromPath(p) {
+  return p.includes("/beta/") ? "beta" : "stable";
+}
+
+function pathForVersion(version, channel) {
+  return channel === "beta"
+    ? `ellamaka-desktop/beta/v${version}`
+    : `ellamaka-desktop/v${version}`;
+}
+
+export function buildReferenceGraph(snapshot, aliases) {
+  const protected_ = new Set();
+  const protectedReason = new Map();
+  const legacy = new Set();
+  const standard = new Set();
+
+  for (const [alias, version] of Object.entries(aliases)) {
+    if (!alias.includes("ellamaka-desktop") || !alias.includes("latest")) continue;
+    const channel = alias.includes("/beta/") ? "beta" : "stable";
+    const path = pathForVersion(version, channel);
+    if (snapshot.versionedPaths.includes(path)) {
+      protected_.add(path);
+      protectedReason.set(path, `latest alias ${alias}`);
+    }
+  }
+
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    try {
+      parseReleaseVersion(version);
+      standard.add(p);
+      continue;
+    } catch {}
+    try {
+      parseLegacyVersion(version);
+      legacy.add(p);
+      continue;
+    } catch {
+      legacy.add(p);
+    }
+  }
+
+  return { protected: protected_, protectedReason, legacy, standard };
+}
+
+/**
+ * @typedef {Object} RetentionPlan
+ * @property {Array<{version: string, path: string, protected: boolean}>} deleteCandidates
+ * @property {string[]} legacyRetained
+ * @property {boolean} dryRun
+ */
+
+export function planRetention({
+  product,
+  channel,
+  snapshot,
+  aliases,
+  keepStable,
+  dryRun = false,
+}) {
+  const graph = buildReferenceGraph(snapshot, aliases);
+  const candidates = [];
+  const legacyRetained = [];
+
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    if (graph.legacy.has(p)) {
+      legacyRetained.push(version);
+      continue;
+    }
+    if (!graph.standard.has(p)) continue;
+    if (channelFromPath(p) !== channel) continue;
+    try {
+      const parsed = parseReleaseVersion(version);
+      if (parsed.channel !== channel) continue;
+    } catch {
+      continue;
+    }
+    candidates.push({ version, path: p, protected: graph.protected.has(p) });
+  }
+
+  candidates.sort((a, b) => compareSemVer(b.version, a.version));
+
+  const deleteCandidates = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c.protected) continue;
+    if (i < keepStable) continue;
+    deleteCandidates.push(c);
+  }
+
+  return { deleteCandidates, legacyRetained, dryRun };
+}
+
+/**
+ * @typedef {Object} WithdrawPlan
+ * @property {boolean} allowed
+ * @property {string} [reason]
+ * @property {Array<{action: string, target: string}>} steps
+ */
+
+export function planWithdraw({
+  product,
+  version,
+  snapshot,
+  aliases,
+  withdrawn,
+  fallbackVersion,
+}) {
+  const withdrawnList = (withdrawn?.products?.[product]) || [];
+  if (!withdrawnList.includes(version)) {
+    return { allowed: false, reason: `version ${version} not in withdrawn-versions.json`, steps: [] };
+  }
+
+  // Determine channel from the version.
+  const channel = version.includes("-beta.") ? "beta" : "stable";
+  const fallbackPath = pathForVersion(fallbackVersion, channel);
+  if (!snapshot.versionedPaths.includes(fallbackPath)) {
+    return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
+  }
+
+  const steps = [];
+  for (const [alias, aliasVersion] of Object.entries(aliases)) {
+    if (aliasVersion === version) {
+      steps.push({ action: "restore-alias", target: alias });
+    }
+  }
+  steps.push({ action: "delete-versioned-path", target: pathForVersion(version, channel) });
+  steps.push({ action: "delete-tag", target: `ellamaka-desktop-v${version}` });
+
+  return { allowed: true, steps };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy retention helpers (backward compat)
+// ---------------------------------------------------------------------------
 
 // --- Exported helpers (for unit testing) ---
 

@@ -34,6 +34,244 @@
  */
 
 import { execSync } from "child_process";
+import { compareSemVer, parseReleaseVersion, parseLegacyVersion } from "./release-identity.mjs";
+
+// ===========================================================================
+// Task 5: protection model (docs/RELEASE-IDENTITY.md §9.1)
+//
+// cleanup must NOT use sort -V, mtime, or the legacy X.Y.Z-N numeric-suffix
+// comparator. It builds a reference graph (latest + updater aliases are
+// protected), and only standard SemVer releases within the same
+// product/channel become retention candidates. Legacy/unknown objects fail
+// closed (retained, never auto-deleted).
+// ===========================================================================
+
+const PRODUCT = "ellamaka-cli";
+
+/**
+ * @typedef {Object} ReleaseSnapshot
+ * @property {string[]} versionedPaths
+ * @property {string[]} tags
+ */
+/**
+ * @typedef {Record<string, string>} AliasMap
+ */
+/**
+ * @typedef {Object} ReferenceGraph
+ * @property {Set<string>} protected
+ * @property {Map<string, string>} protectedReason
+ * @property {Set<string>} legacy
+ * @property {Set<string>} standard
+ */
+
+/**
+ * Parse a namespaced standard SemVer tag for ellamaka-cli. Returns null for
+ * non-CLI tags, generic vX.Y.Z tags, or legacy shapes.
+ */
+export function parseReleaseTag(tag) {
+  const m = tag.match(/^ellamaka-cli-v(.+)$/);
+  if (!m) return null;
+  const version = m[1];
+  try {
+    const parsed = parseReleaseVersion(version);
+    return {
+      product: PRODUCT,
+      version,
+      channel: parsed.channel,
+      kind: "standard",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse a legacy tag (X.Y.Z-N or X.Y.Z-N.rcM) for ellamaka-cli. Accepts
+ * both bare `v1.15.13-4` and ontology-prefixed `ellamaka-v1.15.13-4`.
+ * Returns null for standard SemVer tags or non-CLI tags.
+ */
+export function parseLegacyTag(tag) {
+  let version = null;
+  if (tag.startsWith("ellamaka-v") && !tag.startsWith("ellamaka-cli-v") && !tag.startsWith("ellamaka-desktop-v")) {
+    version = tag.slice("ellamaka-v".length);
+  } else if (tag.startsWith("v") && /^\d/.test(tag.slice(1))) {
+    version = tag.slice(1);
+  } else {
+    return null;
+  }
+  try {
+    const legacy = parseLegacyVersion(version);
+    return {
+      product: PRODUCT,
+      version,
+      kind: "legacy",
+      legacyShape: legacy.legacyShape,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function versionFromPath(p) {
+  // ellamaka/v1.17.1 → 1.17.1
+  const m = p.match(/^ellamaka\/v(.+)$/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Build the release reference graph. Any versioned path referenced by a
+ * latest alias is protected. Legacy paths are classified but not protected.
+ */
+export function buildReferenceGraph(snapshot, aliases) {
+  const protected_ = new Set();
+  const protectedReason = new Map();
+  const legacy = new Set();
+  const standard = new Set();
+
+  // Mark alias-referenced versions as protected.
+  for (const [alias, version] of Object.entries(aliases)) {
+    if (!alias.includes("ellamaka/latest")) continue;
+    const path = `ellamaka/v${version}`;
+    if (snapshot.versionedPaths.includes(path)) {
+      protected_.add(path);
+      protectedReason.set(path, `latest alias ${alias}`);
+    }
+  }
+
+  // Classify all versioned paths.
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    // Try standard first.
+    try {
+      parseReleaseVersion(version);
+      standard.add(p);
+      continue;
+    } catch {
+      // fall through to legacy
+    }
+    try {
+      parseLegacyVersion(version);
+      legacy.add(p);
+      continue;
+    } catch {
+      // unknown — fail closed, treat as legacy (retained)
+      legacy.add(p);
+    }
+  }
+
+  return { protected: protected_, protectedReason, legacy, standard };
+}
+
+/**
+ * @typedef {Object} RetentionPlan
+ * @property {Array<{version: string, path: string, protected: boolean}>} deleteCandidates
+ * @property {string[]} legacyRetained
+ * @property {boolean} dryRun
+ */
+
+/**
+ * Plan retention deletion for a product/channel. Uses standard SemVer
+ * descending order. Protected releases are never deleted. Legacy releases
+ * are retained (fail-closed).
+ */
+export function planRetention({
+  product,
+  channel,
+  snapshot,
+  aliases,
+  keepStable,
+  dryRun = false,
+}) {
+  const graph = buildReferenceGraph(snapshot, aliases);
+  const candidates = [];
+  const legacyRetained = [];
+
+  for (const p of snapshot.versionedPaths) {
+    const version = versionFromPath(p);
+    if (!version) continue;
+    if (graph.legacy.has(p)) {
+      legacyRetained.push(version);
+      continue;
+    }
+    if (!graph.standard.has(p)) continue;
+    // Only same-channel releases are candidates.
+    try {
+      const parsed = parseReleaseVersion(version);
+      if (parsed.channel !== channel) continue;
+    } catch {
+      continue;
+    }
+    candidates.push({ version, path: p, protected: graph.protected.has(p) });
+  }
+
+  // Sort descending by standard SemVer.
+  candidates.sort((a, b) => compareSemVer(b.version, a.version));
+
+  // Keep top N, but protected ones are always kept regardless of count.
+  const deleteCandidates = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c.protected) continue;
+    if (i < keepStable) continue;
+    deleteCandidates.push(c);
+  }
+
+  return { deleteCandidates, legacyRetained, dryRun };
+}
+
+/**
+ * @typedef {Object} WithdrawPlan
+ * @property {boolean} allowed
+ * @property {string} [reason]
+ * @property {Array<{action: string, target: string}>} steps
+ */
+
+/**
+ * Plan a whole-version withdrawal. Per §9.2, the version must be recorded
+ * in withdrawn-versions.json, and a healthy fallback must be specified and
+ * present in the snapshot. Steps: restore aliases → delete versioned path →
+ * delete tag.
+ */
+export function planWithdraw({
+  product,
+  version,
+  snapshot,
+  aliases,
+  withdrawn,
+  fallbackVersion,
+}) {
+  const withdrawnList = (withdrawn?.products?.[product]) || [];
+  if (!withdrawnList.includes(version)) {
+    return { allowed: false, reason: `version ${version} not in withdrawn-versions.json`, steps: [] };
+  }
+
+  // Fallback must exist in versioned paths.
+  const fallbackPath = `ellamaka/v${fallbackVersion}`;
+  if (!snapshot.versionedPaths.includes(fallbackPath)) {
+    return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
+  }
+
+  const steps = [];
+  // 1. Restore aliases pointing to the withdrawn version.
+  for (const [alias, aliasVersion] of Object.entries(aliases)) {
+    if (aliasVersion === version) {
+      steps.push({ action: "restore-alias", target: alias });
+    }
+  }
+  // 2. Delete the versioned path.
+  steps.push({ action: "delete-versioned-path", target: `ellamaka/v${version}` });
+  // 3. Delete the tag.
+  steps.push({ action: "delete-tag", target: `ellamaka-cli-v${version}` });
+
+  return { allowed: true, steps };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy retention helpers (retained for backward compat with any caller
+// that still uses the old selectForDeletion API; new code should use
+// planRetention).
+// ---------------------------------------------------------------------------
 
 // --- Exported helpers (for unit testing) ---
 
