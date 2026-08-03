@@ -222,11 +222,19 @@ process.stdout.write(arr.includes('$version') ? 'yes' : 'no');
 }
 
 # check_migration_floor <product> <version>
+# Per W-01: fail closed when inventory is missing or not frozen from a live
+# capture. Fixture/dry-run inventories must NOT gate real releases.
 check_migration_floor() {
   local product="$1" version="$2"
-  if [ ! -f "$LEGACY_INVENTORY_FILE" ]; then return 0; fi
+  if [ ! -f "$LEGACY_INVENTORY_FILE" ]; then
+    die "legacy-inventory.json 缺失（$LEGACY_INVENTORY_FILE）；必须先用 capture-legacy-release-inventory.mjs 真实盘点并冻结后才能发布"
+  fi
   node -e "
 const inv = JSON.parse(require('fs').readFileSync('$LEGACY_INVENTORY_FILE', 'utf8'));
+if (inv.source !== 'live') {
+  console.error('legacy-inventory.json source=' + (inv.source || 'undefined') + ' 不是 live；fixture/dry-run inventory 不得用于真实发布门禁');
+  process.exit(2);
+}
 const entries = inv.products && inv.products['$product'];
 if (!entries) process.exit(0);
 let highest = null;
@@ -245,7 +253,13 @@ if (vkey.join('.') < floor.join('.')) {
   console.error('版本 ' + '$version' + ' 低于 migration floor ' + floor.join('.'));
   process.exit(1);
 }
-" || die "版本 $version 低于 migration floor（见 $LEGACY_INVENTORY_FILE）"
+" || {
+  local rc=$?
+  if [ $rc -eq 2 ]; then
+    die "legacy-inventory.json 不是 live capture（source != live）；不得用 fixture/dry-run inventory 门禁真实发布"
+  fi
+  die "版本 $version 低于 migration floor（见 $LEGACY_INVENTORY_FILE）"
+}
 }
 
 # check_tag_absent <tag>
