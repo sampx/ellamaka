@@ -1,18 +1,8 @@
 # Ellamaka API 与 SDK 契约
 
 > **状态**：Active
-> **更新时间**：2026-07-18
+> **更新时间**：2026-08-03
 > **上级架构**：`../../../docs/products/wopal-space/DESIGN-wopalspace.md` §1.1
-
-## 0. 变更记录
-
-| 日期 | 类型 | 摘要 |
-|---|---|---|
-| 2026-07-18 | Added | `/global/health` 新增 Wopal CLI 健康握手，`POST /global/cli/repair` 提供用户确认后的更新或安装恢复。CLI 失效时保留 General Session Runtime。 |
-| 2026-07-17 | Updated | Wopal CLI adapter 消费 `space.projects.list` v2（含 worktrees）和 `space.search` v1（替代 `space.directories.search`）。后端 Session Projection 不再自行调用 `git worktree list`，worktree 数据完全由 CLI 提供。 |
-| 2026-07-17 | Updated | Workbench 新增 Instance 级 session-tree、locations 与 requestID 幂等创建；保留 session-groups 作为兼容读模型。 |
-| 2026-07-15 | Updated | 明确 `GET /workbench/session-groups` 只返回未归档根会话，不暴露归档会话或带 `parentID` 的子会话。 |
-| 2026-07-11 | Added | 定义 Effect HttpApi、OpenAPI、生成 SDK 和 Wopal CLI adapter 的统一 Runtime API 契约。 |
 
 ## 1. 目的
 
@@ -101,13 +91,17 @@ Effect Schema + HttpApiGroup
 
 ## 6. Wopal CLI 集成
 
-Ellamaka 的 Wopal CLI adapter 是 Runtime API 的领域服务。它以绝对可执行路径和参数数组调用已登记的 `wopal ... --json --api-version` capability，验证结构化结果，映射稳定 CLI 错误码，并维护非权威查询快照。
+Ellamaka 的 Wopal CLI adapter 是 Runtime API 的领域服务。它以绝对可执行路径和参数数组调用已登记的 `wopal ... --api-version` capability，验证结构化结果，映射稳定 CLI 错误码，并维护非权威查询快照。adapter 位于 sidecar（serve 进程）内部，直接 spawn wopal 进程；不引入专门的 wopal 常驻 worker——wopal 调用是无状态进程边界，sidecar 已是常驻承载者，Workbench renderer 的所有 CLI 调用都经过它。
 
-CLI 健康契约由 `CliContract` 服务负责。它使用同一安装路径检查 `wopal --version` 是否满足 `MIN_WOPAL_CLI_VERSION`，将检查结果缓存在短时窗口内，并在修复完成后立即失效缓存。CLI 控制能力不可用时，Session Runtime 继续提供 General Session；Space 投影以空 Space 集合降级。
+CLI 健康契约由 `CliContract` 服务负责。它使用同一安装路径检查 `wopal --version` 版本兼容，修复完成后失效缓存重新检测。CLI 控制能力不可用时，Session Runtime 继续提供 General Session；Space 投影以空 Space 集合降级。
 
 Runtime API 面向 Workbench 暴露 Ellamaka 领域资源与投影，而不是透传 CLI 命令、CLI JSON envelope 或底层 filesystem 参数。CLI 管理的 settings、Git 和 ontology 状态保持事实来源。Session、PTY、消息和 General Session 工作目录由 ellamaka 直接拥有。
 
-Ellamaka 当前消费的 CLI capability：
+### 6.1 消费侧 schema 来源
+
+消费侧 schema 从共享契约包导入，与 wopal 契约同源：wopal-cli 以 TypeBox 声明的能力 schema（真相源）发布为共享契约包，ellamaka 从共享包导入，编译期与 wopal 契约同步。运行时的 envelope 解码与错误映射保持现有 adapter 形态不变；具体转换方式（Effect Schema 包装或直接 TypeBox 校验）属落地阶段决策。共享包与 wopal-cli 同版本发布，ellamaka 锁版本消费。
+
+### 6.2 当前消费的 CLI capability
 
 | Capability | 版本 | 消费方 | 用途 |
 |---|---|---|---|
