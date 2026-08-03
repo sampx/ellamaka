@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   parseReleaseTag,
   parseLegacyTag,
@@ -8,6 +11,9 @@ import {
   type ReleaseSnapshot,
   type AliasMap,
 } from "../scripts/cleanup-ellamaka-releases.mjs"
+
+const currentDir = dirname(fileURLToPath(import.meta.url))
+const scriptSource = readFileSync(join(currentDir, "..", "scripts", "cleanup-ellamaka-releases.mjs"), "utf8")
 
 // ---------------------------------------------------------------------------
 // Task 5: cleanup protection model.
@@ -230,5 +236,30 @@ describe("cleanup-ellamaka: withdraw plan", () => {
     const restoreIdx = plan.steps.findIndex((s) => s.action === "restore-alias")
     const deleteIdx = plan.steps.findIndex((s) => s.action === "delete-versioned-path")
     expect(restoreIdx).toBeLessThan(deleteIdx)
+  })
+})
+
+describe("cleanup-ellamaka: contract — main path uses protection model", () => {
+  // Per B-01/W-02: assert the script source no longer contains the removed
+  // legacy comparators in the execution path, and that it wires to the new
+  // protection-model pure functions.
+  test("script does not export selectForDeletion / compareVersions / parseTag", () => {
+    expect(scriptSource).not.toContain("export function selectForDeletion")
+    expect(scriptSource).not.toContain("export function compareVersions")
+    expect(scriptSource).not.toContain("export function parseTag")
+  })
+
+  test("script does not use sort -V or numeric-suffix comparator in main path", () => {
+    expect(scriptSource).not.toMatch(/\bsort\s+-V\b/)
+  })
+
+  test("script main calls planRetention (retention) and planWithdraw (withdraw)", () => {
+    expect(scriptSource).toContain("planRetention(")
+    expect(scriptSource).toContain("planWithdraw(")
+  })
+
+  test("script supports --withdraw and --fallback CLI flags", () => {
+    expect(scriptSource).toContain('"--withdraw"')
+    expect(scriptSource).toContain('"--fallback"')
   })
 })

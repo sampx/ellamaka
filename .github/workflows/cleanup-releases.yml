@@ -4,10 +4,10 @@ name: cleanup-releases
 # cleanup uses the protection model: latest/updater-referenced releases are
 # always protected; only standard SemVer releases within the same
 # product/channel become retention candidates; legacy/unknown objects fail
-# closed. Whole-version withdrawal (§9.2) is a separate explicit mode.
-#
-# This workflow replaces the inline cleanup steps that previously ran inside
-# the publish workflows.
+# closed (retained, never auto-deleted). Whole-version withdrawal (§9.2) is
+# a separate explicit mode that requires the version to be recorded in
+# release/withdrawn-versions.json, restores aliases to a healthy fallback,
+# purges CDN, then deletes the versioned path, Release page and tag.
 
 on:
   workflow_dispatch:
@@ -32,12 +32,17 @@ on:
         required: false
         type: string
         default: "5"
+      keep-beta:
+        description: "Number of beta releases to keep (desktop retention only)"
+        required: false
+        type: string
+        default: "2"
       withdraw-version:
-        description: "Version to withdraw (withdraw mode)"
+        description: "Version to withdraw (withdraw mode, must be in withdrawn-versions.json)"
         required: false
         type: string
       fallback-version:
-        description: "Healthy fallback version (withdraw mode)"
+        description: "Healthy fallback version (withdraw mode, required)"
         required: false
         type: string
 
@@ -56,16 +61,29 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.RELEASE_GITEE }}
         run: |
-          if [ "${{ inputs.mode }}" = "retention" ]; then
-            if [ "${{ inputs.product }}" = "ellamaka-cli" ]; then
+          PRODUCT="${{ inputs.product }}"
+          MODE="${{ inputs.mode }}"
+          if [ "$MODE" = "retention" ]; then
+            if [ "$PRODUCT" = "ellamaka-cli" ]; then
               node scripts/cleanup-ellamaka-releases.mjs --keep "${{ inputs.keep-stable }}" --dry-run
             else
-              node scripts/cleanup-desktop-releases.mjs --keep-prod "${{ inputs.keep-stable }}" --dry-run
+              node scripts/cleanup-desktop-releases.mjs --keep-prod "${{ inputs.keep-stable }}" --keep-beta "${{ inputs.keep-beta }}" --dry-run
             fi
           else
-            echo "Withdraw mode requires operator review of the plan output before applying."
-            echo "Product: ${{ inputs.product }}, Version: ${{ inputs.withdraw-version }}, Fallback: ${{ inputs.fallback-version }}"
-            echo "Run the cleanup script manually with --withdraw after reviewing the plan."
+            # Withdraw mode: real execution (R2 + GitHub + Gitee mutation).
+            # Per §9.2, the version must already be recorded in
+            # release/withdrawn-versions.json before this run.
+            WITHDRAW_VER="${{ inputs.withdraw-version }}"
+            FALLBACK_VER="${{ inputs.fallback-version }}"
+            if [ -z "$WITHDRAW_VER" ] || [ -z "$FALLBACK_VER" ]; then
+              echo "ERROR: withdraw mode requires withdraw-version and fallback-version"
+              exit 2
+            fi
+            if [ "$PRODUCT" = "ellamaka-cli" ]; then
+              node scripts/cleanup-ellamaka-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" --dry-run
+            else
+              node scripts/cleanup-desktop-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" --dry-run
+            fi
           fi

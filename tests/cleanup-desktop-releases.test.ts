@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import {
   parseReleaseTag,
   parseLegacyTag,
@@ -8,6 +11,9 @@ import {
   type ReleaseSnapshot,
   type AliasMap,
 } from "../scripts/cleanup-desktop-releases.mjs"
+
+const currentDir = dirname(fileURLToPath(import.meta.url))
+const scriptSource = readFileSync(join(currentDir, "..", "scripts", "cleanup-desktop-releases.mjs"), "utf8")
 
 describe("cleanup-desktop: parseReleaseTag (standard SemVer)", () => {
   test("parses namespaced Desktop stable tag", () => {
@@ -164,5 +170,27 @@ describe("cleanup-desktop: withdraw plan", () => {
       fallbackVersion: "1.17.0",
     })
     expect(plan.allowed).toBe(false)
+  })
+})
+
+describe("cleanup-desktop: contract — main path uses protection model", () => {
+  test("script does not export selectForDeletion / compareVersions / parseTag", () => {
+    expect(scriptSource).not.toContain("export function selectForDeletion")
+    expect(scriptSource).not.toContain("export function compareVersions")
+    expect(scriptSource).not.toContain("export function parseTag")
+  })
+
+  test("script does not use sort -V or numeric-suffix comparator in main path", () => {
+    expect(scriptSource).not.toMatch(/\bsort\s+-V\b/)
+  })
+
+  test("script main calls planRetention (retention) and planWithdraw (withdraw)", () => {
+    expect(scriptSource).toContain("planRetention(")
+    expect(scriptSource).toContain("planWithdraw(")
+  })
+
+  test("script supports --withdraw and --fallback CLI flags", () => {
+    expect(scriptSource).toContain('"--withdraw"')
+    expect(scriptSource).toContain('"--fallback"')
   })
 })
