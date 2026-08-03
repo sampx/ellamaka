@@ -348,6 +348,24 @@ function listGithubReleases(repo) {
   return output.trim().split("\n").filter(Boolean).filter((t) => t.startsWith("ellamaka-cli-v"));
 }
 
+// Ontology repo historically mirrored CLI releases with a bare `ellamaka-v*`
+// prefix (e.g. ellamaka-v2.0.0). Since the naming switch to
+// `ellamaka-cli-v*`, both prefixes can appear. List both so retention and
+// withdrawal can clean stale ontology mirrors without deleting Desktop tags.
+function listGithubOntologyReleases(repo) {
+  const cmd = `gh api repos/${repo}/releases --paginate --jq '[.[] | select(.tag_name | test("^ellamaka-(cli-)?v"))] | .[].tag_name'`;
+  const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+  return output
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .filter(
+      (t) =>
+        (t.startsWith("ellamaka-cli-v") || t.startsWith("ellamaka-v")) &&
+        !t.startsWith("ellamaka-desktop-v"),
+    );
+}
+
 function deleteGithubRelease(repo, tag, dryRun) {
   if (dryRun) {
     console.log(`  [DRY RUN] would delete GitHub release + tag ${repo}:${tag}`);
@@ -380,6 +398,24 @@ function listGiteeReleases(token, repo) {
   const releases = JSON.parse(output);
   return releases
     .filter((r) => r.tag_name && r.tag_name.startsWith("ellamaka-cli-v"))
+    .map((r) => ({ id: r.id, tag_name: r.tag_name }));
+}
+
+// Ontology repo Gitee mirror: match both ellamaka-cli-v* and legacy
+// ellamaka-v* prefixes (never ellamaka-desktop-v*).
+function listGiteeOntologyReleases(token, repo) {
+  const [owner, repoName] = repo.split("/");
+  const url = `${GITEE_BASE}/repos/${owner}/${repoName}/releases?access_token=${encodeURIComponent(token)}&per_page=100`;
+  const cmd = `curl -fsSL "${url}"`;
+  const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+  const releases = JSON.parse(output);
+  return releases
+    .filter(
+      (r) =>
+        r.tag_name &&
+        (r.tag_name.startsWith("ellamaka-cli-v") || r.tag_name.startsWith("ellamaka-v")) &&
+        !r.tag_name.startsWith("ellamaka-desktop-v"),
+    )
     .map((r) => ({ id: r.id, tag_name: r.tag_name }));
 }
 
@@ -545,6 +581,42 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
         console.error(`  Gitee list failed: ${err.message}`);
       }
     }
+
+    // Ontology repo mirrors CLI releases under ellamaka-cli-v* (new) or
+    // ellamaka-v* (legacy). Clean both so retention also prunes stale
+    // ontology release pages. Desktop tags (ellamaka-desktop-v*) are
+    // excluded — they belong to the desktop cleanup script.
+    console.log("\n=== GitHub (wopal-cn/wopal-space-ontology): matching ellamaka-{cli-,}v* releases ===");
+    try {
+      const ghOntTags = listGithubOntologyReleases("wopal-cn/wopal-space-ontology");
+      for (const tag of ghOntTags) {
+        const version = tag.startsWith("ellamaka-cli-v")
+          ? tag.slice("ellamaka-cli-v".length)
+          : tag.slice("ellamaka-v".length);
+        if (deletedVersions.has(version)) {
+          deleteGithubRelease("wopal-cn/wopal-space-ontology", tag, flags.dryRun);
+        }
+      }
+    } catch (err) {
+      console.error(`  GitHub ontology list failed: ${err.message}`);
+    }
+
+    if (giteeToken) {
+      console.log("\n=== Gitee (wopal-cn/wopal-space-ontology): matching ellamaka-{cli-,}v* releases ===");
+      try {
+        const giteeOntReleases = listGiteeOntologyReleases(giteeToken, "wopal-cn/wopal-space-ontology");
+        for (const release of giteeOntReleases) {
+          const version = release.tag_name.startsWith("ellamaka-cli-v")
+            ? release.tag_name.slice("ellamaka-cli-v".length)
+            : release.tag_name.slice("ellamaka-v".length);
+          if (deletedVersions.has(version)) {
+            deleteGiteeRelease(giteeToken, "wopal-cn/wopal-space-ontology", release, flags.dryRun);
+          }
+        }
+      } catch (err) {
+        console.error(`  Gitee ontology list failed: ${err.message}`);
+      }
+    }
   }
 
   console.log(`\n${mode}Cleanup complete.\n`);
@@ -620,6 +692,33 @@ async function runWithdraw({ flags, r2Url, ghToken, giteeToken }) {
           if (match) deleteGiteeRelease(giteeToken, "wopal-cn/ellamaka", match, false);
         } catch (err) {
           console.error(`  Gitee tag delete failed: ${err.message}`);
+        }
+      }
+      // Sync-delete the same version from the ontology mirror (both the
+      // new ellamaka-cli-v* and legacy ellamaka-v* naming), if present.
+      const version = step.target.replace(/^ellamaka-cli-v/, "");
+      try {
+        const ghOntTags = listGithubOntologyReleases("wopal-cn/wopal-space-ontology");
+        for (const tag of ghOntTags) {
+          const v = tag.startsWith("ellamaka-cli-v")
+            ? tag.slice("ellamaka-cli-v".length)
+            : tag.slice("ellamaka-v".length);
+          if (v === version) deleteGithubRelease("wopal-cn/wopal-space-ontology", tag, false);
+        }
+      } catch (err) {
+        console.error(`  GitHub ontology tag delete failed: ${err.message}`);
+      }
+      if (giteeToken) {
+        try {
+          const giteeOntReleases = listGiteeOntologyReleases(giteeToken, "wopal-cn/wopal-space-ontology");
+          for (const release of giteeOntReleases) {
+            const v = release.tag_name.startsWith("ellamaka-cli-v")
+              ? release.tag_name.slice("ellamaka-cli-v".length)
+              : release.tag_name.slice("ellamaka-v".length);
+            if (v === version) deleteGiteeRelease(giteeToken, "wopal-cn/wopal-space-ontology", release, false);
+          }
+        } catch (err) {
+          console.error(`  Gitee ontology tag delete failed: ${err.message}`);
         }
       }
     }

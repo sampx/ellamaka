@@ -76,6 +76,31 @@ describe("cleanup-ellamaka: parseLegacyTag (read-only legacy)", () => {
   test("returns null for standard SemVer tag", () => {
     expect(parseLegacyTag("ellamaka-cli-v1.17.1")).toBeNull()
   })
+
+  test("ontology listing helper matches both new and legacy CLI prefixes", () => {
+    // The ontology repo historically mirrored CLI releases as ellamaka-v*
+    // and now mirrors them as ellamaka-cli-v*. The listing helper must
+    // match both but never desktop tags.
+    expect(scriptSource).toContain("listGithubOntologyReleases")
+    expect(scriptSource).toContain('test("^ellamaka-(cli-)?v")')
+    expect(scriptSource).toContain("!t.startsWith(\"ellamaka-desktop-v\")")
+    expect(scriptSource).toContain("listGiteeOntologyReleases")
+  })
+
+  test("retention cleanup prunes ontology mirror in lockstep", () => {
+    // The ontology repo is a mirror of ellamaka releases; retention must
+    // delete matching ontology release pages/tags alongside the primary
+    // repo (both old ellamaka-v* and new ellamaka-cli-v* naming).
+    expect(scriptSource).toContain("wopal-cn/wopal-space-ontology")
+    expect(scriptSource).toContain("listGithubOntologyReleases(\"wopal-cn/wopal-space-ontology\")")
+    expect(scriptSource).toContain("listGiteeOntologyReleases")
+  })
+
+  test("withdraw deletes ontology mirror tags in lockstep", () => {
+    expect(scriptSource).toContain("step.target.replace(/^ellamaka-cli-v/, \"\")")
+    expect(scriptSource).toContain("GitHub ontology tag delete failed")
+    expect(scriptSource).toContain("Gitee ontology tag delete failed")
+  })
 })
 
 describe("cleanup-ellamaka: reference graph protection", () => {

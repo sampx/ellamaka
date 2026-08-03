@@ -537,6 +537,36 @@ async function runRetention({ flags, r2Url, ghToken, giteeToken, mode }) {
         console.error(`  Gitee list failed: ${err.message}`);
       }
     }
+
+    // Ontology repo mirrors Desktop releases under the same
+    // ellamaka-desktop-v* prefix. Prune stale mirrors in lockstep.
+    console.log(`\n=== GitHub (${GH_REPO}): matching ellamaka-desktop-v* releases ===`);
+    try {
+      const ghOntTags = listGithubReleases(GH_REPO);
+      for (const tag of ghOntTags) {
+        const parsed = parseReleaseTag(tag);
+        if (parsed && allDeleteVersions.has(parsed.version)) {
+          deleteGithubRelease(GH_REPO, tag, flags.dryRun);
+        }
+      }
+    } catch (err) {
+      console.error(`  GitHub ontology list failed: ${err.message}`);
+    }
+
+    if (giteeToken) {
+      console.log(`\n=== Gitee (${GH_REPO}): matching ellamaka-desktop-v* releases ===`);
+      try {
+        const giteeOntReleases = listGiteeReleases(giteeToken, GH_REPO);
+        for (const release of giteeOntReleases) {
+          const parsed = parseReleaseTag(release.tag_name);
+          if (parsed && allDeleteVersions.has(parsed.version)) {
+            deleteGiteeRelease(giteeToken, GH_REPO, release, flags.dryRun);
+          }
+        }
+      } catch (err) {
+        console.error(`  Gitee ontology list failed: ${err.message}`);
+      }
+    }
   }
 
   console.log(`\n${mode}Cleanup complete.\n`);
@@ -620,6 +650,23 @@ async function runWithdraw({ flags, r2Url, ghToken, giteeToken }) {
           if (match) deleteGiteeRelease(giteeToken, ELLAMAKA_REPO, match, false);
         } catch (err) {
           console.error(`  Gitee tag delete failed: ${err.message}`);
+        }
+      }
+      // Sync-delete the same version from the ontology mirror.
+      try {
+        const ghOntTags = listGithubReleases(GH_REPO);
+        const ghMatch = ghOntTags.find((t) => t === step.target);
+        if (ghMatch) deleteGithubRelease(GH_REPO, ghMatch, false);
+      } catch (err) {
+        console.error(`  GitHub ontology tag delete failed: ${err.message}`);
+      }
+      if (giteeToken) {
+        try {
+          const giteeOntReleases = listGiteeReleases(giteeToken, GH_REPO);
+          const giteeMatch = giteeOntReleases.find((r) => r.tag_name === step.target);
+          if (giteeMatch) deleteGiteeRelease(giteeToken, GH_REPO, giteeMatch, false);
+        } catch (err) {
+          console.error(`  Gitee ontology tag delete failed: ${err.message}`);
         }
       }
     }

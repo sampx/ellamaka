@@ -227,4 +227,18 @@ describe("cleanup-desktop: contract — main path uses protection model", () => 
     expect(scriptSource).toContain('"--withdraw"')
     expect(scriptSource).toContain('"--fallback"')
   })
+
+  test("retention cleanup prunes ontology mirror in lockstep", () => {
+    // The ontology repo mirrors Desktop releases; retention must delete
+    // matching ontology release pages/tags alongside the primary repo.
+    expect(scriptSource).toContain("GH_REPO")
+    expect(scriptSource).toContain("wopal-cn/wopal-space-ontology")
+    expect(scriptSource).toContain("listGithubReleases(GH_REPO)")
+    expect(scriptSource).toContain("listGiteeReleases(giteeToken, GH_REPO)")
+  })
+
+  test("withdraw deletes ontology mirror tags in lockstep", () => {
+    expect(scriptSource).toContain("GitHub ontology tag delete failed")
+    expect(scriptSource).toContain("Gitee ontology tag delete failed")
+  })
 })
