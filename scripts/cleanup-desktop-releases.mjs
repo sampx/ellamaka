@@ -5,22 +5,21 @@
  *
  * Protection-model cleanup for ellamaka-desktop releases. Per
  * docs/RELEASE-IDENTITY.md §9.1, this script does not use shell version
- * sort, mtime, or legacy numeric-suffix comparators. It builds a reference graph (stable
- * and beta latest aliases are protected), and only standard SemVer
- * releases within the same product/channel become retention candidates.
- * Legacy and unknown objects fail closed (retained, never auto-deleted).
+ * sort, mtime, or legacy numeric-suffix comparators. It builds a reference
+ * graph (stable and beta latest aliases are protected), and only standard
+ * SemVer releases within the same product/channel become retention
+ * candidates. Legacy and unknown objects fail closed (retained, never
+ * auto-deleted).
  *
  * Modes:
  *   retention: `--keep-prod N --keep-beta M` keeps the N newest stable and
  *     M newest beta standard-SemVer releases; deletes older non-protected
- *     standard releases; never touches legacy.
+ *     standard releases; never touches legacy. Applies with a fresh re-read
+ *     of aliases to skip candidates that became protected since the plan.
  *   withdraw: `--withdraw <version> --fallback <v>` performs whole-version
  *     withdrawal per §9.2. The version must be recorded in
  *     release/withdrawn-versions.json. Steps: restore aliases → delete
  *     versioned R2 path → delete GitHub/Gitee Release + tag.
- *
- * Surfaces: R2 versioned paths (prod + beta) + GitHub/Gitee Release pages
- * for the ellamaka-desktop product.
  *
  * Usage:
  *   node scripts/cleanup-desktop-releases.mjs --keep-prod 3 --keep-beta 2 [--dry-run]

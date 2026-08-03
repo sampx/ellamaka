@@ -5,22 +5,21 @@
  *
  * Protection-model cleanup for ellamaka CLI releases. Per
  * docs/RELEASE-IDENTITY.md §9.1, this script does not use shell version
- * sort, mtime, or the legacy X.Y.Z-N numeric-suffix comparator. It builds a reference
- * graph (latest aliases are protected), and only standard SemVer releases
- * within the same product/channel become retention candidates. Legacy
- * and unknown objects fail closed (retained, never auto-deleted).
+ * sort, mtime, or the legacy X.Y.Z-N numeric-suffix comparator. It builds a
+ * reference graph (latest aliases are protected), and only standard SemVer
+ * releases within the same product/channel become retention candidates.
+ * Legacy and unknown objects fail closed (retained, never auto-deleted).
  *
  * Modes:
- *   retention: `--keep N --keep-prerelease M` keeps the N newest stable
- *     and M newest prerelease standard-SemVer releases; deletes older
- *     non-protected standard releases; never touches legacy.
+ *   retention: `--keep N --keep-prerelease M` keeps the N newest stable and
+ *     M newest prerelease (beta/rc) standard-SemVer releases; deletes older
+ *     non-protected standard releases; never touches legacy. Applies with a
+ *     fresh re-read of aliases to skip candidates that became protected
+ *     since the plan.
  *   withdraw: `--withdraw <version> --fallback <v>` performs whole-version
  *     withdrawal per §9.2. The version must be recorded in
  *     release/withdrawn-versions.json. Steps: restore aliases → delete
  *     versioned R2 path → delete GitHub/Gitee Release + tag.
- *
- * Surfaces (retention): R2 versioned paths + GitHub/Gitee Release pages
- * for the ellamaka-cli product.
  *
  * Usage:
  *   node scripts/cleanup-ellamaka-releases.mjs --keep 5 --keep-prerelease 1 [--dry-run]
