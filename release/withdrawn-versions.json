@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "products": {
-    "ellamaka-cli": [],
+    "ellamaka-cli": ["2.0.0"],
     "ellamaka-desktop": []
   }
 }
