@@ -102,3 +102,51 @@ jobs:
               node scripts/cleanup-desktop-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
             fi
           fi
+      - name: Purge withdrawn version from Cloudflare CDN
+        if: inputs.mode == 'withdraw' && inputs.apply == 'true' && inputs.withdraw-version != ''
+        env:
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+          CLOUDFLARE_CACHE_PURGE_ZONE: ${{ secrets.CLOUDFLARE_CACHE_PURGE_ZONE }}
+          WITHDRAW_VER: ${{ inputs.withdraw-version }}
+          FALLBACK_VER: ${{ inputs.fallback-version }}
+        run: |
+          if [ -z "${CLOUDFLARE_CACHE_PURGE_TOKEN:-}" ] || [ -z "${CLOUDFLARE_CACHE_PURGE_ZONE:-}" ]; then
+            echo "WARN: CDN purge credentials missing — withdrawn version remains cached until TTL expiry."
+            exit 0
+          fi
+
+          if [ "${{ inputs.product }}" = "ellamaka-cli" ]; then
+            ROOT="ellamaka"
+          else
+            ROOT="ellamaka-desktop"
+          fi
+
+          PURGE_URLS=(
+            "https://download.coursedao.com/${ROOT}/v${WITHDRAW_VER}/manifest.json"
+            "https://download.coursedao.com/${ROOT}/v${WITHDRAW_VER}/checksums.txt"
+            "https://download.coursedao.com/${ROOT}/v${WITHDRAW_VER}/release-notes.md"
+            "https://download.coursedao.com/${ROOT}/latest/manifest.json"
+          )
+
+          for ((offset=0; offset<${#PURGE_URLS[@]}; offset+=30)); do
+            batch=("${PURGE_URLS[@]:offset:30}")
+            payload=$(printf '%s\n' "${batch[@]}" | node -e '
+              let input = "";
+              process.stdin.on("data", (chunk) => input += chunk);
+              process.stdin.on("end", () => {
+                const files = input.split(/\r?\n/).filter(Boolean);
+                process.stdout.write(JSON.stringify({ files }));
+              });
+            ')
+            response="${RUNNER_TEMP}/withdraw-purge-response-${offset}.json"
+            code=$(curl -sS -o "$response" -w "%{http_code}" \
+              -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_CACHE_PURGE_ZONE}/purge_cache" \
+              -H "Authorization: Bearer ${CLOUDFLARE_CACHE_PURGE_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$payload")
+            if [ "$code" != "200" ] || ! node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).success ? 0 : 1)' "$response"; then
+              echo "ERROR: Cloudflare purge failed (HTTP $code)."
+              exit 1
+            fi
+          done
+          echo "CDN purge complete for ${ROOT} v${WITHDRAW_VER}"
