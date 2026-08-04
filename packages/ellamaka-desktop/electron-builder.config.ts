@@ -38,12 +38,18 @@ const getBase = (): Configuration => ({
     output: "dist",
     buildResources: "resources",
   },
-  files: ["out/**/*", "resources/**/*"],
+  files: ["out/**/*", "resources/**/*", "!resources/release-identity.json"],
   extraResources: [
     {
       from: "native/",
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
+    },
+    {
+      // release-identity.json must live outside app.asar (Contents/Resources)
+      // so external consumers (wopal-cli) can probe the embedded identity.
+      from: "resources/release-identity.json",
+      to: "release-identity.json",
     },
   ],
   mac: {
