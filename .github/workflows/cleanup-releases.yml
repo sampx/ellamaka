@@ -119,6 +119,10 @@ jobs:
             ROOT="ellamaka"
           else
             ROOT="ellamaka-desktop"
+            # Desktop beta releases live under beta/ in R2 and CDN.
+            if [[ "${WITHDRAW_VER}" == *-beta.* ]]; then
+              ROOT="${ROOT}/beta"
+            fi
           fi
 
           PURGE_URLS=(
