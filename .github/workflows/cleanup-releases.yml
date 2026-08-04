@@ -132,6 +132,21 @@ jobs:
             "https://download.coursedao.com/${ROOT}/latest/manifest.json"
           )
 
+          # Artifact files are versioned objects too; derive their names from
+          # the healthy fallback manifest (same product/channel artifact set)
+          # and swap in the withdrawn version.
+          FALLBACK_MANIFEST_URL="https://download.coursedao.com/${ROOT}/v${FALLBACK_VER}/manifest.json"
+          curl -sS -o "${RUNNER_TEMP}/fallback-manifest.json" "$FALLBACK_MANIFEST_URL" || true
+          if [ -s "${RUNNER_TEMP}/fallback-manifest.json" ]; then
+            while IFS= read -r artifact_url; do
+              swapped="${artifact_url//v${FALLBACK_VER}/v${WITHDRAW_VER}}"
+              PURGE_URLS+=("$swapped" "${swapped}.blockmap")
+            done < <(node -e '
+              const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              for (const a of m.artifacts || []) if (a.url) console.log(a.url);
+            ' "${RUNNER_TEMP}/fallback-manifest.json")
+          fi
+
           for ((offset=0; offset<${#PURGE_URLS[@]}; offset+=30)); do
             batch=("${PURGE_URLS[@]:offset:30}")
             payload=$(printf '%s\n' "${batch[@]}" | node -e '
