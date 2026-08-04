@@ -91,9 +91,14 @@ jobs:
               echo "ERROR: withdraw mode requires withdraw-version and fallback-version"
               exit 2
             fi
-            if [ "$PRODUCT" = "ellamaka-cli" ]; then
-              node scripts/cleanup-ellamaka-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" --dry-run
+            if [ "${{ inputs.apply }}" = "true" ]; then
+              DRY_FLAG=""
             else
-              node scripts/cleanup-desktop-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" --dry-run
+              DRY_FLAG="--dry-run"
+            fi
+            if [ "$PRODUCT" = "ellamaka-cli" ]; then
+              node scripts/cleanup-ellamaka-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
+            else
+              node scripts/cleanup-desktop-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
             fi
           fi
