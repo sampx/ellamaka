@@ -407,7 +407,7 @@ Desktop 保留自己的 manifest policy gate。electron-updater 负责平台 fee
 
 - CLI 发布时直接更新 CLI stable latest，不受任何 Desktop 版本约束。
 - Desktop stable/beta 发布前校验当前 CLI stable latest 满足自身 requirements（product、channel、upstream baseline、engine API range）；不满足时 fail closed 并提示先发布兼容的 CLI。
-- 旧 Desktop 用户启动时若发现 CLI 不兼容，通过 Setup Center 的 `install-engine` 下载并校验 CLI stable latest；仍不满足则提示更新 Desktop，不搜索历史 CLI，不静默回退。
+- 旧 Desktop 用户启动时若发现 CLI 不兼容，通过 onboarding 的 `install-engine` 下载并校验 CLI stable latest；仍不满足则提示更新 Desktop，不搜索历史 CLI，不静默回退。
 - CLI stable 只能进入 stable alias；Desktop stable 只能进入 stable alias，beta 只能进入 beta alias。
 
 不存在跨产品的 latest 协调流程：CLI 永不等待 Desktop，Desktop 永远自我适配。短暂的不一致窗口由 consumer fail-closed 并提示重试，不通过历史版本搜索掩盖发布事务错误。

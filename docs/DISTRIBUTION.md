@@ -31,7 +31,7 @@
 
 本文件定义 Ellamaka CLI 与 Desktop 的 release backbone、artifact naming、固定安装路径和消费边界。产品版本、OpenCode baseline、构建身份与兼容规则由 `RELEASE-IDENTITY.md` 唯一定义。
 
-Ellamaka CLI 与 Desktop 分别发布为独立制品，使用各自的 SemVer、namespaced tag、workflow、R2 latest 和回滚边界。Desktop manifest 声明兼容约束，Wopal 读取并校验 CLI stable latest，把两个制品组合为一个可安装产品。默认 `wopal ellamaka install` 安装完整产品，`wopal setup` 复用该能力并请求 Desktop 打开 Setup Center。
+Ellamaka CLI 与 Desktop 分别发布为独立制品，使用各自的 SemVer、namespaced tag、workflow、R2 latest 和回滚边界。Desktop manifest 声明兼容约束，Wopal 读取并校验 CLI stable latest，把两个制品组合为一个可安装产品。默认 `wopal ellamaka install` 安装完整产品，`wopal setup` 复用该能力并启动 Desktop onboarding。
 
 项目职责、配置链路与 runtime loading 见 `DESIGN.md`。桌面端的分发方案见 §9，其架构与运行时行为见 `DESKTOP.md`。
 
@@ -56,7 +56,7 @@ P2 的 canonical consumer：
 
 1. `wopal ellamaka install`：默认安装 Desktop latest + CLI stable latest，并在落盘前校验兼容性。
 2. `wopal ellamaka install --cli`：只安装外部 Ellamaka CLI。
-3. `wopal setup`：确保完整产品并拉起 Desktop Setup Center。
+3. `wopal setup`：确保完整产品并拉起 Desktop onboarding。
 4. Desktop-first：Desktop bootstrap Wopal CLI 后，通过 machine operation 安装并校验 CLI stable latest。
 5. 人工从 GitHub/Gitee Release 页面点击 R2 链接下载。
 
@@ -305,7 +305,7 @@ Contract：
 
 ellamaka CLI 通过以下渠道分发到用户本地：
 
-- **主路径**：`wopal ellamaka install` 完整安装或 Desktop Setup Center 的 `install-engine` machine operation。
+- **主路径**：`wopal ellamaka install` 完整安装或 Desktop onboarding 的 `install-engine` machine operation。
 - **CLI-only 路径**：`wopal ellamaka install --cli`。
 - **手动下载**：用户从 GitHub/Gitee Release 页面点击 R2 链接下载。
 
@@ -314,7 +314,7 @@ ellamaka CLI 通过以下渠道分发到用户本地：
 consumer（wopal-cli 或 Desktop）在安装 ellamaka 时须遵循以下契约：
 
 - 只从 R2 读取机器契约：cli-only 读取 CLI `latest/manifest.json`；完整产品读取 Desktop channel latest 与 CLI stable latest。
-- CLI-only 安装默认使用 Engine stable latest；完整产品安装和 Setup Center 根据 Desktop requirements 校验同一个 CLI stable latest。
+- CLI-only 安装默认使用 Engine stable latest；完整产品安装和 onboarding 根据 Desktop requirements 校验同一个 CLI stable latest。
 - 修改本机前解析并验证完整安装计划；CLI latest 不兼容时明确失败并建议刷新或重试，不搜索历史版本或回退到 `testedWith`。
 - 根据平台和稳定 artifact naming 计算目标文件名，不依赖 GitHub API 解析 release 页面。
 - 安装目标固定为上述 binary path。
@@ -589,7 +589,7 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 | P1（已完成）     | CI matrix + R2 + channel feed + updater 资产 + wopal-site 下载页 + GH/Gitee 索引；macOS ad-hoc 签名                        | 三平台安装包可从 R2 下载；macOS 用户可主动接受风险后运行；electron-updater 检测+手动下载已可用  |
 | P2（收尾中）     | 三平台更新检测验证；NSIS/ZIP/AppImage 增量更新验证（DMG 全量）；用户确认后安装流程验证；缓存策略对齐                       | 三平台增量更新全流程通过；缓存 TTL 对齐（versioned 30 天、latest 60 秒）                        |
 | Release Identity | CLI/Desktop 独立 SemVer、namespaced tag、upstream lock、latest promotion 与 updater policy gate                            | 新发布不依赖 legacy comparator；latest/cleanup 使用同一规则；manifest 可审计                    |
-| 统一 Setup       | Desktop manifest 发布完整兼容 requirements；CLI 可安装 Desktop latest + CLI stable latest；Setup Center 收敛首次配置与修复 | CLI-first 与 Desktop-first 汇合；完整安装通过 upstream/engine API 检查；`bin/` 无 metadata 污染 |
+| 统一 Setup       | Desktop manifest 发布完整兼容 requirements；CLI 可安装 Desktop latest + CLI stable latest；onboarding 收敛首次配置 | CLI-first 与 Desktop-first 汇合；完整安装通过 upstream/engine API 检查；`bin/` 无 metadata 污染 |
 | P2 之后          | mac/win 签名 + 公证；electron-updater 切换为自动下载安装                                                                   | 无 Gatekeeper / SmartScreen 拦截，应用内自动更新可用                                            |
 
 ### 9.10 验证清单
@@ -615,7 +615,7 @@ P1 使用 ad-hoc 签名。该签名保证 macOS app bundle 结构完整并通过
 | `./BRANDING.md`                                             | ellamaka 品牌注入点清单与桌面分发身份（§17）                             |
 | `../../../docs/products/wopal-space/DESIGN-distribution.md` | 产品级分发总设计：R2 架构、缓存策略、完整性模型、Release 页面策略        |
 | `../../../docs/products/wopal-space/DESIGN-wopalspace.md`   | 产品级架构与版本体系                                                     |
-| `../../../docs/products/wopal-space/DESIGN-onboarding.md`   | Setup Center 架构、setup 完整流程、版本兼容矩阵维护                      |
+| `../../../docs/products/wopal-space/DESIGN-onboarding.md`   | onboarding 架构、setup 完整流程、版本兼容矩阵维护                      |
 | `../../wopal-cli/docs/DESIGN.md`                            | CLI 的 setup / engine / space orchestration 边界                         |
 | `../../wopal-cli/docs/DISTRIBUTION.md`                      | CLI 对 ellamaka release 的消费契约                                       |
 | `../../../.wopal/docs/DESIGN.md`                            | ontology 的 template、command 与 runtime maintenance 设计                |

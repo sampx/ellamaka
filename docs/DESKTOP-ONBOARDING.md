@@ -1,59 +1,57 @@
-# Desktop Setup Center — 目标实现规范
+# Desktop Onboarding — 目标实现规范
 
 > **状态**: Target Shape
-> **更新时间**: 2026-08-03
+> **更新时间**: 2026-08-04
 > **上级文档**:
 >
 > - `../../../docs/products/wopal-space/DESIGN-onboarding.md` — 统一入口架构与职责边界
 > - `./DESKTOP.md` — Desktop 启动、窗口与 sidecar 生命周期
 >   **CLI machine 契约**: `../../../projects/wopal-cli/src/lib/setup-machine.ts`
 
-本文档定义 Ellamaka Desktop Setup Center 的目标实现。首次 Onboarding 是 Setup Center 在 fresh 状态下的呈现。CLI machine operation 的输入、输出和业务语义以 wopal-cli 代码为准。
+本文档定义 Ellamaka Desktop onboarding 的目标实现。入口判定只依赖 `onboarding.json`（Desktop-owned UI 状态）；CLI machine operation 的输入、输出和业务语义以 wopal-cli 代码为准。
 
 ---
 
 ## 1. 实现架构
 
 ```text
-SolidJS Setup Center Renderer
+SolidJS Onboarding Renderer
   └── Preload allowlist
         └── Electron Main
-              ├── setup UI state / IPC / logging
+              ├── onboarding UI state / IPC / logging
               ├── CLI bootstrap and process lifecycle
               └── wopal setup --machine --json --api-version 1
 ```
 
-| 层       | 实现责任                                                                                                               | 主要位置                                       |
-| -------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Renderer | 呈现四阶段 Setup Center、收集用户输入、触发 probe/execute、显示进度和结果、控制用户确认导航。                          | `src/renderer/onboarding/`                     |
-| Preload  | 向 Renderer 暴露最小化 Setup Center API。                                                                              | `src/preload/index.ts`、`src/preload/types.ts` |
-| Main     | 消费一次性 setup request，bootstrap CLI，执行 inspect，决定 Setup Center 或 Workbench，保存 UI 状态并治理 CLI 子进程。 | `src/main/onboarding-*.ts`                     |
-| CLI      | 执行安装、Ontology、Runtime、Space、Provider 和 Memory 的确定性变更。                                                  | `wopal setup --machine`                        |
+| 层       | 实现责任                                                                                                                     | 主要位置                                       |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Renderer | 呈现四阶段 onboarding、收集用户输入、触发 probe/execute、显示进度和结果、控制用户确认导航。                                  | `src/renderer/onboarding/`                     |
+| Preload  | 向 Renderer 暴露最小化 onboarding API。                                                                                      | `src/preload/index.ts`、`src/preload/types.ts` |
+| Main     | 读取 onboarding 状态决定入口，bootstrap CLI，编排步骤执行，保存 UI 状态并治理 CLI 子进程。                                   | `src/main/onboarding-*.ts`                     |
+| CLI      | 执行安装、Ontology、Runtime、Space、Provider 和 Memory 的确定性变更。                                                        | `wopal setup --machine`                        |
 
-Renderer 不直接访问文件系统或启动子进程。它不依赖 sidecar、Server 或 SDK。冷启动进入 Setup Center 时不挂载 Workbench，健康门禁完成前 sidecar 保持未启动；从已经运行的 Workbench 切入时，Workbench subtree、HTTP/WebSocket subscriber 和 PTY bindings 必须继续 mounted，Setup Center 作为 overlay/surface 覆盖并用 `visibility`/`inert`/绝对定位隔离交互，不得通过 unmount 或 `display:none` 触发断连或终端尺寸变化。Setup Center 本身仍不能依赖 sidecar 完成配置。
+Renderer 不直接访问文件系统或启动子进程。它不依赖 sidecar、Server 或 SDK。冷启动进入 onboarding 时不挂载 Workbench，健康门禁完成前 sidecar 保持未启动。onboarding 本身不依赖 sidecar 完成配置。
 
 ## 2. 启动门禁与状态
 
 Desktop 在启动时解析 `WOPAL_HOME`。GUI 进程缺少 shell 环境时，Main 从登录 shell 补齐该变量；不可用时使用默认目录。
 
-Main 随后读取 `$WOPAL_HOME/ellamaka/state/setup-request.json`、bootstrap Wopal CLI，并调用 `setup.operation: inspect`。`wopal setup` 通过原子 one-shot request 请求导航，不向 Desktop 添加 `--setup` 参数。request 的 `desktopChannel` 必须匹配当前 Desktop release channel/appId；其他 channel 的 request 被忽略且不删除。入口由匹配且未消费的 request 和 inspect verdict 共同决定：
+Main 随后读取 `$WOPAL_HOME/ellamaka/state/onboarding.json` 决定入口：
 
-| 条件                                           | Desktop 行为                                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 未消费 setup request                           | 创建或切换到 Setup Center；Renderer 确认目标界面可见后，Main 为对应 `requestId` 写入 accepted 结果 |
-| normal launch + `healthy`                      | 启动 sidecar 并进入 Workbench                                                                      |
-| normal launch + `fresh` / `partial` / `broken` | 创建 Setup Center，不启动 sidecar                                                                  |
-| CLI bootstrap 或 inspect 失败                  | 创建 Setup Center，并展示 bootstrap 诊断                                                           |
+| 条件                          | Desktop 行为                                              |
+| ----------------------------- | --------------------------------------------------------- |
+| 状态文件缺失                  | 创建 onboarding 窗口（首次配置），不启动 sidecar          |
+| 状态文件存在但 `completed` 未真 | 创建 onboarding 窗口（恢复），不启动 sidecar              |
+| `completed === true`          | 启动 sidecar 并进入 Workbench                             |
+| CLI bootstrap 失败            | 创建 onboarding 窗口，并展示 bootstrap 诊断               |
 
-`$WOPAL_HOME/ellamaka/state/setup-center.json` 是界面恢复载体。状态包含当前阶段、步骤展示状态、结构化结果、可展示错误和更新时间。它不保存机器健康结论。
+`onboarding.json` 是界面恢复载体。状态包含当前阶段、步骤展示状态、结构化结果、可展示错误和更新时间。它不保存机器健康结论。
 
-Wopal CLI 不读取、清除或重置 `setup-center.json`。Desktop 已运行时通过 single-instance activation 重新读取 one-shot request，并在当前窗口进入 Setup Center；同一 `requestId` 重复交付必须幂等。Main 通过 typed IPC 把 pending `requestId` 交给 Renderer，Renderer 只在 Setup Center 已真实可见后回传该 ID；reload/crash 前未完成的请求保持 pending，旧或重复 Renderer ack 不得完成其他请求。
+`wopal setup` 不向 Desktop 添加 `--setup` 参数。CLI 仅在用户确认后清除 `onboarding.json`，然后通过正常应用入口启动 Desktop；Desktop 冷启动时自然重新进入 onboarding。Desktop 已运行时，启动只会唤醒现有进程，不会导航到 onboarding——需要重新配置的用户先退出 Desktop，再运行 `wopal setup`。
 
-并发 setup request 采用 last-write-wins，并通过 `setup-request.lock`、唯一活动 `setup-request.json` 与逐 ID 的 `setup-request-results/<requestId>.json` 完成。Desktop 收到 visible ack 后在锁内重新读取活动请求：只有 ID 仍相等时写入 `accepted` 结果并删除活动请求；已经变化时忽略旧 ack，保留新请求并继续交付。`superseded` 由写入新活动请求的 CLI 在同一锁内为旧 ID 生成。任何一方都不得用活动文件消失推断完成。
+Main 是 UI 状态文件的唯一写入者。写入使用临时文件加 rename 的原子替换，并以用户私有权限保存。状态不保存 token、API key 或其他秘密。损坏文件会移入带时间戳的备份，再由最新步骤探测结果重建。
 
-Main 是 UI 状态文件的唯一写入者。写入使用临时文件加 rename 的原子替换，并以用户私有权限保存。状态不保存 token、API key 或其他秘密。损坏文件会移入带时间戳的备份，再由最新 inspect 结果重建。
-
-旧 `onboarding.json` 在首次读取时迁移。旧步骤 `install-wopal-cli`、`install-ellamaka-cli` 和 `star-guide` 分别映射到当前的 `install-cli` 或 `done`。
+旧 `onboarding.json` 的步骤名继续兼容读取。旧步骤 `install-wopal-cli`、`install-ellamaka-cli` 和 `star-guide` 分别映射到当前的 `install-cli` 或 `done`。
 
 ## 3. 阶段与步骤
 
@@ -64,7 +62,7 @@ system-check → install-cli → github-auth → ontology-setup
   → create-space → ai-provider → memory-config → done
 ```
 
-Renderer 将它们呈现为四个阶段。每次进入 Setup Center 都先根据 inspect 结果计算 fresh、partial、healthy 或 broken：
+Renderer 将它们呈现为四个阶段：
 
 | 阶段       | UI 步骤                                        | 实现行为                                                                             |
 | ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -73,13 +71,13 @@ Renderer 将它们呈现为四个阶段。每次进入 Setup Center 都先根据
 | 空间与记忆 | `create-space`、`ai-provider`、`memory-config` | 创建或复用 Space，配置可选 Provider，并配置全局或 Space 级记忆。                     |
 | 启动       | `done`                                         | 展示健康摘要、可选 Star 操作，并从健康门禁进入 Workbench。                           |
 
-`github-auth` 是底层状态步骤，不单独渲染页面。`install-cli` 负责 Wopal CLI 健康，读取 CLI stable latest，并根据 Desktop compatibility requirements 完成校验与安装；不使用精确 `engineVersion` pin，也不搜索历史 CLI。Desktop 应用本身在进入 Setup Center 前已由用户或 `wopal setup` 安装。Runtime 准备由 `ontology-setup` 成功后的 machine operation 执行。
+`github-auth` 是底层状态步骤，不单独渲染页面。`install-cli` 负责 Wopal CLI 健康，读取 CLI stable latest，并根据 Desktop compatibility requirements 完成校验与安装；不使用精确 `engineVersion` pin，也不搜索历史 CLI。Desktop 应用本身在进入 onboarding 前已由用户或 `wopal setup` 安装。Runtime 准备由 `ontology-setup` 成功后的 machine operation 执行。
 
-顶部阶段追踪器只允许访问已解锁阶段。用户可以返回已访问步骤；返回后重新 probe，并以真实机器状态重算后续阶段。任何成功结果都停留在当前页面，直到用户显式点击“下一步”。
+顶部阶段追踪器只允许访问已解锁阶段。用户可以返回已访问步骤；返回后重新 probe，并以真实机器状态重算后续阶段。任何成功结果都停留在当前页面，直到用户显式点击"下一步"。
 
-## 4. Setup Center 交互模型
+## 4. Onboarding 交互模型
 
-`OnboardingRoot` 作为迁移期组件持有当前阶段、执行状态、步骤结果、错误、解锁阶段和日志。对外产品概念统一为 Setup Center。各步骤组件通过 `onStatusChange` 与 `onError` 上报状态；根组件管理固定导航栏和跨步骤状态。
+`OnboardingRoot` 持有当前阶段、执行状态、步骤结果、错误、解锁阶段和日志。各步骤组件通过 `onStatusChange` 与 `onError` 上报状态；根组件管理固定导航栏和跨步骤状态。
 
 左侧步骤说明由 `content/zh-CN/guides/*.md` 在构建时打包，步骤元数据与业务交互仍由 TypeScript 管理。说明区使用共享 Markdown Renderer 与 DOMPurify 渲染，支持列表、引用、代码、本地 `asset:` 图片和 HTTPS 外链图片；外链图片使用懒加载并禁止发送 Referrer。桌面布局按 `40:60` 分配说明区与操作卡片，窄屏通过折叠面板复用同一份说明内容。
 
@@ -87,19 +85,18 @@ Renderer 将它们呈现为四个阶段。每次进入 Setup Center 都先根据
 
 执行由 `onboardingExecuteStep` 发起。步骤完成后使用统一的 `ResultPanel` 呈现成功、执行中或失败状态。Memory、Provider、Ontology 和 Space 的所有写入都通过 CLI machine operation 完成。Renderer 只保存未提交草稿。Space 目标来自 CLI inspect；没有有效路径时空间配置入口保持禁用。`install-cli` 在需要时安装或修复组件。若 Wopal CLI 已健康而 Engine 失败，重试只执行 Engine 子步骤。
 
-healthy 模式直接展示环境摘要。`done` 页面只在用户点击“启动工作台”时执行完成门禁。它先调用 `onboardingComplete`，再调用 `onboardingTransitionToWorkbench`；Main 复用仍健康的 sidecar，只有不存在或已失效时才启动/重启。Star 是用户主动触发的独立动作，不阻断启动。
+`done` 页面只在用户点击"启动工作台"时执行完成门禁。它先调用 `onboardingComplete`，再调用 `onboardingTransitionToWorkbench`；Main 复用仍健康的 sidecar，只有不存在或已失效时才启动/重启。Star 是用户主动触发的独立动作，不阻断启动。
 
 ## 5. Main IPC 与执行
 
-| IPC 能力                                 | Main 行为                                                                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `onboarding-probe`                       | 返回本地与 CLI 的只读摘要，不改写步骤状态。                                                                      |
-| `onboarding-execute-step`                | 串行化执行一个步骤，记录状态，转发进度，并返回结构化结果。                                                       |
-| `onboarding-set-current-step`            | 持久化用户导航后的当前步骤。                                                                                     |
-| `onboarding-complete`                    | 执行 `inspect`，仅在 `verdict === "healthy"` 时保存 UI 完成状态。                                                |
-| `onboarding-transition-to-workbench`     | 在当前 Electron 进程中启动 Workbench 并复用 Setup Center 窗口。                                                  |
-| `onboarding-set-wopal-home`              | 更新当前 Main 进程使用的 `WOPAL_HOME`。                                                                          |
-| `onboarding-setup-request` / visible ack | Main 向 Renderer 交付 pending requestId；Renderer 在 Setup Center 可见后回传同一 ID，Main 再完成 exact request。 |
+| IPC 能力                             | Main 行为                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `onboarding-probe`                   | 返回本地与 CLI 的只读摘要，不改写步骤状态。                                                                      |
+| `onboarding-execute-step`            | 串行化执行一个步骤，记录状态，转发进度，并返回结构化结果。                                                       |
+| `onboarding-set-current-step`        | 持久化用户导航后的当前步骤。                                                                                     |
+| `onboarding-complete`                | 执行 `inspect`，仅在 `verdict === "healthy"` 时保存 UI 完成状态（`completed: true`）。                            |
+| `onboarding-transition-to-workbench` | 在当前 Electron 进程中启动 Workbench 并复用 onboarding 窗口。                                                    |
+| `onboarding-set-wopal-home`          | 更新当前 Main 进程使用的 `WOPAL_HOME`。                                                                          |
 
 每次 `onboarding-execute-step` 创建一个 `AbortController`。Main 同一时间只接受一个执行型操作；第二个请求立即返回 `ONBOARDING_OPERATION_BUSY`。执行期间，Main 将状态置为 `in-progress`，结束后写入 `done`、`skipped` 或 `failed`。
 
@@ -117,7 +114,7 @@ Main 是 timeout 的唯一 Owner。Wopal installer 具有下载超时和五分�
 
 超时或内部 abort 会停止整个子进程树：Unix 先向进程组发送 `SIGTERM`，再升级至 `SIGKILL`；Windows 使用 `taskkill /t /f`。子进程完成或终止后不再转发 stdout/stderr 进度。
 
-Main 将步骤进度广播给 Renderer，并记录到 `$WOPAL_HOME/logs/setup-center.log`。日志超过 1 MB 时滚动为 `setup-center.log.1`，写入前会脱敏常见 token 与 API key 模式。Renderer 日志抽屉保存最近 200 条显示记录，并保留用户的展开状态。
+Main 将步骤进度广播给 Renderer，并记录到 `$WOPAL_HOME/logs/onboarding.log`。日志超过 1 MB 时滚动为 `onboarding.log.1`，写入前会脱敏常见 token 与 API key 模式。Renderer 日志抽屉保存最近 200 条显示记录，并保留用户的展开状态。
 
 执行型 operation 使用显式 runtime impact：`externalCli` 与 `desktopSidecar` 分开报告，`stopRunning` 是调用方授权输入，不是 operation 自动推导的成功结果。替换外部 Bun CLI 不得停止 Desktop sidecar；只有确需重启内嵌 sidecar 的 operation 才能在 UI 明确说明活跃 Session/PTY 会终止并确认后执行。
 
@@ -135,9 +132,8 @@ Main 将步骤进度广播给 Renderer，并记录到 `$WOPAL_HOME/logs/setup-ce
 | `src/main/onboarding-gate.ts`                        | 启动模式判定与 shell 环境补齐。                                                        |
 | `src/main/onboarding-state.ts`                       | 状态 schema、恢复、原子写入和步骤迁移。                                                |
 | `src/main/onboarding-ipc.ts`                         | IPC handler、步骤编排、probe 与完成门禁。                                              |
-| `src/main/setup-request.ts`                          | exact request/result protocol、跨进程锁、pending delivery 与 visible acknowledgement。 |
 | `src/main/bootstrap-installer.ts`                    | Wopal CLI bootstrap、版本探测与安装生命周期。                                          |
 | `src/main/setup-machine-client.ts`                   | CLI machine operation 执行与响应验证。                                                 |
 | `src/main/child-process-lifecycle.ts`                | 跨平台子进程树终止。                                                                   |
-| `src/main/sidecar-supervisor.ts`                     | Desktop 内嵌 sidecar 的唯一生命周期 Owner；route 变化不等于 stop/restart。             |
-| `src/renderer/index.tsx`                             | 冷启动挂载选择，以及 live Setup Center overlay 下 Workbench subtree 的保留。           |
+| `src/main/sidecar-supervisor.ts`                     | Desktop 内嵌 sidecar 的唯一生命周期 Owner；onboarding 阶段不启动。                     |
+| `src/renderer/index.tsx`                             | 冷启动挂载选择：onboarding 或 Workbench。                                              |

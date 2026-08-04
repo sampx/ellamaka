@@ -179,12 +179,6 @@ PTY 连接建立后，Renderer 刷新不会改变其后台进程所有权。
 
 刷新前后复用同一个 PTY ID 和操作系统进程。
 
-### 6.2.1 运行中进入 Setup Center
-
-冷启动直接进入 Setup Center 时不挂载 Workbench，也不启动 sidecar。已经运行的 Workbench 收到 setup request 时则属于 route surface 切换，不是 Renderer 刷新或销毁：`AppInterface`/Workbench subtree、PTY WebSocket subscriber 和 panel bindings 必须保持 mounted；Setup Center 用 overlay/surface 覆盖，并通过 `visibility`、`inert` 与绝对定位隔离交互。禁止 unmount 或 `display:none`，因为前者会触发 WebSocket 断连并在 10 秒 grace 后回收 PTY，后者会破坏终端尺寸计算。
-
-在 Setup Center 停留超过 10 秒后，原 PTY ID、操作系统进程 PID 与期间产生的输出仍应连续；返回 Workbench 只恢复可见性和交互，不重新创建 PTY。只有用户明确确认的 `desktopSidecar` restart 才允许结束这些 PTY。外部 Bun CLI 更新属于 `externalCli` 影响，不得停止由 `SidecarSupervisor` 管理的内嵌 sidecar。
-
 ### 6.3 Panel 或 Space 关闭
 
 1. Renderer 使用真实 directory 请求 sidecar 终止 PTY。
@@ -430,73 +424,71 @@ Desktop 的选择键保持稳定别名 `sidecar`，不能用于判断 sidecar �
 
 PTY 清理后不自动创建 Session 或 PTY 伪装恢复。用户点击 TUI/Terminal 后按正常 Action 创建新 PTY。Session 绑定和草稿保留。
 
-## 17. Setup Center 启动行为
+## 17. Onboarding 启动行为
 
 ### 17.1 模式判定
 
-Desktop Main Process 在 `app.whenReady()` 之后、创建窗口之前，完成 Wopal CLI bootstrap、只读 inspect 和一次性 setup request 判定。`wopal setup` 不向 Desktop 添加 `--setup` 参数；它在 `setup-request.lock` 内原子更新 `$WOPAL_HOME/ellamaka/state/setup-request.json` 后正常启动或唤醒 Desktop。request 包含 schema version、唯一 `requestId`、创建时间、目标 `setup-center` 和 `desktopChannel`，只表达一次导航请求，不保存机器健康结论。Desktop 只接受与自身 release channel/appId 匹配的 request；另一 channel 的进程必须忽略且不得删除。
+Desktop Main Process 在 `app.whenReady()` 之后、创建窗口之前，完成 Wopal CLI bootstrap，并读取 `$WOPAL_HOME/ellamaka/state/onboarding.json` 决定进入 onboarding 还是 Workbench。`wopal setup` 不向 Desktop 添加 `--setup` 参数；它仅在用户确认后清除该状态文件，然后通过正常应用入口启动 Desktop。onboarding.json 是 Desktop-owned 状态文件，保存 UI 进度与完成标记；文件名与结构保持现状，不迁移、不改名。
 
 ```
-bootstrap Wopal CLI → read setup request → setup.operation inspect
-  ├── 有 channel 匹配且未消费的 setup request → Setup Center
-  ├── fresh / partial / broken → Setup Center
-  ├── bootstrap / inspect failed → Setup Center 诊断
-  └── healthy → Workbench
+bootstrap Wopal CLI → read onboarding.json
+  ├── 状态文件缺失 → onboarding（首次配置）
+  ├── 状态文件存在但未完成 → onboarding（恢复）
+  ├── completed === true → Workbench
+  └── bootstrap 失败 → onboarding 诊断（可重试）
 
-Setup Center（冷启动）
+Onboarding（冷启动）
   ├── 跳过 SidecarSupervisor 启动
   ├── 跳过 migrate()
-  ├── 创建 Setup Center 窗口
+  ├── 创建 onboarding 窗口
   └── 完成健康门禁后在当前进程转换到 Workbench
 
 Workbench
-  ├── 执行版本兼容检查（§17.7）
+  ├── 执行版本兼容检查（§17.6）
   ├── 启动 SidecarSupervisor
   ├── 执行 migrate()
   └── 加载 ellamaka-app Workbench
 ```
 
-Desktop 已运行时，正常的 single-instance activation 唤醒现有进程；Main 重新读取 request，并在当前窗口进入 Setup Center。已有健康 sidecar 与 PTY 现场默认保留，避免一次导航请求直接中断正在运行的任务；需要停止或重启 runtime 的 setup operation 必须由 Main 提示影响并取得用户确认。Main 通过 typed IPC 向 Renderer 交付 `requestId`，只有 Renderer 确认 Setup Center 已真实可见，且 Main 在跨进程锁内确认活动 ID 仍匹配时，才写入该 ID 的 `accepted` result 并删除活动 request。启动或切换中途失败时保留 request，供下次启动重试。重复观察和 ack 同一 `requestId` 必须幂等。Wopal CLI 不修改 Desktop 拥有的 `setup-center.json` UI 状态。
-
-并发协议由 `setup-request.lock`、唯一活动 `setup-request.json` 和 `setup-request-results/<requestId>.json` 组成。新 CLI writer 在锁内先为旧活动 ID 写入 `superseded` result，再替换活动请求；每个 CLI 只等待自己的 result。旧 Renderer ack 不得删除或完成新活动请求，活动文件消失也不得被任何 consumer 推断为成功。
+Desktop 已运行时，`wopal setup` 只会唤醒现有进程，不会导航到 onboarding。需要重新配置的用户先退出 Desktop，再运行 `wopal setup`：CLI 清除状态后，Desktop 下次冷启动自然重新进入 onboarding。
 
 ### 17.2 与正常启动的关键差异
 
-| 行为         | Workbench 模式             | Setup Center 模式                                                   |
-| ------------ | -------------------------- | ------------------------------------------------------------------- |
-| Sidecar 启动 | 立即启动                   | 冷启动不启动；从运行中 Workbench 切入时保留健康 sidecar             |
-| migrate()    | 执行                       | 跳过                                                                |
-| 窗口类型     | Workbench 窗口             | Setup Center 窗口（无 sidecar 依赖）                                |
-| PTY 连接     | 建立 sidecar PTY           | 无 PTY                                                              |
-| 完成后       | —                          | 最终 inspect healthy，在当前进程复用或启动 sidecar 并切换 Workbench |
-| 重启策略     | SidecarSupervisor 退避重试 | 不适用（无 sidecar）                                                |
+| 行为         | Workbench 模式             | Onboarding 模式                                               |
+| ------------ | -------------------------- | ------------------------------------------------------------- |
+| Sidecar 启动 | 立即启动                   | 不启动（onboarding 期间无 sidecar 依赖）                      |
+| migrate()    | 执行                       | 跳过                                                          |
+| 窗口类型     | Workbench 窗口             | onboarding 窗口                                               |
+| PTY 连接     | 建立 sidecar PTY           | 无 PTY                                                        |
+| 完成后       | —                          | 最终 inspect healthy，在当前进程启动 sidecar 并切换 Workbench |
+| 重启策略     | SidecarSupervisor 退避重试 | 不适用（无 sidecar）                                          |
 
 ### 17.3 开发模式快速跳过
 
-`WOPAL_DEV=1` + `WOPAL_DEV_SKIP_ONBOARDING=1` 时，开发环境可跳过 Setup Center 入口判定直接进入 Workbench。该开关不进入 release build。
+`WOPAL_DEV=1` + `WOPAL_DEV_SKIP_ONBOARDING=1` 时，开发环境可跳过 onboarding 入口判定直接进入 Workbench。该开关不进入 release build。
 
-### 17.4 Setup Center 完成后的转换
+### 17.4 Onboarding 完成后的转换
 
-Setup Center 最后一步 `done` 的行为：
+Onboarding 最后一步 `done` 的行为：
 
 1. Desktop Main 调用 CLI `inspect`。
-2. `verdict === "healthy"` 时保存 `$WOPAL_HOME/ellamaka/state/setup-center.json` 的 UI 完成状态。
+2. `verdict === "healthy"` 时保存 `$WOPAL_HOME/ellamaka/state/onboarding.json` 的 UI 完成状态（`completed: true`）。
 3. Desktop Main 确保 SidecarSupervisor ready：已有健康 sidecar 则复用，否则启动并等待 ready。
-4. 当前窗口从 Setup Center 切换到 Workbench。
+4. 当前窗口从 onboarding 切换到 Workbench。
 
-转换失败时保留 Setup Center 和诊断信息。用户修复后可再次执行完成动作。完成流程不依赖应用 relaunch。
+转换失败时保留 onboarding 和诊断信息。用户修复后可再次执行完成动作。完成流程不依赖应用 relaunch。
 
 ### 17.5 失败回退
 
-Setup Center 过程中若 Desktop 意外退出，下次启动重新执行 CLI inspect。已健康的幂等资源被复用。UI 状态用于恢复导航与展示，真实机器状态决定下一步。
+Onboarding 过程中若 Desktop 意外退出，下次启动从保存的 UI 状态恢复。已健康的幂等资源被复用。UI 状态用于恢复导航与展示，真实机器状态决定下一步。
 
 ### 17.6 相关文档
 
-- 完整 Setup Center 架构与步骤行为：`../../../docs/products/wopal-space/DESIGN-onboarding.md`
+- 完整 onboarding 架构与步骤行为：`../../../docs/products/wopal-space/DESIGN-onboarding.md`
 - 状态、阶段、IPC 与组件规范：`DESKTOP-ONBOARDING.md`（本目录）
 - Machine capability 契约：`../../wopal-cli/docs/CAPABILITY-PROTOCOL.md`
 
-### 17.7 启动时版本兼容检查
+### 17.7 启动时版本兼容检查### 17.7 启动时版本兼容检查
 
 Workbench 模式下，Desktop 在 sidecar 启动前执行版本兼容检查。检查基于 Desktop manifest 内嵌的 ReleaseIdentity、`requirements.externalCli`、`requirements.wopalCli` 与本地实际组件 identity。
 
@@ -513,7 +505,7 @@ Desktop 自身在 `resources/release-identity.json` 中内嵌相同的 ReleaseId
 
 | 严重度                     | 行为                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 Setup Center，并调用 `install-engine` 读取、校验并安装 CLI stable latest；仍不兼容则提示更新 Desktop 或稍后重试 |
-| 阻断（Wopal CLI 版本过低） | Setup Center 调用第一方 installer 的 install-only 模式，完成后重新 inspect                                                           |
+| 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 onboarding，并调用 `install-engine` 读取、校验并安装 CLI stable latest；仍不兼容则提示更新 Desktop 或稍后重试 |
+| 阻断（Wopal CLI 版本过低） | onboarding 调用第一方 installer 的 install-only 模式，完成后重新 inspect                                                            |
 
 **与自动更新的协作**：Desktop 先校验 manifest ReleaseIdentity 并使用标准 SemVer 授权同 channel 更新，electron-updater 负责下载和安装。新版本首次启动时，在 sidecar 前按 compatibility requirements 准备外部 CLI，然后进入 Workbench。
