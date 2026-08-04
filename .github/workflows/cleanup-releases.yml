@@ -103,7 +103,7 @@ jobs:
             fi
           fi
       - name: Purge withdrawn version from Cloudflare CDN
-        if: inputs.mode == 'withdraw' && inputs.apply == 'true' && inputs.withdraw-version != ''
+        if: inputs.mode == 'withdraw' && inputs.apply && inputs.withdraw-version != ''
         env:
           CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
           CLOUDFLARE_CACHE_PURGE_ZONE: ${{ secrets.CLOUDFLARE_CACHE_PURGE_ZONE }}
