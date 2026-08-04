@@ -270,12 +270,20 @@ for (const item of targets) {
       // (OPENCODE_RELEASE=1) with a release-context path produce a release
       // identity; otherwise a development identity is embedded. See
       // docs/RELEASE-IDENTITY.md §5.4.
+      //
+      // The define must be a JSON *string* literal (double-encoded): the
+      // runtime reads it as a string and JSON.parses it. A bare object
+      // literal would make OPENCODE_RELEASE_IDENTITY an object at runtime,
+      // which release-info.ts rejects with a fallback to the development
+      // identity (bun --define inlines the expression as-is).
       OPENCODE_RELEASE_IDENTITY: JSON.stringify(
-        buildReleaseIdentityForBuild({
-          isRelease: Script.release,
-          version: Script.version,
-          channel,
-        }),
+        JSON.stringify(
+          buildReleaseIdentityForBuild({
+            isRelease: Script.release,
+            version: Script.version,
+            channel,
+          }),
+        ),
       ),
     },
   })
