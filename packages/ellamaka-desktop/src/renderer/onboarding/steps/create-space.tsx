@@ -247,7 +247,6 @@ export function CreateSpaceStep(props: StepProps) {
                 setShowCreateForm(true)
                 props.onStatusChange?.("idle")
               }}
-              style={{ "font-size": "12px", padding: "6px 14px" }}
             >
               + 创建新工作空间
             </button>

@@ -82,7 +82,10 @@ export function MemoryConfigStep(props: StepProps) {
 
   function applyProbe(p: MemoryProbeResult, targetScope?: "global" | "space") {
     setProbeResult(p)
-    const activeScope = targetScope ?? (hasMemorySpaceTarget(p) && (p.effectiveSpace || p.spaceMemory) ? "space" : "global")
+    const storedScope = localStorage.getItem("wopal.onboarding.memoryScope")
+    const preferredScope = storedScope === "space" || storedScope === "global" ? storedScope : null
+    const activeScope = targetScope
+      ?? (preferredScope === "space" && hasMemorySpaceTarget(p) ? "space" : "global")
     const drafts = createMemoryScopeDrafts(p)
     const editingState: MemoryScopeEditing = {
       global: !p.globalMemory,
@@ -163,6 +166,8 @@ export function MemoryConfigStep(props: StepProps) {
     const probe = probeResult()
     if (!probe) return
     if (targetScope === "space" && !hasMemorySpaceTarget(probe)) return
+
+    localStorage.setItem("wopal.onboarding.memoryScope", targetScope)
 
     const currentDrafts = scopeDrafts() ?? createMemoryScopeDrafts(probe)
     const switched = editing()
@@ -337,20 +342,10 @@ export function MemoryConfigStep(props: StepProps) {
       <Show when={!probing() && !probeError()}>
         {/* Scope Selector Tabs */}
         <div class="ob-form-group">
-          <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", padding: "3px", "border-radius": "6px", width: "fit-content", margin: "0 auto" }}>
+          <div class="ob-scope-tabs">
             <button
               type="button"
-              style={{
-                padding: "5px 14px",
-                "font-size": "12px",
-                "font-weight": "500",
-                border: "none",
-                "border-radius": "4px",
-                cursor: "pointer",
-                background: scope() === "global" ? "var(--ob-accent)" : "transparent",
-                color: scope() === "global" ? "#fff" : "var(--ob-text-subtle)",
-                transition: "all 0.15s ease",
-              }}
+              class={`ob-scope-tab ${scope() === "global" ? "active" : ""}`}
               disabled={submitting()}
               onClick={() => switchScope("global")}
             >
@@ -358,23 +353,11 @@ export function MemoryConfigStep(props: StepProps) {
             </button>
             <button
               type="button"
-              style={{
-                padding: "5px 14px",
-                "font-size": "12px",
-                "font-weight": "500",
-                border: "none",
-                "border-radius": "4px",
-                cursor: canConfigureSpace() ? "pointer" : "not-allowed",
-                background: scope() === "space" ? "var(--ob-accent)" : "transparent",
-                color: scope() === "space" ? "#fff" : "var(--ob-text-subtle)",
-                transition: "all 0.15s ease",
-                opacity: canConfigureSpace() ? "1" : "0.45",
-              }}
-              disabled={submitting() || !canConfigureSpace()}
-              title={canConfigureSpace() ? undefined : "请先完成工作空间创建"}
+              class={`ob-scope-tab ${scope() === "space" ? "active" : ""}`}
+              disabled={!canConfigureSpace() || submitting()}
               onClick={() => switchScope("space")}
             >
-              📁 {canConfigureSpace() ? `本空间 [${spaceName()}] 专属策略` : "尚无可配置工作空间"}{scopeDirty().space ? " · 未保存" : ""}
+              📁 本空间 [{spaceName()}] 专属策略{scopeDirty().space ? " · 未保存" : ""}
             </button>
           </div>
         </div>
@@ -389,7 +372,6 @@ export function MemoryConfigStep(props: StepProps) {
                 type="button"
                 class="ob-button ob-button-secondary"
                 onClick={editCurrentScope}
-                style={{ "font-size": "12px", padding: "6px 14px" }}
               >
                 修改配置
               </button>

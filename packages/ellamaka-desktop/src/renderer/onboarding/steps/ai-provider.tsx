@@ -107,7 +107,6 @@ export function AiProviderStep(props: StepProps) {
               onClick={() => {
                 setConfigured(false)
               }}
-              style={{ "font-size": "12px", padding: "6px 14px" }}
             >
               更换 API Key
             </button>

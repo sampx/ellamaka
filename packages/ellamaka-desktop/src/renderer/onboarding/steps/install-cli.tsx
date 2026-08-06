@@ -109,9 +109,9 @@ export function InstallCliStep(props: StepProps) {
         message={failure() ? `${failure()!.message} ${failure()!.suggestion ?? ""}`.trim() : undefined}
       >
         <div class="ob-result-details">
-          <div class="ob-result-row" style={{ padding: "6px 0" }}>
-            <span class="ob-result-label" style={{ "font-size": "13px" }}>Wopal CLI 命令行工具</span>
-            <span class="ob-result-value" style={{ "font-size": "13px" }}>
+          <div class="ob-result-row">
+            <span class="ob-result-label">Wopal CLI 命令行工具</span>
+            <span class="ob-result-value">
               <Show
                 when={wopalStatus().done}
                 fallback={
@@ -130,9 +130,9 @@ export function InstallCliStep(props: StepProps) {
             </span>
           </div>
 
-          <div class="ob-result-row" style={{ padding: "6px 0" }}>
-            <span class="ob-result-label" style={{ "font-size": "13px" }}>Ellamaka AI 引擎</span>
-            <span class="ob-result-value" style={{ "font-size": "13px" }}>
+          <div class="ob-result-row">
+            <span class="ob-result-label">Ellamaka AI 引擎</span>
+            <span class="ob-result-value">
               <Show
                 when={ellamakaStatus().done}
                 fallback={

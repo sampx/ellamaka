@@ -61,60 +61,39 @@ export function DoneStep() {
   }
 
   return (
-    <div class="ob-step-content" style={{ "text-align": "center", padding: "8px 0 0" }}>
+    <div class="ob-done-content">
       {/* Warm Main Greeting */}
-      <div style={{ "font-size": "36px", "margin-bottom": "6px" }}>🎉</div>
-      <h3 style={{ "font-size": "20px", "font-weight": "800", color: "#fff", "margin-bottom": "6px" }}>
-        设置完成！
-      </h3>
-      <p style={{ "font-size": "13px", color: "var(--ob-text-muted)", "max-width": "480px", margin: "0 auto 14px", "line-height": "1.5" }}>
-        WopalSpace 智能助手环境已全面准备就绪。点击下方按钮即可开启属于你的超级个体创作之旅。
-      </p>
+      <div class="ob-done-hero">
+        <div class="ob-done-emoji">🎉</div>
+        <h3 class="ob-done-title">设置完成！</h3>
+        <p class="ob-done-subtitle">
+          WopalSpace 智能助手环境已全面准备就绪。点击下方按钮即可开启属于你的超级个体创作之旅。
+        </p>
+      </div>
 
       {/* Warm Thank You Card — Replaces cold technical details table */}
-      <div style={{
-        "background": "linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)",
-        "border": "1px solid rgba(255, 255, 255, 0.08)",
-        "border-radius": "8px",
-        "padding": "12px 16px",
-        "margin-bottom": "14px",
-        "text-align": "left",
-        "backdrop-filter": "blur(8px)",
-      }}>
-        <div style={{ "font-size": "13px", "font-weight": "600", color: "#f43f5e", "margin-bottom": "4px", display: "flex", "align-items": "center", gap: "6px" }}>
+      <div class="ob-done-card ob-done-card-warm">
+        <div class="ob-done-heart">
           <span>💖</span> 感谢你使用 WopalSpace
         </div>
-        <div style={{ "font-size": "12px", color: "var(--ob-text-subtle)", "line-height": "1.5" }}>
+        <div class="ob-done-body">
           每一位创作者与超级个体都是时代独特的闪耀星光。全套 AI 智能助手与能力工具链已把关完毕，愿 WopalSpace 伴你构建卓越产品，享受纯粹的创作与构建乐趣。
         </div>
       </div>
 
       {/* Community Support Card — NO Auto Star */}
-      <div class="ob-community-card" style={{
-        "background": "rgba(255, 255, 255, 0.03)",
-        "border": "1px solid rgba(255, 255, 255, 0.08)",
-        "border-radius": "8px",
-        "padding": "10px 14px",
-        "margin-bottom": "14px",
-        "text-align": "left",
-        "display": "flex",
-        "align-items": "center",
-        "justify-content": "space-between",
-      }}>
+      <div class="ob-done-card ob-done-support-card">
         <div>
-          <div style={{ "font-weight": "600", "font-size": "13px", "margin-bottom": "2px" }}>
-            ⭐ 支持 WopalSpace 开源项目
-          </div>
-          <div style={{ "font-size": "11px", color: "var(--ob-text-subtle)" }}>
+          <div class="ob-done-support-title">⭐ 支持 WopalSpace 开源项目</div>
+          <div class="ob-done-support-desc">
             点亮 GitHub Star，支持团队持续交付下一代 AI 智能助手与工具链。
           </div>
         </div>
         <button
           type="button"
-          class="ob-button ob-button-secondary"
+          class="ob-button ob-button-secondary ob-done-star-button"
           onClick={handleManualStar}
           disabled={starred()}
-          style={{ "white-space": "nowrap", padding: "6px 12px", "font-size": "12px" }}
         >
           {starred() ? "已支持 ⭐" : "⭐ 点亮 Star"}
         </button>
@@ -122,9 +101,9 @@ export function DoneStep() {
 
       {/* Warnings & Diagnostics Slot */}
       <Show when={warnings().length > 0}>
-        <div style={{ "background": "rgba(255, 170, 0, 0.1)", "border": "1px solid rgba(255, 170, 0, 0.3)", "padding": "10px", "border-radius": "6px", "margin-bottom": "14px", "text-align": "left", "color": "#fcd34d", "font-size": "12px" }}>
-          <div style={{ "font-weight": "600", "margin-bottom": "4px" }}>⚠️ 检查提醒：</div>
-          <ul style={{ "margin": 0, "padding-left": "18px" }}>
+        <div class="ob-done-warning">
+          <div class="ob-done-warning-title">⚠️ 检查提醒</div>
+          <ul class="ob-done-warning-list">
             <For each={warnings()}>
               {(w) => <li>{w}</li>}
             </For>
@@ -134,21 +113,18 @@ export function DoneStep() {
 
       {/* Error Message Slot */}
       <Show when={errorMsg()}>
-        <div style={{ "background": "rgba(255, 68, 68, 0.1)", "border": "1px solid rgba(255, 68, 68, 0.3)", "padding": "10px", "border-radius": "6px", "margin-bottom": "14px", "text-align": "left", "color": "#ff6b6b", "font-size": "12px" }}>
-          <div>❌ {errorMsg()}</div>
-        </div>
+        <div class="ob-done-error">❌ {errorMsg()}</div>
       </Show>
 
       {/* Launch Workbench Button */}
-      <div style={{ display: "flex", "justify-content": "center", "margin-top": "4px" }}>
+      <div class="ob-done-launch">
         <button
-          class="ob-button"
-          style={{ padding: "10px 32px", "font-size": "15px", "font-weight": "600" }}
+          class="ob-button ob-done-launch-button"
           onClick={handleLaunch}
           disabled={isLaunching()}
         >
           <Show when={isLaunching()} fallback={<span>🚀 启动工作台</span>}>
-            <span class="ob-spinner" style={{ width: "16px", height: "16px", "border-width": "2px" }} />
+            <span class="ob-spinner" style={{ width: "18px", height: "18px", "border-width": "2px" }} />
             <span>正在启动…</span>
           </Show>
         </button>
