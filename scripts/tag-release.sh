@@ -293,6 +293,34 @@ check_tag_absent() {
   fi
 }
 
+# check_min_wopal_cli_released
+# Verifies that MIN_WOPAL_CLI_VERSION defined in .ci/versions.json is already
+# released on the wopal-cli repository (git tag v<VERSION> exists on remote),
+# preventing release of an Ellamaka version with an unreleased CLI dependency floor.
+check_min_wopal_cli_released() {
+  local req_ver="${MIN_WOPAL_CLI_VERSION:-}"
+  if [ -z "$req_ver" ]; then
+    return 0
+  fi
+
+  echo "→ 检查 minWopalCli (v${req_ver}) 是否已在 wopal-cli 仓库发布..."
+
+  local tag_found=""
+  local cli_repo="https://github.com/wopal-cn/wopal-cli.git"
+
+  if git ls-remote --tags "$cli_repo" "refs/tags/v${req_ver}" 2>/dev/null | grep -q "refs/tags/v${req_ver}$"; then
+    tag_found="yes"
+  elif command -v gh &>/dev/null && gh release view "v${req_ver}" -R wopal-cn/wopal-cli &>/dev/null; then
+    tag_found="yes"
+  fi
+
+  if [ "$tag_found" != "yes" ]; then
+    die "终止发布: .ci/versions.json 要求的 minWopalCli (v${req_ver}) 尚未在 wopal-cli 仓库发布！\n  请先在 wopal-cn/wopal-cli 仓库发布 tag v${req_ver}，再发布 Ellamaka。"
+  fi
+
+  echo "  ✓ 已确认 wopal-cli v${req_ver} 存在于远端"
+}
+
 # --- Pre-flight checks ---
 check_workspace_clean() {
   local dirty=0
@@ -382,6 +410,8 @@ check_workspace_clean
 
 echo "→ 检查 remote main..."
 check_remote_main
+
+check_min_wopal_cli_released
 
 # Resolve and validate per-product tags
 CLI_TAG=""
