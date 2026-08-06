@@ -426,6 +426,31 @@ jobs:
           else
             CDN_ROOT="https://download.coursedao.com/ellamaka-desktop"
           fi
+          echo "Verifying CDN serves the new version before warmup..."
+          # The `latest` alias has a 60s CDN TTL. Confirm the published
+          # manifest is actually served before warming the big binaries;
+          # otherwise a stale edge would be refreshed back into the cache.
+          VERIFIED=0
+          for i in $(seq 1 12); do
+            SERVED_VERSION=$(curl -s -L -H "User-Agent: WopalReleaseVerify/1.0" "${CDN_ROOT}/latest/manifest.json" | node -e '
+              let raw = "";
+              process.stdin.on("data", (c) => raw += c);
+              process.stdin.on("end", () => {
+                try { process.stdout.write(JSON.parse(raw).version || ""); } catch { /* invalid JSON */ }
+              });
+            ')
+            if [ -n "$SERVED_VERSION" ] && [ "$SERVED_VERSION" = "$VERSION" ]; then
+              VERIFIED=1
+              echo "  OK: ${CDN_ROOT}/latest/manifest.json serves v${SERVED_VERSION}"
+              break
+            fi
+            echo "  retry $i/12: served v${SERVED_VERSION:-unknown}, waiting for v${VERSION}..."
+            sleep 5
+          done
+          if [ "$VERIFIED" != "1" ]; then
+            echo "WARN: latest manifest did not converge to v${VERSION} within 60s — skipping warmup"
+            exit 0
+          fi
           echo "Warming up CDN cache for ellamaka-desktop v${VERSION} (${CHANNEL})..."
           WARMUP_URLS=(
             "${CDN_ROOT}/latest/manifest.json"
