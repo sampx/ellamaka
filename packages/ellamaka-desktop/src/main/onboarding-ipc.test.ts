@@ -891,8 +891,113 @@ console.log(JSON.stringify({ capability: "setup.operation", apiVersion: 1, ok: t
     }
   })
 
+  test("onboardingExecuteStep install-cli wopal short-circuit reads wopalCli version from snapshot", async () => {
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      if (opts.operation === "inspect") {
+        return {
+          status: "reused" as const,
+          result: {
+            engineInstalled: true,
+            engineVersion: "2.0.1",
+            ontologyInstalled: true,
+            runtime: { ready: true },
+            spaces: [{ name: "space1", path: join(testHome, "space1") }],
+            products: {
+              cli: { installed: true, product: "ellamaka-cli", channel: "stable", version: "2.0.1" },
+              wopalCli: { installed: true, version: "0.3.11" },
+            },
+          },
+        } as any
+      }
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+      // Establish the inspect snapshot.
+      await handlers["onboarding-probe"]({}, "runtime")
+
+      const result = await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "wopal" })
+      expect(result.status).toBe("reused")
+      expect(result.result).toEqual({ version: "0.3.11", upgraded: false })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("onboardingExecuteStep install-cli wopal falls back to products.cli on older builds", async () => {
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      if (opts.operation === "inspect") {
+        return {
+          status: "reused" as const,
+          result: {
+            engineInstalled: true,
+            engineVersion: "2.0.1",
+            ontologyInstalled: true,
+            runtime: { ready: true },
+            spaces: [{ name: "space1", path: join(testHome, "space1") }],
+            products: {
+              cli: { installed: true, product: "ellamaka-cli", channel: "stable", version: "2.0.1" },
+            },
+          },
+        } as any
+      }
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+      await handlers["onboarding-probe"]({}, "runtime")
+
+      const result = await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "wopal" })
+      expect(result.status).toBe("reused")
+      expect(result.result).toEqual({ version: "2.0.1", upgraded: false })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("onboardingExecuteStep install-cli wopal does not mark the engine installed", async () => {
+    let installEngineCalls = 0
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      if (opts.operation === "inspect") {
+        return {
+          status: "reused" as const,
+          result: {
+            engineInstalled: false,
+            ontologyInstalled: false,
+            runtime: { ready: false },
+            spaces: [],
+            products: {
+              wopalCli: { installed: true, version: "0.3.11" },
+            },
+          },
+        } as any
+      }
+      if (opts.operation === "install-engine") {
+        installEngineCalls += 1
+        return { status: "completed" as const, result: { version: "2.0.1" } } as any
+      }
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+      await handlers["onboarding-probe"]({}, "runtime")
+
+      // The wopal subStep result must not pollute the engine dimension of the snapshot.
+      await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "wopal" })
+      const ellamakaRes = await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "ellamaka" })
+      // If the wopal version had polluted engineInstalled, ellamaka would
+      // short-circuit from the snapshot instead of running install-engine.
+      expect(ellamakaRes.status).toBe("completed")
+      expect(installEngineCalls).toBe(1)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   test("onboardingComplete clears the onboarding log after finishing", async () => {
-    // Write some log lines first.
     const logger = getOnboardingLogger(testHome)
     logger.log("step one")
     logger.log("step two")

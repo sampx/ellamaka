@@ -799,14 +799,16 @@ export function createOnboardingIpcHandlers(deps: OnboardingIpcDeps = {}) {
     return { result: inspectSnapshot, error: null, fromSnapshot: false }
   }
 
-  const updateInspectionFromStep = (stepName: string, result: unknown) => {
+  const updateInspectionFromStep = (stepName: string, input: unknown, result: unknown) => {
     if (!inspectSnapshot) return
     const data = (result ?? {}) as Record<string, unknown>
+    const stepInput = (input ?? {}) as Record<string, unknown>
     const snap = inspectSnapshot
     switch (stepName) {
       case "install-cli": {
-        // subStep "ellamaka" → install-engine result
-        if (data.version) {
+        // Only the "ellamaka" subStep (install-engine) mutates the engine
+        // dimension; the "wopal" subStep installs the wopal CLI itself.
+        if (stepInput.subStep === "ellamaka" && data.version) {
           snap.engineInstalled = true
           snap.engineRunning = true
           snap.engineVersion = data.version
@@ -931,9 +933,18 @@ switch (step as string) {
           // installed — no need to spawn wopal or hit the network again.
           if (subStep === "wopal") {
             const snapshot = inspectSnapshot
-            const cliInfo = (snapshot?.products as Record<string, unknown> | undefined)
-              ?.cli as { installed?: boolean; version?: string | null } | undefined
+            const products = (snapshot?.products as Record<string, unknown> | undefined)
+            const wopalCliInfo = (products?.wopalCli as { installed?: boolean; version?: string | null } | undefined)
+            const cliInfo = (products?.cli as { installed?: boolean; version?: string | null } | undefined)
+            if (wopalCliInfo?.installed) {
+              return {
+                status: "reused",
+                result: { version: wopalCliInfo.version ?? undefined, upgraded: false },
+              }
+            }
             if (cliInfo?.installed) {
+              // Fallback for older wopal CLI builds that only report the
+              // ellamaka engine CLI under products.cli.
               return {
                 status: "reused",
                 result: { version: cliInfo.version ?? undefined, upgraded: false },
@@ -1537,7 +1548,7 @@ switch (step as string) {
           state = readOnboardingState(deps.homePath) ?? state
           if (res.status === "completed" || res.status === "reused") {
             state = updateStep(state, stepName, "done")
-            updateInspectionFromStep(stepName, res.result)
+            updateInspectionFromStep(stepName, input, res.result)
           } else if (res.status === "skipped") {
             state = updateStep(state, stepName, "skipped")
           } else {
