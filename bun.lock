@@ -447,12 +447,10 @@
         "@parcel/watcher": "2.5.1",
         "@pierre/diffs": "catalog:",
         "@silvia-odwyer/photon-node": "0.3.4",
-        "@sinclair/typebox": "0.34.52",
         "@solid-primitives/event-bus": "1.1.2",
         "@solid-primitives/scheduled": "1.5.2",
         "@standard-schema/spec": "1.0.0",
         "@types/ws": "8.18.1",
-        "@wopal/capability-schema": "file:../../../wopal-cli/packages/capability-schema",
         "@zip.js/zip.js": "2.7.62",
         "ai": "catalog:",
         "ai-gateway-provider": "3.1.2",
@@ -1612,8 +1610,6 @@
     "@sigstore/verify": ["@sigstore/verify@3.1.0", "https://registry.npmmirror.com/@sigstore/verify/-/verify-3.1.0.tgz", { "dependencies": { "@sigstore/bundle": "^4.0.0", "@sigstore/core": "^3.1.0", "@sigstore/protobuf-specs": "^0.5.0" } }, "sha512-mNe0Iigql08YupSOGv197YdHpPPr+EzDZmfCgMc7RPNaZTw5aLN01nBl6CHJOh3BGtnMIj83EeN4butBchc8Ag=="],
 
     "@silvia-odwyer/photon-node": ["@silvia-odwyer/photon-node@0.3.4", "https://registry.npmmirror.com/@silvia-odwyer/photon-node/-/photon-node-0.3.4.tgz", {}, "sha512-bnly4BKB3KDTFxrUIcgCLbaeVVS8lrAkri1pEzskpmxu9MdfGQTy8b8EgcD83ywD3RPMsIulY8xJH5Awa+t9fA=="],
-
-    "@sinclair/typebox": ["@sinclair/typebox@0.34.52", "https://registry.npmmirror.com/@sinclair/typebox/-/typebox-0.34.52.tgz", {}, "sha512-XiMQh7qqVlxZzcVD+kkGMNGMzcTrDMLWI7S4x7z1MkCkbDPrekpZXEUK0eZqZFMuHQg2a2DZOcDIh9o5v3Gonw=="],
 
     "@sindresorhus/is": ["@sindresorhus/is@4.6.0", "https://registry.npmmirror.com/@sindresorhus/is/-/is-4.6.0.tgz", {}, "sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw=="],
 
@@ -4166,8 +4162,6 @@
     "nypm/tinyexec": ["tinyexec@1.1.1", "https://registry.npmmirror.com/tinyexec/-/tinyexec-1.1.1.tgz", {}, "sha512-VKS/ZaQhhkKFMANmAOhhXVoIfBXblQxGX1myCQ2faQrfmobMftXeJPcZGp0gS07ocvGJWDLZGyOZDadDBqYIJg=="],
 
     "opencode/@solid-primitives/scheduled": ["@solid-primitives/scheduled@1.5.2", "https://registry.npmmirror.com/@solid-primitives/scheduled/-/scheduled-1.5.2.tgz", { "peerDependencies": { "solid-js": "^1.6.12" } }, "sha512-/j2igE0xyNaHhj6kMfcUQn5rAVSTLbAX+CDEBm25hSNBmNiHLu2lM7Usj2kJJ5j36D67bE8wR1hBNA8hjtvsQA=="],
-
-    "opencode/@wopal/capability-schema": ["@wopal/capability-schema@file:../wopal-cli/packages/capability-schema", { "dependencies": { "@sinclair/typebox": "^0.34.52" } }],
 
     "opencode/minimatch": ["minimatch@10.0.3", "https://registry.npmmirror.com/minimatch/-/minimatch-10.0.3.tgz", { "dependencies": { "@isaacs/brace-expansion": "^5.0.0" } }, "sha512-IPZ167aShDZZUMdRk66cyQAW3qr0WzbHkPdMYa8bzZhlHhO3jALbKdxcaak7W9FfT2rZNpQuUu4Od7ILEpXSaw=="],
 

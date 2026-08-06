@@ -1,7 +1,6 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { CliAdapter } from "./cli-adapter"
-import { spaceListSchema, spaceProjectsListSchema, spaceSearchSchema } from "./cli-schema"
-import type { SpaceEntry, ProjectEntry, DirectoryEntry, SpaceListData, SpaceProjectsListData, SpaceSearchData } from "./cli-schema"
+import type { SpaceEntry, ProjectEntry, DirectoryEntry } from "./cli-schema"
 import { SpaceControlUnavailable, CapabilityContractError } from "./cli-schema"
 
 // ---------------------------------------------------------------------------
@@ -49,6 +48,51 @@ export interface SpaceRegistry {
 export class Service extends Context.Service<Service, SpaceRegistry>()("@opencode/SpaceRegistry") {}
 
 // ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
+
+const spaceListSchema = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      path: Schema.String,
+      type: Schema.optional(Schema.String),
+    }),
+  ),
+  total: Schema.Number,
+})
+
+const projectListSchema = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      path: Schema.String,
+      worktrees: Schema.optional(
+        Schema.Array(
+          Schema.Struct({
+            path: Schema.String,
+            branch: Schema.optional(Schema.String),
+          }),
+        ),
+      ),
+    }),
+  ),
+  total: Schema.Number,
+})
+
+const directorySearchSchema = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      path: Schema.String,
+      type: Schema.optional(Schema.Literals(["dir", "repo", "file"])),
+    }),
+  ),
+  total: Schema.Number,
+})
+
+// ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
 
@@ -58,7 +102,7 @@ const make = Effect.gen(function* () {
 
   const refreshSpaces = (executablePath: string): Effect.Effect<SpaceSnapshot, SpaceControlUnavailable | CapabilityContractError> =>
     Effect.gen(function* () {
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         executablePath,
         ["space", "list", "--json", "--api-version", "1"],
         "space.list",
@@ -84,11 +128,11 @@ const make = Effect.gen(function* () {
       const args = spaceName
         ? ["--space", spaceName, "space", "projects", "list", "--json", "--api-version", "2"]
         : ["space", "projects", "list", "--json", "--api-version", "2"]
-      const result = yield* adapter.execute<SpaceProjectsListData>(
+      const result = yield* adapter.execute(
         executablePath,
         args,
         "space.projects.list",
-        spaceProjectsListSchema,
+        projectListSchema,
       )
       return {
         items: result.items as ProjectEntry[],
@@ -110,11 +154,11 @@ const make = Effect.gen(function* () {
       }
       baseArgs.push("--json", "--api-version", "1")
       const args = spaceName ? ["--space", spaceName, ...baseArgs] : baseArgs
-      const result = yield* adapter.execute<SpaceSearchData>(
+      const result = yield* adapter.execute(
         executablePath,
         args,
         "space.search",
-        spaceSearchSchema,
+        directorySearchSchema,
       )
       return {
         items: result.items as DirectoryEntry[],

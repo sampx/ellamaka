@@ -1,12 +1,11 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 import { tmpdirScoped } from "../fixture/fixture"
 import { CliAdapter } from "../../src/wopal/cli-adapter"
 import { SpaceRegistry } from "../../src/wopal/space-registry"
-import { spaceListSchema, spaceProjectsListSchema, spaceSearchSchema, type SpaceListData, type SpaceProjectsListData, type SpaceSearchData } from "../../src/wopal/cli-schema"
 
 const it = testEffect(
   Layer.mergeAll(
@@ -51,11 +50,16 @@ describe("wopal-cli-adapter", () => {
       yield* Effect.promise(() => Bun.write(executable, `process.stdout.write(${JSON.stringify(successEnvelope("space.list", data))})\n`))
 
       const adapter = yield* CliAdapter.Service
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         executable,
         [],
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(
+            Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) }),
+          ),
+          total: Schema.Number,
+        }),
       )
 
       expect(result).toEqual(data)
@@ -69,11 +73,14 @@ describe("wopal-cli-adapter", () => {
       const json = successEnvelope("space.list", data)
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       )
 
       expect(result).toEqual(data)
@@ -87,11 +94,14 @@ describe("wopal-cli-adapter", () => {
       const json = successEnvelope("space.projects.list", data)
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceProjectsListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.projects.list",
-        spaceProjectsListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
       )
 
       expect(result.items.length).toBe(1)
@@ -99,18 +109,21 @@ describe("wopal-cli-adapter", () => {
     }),
   )
 
-  it.live("decodes v1 success envelope for space.search", () =>
+  it.live("decodes v1 success envelope for space.directories.search", () =>
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
-      const data = { items: [{ name: "src", path: "src", type: "dir" }], total: 1, offset: 0, limit: 50, hasMore: false }
-      const json = successEnvelope("space.search", data)
+      const data = { items: [{ name: "src", path: "src" }], total: 1 }
+      const json = successEnvelope("space.directories.search", data)
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceSearchData>(
+      const result = yield* adapter.execute(
         exec,
         args,
-        "space.search",
-        spaceSearchSchema,
+        "space.directories.search",
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
       )
 
       expect(result.items[0].name).toBe("src")
@@ -128,11 +141,14 @@ describe("wopal-cli-adapter", () => {
       )
       const [exec, args] = shellCmd(json, 1)
 
-      const result = yield* adapter.execute<SpaceProjectsListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.projects.list",
-        spaceProjectsListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -153,11 +169,14 @@ describe("wopal-cli-adapter", () => {
       )
       const [exec, args] = shellCmd(json, 1)
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -168,11 +187,14 @@ describe("wopal-cli-adapter", () => {
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         "/bin/sh",
         ["-c", "echo 'not valid json'"],
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -189,11 +211,14 @@ describe("wopal-cli-adapter", () => {
       const json = successEnvelope("space.list", data)
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceProjectsListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.projects.list",
-        spaceProjectsListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -207,11 +232,14 @@ describe("wopal-cli-adapter", () => {
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         "/nonexistent/cli/binary/that/does/not/exist",
         ["--json"],
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -225,11 +253,14 @@ describe("wopal-cli-adapter", () => {
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         "/bin/sh",
         ["-c", "sleep 1"],
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
         { timeout: 10 },
       ).pipe(Effect.exit)
 
@@ -244,11 +275,14 @@ describe("wopal-cli-adapter", () => {
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         "/bin/sh",
         ["-c", "echo ''"],
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -264,11 +298,14 @@ describe("wopal-cli-adapter", () => {
       const json = successEnvelope("space.list", { items: "wrong", total: 0 })
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -288,11 +325,14 @@ describe("wopal-cli-adapter", () => {
       )
       const [exec, args] = shellCmd(json, 1)
 
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) })),
+          total: Schema.Number,
+        }),
       ).pipe(Effect.exit)
 
       expect(result._tag).toBe("Failure")
@@ -326,11 +366,16 @@ describe("space-registry", () => {
       const [exec, args] = shellCmd(json)
 
       // Verify the adapter can decode the space list
-      const result = yield* adapter.execute<SpaceListData>(
+      const result = yield* adapter.execute(
         exec,
         args,
         "space.list",
-        spaceListSchema,
+        Schema.Struct({
+          items: Schema.Array(
+            Schema.Struct({ name: Schema.String, path: Schema.String, type: Schema.optional(Schema.String) }),
+          ),
+          total: Schema.Number,
+        }),
       )
 
       expect(result.items.length).toBe(1)
@@ -338,19 +383,22 @@ describe("space-registry", () => {
     }),
   )
 
-  it.live("searchSpace returns directory data", () =>
+  it.live("searchDirectories returns directory data", () =>
     Effect.gen(function* () {
       const registry = yield* SpaceRegistry.Service
       const adapter = yield* CliAdapter.Service
-      const data = { items: [{ name: "src", path: "src", type: "dir" }], total: 1, offset: 0, limit: 50, hasMore: false }
-      const json = successEnvelope("space.search", data)
+      const data = { items: [{ name: "src", path: "src" }], total: 1 }
+      const json = successEnvelope("space.directories.search", data)
       const [exec, args] = shellCmd(json)
 
-      const result = yield* adapter.execute<SpaceSearchData>(
+      const result = yield* adapter.execute(
         exec,
         args,
-        "space.search",
-        spaceSearchSchema,
+        "space.directories.search",
+        Schema.Struct({
+          items: Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String })),
+          total: Schema.Number,
+        }),
       )
 
       expect(result.items[0].name).toBe("src")

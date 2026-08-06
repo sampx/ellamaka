@@ -190,7 +190,7 @@ describe("session-projection-group-resolution", () => {
       const subDir = path.join(dir, "subdir")
       yield* Effect.sync(() => require("fs").mkdirSync(subDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, dir, subDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
@@ -207,7 +207,7 @@ describe("session-projection-group-resolution", () => {
       const generalDir = path.join(dir, "general")
       yield* Effect.sync(() => require("fs").mkdirSync(generalDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: path.join(dir, "nonexistent"), type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "test-space", path: path.join(dir, "nonexistent") }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, generalDir))
 
       const spaceGroup = groups.find((g) => g.type === "space")
@@ -224,7 +224,7 @@ describe("session-projection-group-resolution", () => {
       const dir = instance.directory
       const missingDir = path.join(dir, "missing")
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: missingDir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "test-space", path: missingDir }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, missingDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
@@ -241,7 +241,7 @@ describe("session-projection-group-resolution", () => {
       const subDir = path.join(dir, "subdir")
       yield* Effect.sync(() => require("fs").mkdirSync(subDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir }]
       const groups = yield* Effect.promise(() => queryProjectionColdStart(spaces, dir, subDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
@@ -255,7 +255,7 @@ describe("session-projection-group-resolution", () => {
       const instance = yield* TestInstance
       const dir = instance.directory
 
-      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir }]
       const groups = yield* Effect.promise(() => queryProjectionColdStart(spaces, dir))
 
       const spaceGroup = groups.find((g) => g.type === "space")
@@ -281,7 +281,7 @@ describe("session-projection-group-resolution", () => {
         require("fs").mkdirSync(wtDir, { recursive: true })
       })
 
-      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir }]
       const projects: ProjectEntry[] = [
         {
           id: "p1",
@@ -329,8 +329,8 @@ describe("session-projection-group-resolution", () => {
         require("fs").mkdirSync(healthyDir, { recursive: true })
       })
       const spaces: SpaceEntry[] = [
-        { name: "broken", path: brokenDir, type: "local" },
-        { name: "healthy", path: healthyDir, type: "local" },
+        { name: "broken", path: brokenDir },
+        { name: "healthy", path: healthyDir },
       ]
       const layer = SessionProjection.layer.pipe(
         Layer.provide(SessionDirectoryHealth.defaultLayer),

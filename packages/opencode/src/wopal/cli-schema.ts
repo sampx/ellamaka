@@ -1,68 +1,80 @@
 import { Schema } from "effect"
-import { Type, type Static } from "@sinclair/typebox"
-import {
-  spaceListSchema,
-  spaceListItemSchema,
-  spaceProjectsListSchema,
-  spaceProjectItemSchema,
-  spaceProjectWorktreeSchema,
-  spaceSearchSchema,
-  spaceSearchItemSchema,
-  type SpaceListData,
-  type SpaceProjectsListData,
-  type SpaceSearchData,
-} from "@wopal/capability-schema"
 
 // ---------------------------------------------------------------------------
 // CLI envelope (wopal.capability/v1)
 // ---------------------------------------------------------------------------
 
-export const CliEnvelopeSuccess = Type.Object({
-  apiVersion: Type.String(),
-  capability: Type.String(),
-  ok: Type.Literal(true),
-  data: Type.Unknown(),
+export const CliEnvelopeSuccess = Schema.Struct({
+  apiVersion: Schema.String,
+  capability: Schema.String,
+  ok: Schema.Literal(true),
+  data: Schema.Any,
 })
 
-export const CliEnvelopeError = Type.Object({
-  apiVersion: Type.String(),
-  capability: Type.String(),
-  ok: Type.Literal(false),
-  error: Type.Object({
-    code: Type.String(),
-    message: Type.String(),
-    suggestion: Type.Optional(Type.String()),
+export const CliEnvelopeError = Schema.Struct({
+  apiVersion: Schema.String,
+  capability: Schema.String,
+  ok: Schema.Literal(false),
+  error: Schema.Struct({
+    code: Schema.String,
+    message: Schema.String,
+    suggestion: Schema.optional(Schema.String),
   }),
 })
 
-export const CliEnvelope = Type.Union([CliEnvelopeSuccess, CliEnvelopeError])
+export const CliEnvelope = Schema.Union([CliEnvelopeSuccess, CliEnvelopeError])
 
-export type CliEnvelopeSuccess = Static<typeof CliEnvelopeSuccess>
-export type CliEnvelopeError = Static<typeof CliEnvelopeError>
+export type CliEnvelopeSuccess = Schema.Schema.Type<typeof CliEnvelopeSuccess>
+export type CliEnvelopeError = Schema.Schema.Type<typeof CliEnvelopeError>
 
 // ---------------------------------------------------------------------------
-// Capability data schemas — imported from the shared contract package
-// (@wopal/capability-schema), the same TypeBox schemas wopal-cli generates
-// its registry from. Compile-time sync: a new required field in wopal-cli
-// surfaces here at build time, not at runtime.
+// Capability data schemas
 // ---------------------------------------------------------------------------
 
-export {
-  spaceListSchema,
-  spaceListItemSchema,
-  spaceProjectsListSchema,
-  spaceProjectItemSchema,
-  spaceProjectWorktreeSchema,
-  spaceSearchSchema,
-  spaceSearchItemSchema,
-  type SpaceListData,
-  type SpaceProjectsListData,
-  type SpaceSearchData,
-}
+export const SpaceEntry = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  type: Schema.optional(Schema.String),
+})
 
-export type SpaceEntry = Static<typeof spaceListItemSchema>
-export type ProjectEntry = Static<typeof spaceProjectItemSchema>
-export type DirectoryEntry = Static<typeof spaceSearchItemSchema>
+export const SpaceListData = Schema.Struct({
+  items: Schema.Array(SpaceEntry),
+  total: Schema.Number,
+})
+
+export const ProjectEntry = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  worktrees: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.String,
+        branch: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+})
+
+export const ProjectListData = Schema.Struct({
+  items: Schema.Array(ProjectEntry),
+  total: Schema.Number,
+})
+
+export const DirectoryEntry = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  type: Schema.optional(Schema.Literals(["dir", "repo", "file"])),
+})
+
+export const DirectorySearchData = Schema.Struct({
+  items: Schema.Array(DirectoryEntry),
+  total: Schema.Number,
+})
+
+export type SpaceEntry = Schema.Schema.Type<typeof SpaceEntry>
+export type ProjectEntry = Schema.Schema.Type<typeof ProjectEntry>
+export type DirectoryEntry = Schema.Schema.Type<typeof DirectoryEntry>
 
 // ---------------------------------------------------------------------------
 // Runtime domain errors (adapter boundary)
@@ -97,15 +109,15 @@ export class CapabilityContractError extends Schema.TaggedErrorClass<CapabilityC
 // Stable error codes the adapter maps from CLI envelope error.code
 // ---------------------------------------------------------------------------
 
-export const StableErrorCode = Type.Union([
-  Type.Literal("SPACE_NOT_FOUND"),
-  Type.Literal("NO_EFFECTIVE_SPACE"),
-  Type.Literal("PATH_TRAVERSAL_DETECTED"),
-  Type.Literal("CAPABILITY_VERSION_UNSUPPORTED"),
-  Type.Literal("UNKNOWN_ERROR"),
+export const StableErrorCode = Schema.Literals([
+  "SPACE_NOT_FOUND",
+  "NO_EFFECTIVE_SPACE",
+  "PATH_TRAVERSAL_DETECTED",
+  "CAPABILITY_VERSION_UNSUPPORTED",
+  "UNKNOWN_ERROR",
 ])
 
-export type StableErrorCode = Static<typeof StableErrorCode>
+export type StableErrorCode = Schema.Schema.Type<typeof StableErrorCode>
 
 // ---------------------------------------------------------------------------
 // Self-reexport

@@ -45,19 +45,19 @@ describe("wopal-space-handler", () => {
       yield* Effect.promise(() =>
         Bun.write(
           executable,
-          '#!/bin/sh\nprintf \'%s\\n\' \'{"apiVersion":"wopal.capability/v1","capability":"space.list","ok":true,"data":{"items":[{"name":"test-space","path":"/tmp/test-space","type":"local"}],"total":1}}\'\n',
+          '#!/bin/sh\nprintf \'%s\\n\' \'{"apiVersion":"wopal.capability/v1","capability":"space.list","ok":true,"data":{"items":[{"name":"test-space","path":"/tmp/test-space"}],"total":1}}\'\n',
         ),
       )
       yield* Effect.promise(() => fs.chmod(executable, 0o755))
 
       const registry = yield* SpaceRegistryService.Service
       const snapshot = yield* registry.refreshSpaces(executable)
-      expect(snapshot.spaces).toEqual([{ name: "test-space", path: "/tmp/test-space", type: "local" }])
+      expect(snapshot.spaces).toEqual([{ name: "test-space", path: "/tmp/test-space" }])
     }),
   )
 
   test("resolveSpaces returns cached spaces when cache is populated", async () => {
-    const cached: SpaceEntry[] = [{ name: "test-space", path: "/tmp/test", type: "local" }]
+    const cached: SpaceEntry[] = [{ name: "test-space", path: "/tmp/test" }]
     let refreshCalled = false
 
     const registry = makeMockRegistry({
@@ -75,7 +75,7 @@ describe("wopal-space-handler", () => {
 
   test("resolveSpaces refreshes through correct CLI path when cache is empty", async () => {
     let capturedPath = ""
-    const refreshed: SpaceEntry[] = [{ name: "space-1", path: "/tmp/space1", type: "local" }]
+    const refreshed: SpaceEntry[] = [{ name: "space-1", path: "/tmp/space1" }]
 
     const registry = makeMockRegistry({
       getSpaces: () => Effect.succeed({ spaces: [] as SpaceEntry[], refreshedAt: 0 }),
