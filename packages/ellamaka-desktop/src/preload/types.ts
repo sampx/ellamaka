@@ -75,6 +75,7 @@ export type ElectronAPI = {
   onboardingProbe: (kind: string) => Promise<Record<string, unknown>>
   onboardingSetWopalHome: (path: string) => Promise<{ status: string; homePath?: string; message?: string }>
   onboardingCancelStep: () => Promise<{ status: string }>
+  onboardingRendererLog: (message: string) => Promise<{ status: string }>
   onOnboardingProgress: (cb: (progress: OnboardingProgress) => void) => () => void
 
   killSidecar: () => Promise<void>

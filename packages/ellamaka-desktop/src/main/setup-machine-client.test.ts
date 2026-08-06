@@ -280,6 +280,50 @@ describe("setup-machine-client", () => {
     expect(res.error?.suggestion).toContain("重试安装")
   })
 
+  test("runSetupOperation does not forward pretty-printed JSON envelope body lines as progress", async () => {
+    const child = new EventEmitter() as any
+    child.stdin = { write: () => {}, end: () => {} }
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.exitCode = null
+    child.signalCode = null
+    child.kill = () => true
+
+    const progress: string[] = []
+    const prettyEnvelope = JSON.stringify(
+      {
+        apiVersion: "wopal.capability/v1",
+        capability: "setup.operation",
+        ok: true,
+        data: {
+          operation: "configure-memory",
+          status: "reused",
+          result: { memoryEnabled: false, state: "disabled", scope: "global" },
+        },
+      },
+      null,
+      2,
+    )
+
+    setTimeout(() => child.stdout.emit("data", "准备配置记忆系统...\n"), 5)
+    setTimeout(() => child.stdout.emit("data", prettyEnvelope + "\n"), 15)
+    setTimeout(() => {
+      child.exitCode = 0
+      child.emit("exit", 0)
+    }, 25)
+
+    const res = await runSetupOperation({
+      binaryPath: binPath,
+      operation: "configure-memory",
+      spawnFn: () => child,
+      onProgress: (p) => progress.push(p.message ?? ""),
+    })
+
+    expect(res.status).toBe("reused")
+    // Real progress line forwarded, but pretty-printed envelope body lines must NOT leak through.
+    expect(progress).toEqual(["准备配置记忆系统..."])
+  })
+
   test("runSetupOperation keeps an active engine download alive", async () => {
     const child = new EventEmitter() as any
     child.stdin = { write: () => {}, end: () => {} }

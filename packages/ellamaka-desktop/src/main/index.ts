@@ -39,6 +39,7 @@ import { enableQuitGuard, interceptWindowClose } from "./quit-guard"
 import { getReleaseInfo } from "./release-info"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { resolveOnboardingMode, probeWopalHomeFromShell } from "./onboarding-gate"
+import { getOnboardingLogger } from "./onboarding-logger"
 // version-compat gate is exercised by the updater policy path (B-04):
 // updater.ts calls authorizeUpdate; version-compat's checkVersionCompatibility
 // is the shared CLI/Desktop compatibility validator used by the coordinator.
@@ -473,6 +474,10 @@ const main = Effect.gen(function* () {
 
   const onboardingMode = resolveOnboardingMode(process.env.WOPAL_HOME)
   if (onboardingMode === "onboarding") {
+    // Start each onboarding session with a clean debug trail. The previous
+    // run's entries (kept until a completed wizard clears them, or a crash /
+    // quit left them behind) must not bleed into this session's log.
+    getOnboardingLogger(process.env.WOPAL_HOME).clear()
     app.setAsDefaultProtocolClient("ellamaka")
     registerRendererProtocol()
     setDockIcon()

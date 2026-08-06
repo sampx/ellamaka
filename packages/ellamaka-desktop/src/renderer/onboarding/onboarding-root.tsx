@@ -55,13 +55,28 @@ export function OnboardingRoot() {
 
   const controller = createStepController("system-check")
 
+  // UI-only append. Messages that originate in the main process (step
+  // progress broadcasts) are already written to onboarding.log by main; we
+  // must NOT mirror them back or the file gets every message twice.
   const appendLog = (text: string, isError = false) => {
     if (!text.trim()) return
     const clean = text.replace(/\x1b\[[0-9;]*m/g, "")
     setLogs((prev) => [...prev.slice(-200), { text: `[${new Date().toLocaleTimeString()}] ${clean}`, isError }])
   }
 
+  // Messages that originate in the renderer (navigation, state restore,
+  // errors) have no main-side counterpart, so mirror them into the file to
+  // keep the UI LogDrawer and onboarding.log consistent.
+  const mirrorToFile = (text: string) => {
+    if (!text.trim()) return
+    void window.api.onboardingRendererLog(text).catch(() => {})
+  }
+
   onMount(() => {
+    // Mirror the boot banner (already seeded in the UI log) into the file so
+    // onboarding.log records the start of this session the same way the UI does.
+    void window.api.onboardingRendererLog("[system] 初始化 Ellamaka Onboarding 环境...").catch(() => {})
+
     const unsub = window.api.onOnboardingProgress((prog) => {
       const msg = prog.message || prog.phase || ""
       if (msg) {
@@ -90,10 +105,12 @@ export function OnboardingRoot() {
             controller.setCurrentStep(savedStep)
             updateUnlockedPhase(savedStep)
             appendLog(`[system] 已自动从本地 onboarding.json 恢复当前进度: ${savedStep}`)
+            mirrorToFile(`[system] 已自动从本地 onboarding.json 恢复当前进度: ${savedStep}`)
           }
         }
       } catch (err) {
         appendLog(`[warning] 获取步骤恢复状态失败: ${err instanceof Error ? err.message : String(err)}`)
+        mirrorToFile(`[warning] 获取步骤恢复状态失败: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setInitialized(true)
       }
@@ -118,6 +135,7 @@ export function OnboardingRoot() {
     setCurrentStep(nextStep)
     updateUnlockedPhase(nextStep)
     appendLog(`[step] 进入步骤: ${getStepMetadata(nextStep).title}`)
+    mirrorToFile(`[step] 进入步骤: ${getStepMetadata(nextStep).title}`)
     if (nextStep !== "done") {
       void window.api.onboardingSetCurrentStep(nextStep)
     }
@@ -131,6 +149,7 @@ export function OnboardingRoot() {
     const prevStep = controller.getCurrentStep()
     setCurrentStep(prevStep)
     appendLog(`[step] 返回步骤: ${getStepMetadata(prevStep).title}`)
+    mirrorToFile(`[step] 返回步骤: ${getStepMetadata(prevStep).title}`)
     if (prevStep !== "done") {
       void window.api.onboardingSetCurrentStep(prevStep)
     }
@@ -146,6 +165,7 @@ export function OnboardingRoot() {
     setCurrentStep(target)
     controller.setCurrentStep(target)
     appendLog(`[step] 切换到阶段 ${phaseNum}: ${config.title}`)
+    mirrorToFile(`[step] 切换到阶段 ${phaseNum}: ${config.title}`)
     if (target !== "done") {
       void window.api.onboardingSetCurrentStep(target)
     }
@@ -175,8 +195,10 @@ export function OnboardingRoot() {
     setErrorInfo(info)
     setStepResult({ success: false })
     appendLog(`[ERROR] ${info.message}`, true)
+    mirrorToFile(`[ERROR] ${info.message}`)
     if (info.details) {
       appendLog(info.details, true)
+      mirrorToFile(info.details)
     }
   }
 

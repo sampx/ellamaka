@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync, rmSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -32,6 +32,15 @@ export function getOnboardingLogger(homePath?: string) {
         const timestamp = new Date().toISOString()
         appendFileSync(logFile, `[${timestamp}] ${safeMessage}\n`)
       } catch {}
-    }
+    },
+    clear: () => {
+      // Remove the onboarding log (and any rotated backup) once onboarding
+      // completes, so a finished wizard leaves no debug trail behind.
+      if (!logAvailable) return
+      try {
+        if (existsSync(logFile)) unlinkSync(logFile)
+        if (existsSync(`${logFile}.1`)) unlinkSync(`${logFile}.1`)
+      } catch {}
+    },
   }
 }

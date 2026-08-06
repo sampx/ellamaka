@@ -16,7 +16,7 @@ import {
 import { installWopalCli } from "./bootstrap-installer"
 import { runSetupOperation } from "./setup-machine-client"
 import { spawnSync } from "node:child_process"
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir, userInfo } from "node:os"
 import { getUserShell, loadShellEnv } from "./shell-env"
@@ -175,6 +175,7 @@ export interface GithubCliProbe {
 export interface GithubAuthenticationProbeDeps extends GithubTokenDetectionDeps {
   probeGhCli?: () => GithubCliProbe
   verifyGithubToken?: (token: string) => Promise<{ account: string | null; valid: boolean }>
+  broadcastProgress?: (progress: any) => void
 }
 
 function probeGithubCli(): GithubCliProbe {
@@ -219,12 +220,22 @@ export async function probeGithubAuthentication(
   homePath?: string,
   deps: GithubAuthenticationProbeDeps = {},
 ) {
+  const t0 = Date.now()
+  const step = (label: string) => {
+    getOnboardingLogger(homePath).log(`[github-auth] ${label}（${Date.now() - t0}ms）`)
+    deps.broadcastProgress?.({ phase: "github-auth", message: label })
+  }
+  step("开始检测 GitHub 凭据")
   const tokenInfo = detectGithubToken(homePath, {
     env: deps.env,
     loadUserShellEnv: deps.loadUserShellEnv,
     readGhToken: () => null,
   })
+  step(tokenInfo ? `已发现 Token 来源: ${tokenInfo.source}` : "未发现环境内 Token")
+
+  const ghCliT = Date.now()
   const ghCli = deps.probeGhCli ? deps.probeGhCli() : probeGithubCli()
+  step(`GitHub CLI 探测完成（${Date.now() - ghCliT}ms）: ${ghCli.authenticated ? "已认证" : ghCli.installed ? "已安装未认证" : "未安装"}`)
 
   if (ghCli.authenticated) {
     return {
@@ -251,7 +262,10 @@ export async function probeGithubAuthentication(
   }
 
   const verify = deps.verifyGithubToken ?? verifyGithubTokenViaApi
+  const verifyT = Date.now()
+  step("向 GitHub API 验证 Token…")
   const verification = await verify(tokenInfo.token)
+  step(`GitHub API 验证完成（${Date.now() - verifyT}ms）: ${verification.valid ? "有效" : "无效"}`)
   if (!verification.valid) {
     return {
       detected: false,
@@ -758,12 +772,125 @@ export function createOnboardingIpcHandlers(deps: OnboardingIpcDeps = {}) {
   let currentOperation: Promise<OnboardingStepResult> | null = null
   let currentAbortController: AbortController | null = null
 
+  // In-memory snapshot of the last `wopal inspect` result. Probes reuse it
+  // instead of re-running the full (network-heavy) inspection on every step.
+  // Each successful execute step updates the affected dimensions in place,
+  // so the snapshot stays fresh without re-inspecting.
+  let inspectSnapshot: Record<string, unknown> | null = null
+  let inspectSnapshotError: { code?: string; message: string } | null = null
+
+  const getInspection = async (
+    homePath: string,
+  ): Promise<{ result: Record<string, unknown> | null; error: { code?: string; message: string } | null; fromSnapshot: boolean }> => {
+    if (inspectSnapshot) {
+      return { result: inspectSnapshot, error: null, fromSnapshot: true }
+    }
+    const executor = deps.executeStep ?? defaultExecuteStep
+    const res = await executor("inspect")
+    if (res.status === "failed") {
+      inspectSnapshotError = {
+        code: res.error?.code,
+        message: res.error?.message ?? "无法检查环境。",
+      }
+      return { result: null, error: inspectSnapshotError, fromSnapshot: false }
+    }
+    inspectSnapshot = (res.result ?? {}) as Record<string, unknown>
+    inspectSnapshotError = null
+    return { result: inspectSnapshot, error: null, fromSnapshot: false }
+  }
+
+  const updateInspectionFromStep = (stepName: string, result: unknown) => {
+    if (!inspectSnapshot) return
+    const data = (result ?? {}) as Record<string, unknown>
+    const snap = inspectSnapshot
+    switch (stepName) {
+      case "install-cli": {
+        // subStep "ellamaka" → install-engine result
+        if (data.version) {
+          snap.engineInstalled = true
+          snap.engineRunning = true
+          snap.engineVersion = data.version
+        }
+        break
+      }
+      case "github-auth": {
+        const security = (snap.security ?? {}) as Record<string, unknown>
+        const github = (security.github ?? {}) as Record<string, unknown>
+        github.tokenConfigured = true
+        security.github = github
+        snap.security = security
+        break
+      }
+      case "ai-provider": {
+        const security = (snap.security ?? {}) as Record<string, unknown>
+        const providers = (security.providers ?? {}) as Record<string, unknown>
+        const providerId = (data.providerId as string) || "opencode-go"
+        providers[providerId] = { configured: true, type: "api" }
+        security.providers = providers
+        snap.security = security
+        break
+      }
+      case "ontology-setup": {
+        // prepare-ontology result: ontologyPath/mode/availableTypes.
+        // prepare-runtime runs right after it in the same execute call, so
+        // settings + capabilities are materialised too → runtime.ready.
+        if (data.mode) {
+          snap.ontologyInstalled = true
+          snap.ontologyMode = data.mode
+        }
+        if (Array.isArray(data.availableTypes)) {
+          snap.availableTypes = data.availableTypes
+        }
+        const runtime = (snap.runtime ?? {}) as Record<string, unknown>
+        runtime.ready = true
+        snap.runtime = runtime
+        break
+      }
+      case "create-space": {
+        // initialize-space result: spaceName/spacePath
+        if (data.spaceName && data.spacePath) {
+          const spaces = Array.isArray(snap.spaces) ? [...snap.spaces] : []
+          spaces.push({
+            name: data.spaceName,
+            path: data.spacePath,
+            hasSkeleton: true,
+            type: null,
+          })
+          snap.spaces = spaces
+        }
+        break
+      }
+      case "memory-config": {
+        // configure-memory result: state/enabled/injectionEnabled/envPath/llm/embedding
+        const memory = (snap.memory ?? {}) as Record<string, unknown>
+        for (const key of ["state", "enabled", "injectionEnabled", "envPath", "llm", "embedding"]) {
+          if (data[key] !== undefined) memory[key] = data[key]
+        }
+        snap.memory = memory
+        break
+      }
+    }
+  }
+
+  // Unified trace: writes the same message to the onboarding log file AND
+  // broadcasts it to the renderer LogDrawer so both stay in sync.
+  const trace = (homePath: string, phase: string, message: string) => {
+    getOnboardingLogger(homePath).log(`[${phase}] ${message}`)
+    deps.broadcastProgress?.({ phase, message })
+  }
+
   const defaultExecuteStep: StepExecutor = async (step, input, onProgress, abortSignal) => {
+    // Resolve the active WOPAL_HOME. deps.homePath is the user-confirmed
+    // directory (set by onboardingSetWopalHome / system-check); it wins over
+    // the process env so every wopal CLI invocation downstream uses the same
+    // home the user chose. process.env.WOPAL_HOME is kept in sync so
+    // runSetupOperation's { ...process.env } env carries the right value.
     const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+    deps.homePath = homePath
     process.env.WOPAL_HOME = homePath
-    
+
     const logger = getOnboardingLogger(homePath)
-    logger.log(`Executing step: ${step}`)
+    logger.log(`Executing step: ${step} (WOPAL_HOME=${homePath})`)
     
     const isWin = process.platform === "win32"
     const binPath = join(homePath, "bin", isWin ? "wopal.exe" : "wopal")
@@ -784,12 +911,34 @@ switch (step as string) {
           deps.homePath = resolvedHome
           process.env.WOPAL_HOME = resolvedHome
           ;(deps.persistWopalHomeEnv ?? noopPersistWopalHomeEnv)(resolvedHome)
+          // Establish the inspect snapshot once the user confirms WOPAL_HOME.
+          // Every later step reads from this in-memory snapshot instead of
+          // re-running the (network-heavy) inspection.
+          if (!inspectSnapshot) {
+            await getInspection(resolvedHome)
+          }
           return performSystemCheck(resolvedHome)
         }
 
         case "install-cli": {
           const subStep = (input as Record<string, unknown> | undefined)?.subStep
+          // Ensure the inspect snapshot exists before deciding what to install.
+          // Both wopal and ellamaka short-circuit from it when already present.
+          if (!inspectSnapshot) {
+            await getInspection(homePath)
+          }
+          // Short-circuit from the inspect snapshot when the tool is already
+          // installed — no need to spawn wopal or hit the network again.
           if (subStep === "wopal") {
+            const snapshot = inspectSnapshot
+            const cliInfo = (snapshot?.products as Record<string, unknown> | undefined)
+              ?.cli as { installed?: boolean; version?: string | null } | undefined
+            if (cliInfo?.installed) {
+              return {
+                status: "reused",
+                result: { version: cliInfo.version ?? undefined, upgraded: false },
+              }
+            }
             const res = await installWopalCli({
               homePath,
               forceUpgrade: (input as Record<string, unknown> | undefined)?.forceUpgrade as boolean | undefined,
@@ -806,6 +955,13 @@ switch (step as string) {
             return res
           }
           if (subStep === "ellamaka") {
+            // Engine already installed per snapshot → reuse without re-download.
+            if (inspectSnapshot?.engineInstalled === true) {
+              return {
+                status: "reused",
+                result: { version: inspectSnapshot.engineVersion ?? undefined, upgraded: false },
+              }
+            }
             const payload = { ...((input as Record<string, unknown>) ?? {}) }
             delete payload.homePath
             delete payload.forkUrl
@@ -1086,6 +1242,15 @@ switch (step as string) {
       return { mode }
     },
 
+    // Renderer-side log lines (e.g. step transitions, state restore) are
+    // forwarded here so the onboarding.log file matches the UI LogDrawer.
+    "onboarding-renderer-log": async (_event: unknown, message: string) => {
+      if (typeof message !== "string" || !message.trim()) return { status: "ok" }
+      const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+      getOnboardingLogger(homePath).log(`[renderer] ${message.trim()}`)
+      return { status: "ok" }
+    },
+
     "onboarding-get-state": async () => {
       return readOnboardingState(deps.homePath)
     },
@@ -1112,25 +1277,38 @@ switch (step as string) {
             const homePath = deps.homePath || process.env.WOPAL_HOME || join(homedir(), ".wopal")
             return { homePath, wopalHome: homePath }
           }
+          case "system-info": {
+            // Read-only static system info for the first-step UI. Never writes
+            // WOPAL_HOME or onboarding state — actual checking happens on "下一步".
+            let gitVer: string | null = null
+            try {
+              const check = spawnSync("git", ["--version"])
+              if (check.status === 0) gitVer = check.stdout.toString().trim()
+            } catch {}
+            return {
+              platform: process.platform,
+              arch: process.arch,
+              nodeVersion: process.version,
+              gitVersion: gitVer,
+            }
+          }
           case "ontology-setup":
           case "ontology": {
             const ontologyPath = join(homePath, "ontologies", "wopal-space-ontology")
             const pathExists = existsSync(ontologyPath)
-            const executor = deps.executeStep ?? defaultExecuteStep
-            const inspection = await executor("inspect")
-            if (inspection.status === "failed") {
+            const inspectT = Date.now()
+            const { result: inspection, error: inspectionError, fromSnapshot } = await getInspection(homePath)
+            trace(homePath, "ontology-probe", `空间能力本体检查完成（${Date.now() - inspectT}ms）${fromSnapshot ? "（快照命中）" : "（首次 inspect）"}`)
+            if (!inspection) {
               return {
                 status: "broken",
                 ontologyInstalled: false,
                 ontologyMode: null,
                 ontologyPath,
                 availableTypes: [],
-                error: inspection.error?.message ?? "无法检查空间能力本体。",
+                error: inspectionError?.message ?? "无法检查空间能力本体。",
               }
             }
-            const inspectionError = typeof inspection.result?.error === "string"
-              ? inspection.result.error
-              : null
             if (inspectionError) {
               return {
                 status: "broken",
@@ -1138,11 +1316,11 @@ switch (step as string) {
                 ontologyMode: null,
                 ontologyPath,
                 availableTypes: [],
-                error: inspectionError,
+                error: inspectionError.message,
               }
             }
-            const reportedInstalled = Boolean(inspection.result?.ontologyInstalled)
-            const rawMode = inspection.result?.ontologyMode
+            const reportedInstalled = Boolean(inspection.ontologyInstalled)
+            const rawMode = inspection.ontologyMode
             const ontologyMode = rawMode === "fork" || rawMode === "clone" ? rawMode : null
             const ontologyInstalled = reportedInstalled && ontologyMode !== null
             const status = ontologyInstalled ? "ready" : pathExists || reportedInstalled ? "broken" : "missing"
@@ -1151,8 +1329,8 @@ switch (step as string) {
               ontologyInstalled,
               ontologyMode,
               ontologyPath,
-              availableTypes: Array.isArray(inspection.result?.availableTypes)
-                ? inspection.result.availableTypes
+              availableTypes: Array.isArray(inspection.availableTypes)
+                ? inspection.availableTypes
                 : [],
               error: status === "broken" ? "检测到本体目录，但它不是可复用的有效 Git 仓库。" : undefined,
             }
@@ -1162,7 +1340,7 @@ switch (step as string) {
           case "ellamaka-cli":
             return probeLocalCli(join(homePath, "bin", isWin ? "ellamaka.exe" : "ellamaka"))
           case "github-auth": {
-            return await probeGithubAuthentication(homePath)
+            return await probeGithubAuthentication(homePath, { broadcastProgress: deps.broadcastProgress })
           }
           case "ai-provider": {
             const existingKey = detectProviderAuth(homePath, "opencode-go")
@@ -1191,23 +1369,20 @@ switch (step as string) {
                 }
               }
 
-              const executor = deps.executeStep ?? defaultExecuteStep
-              const res = await executor("inspect")
-              if (res.status === "failed") {
+              const { result: inspection, error: inspectionError } = await getInspection(homePath)
+              if (!inspection) {
                 return {
                   ready: false,
                   homePath,
-                  error: res.error?.message ?? "无法检查本体能力配置。",
+                  error: inspectionError?.message ?? "无法检查本体能力配置。",
                 }
               }
-              const runtime = res.result?.runtime
+              const runtime = inspection.runtime
               if (!runtime || typeof runtime !== "object") {
                 return {
                   ready: false,
                   homePath,
-                  error: typeof res.result?.error === "string"
-                    ? res.result.error
-                    : "检查结果缺少本体能力状态。",
+                  error: "检查结果缺少本体能力状态。",
                 }
               }
               return runtime
@@ -1222,75 +1397,39 @@ switch (step as string) {
 
           case "environment": {
             try {
-              const binPath = join(homePath, "bin", isWin ? "wopal.exe" : "wopal")
-              const ontologyDir = join(homePath, "ontologies", "wopal-space-ontology")
+              const homeDir = homePath
+              const ontologyDir = join(homeDir, "ontologies", "wopal-space-ontology")
               const gitDir = join(ontologyDir, ".git")
               const installed = existsSync(gitDir) || existsSync(ontologyDir)
 
-              if (installed) {
-                const availableTypes: Array<{ type: string; branch: string }> = [{ type: "common", branch: "main" }]
-                try {
-                  const typeHeadsDir = join(gitDir, "refs", "heads", "type")
-                  if (existsSync(typeHeadsDir)) {
-                    const entries = readdirSync(typeHeadsDir)
-                    for (const entry of entries) {
-                      if (entry && !entry.startsWith(".")) {
-                        availableTypes.push({ type: entry, branch: `type/${entry}` })
-                      }
-                    }
-                  }
-                } catch {}
-
-                const spaces = probeWopalSpaceList(binPath, { WOPAL_HOME: homePath })
-
-                let ontologyMode: "fork" | "clone" = "clone"
-                try {
-                  const configPath = join(gitDir, "config")
-                  if (existsSync(configPath)) {
-                    const configText = readFileSync(configPath, "utf-8")
-                    if (configText.includes("upstream") || configText.includes("fork")) {
-                      ontologyMode = "fork"
-                    }
-                  }
-                } catch {}
-
-                return {
-                  availableTypes,
-                  spaces,
-                  ontologyInstalled: true,
-                  ontologyMode,
-                  homePath,
-                  wopalHome: homePath,
-                  defaultSpacePath: join(homedir(), "WopalSpace"),
-                  legacyContract: false,
-                }
-              }
-
-              const executor = deps.executeStep ?? defaultExecuteStep
-              const res = await executor("inspect")
-              if (res.status === "failed") {
+              // Both branches read from the inspect snapshot. The snapshot is
+              // built once (first probe) and incrementally updated by each
+              // execute step, so we never re-spawn wopal just to list spaces.
+              const { result: inspection, error: inspectionError } = await getInspection(homeDir)
+              if (!inspection) {
                 return {
                   availableTypes: [],
                   spaces: [],
-                  ontologyInstalled: false,
+                  ontologyInstalled: installed,
                   ontologyMode: null,
-                  homePath,
+                  homePath: homeDir,
+                  wopalHome: homeDir,
                   defaultSpacePath: join(homedir(), "WopalSpace"),
-                  error: res.error?.message ?? "无法检查工作空间环境。",
-                  errorCode: res.error?.code ?? "ENVIRONMENT_INSPECT_FAILED",
+                  error: inspectionError?.message ?? "无法检查工作空间环境。",
+                  errorCode: inspectionError?.code ?? "ENVIRONMENT_INSPECT_FAILED",
                 }
               }
-              const hasAvailableTypes = Array.isArray(res.result?.availableTypes)
+              const hasAvailableTypes = Array.isArray(inspection.availableTypes)
               const availableTypes = hasAvailableTypes
-                ? res.result?.availableTypes
+                ? inspection.availableTypes
                 : [{ type: "common", branch: "main" }]
               return {
                 availableTypes,
-                spaces: res.result?.spaces ?? [],
-                ontologyInstalled: res.result?.ontologyInstalled ?? false,
-                ontologyMode: res.result?.ontologyMode ?? null,
-                homePath,
-                wopalHome: homePath,
+                spaces: Array.isArray(inspection.spaces) ? inspection.spaces : [],
+                ontologyInstalled: installed || Boolean(inspection.ontologyInstalled),
+                ontologyMode: inspection.ontologyMode ?? null,
+                homePath: homeDir,
+                wopalHome: homeDir,
                 defaultSpacePath: join(homedir(), "WopalSpace"),
                 legacyContract: !hasAvailableTypes,
               }
@@ -1314,18 +1453,17 @@ switch (step as string) {
               if (detected) {
                 return detected
               }
-              const executor = deps.executeStep ?? defaultExecuteStep
-              const res = await executor("inspect")
-              if (res.status === "failed") {
+              const { result: inspection, error: inspectionError } = await getInspection(homePath)
+              if (!inspection) {
                 return {
                   state: "unconfigured",
                   enabled: false,
                   envPath: join(homePath, ".env"),
-                  error: res.error?.message ?? "无法检查记忆配置。",
+                  error: inspectionError?.message ?? "无法检查记忆配置。",
                 }
               }
-              const memory = (res.result?.memory ?? {}) as Record<string, unknown>
-              const spaces = Array.isArray(res.result?.spaces) ? res.result.spaces : []
+              const memory = (inspection.memory ?? {}) as Record<string, unknown>
+              const spaces = Array.isArray(inspection.spaces) ? inspection.spaces : []
               const effectiveSpace = memory.effectiveSpace ?? spaces[0] ?? null
               return effectiveSpace ? { ...memory, effectiveSpace } : memory
             } catch (err) {
@@ -1399,6 +1537,7 @@ switch (step as string) {
           state = readOnboardingState(deps.homePath) ?? state
           if (res.status === "completed" || res.status === "reused") {
             state = updateStep(state, stepName, "done")
+            updateInspectionFromStep(stepName, res.result)
           } else if (res.status === "skipped") {
             state = updateStep(state, stepName, "skipped")
           } else {
@@ -1461,10 +1600,11 @@ switch (step as string) {
     },
 
     "onboarding-complete": async () => {
-      const executor = deps.executeStep ?? defaultExecuteStep
-      let readiness: OnboardingStepResult
+      const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+      let inspection: Record<string, unknown> | null
       try {
-        readiness = await executor("inspect")
+        const result = await getInspection(homePath)
+        inspection = result.result
       } catch (err) {
         return {
           status: "failed" as const,
@@ -1475,30 +1615,39 @@ switch (step as string) {
         }
       }
 
-      if (readiness.status === "failed") {
+      if (!inspection) {
         return {
           status: "failed" as const,
           error: {
             code: "ONBOARDING_READINESS_CHECK_FAILED",
-            message: readiness.error?.message ?? "Unable to verify Wopal runtime readiness.",
+            message: "Unable to verify Wopal runtime readiness.",
           },
         }
       }
 
-      if (readiness.result?.verdict !== "healthy") {
+      // Derive readiness from the snapshot: engine + ontology installed,
+      // runtime prepared, and at least one registered space.
+      const runtime = (inspection.runtime ?? {}) as Record<string, unknown>
+      const ready =
+        Boolean(inspection.engineInstalled) &&
+        Boolean(inspection.ontologyInstalled) &&
+        runtime.ready === true &&
+        Array.isArray(inspection.spaces) &&
+        inspection.spaces.length > 0
+
+      if (!ready) {
         return {
           status: "failed" as const,
-          result: readiness.result,
+          result: inspection,
           error: {
             code: "ONBOARDING_NOT_READY",
-            message: String(readiness.result?.verdictReason ?? "Wopal runtime is not healthy yet."),
+            message: "Wopal runtime is not healthy yet.",
           },
         }
       }
 
       let state = readOnboardingState(deps.homePath) ?? createDefaultOnboardingState()
       state = markCompleted(state)
-      const homePath = deps.homePath ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
       if (!writeOnboardingState(state, homePath)) {
         return {
           status: "failed" as const,
@@ -1510,7 +1659,10 @@ switch (step as string) {
       }
       // Persist WOPAL_HOME to user environment variables / shell profile
       ;(deps.persistWopalHomeEnv ?? noopPersistWopalHomeEnv)(homePath)
-      return { status: "completed" as const, result: readiness.result }
+      // Onboarding finished — clear the debug log so a completed wizard
+      // leaves no per-run trace behind.
+      getOnboardingLogger(homePath).clear()
+      return { status: "completed" as const, result: inspection }
     },
 
     "onboarding-cancel-step": async () => {

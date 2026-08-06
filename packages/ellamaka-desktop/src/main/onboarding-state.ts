@@ -164,6 +164,7 @@ export function markCompleted(state: OnboardingState): OnboardingState {
     ...state,
     completed: true,
     currentStep: "done",
+    steps: { ...state.steps, done: "done" },
     updatedAt: now,
   }
 }

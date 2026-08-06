@@ -96,20 +96,30 @@ export function OntologySetupStep(props: StepProps) {
   onMount(async () => {
     props.onError(null)
     props.onStatusChange?.("working")
+    const t0 = performance.now()
+    const lap = (label: string) => {
+      const ms = Math.round(performance.now() - t0)
+      console.log(`[onboarding:ontology] ${label} — 累计 ${ms}ms`)
+    }
     try {
       setProbePhase("正在检测 GitHub 配置…")
+      const githubT = performance.now()
       const authRaw = await window.api.onboardingProbe("github-auth")
       const auth = normalizeGithubAuthProbe(authRaw)
+      lap(`github-auth 探测完成（${Math.round(performance.now() - githubT)}ms）`)
       setGithubAuth(auth)
       setProbePhase("正在检查空间能力本体…")
+      const ontologyT = performance.now()
       const ontologyRaw = await window.api.onboardingProbe("ontology-setup")
       const ontology = normalizeOntologyProbe(ontologyRaw)
+      lap(`ontology-setup 探测完成（${Math.round(performance.now() - ontologyT)}ms）`)
       const initial = buildOntologyInitialState(auth, ontology)
       setOntologyProbe(ontology)
       setMode(initial.mode)
       if (ontology.status === "ready") {
         // Auto-confirm reuse: execute backend to mark step done, then user can proceed directly
         try {
+          const reuseT = performance.now()
           const res = await executeOntologySetup(
             {
               mode: ontology.mode === "fork" ? "fork" : "clone",
@@ -119,6 +129,7 @@ export function OntologySetupStep(props: StepProps) {
             },
             window.api.onboardingExecuteStep,
           )
+          lap(`复用 execute 完成（${Math.round(performance.now() - reuseT)}ms）`)
           if (res.status === "completed" || res.status === "reused") {
             setResultInfo(normalizeOntologyResult(res.result, ontology.mode === "fork" ? "fork" : "clone", "official"))
             props.onStatusChange?.("success")
@@ -134,6 +145,7 @@ export function OntologySetupStep(props: StepProps) {
       } else {
         props.onStatusChange?.("idle")
       }
+      lap("探测流程结束")
     } catch (error) {
       props.onStatusChange?.("error")
       props.onError(error instanceof Error ? error.message : String(error))
@@ -258,7 +270,7 @@ export function OntologySetupStep(props: StepProps) {
         <ProgressDisplay phase={probePhase()} />
       </Show>
 
-      <Show when={!isProbing()}>
+      <Show when={!isProbing() && !resultInfo()}>
         <div class={`ob-github-card ${githubAuth().detected ? "ready" : "required"}`}>
           <div class="ob-github-card-header">
             <span class="ob-github-card-icon">{githubAuth().detected ? "✓" : "GH"}</span>
@@ -339,22 +351,12 @@ export function OntologySetupStep(props: StepProps) {
           <div class="ob-github-actions">
             <button
               type="button"
-              class="ob-inline-action"
-              disabled={isSubmitting() || isSavingGithub() || isRecheckingGithub()}
-              onClick={() => void recheckGithub()}
+              class="ob-button ob-button-secondary"
+              disabled={isSubmitting() || isSavingGithub()}
+              onClick={() => setIsEditingGithub(true)}
             >
-              {isRecheckingGithub() ? "正在检测…" : "重新检测"}
+              重新配置
             </button>
-            <Show when={githubAuth().detected && !isEditingGithub()}>
-              <button
-                type="button"
-                class="ob-inline-action"
-                disabled={isSubmitting() || isSavingGithub()}
-                onClick={() => setIsEditingGithub(true)}
-              >
-                重新配置
-              </button>
-            </Show>
           </div>
         </div>
       </Show>
@@ -386,7 +388,7 @@ export function OntologySetupStep(props: StepProps) {
           <div class="ob-result-details">
             <div class="ob-result-row">
               <span class="ob-result-label">同步方式</span>
-              <span class="ob-result-value">{ontologyProbe()?.mode === "fork" ? "Fork · 可同步" : "Clone · 仅本机"}</span>
+              <span class="ob-result-value">{ontologyProbe()?.mode === "fork" ? "Fork · 可贡献进化" : "Clone · 仅本机"}</span>
             </div>
             <div class="ob-result-row">
               <span class="ob-result-label">本地位置</span>
@@ -478,10 +480,7 @@ export function OntologySetupStep(props: StepProps) {
       </Show>
 
       <Show when={resultInfo()}>
-        <ResultPanel
-          title="空间能力本体已就绪"
-          message={resultInfo()?.mode === "fork" ? "个人远程副本已准备完成。" : "本体已下载到当前电脑。"}
-        >
+        <ResultPanel title="空间能力本体已就绪">
           <div class="ob-result-details">
             <div class="ob-result-row">
               <span class="ob-result-label">能力来源</span>
@@ -489,12 +488,28 @@ export function OntologySetupStep(props: StepProps) {
             </div>
             <div class="ob-result-row">
               <span class="ob-result-label">同步方式</span>
-              <span class="ob-result-value">{resultInfo()?.mode === "fork" ? "Fork · 可同步" : "Clone · 仅本机"}</span>
+              <span class="ob-result-value">{resultInfo()?.mode === "fork" ? "Fork · 可贡献进化" : "Clone · 仅本机"}</span>
             </div>
+            <Show when={resultInfo()?.mode === "fork"}>
+              <div class="ob-result-row">
+                <span class="ob-result-label">Fork 仓库</span>
+                <span class="ob-result-value ob-result-location">{resultInfo()?.remoteUrl}</span>
+              </div>
+            </Show>
             <div class="ob-result-row">
               <span class="ob-result-label">本地位置</span>
               <span class="ob-result-value ob-result-location">{resultInfo()?.localPath}</span>
             </div>
+            <Show when={githubAuth().detected}>
+              <div class="ob-result-row">
+                <span class="ob-result-label">GitHub 账号</span>
+                <span class="ob-result-value">{githubAuth().account ? `@${githubAuth().account}` : "未获取"}</span>
+              </div>
+              <div class="ob-result-row">
+                <span class="ob-result-label">当前凭据</span>
+                <span class="ob-result-value">{credentialSourceLabel(githubAuth().source)}</span>
+              </div>
+            </Show>
           </div>
           <OntologyTypes items={resultInfo()?.availableTypes ?? []} />
         </ResultPanel>

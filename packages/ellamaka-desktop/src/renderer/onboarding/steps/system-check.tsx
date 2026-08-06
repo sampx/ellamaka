@@ -4,7 +4,7 @@ export interface StepProps {
   userName?: string
   onComplete: () => void
   onError: (msg: string | null) => void
-  onStatusChange?: (status: "working" | "success" | "error") => void
+  onStatusChange?: (status: "idle" | "working" | "success" | "error") => void
 }
 
 export function SystemCheckStep(props: StepProps) {
@@ -19,7 +19,29 @@ export function SystemCheckStep(props: StepProps) {
     gitVer?: string
   }>({})
 
-  const runCheck = async (targetPath?: string) => {
+  // Read-only probe: inspects the current home WITHOUT advancing state or
+  // writing any onboarding file. Only called on mount to show system info.
+  const probe = async (targetPath?: string) => {
+    const checkHome = targetPath ?? wopalHome()
+    try {
+      const res = await window.api.onboardingProbe("system-info")
+      const data = (res as Record<string, unknown>) || {}
+      setSysInfo({
+        platform: (data.platform as string) || "darwin",
+        arch: (data.arch as string) || "arm64",
+        nodeVer: (data.nodeVersion as string) || "v24.x",
+        gitVer: (data.gitVersion as string) || "git version 2.x",
+      })
+      if (checkHome) setWopalHome(checkHome)
+    } catch {
+      // ignore probe failure — system info is cosmetic
+    }
+  }
+
+  // Confirmation-time check: runs the system-check execute (which persists
+  // WOPAL_HOME and writes onboarding state). Only called when the user
+  // explicitly clicks "下一步".
+  const runCheck = async (targetPath?: string): Promise<boolean> => {
     props.onError(null)
     props.onStatusChange?.("working")
     setIsRunning(true)
@@ -43,17 +65,20 @@ export function SystemCheckStep(props: StepProps) {
         if (data.wopalHome) {
           setWopalHome(data.wopalHome)
         }
+        return true
       } else {
         const msg = res.error?.message ?? "系统环境检查失败。"
         setErrorMsg(msg)
         props.onStatusChange?.("error")
         props.onError(msg)
+        return false
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       setErrorMsg(msg)
       props.onStatusChange?.("error")
       props.onError(msg)
+      return false
     } finally {
       setIsRunning(false)
     }
@@ -62,18 +87,21 @@ export function SystemCheckStep(props: StepProps) {
   onMount(async () => {
     props.onStatusChange?.("working")
     setIsRunning(true)
-    let home = wopalHome()
     try {
       const probeRes = await window.api.onboardingProbe("home")
       const realHome = (probeRes as any)?.homePath || (probeRes as any)?.wopalHome
-      if (realHome) {
-        home = realHome
-        setWopalHome(realHome)
-      }
+      const home = realHome || ""
+      setWopalHome(home)
+      await probe(home || undefined)
     } catch {
       // ignore probe error
+    } finally {
+      setIsRunning(false)
+      // Restore the root "idle" state so the 下一步 button re-enables after
+      // the read-only probe completes. Without this, onMount's "working"
+      // leaves the button permanently disabled.
+      props.onStatusChange?.("idle")
     }
-    await runCheck(home || undefined)
   })
 
   const handleBrowseHome = async () => {
@@ -86,33 +114,33 @@ export function SystemCheckStep(props: StepProps) {
       if (selected) {
         setWopalHome(selected)
         setIsPassed(false)
-        await window.api.onboardingSetWopalHome(selected)
-        void runCheck(selected)
+        setErrorMsg(null)
+        // Browse only selects the path — the actual check/write happens on "下一步".
+        await probe(selected)
       }
     } catch {
       // ignore dialog cancel
     }
   }
 
-  const handleSubmit = (event: Event) => {
-    event.preventDefault()
-    if (isRunning()) return
-    props.onComplete()
-  }
-
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined
-
   const handleInputChange = (val: string) => {
     setWopalHome(val)
     setIsPassed(false)
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(async () => {
-      const trimmed = val.trim()
-      if (trimmed) {
-        await window.api.onboardingSetWopalHome(trimmed)
-        void runCheck(trimmed)
-      }
-    }, 400)
+    setErrorMsg(null)
+  }
+
+  const handleSubmit = async (event: Event) => {
+    event.preventDefault()
+    if (isRunning()) return
+    const trimmed = wopalHome().trim()
+    if (!trimmed) {
+      setErrorMsg("请输入或选择一个工作目录。")
+      props.onError("请输入或选择一个工作目录。")
+      return
+    }
+    await window.api.onboardingSetWopalHome(trimmed)
+    const passed = await runCheck(trimmed)
+    if (passed) props.onComplete()
   }
 
   return (
@@ -139,21 +167,6 @@ export function SystemCheckStep(props: StepProps) {
           <span class="ob-result-label">Git</span>
           <span class="ob-result-value">{sysInfo().gitVer || "已准备"}</span>
         </div>
-        <div class="ob-result-row">
-          <span class="ob-result-label">环境准备状态</span>
-          <span class={`ob-result-value ob-syscheck-status ${!isRunning() && isPassed() ? "ready" : ""}`}>
-            <Show when={isRunning()}>
-              <span class="ob-syscheck-spinner" />
-              <span>检查中…</span>
-            </Show>
-            <Show when={!isRunning() && isPassed()}>
-              <span>✓ 基础环境检测就绪</span>
-            </Show>
-            <Show when={!isRunning() && !isPassed()}>
-              <span>等待确认</span>
-            </Show>
-          </span>
-        </div>
       </div>
 
       {/* 3. Working Directory Card */}
@@ -168,16 +181,25 @@ export function SystemCheckStep(props: StepProps) {
           placeholder="~/.wopal"
           disabled={isRunning()}
         />
-        <button
-          type="button"
-          class="ob-button ob-button-secondary ob-syscheck-browse"
-          onClick={handleBrowseHome}
-          disabled={isRunning()}
-        >
-          <span>📁</span>
-          <span>选择 / 更改工作目录…</span>
-        </button>
+        <div class="ob-syscheck-home-actions">
+          <button
+            type="button"
+            class="ob-button ob-button-secondary ob-syscheck-browse"
+            onClick={handleBrowseHome}
+            disabled={isRunning()}
+          >
+            <span>📁</span>
+            <span>选择 / 更改工作目录…</span>
+          </button>
+        </div>
       </div>
+
+      <Show when={isRunning()}>
+        <div class="ob-progress-container" style={{ padding: "16px 0" }}>
+          <div class="ob-spinner" />
+          <div class="ob-progress-phase">正在初始化并检查环境（首次检查需 5-10 秒）…</div>
+        </div>
+      </Show>
 
       <Show when={!isRunning() && errorMsg()}>
         <div class="ob-syscheck-error">

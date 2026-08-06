@@ -11,6 +11,7 @@ const api: ElectronAPI = {
   onboardingProbe: (kind) => ipcRenderer.invoke("onboarding-probe", kind),
   onboardingSetWopalHome: (path) => ipcRenderer.invoke("onboarding-set-wopal-home", path),
   onboardingCancelStep: () => ipcRenderer.invoke("onboarding-cancel-step"),
+  onboardingRendererLog: (message) => ipcRenderer.invoke("onboarding-renderer-log", message),
   onOnboardingProgress: (cb) => {
     const handler = (_: unknown, progress: any) => cb(progress)
     ipcRenderer.on("onboarding-progress", handler)

@@ -119,10 +119,17 @@ describe("onboarding-ipc", () => {
     expect(duplicateResult.error?.code).toBe("ONBOARDING_OPERATION_BUSY")
   })
 
-  test("onboardingComplete marks state as completed only when inspect is healthy", async () => {
+  test("onboardingComplete marks state as completed only when snapshot is ready", async () => {
     const executor = async (step: string) => ({
       status: "reused" as const,
-      result: step === "inspect" ? { verdict: "healthy", verdictReason: "All components are ready." } : {},
+      result: step === "inspect"
+        ? {
+            engineInstalled: true,
+            ontologyInstalled: true,
+            runtime: { ready: true },
+            spaces: [{ name: "space1", path: join(testHome, "space1") }],
+          }
+        : {},
     })
     const handlers = createOnboardingIpcHandlers({ homePath: testHome, executeStep: executor })
     const result = await handlers["onboarding-complete"]()
@@ -142,11 +149,16 @@ describe("onboarding-ipc", () => {
     expect(state?.currentStep).toBe("memory-config")
   })
 
-  for (const verdict of ["fresh", "partial", "broken"] as const) {
-    test(`onboardingComplete rejects ${verdict} runtime and preserves onboarding mode`, async () => {
+  for (const missing of [
+    { engineInstalled: false, ontologyInstalled: true, runtime: { ready: true }, spaces: [{ name: "s", path: "/s" }] },
+    { engineInstalled: true, ontologyInstalled: false, runtime: { ready: true }, spaces: [{ name: "s", path: "/s" }] },
+    { engineInstalled: true, ontologyInstalled: true, runtime: { ready: false }, spaces: [{ name: "s", path: "/s" }] },
+    { engineInstalled: true, ontologyInstalled: true, runtime: { ready: true }, spaces: [] },
+  ] as const) {
+    test(`onboardingComplete rejects incomplete snapshot (${JSON.stringify(missing)})`, async () => {
       const executor = async () => ({
         status: "reused" as const,
-        result: { verdict, verdictReason: `Runtime is ${verdict}.` },
+        result: missing,
       })
       const handlers = createOnboardingIpcHandlers({ homePath: testHome, executeStep: executor })
       const result = await handlers["onboarding-complete"]()
@@ -176,6 +188,56 @@ describe("onboarding-ipc", () => {
 
     const state = readOnboardingState(testHome)
     expect(state).toBeNull()
+  })
+
+  test("inspect snapshot is reused across probes and updated by execute steps", async () => {
+    let inspectCalls = 0
+    const executor = async (step: string) => {
+      if (step === "inspect") {
+        inspectCalls += 1
+        return {
+          status: "reused" as const,
+          result: {
+            engineInstalled: false,
+            ontologyInstalled: false,
+            runtime: { ready: false },
+            spaces: [],
+            availableTypes: [{ type: "common", branch: "main" }],
+          },
+        }
+      }
+      if (step === "install-cli") {
+        return { status: "completed" as const, result: { version: "1.2.3" } }
+      }
+      if (step === "ontology-setup") {
+        return {
+          status: "completed" as const,
+          result: { mode: "fork", availableTypes: [{ type: "common", branch: "main" }] },
+        }
+      }
+      return { status: "completed" as const, result: {} }
+    }
+    const handlers = createOnboardingIpcHandlers({ homePath: testHome, executeStep: executor })
+
+    // First probe triggers inspect; second probe reuses the snapshot.
+    const first = await handlers["onboarding-probe"]({}, "ontology-setup")
+    const second = await handlers["onboarding-probe"]({}, "ontology-setup")
+    expect(inspectCalls).toBe(1)
+    expect(first.status).toBe("missing")
+    expect(second.status).toBe("missing")
+
+    // install-cli updates engine dimension in the snapshot.
+    await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "ellamaka" })
+    const afterEngine = await handlers["onboarding-probe"]({}, "ontology-setup")
+    expect(inspectCalls).toBe(1)
+    expect(afterEngine.status).toBe("missing")
+
+    // ontology-setup updates ontology dimension; runtime becomes ready.
+    await handlers["onboarding-execute-step"]({}, "ontology-setup", { mode: "fork" })
+    const afterOntology = await handlers["onboarding-probe"]({}, "ontology-setup")
+    expect(inspectCalls).toBe(1)
+    expect(afterOntology.status).toBe("ready")
+    expect(afterOntology.ontologyMode).toBe("fork")
   })
 
   test("onboardingProbe home returns homePath instantly", async () => {
@@ -827,5 +889,30 @@ console.log(JSON.stringify({ capability: "setup.operation", apiVersion: 1, ok: t
     } finally {
       spy.mockRestore()
     }
+  })
+
+  test("onboardingComplete clears the onboarding log after finishing", async () => {
+    // Write some log lines first.
+    const logger = getOnboardingLogger(testHome)
+    logger.log("step one")
+    logger.log("step two")
+    expect(existsSync(join(testHome, "logs", "onboarding.log"))).toBe(true)
+
+    const executor = async (step: string) => ({
+      status: "reused" as const,
+      result: step === "inspect"
+        ? {
+            engineInstalled: true,
+            ontologyInstalled: true,
+            runtime: { ready: true },
+            spaces: [{ name: "space1", path: join(testHome, "space1") }],
+          }
+        : {},
+    })
+    const handlers = createOnboardingIpcHandlers({ homePath: testHome, executeStep: executor })
+    const result = await handlers["onboarding-complete"]()
+
+    expect(result.status).toBe("completed")
+    expect(existsSync(join(testHome, "logs", "onboarding.log"))).toBe(false)
   })
 })

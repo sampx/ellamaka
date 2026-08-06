@@ -996,10 +996,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 16px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.035);
   text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ob-source-option:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .ob-source-option.active,
@@ -1037,11 +1042,11 @@
 .ob-custom-source {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1px solid var(--ob-card-border);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .ob-radio-row {
@@ -1060,14 +1065,19 @@
 
 .ob-mode-option {
   display: flex;
-  min-height: 86px;
+  min-height: 96px;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
-  padding: 11px 12px;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.035);
   text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ob-mode-option:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .ob-mode-option:disabled {
@@ -1109,6 +1119,9 @@
 
 .ob-ontology-flow .ob-ontology-section {
   gap: 10px;
+  width: 100%;
+  max-width: 640px;
+  align-self: center;
 }
 
 .ob-ontology-flow .ob-ontology-section-title {
@@ -1133,8 +1146,10 @@
 }
 
 .ob-ontology-flow .ob-advanced-toggle {
-  padding: 8px 4px;
+  padding: 8px 2px;
   font-size: 13px;
+  align-self: flex-end;
+  width: auto;
 }
 
 .ob-ontology-flow .ob-custom-source {
@@ -1303,7 +1318,13 @@
 .ob-github-actions {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 16px;
+}
+
+.ob-github-actions .ob-button {
+  padding: 9px 18px;
+  font-size: 13px;
 }
 
 .ob-inline-action {
@@ -1884,8 +1905,13 @@
   color: var(--ob-text-main);
 }
 
+.ob-syscheck-home-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .ob-syscheck-browse {
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 6px;

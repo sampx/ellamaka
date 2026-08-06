@@ -127,15 +127,21 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
   const payload = JSON.stringify({ operation, ...input })
   const spawnImpl = spawnFn ?? spawn
 
+  // Always carry an explicit WOPAL_HOME to the wopal CLI subprocess. The
+  // caller may pass input.homePath; otherwise fall back to the resolved env
+  // so every operation targets the same user-chosen home.
+  const effectiveHome = input.homePath?.toString().trim() || process.env.WOPAL_HOME?.trim()
   const env = {
     ...process.env,
-    ...(input.homePath ? { WOPAL_HOME: String(input.homePath) } : {}),
+    ...(effectiveHome ? { WOPAL_HOME: effectiveHome } : {}),
   }
 
   return new Promise((resolve) => {
     let stdoutData = ""
     let stderrData = ""
     let isSettled = false
+    let envelopeStarted = false
+    let stderrEnvelopeStarted = false
     let child: ChildProcess
     let inactivityTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -229,15 +235,21 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
       const str = chunk.toString()
       stdoutData += str
       // Forward non-JSON progress lines to onProgress.
-      // The JSON envelope is a single multi-line object written at the end;
-      // progress lines (e.g. "  ellamaka v1.2.3", "  Downloading...") are
-      // plain text and won't interfere with envelope extraction.
+      // The JSON envelope is a single multi-line object written at the END of
+      // output. Once the envelope starts (its root line begins with "{"), stop
+      // forwarding — every subsequent line belongs to the envelope, not a
+      // progress message. Genuine progress lines always precede the envelope,
+      // so buffering the envelope start is enough to keep them clean.
+      if (envelopeStarted) return
       const lines = str.split("\n")
       for (const line of lines) {
         const trimmed = line.trim()
-        if (trimmed && !trimmed.startsWith("{") && !trimmed.startsWith("}")) {
-          onProgress?.({ phase: operation, message: trimmed })
+        if (!trimmed) continue
+        if (trimmed.startsWith("{")) {
+          envelopeStarted = true
+          return
         }
+        onProgress?.({ phase: operation, message: trimmed })
       }
     })
 
@@ -246,7 +258,19 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
       resetInactivityTimer()
       const str = chunk.toString()
       stderrData += str
-      onProgress?.({ phase: operation, message: str.trim() })
+      // Like stdout, stop forwarding once the JSON envelope starts (root "{")
+      // so envelope body lines never leak into progress messages.
+      if (stderrEnvelopeStarted) return
+      const stderrLines = str.split("\n")
+      for (const line of stderrLines) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        if (trimmed.startsWith("{")) {
+          stderrEnvelopeStarted = true
+          return
+        }
+        onProgress?.({ phase: operation, message: trimmed })
+      }
     })
 
     child.stdin?.write(payload)

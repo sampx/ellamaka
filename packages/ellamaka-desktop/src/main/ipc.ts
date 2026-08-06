@@ -72,6 +72,7 @@ export function registerIpcHandlers(deps: Deps) {
     "onboarding-probe",
     "onboarding-set-wopal-home",
     "onboarding-cancel-step",
+    "onboarding-renderer-log",
   ]) {
     ipcMain.removeHandler(channel)
   }
@@ -92,6 +93,9 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("onboarding-cancel-step", () =>
     onboardingHandlers["onboarding-cancel-step"](),
+  )
+  ipcMain.handle("onboarding-renderer-log", (_event, message: string) =>
+    onboardingHandlers["onboarding-renderer-log"](_event, message),
   )
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())

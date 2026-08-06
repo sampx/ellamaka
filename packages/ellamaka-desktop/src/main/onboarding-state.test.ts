@@ -121,6 +121,7 @@ describe("onboarding-state", () => {
 
     expect(completed.completed).toBe(true)
     expect(completed.currentStep).toBe("done")
+    expect(completed.steps["done"]).toBe("done")
     expect(completed.updatedAt).not.toBeNull()
   })
 
