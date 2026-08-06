@@ -1,7 +1,8 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test"
+import { describe, expect, test, beforeEach, afterEach, spyOn } from "bun:test"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import * as setupMachineClient from "./setup-machine-client"
 import {
   buildMemoryOperationInput,
   createOnboardingIpcHandlers,
@@ -808,5 +809,23 @@ console.log(JSON.stringify({ capability: "setup.operation", apiVersion: 1, ok: t
     const state = readOnboardingState(testHome)
     expect(state?.steps["system-check"]).toBe("failed")
     expect(state?.currentStep).toBe("system-check")
+  })
+
+  test("onboardingExecuteStep install-cli subStep ellamaka automatically populates requirements object", async () => {
+    let capturedInput: any = null
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      capturedInput = opts.input
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+      const result = await handlers["onboarding-execute-step"]({}, "install-cli", { subStep: "ellamaka" })
+      expect(result.status).toBe("completed")
+      expect(capturedInput).toBeDefined()
+      expect(capturedInput?.requirements).toEqual({})
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

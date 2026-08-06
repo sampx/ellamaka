@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { spawnSync } from "node:child_process"
 import { app } from "electron"
 
 type PackageMetadata = {
@@ -96,13 +97,49 @@ export function validateEmbeddedIdentity(identity: EmbeddedIdentity, meta: AppMe
     )
   }
 }
-
 export function getReleaseInfo(): ReleaseInfo {
+  let version = app.getVersion()
   let build: string | undefined
+
   try {
-    const metadata = JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")) as PackageMetadata
-    if (typeof metadata.ellamakaBuild === "string") build = metadata.ellamakaBuild
+    const resourcesPath = process.resourcesPath || join(app.getAppPath(), "resources")
+    const embedded = readEmbeddedReleaseIdentity(resourcesPath)
+    if (embedded?.version) {
+      version = embedded.version
+    }
+    if (typeof embedded?.build === "string") {
+      build = embedded.build
+    } else if (embedded?.build && typeof (embedded.build as any).gitCommit === "string") {
+      build = (embedded.build as any).gitCommit
+    }
   } catch {}
 
-  return createReleaseInfo(app.getVersion(), build)
+  if (process.env.OPENCODE_VERSION?.trim()) {
+    version = process.env.OPENCODE_VERSION.trim()
+  }
+  if (!build && process.env.OPENCODE_BUILD_ID?.trim()) {
+    build = process.env.OPENCODE_BUILD_ID.trim()
+  }
+
+  if (!build) {
+    try {
+      const metadata = JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")) as PackageMetadata
+      if (typeof metadata.ellamakaBuild === "string") build = metadata.ellamakaBuild
+    } catch {}
+  }
+
+  if (!build) {
+    try {
+      const res = spawnSync("git", ["rev-parse", "--short=12", "HEAD"], {
+        cwd: app.getAppPath(),
+        encoding: "utf8",
+        timeout: 1500,
+      })
+      if (res.status === 0 && res.stdout?.trim()) {
+        build = res.stdout.trim()
+      }
+    } catch {}
+  }
+
+  return createReleaseInfo(version, build)
 }

@@ -79,7 +79,8 @@ export function OnboardingRoot() {
           window.api.onboardingProbe("system-user").catch(() => null),
         ])
 
-        const name = (userProbe as { userName?: string } | null)?.userName?.trim()
+        const probeResult = userProbe as { userName?: string } | null
+        const name = probeResult?.userName?.trim()
         if (name) setSystemUserName(name)
 
         if (state && state.currentStep && !state.completed) {
@@ -501,14 +502,12 @@ export function OnboardingRoot() {
             </div>
           </div>
 
-          <LogDrawer logs={logs()} onClear={() => setLogs([])} />
+          <LogDrawer logs={logs()} statusMsg={progressMsg() || "系统就绪"} onClear={() => setLogs([])} />
         </div>
       </main>
 
       <footer class="ob-footer">
-        <div>WopalSpace &copy; 2026</div>
-        <div class="ob-footer-status">{progressMsg() || "系统就绪"}</div>
-        <div class="ob-footer-version">v1.15.13</div>
+        <div>Wopal.cn &copy; 2026</div>
       </footer>
     </div>
   )

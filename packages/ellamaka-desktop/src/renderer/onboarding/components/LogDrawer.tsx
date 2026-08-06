@@ -9,6 +9,7 @@ export interface LogEntry {
 
 export interface LogDrawerProps {
   logs: LogEntry[]
+  statusMsg?: string
   onClear?: () => void
   onCopy?: () => void
 }
@@ -79,6 +80,9 @@ export function LogDrawer(props: LogDrawerProps) {
           <Show when={errorCount() > 0}>
             <span class="ob-log-error-badge">{errorCount()} 错误</span>
           </Show>
+        </div>
+        <div class="ob-log-header-status">
+          {props.statusMsg || ""}
         </div>
         <div class="ob-log-header-actions" onClick={(e) => e.stopPropagation()}>
           <Show when={expanded()}>

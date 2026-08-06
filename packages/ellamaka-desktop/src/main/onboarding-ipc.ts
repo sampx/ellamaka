@@ -24,6 +24,7 @@ import type { OnboardingStepResult } from "../preload/types"
 
 import { statfsSync } from "node:fs"
 import { getOnboardingLogger } from "./onboarding-logger"
+import { getReleaseInfo } from "./release-info"
 
 export function resolveSystemUserName(): string {
   try {
@@ -809,6 +810,9 @@ switch (step as string) {
             delete payload.homePath
             delete payload.forkUrl
             delete payload.subStep
+            if (!payload.requirements || typeof payload.requirements !== "object") {
+              payload.requirements = {}
+            }
             return normalizeSetupResult(await runSetupOperation({
               binaryPath: binPath,
               operation: "install-engine",
@@ -829,6 +833,9 @@ switch (step as string) {
           const payload = { ...((input as Record<string, unknown>) ?? {}) }
           delete payload.homePath
           delete payload.forkUrl
+          if (!payload.requirements || typeof payload.requirements !== "object") {
+            payload.requirements = {}
+          }
           const ellamakaRes = normalizeSetupResult(await runSetupOperation({
             binaryPath: binPath,
             operation: "install-engine",
@@ -1331,7 +1338,11 @@ switch (step as string) {
             }
           }
           case "system-user": {
-            return { userName: resolveSystemUserName() }
+            let appVersion: string | undefined
+            try {
+              appVersion = getReleaseInfo().displayVersion
+            } catch {}
+            return { userName: resolveSystemUserName(), appVersion }
           }
           default:
             return { error: "Unknown probe kind" }

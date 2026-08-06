@@ -369,8 +369,10 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           >
             查看官方文档 (wopal.cn/docs)
           </button>
-          <span>·</span>
-          <span>版本: {platform.version || "1.15.13"}</span>
+          <Show when={platform.version}>
+            <span>·</span>
+            <span>版本: {platform.version}</span>
+          </Show>
         </div>
       </div>
     </div>
