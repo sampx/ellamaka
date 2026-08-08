@@ -19,7 +19,7 @@ on:
 
 # tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
 # 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
-# Per docs/RELEASE-IDENTITY.md §8-§9, releases are immutable: versioned R2
+# Per docs/DISTRIBUTION.md §4.1/§7, releases are immutable: versioned R2
 # paths are never cleared, committed releases are never overwritten.
 
 permissions:
@@ -76,7 +76,7 @@ jobs:
       - name: Generate release context
         if: needs.version.outputs.release != ''
         run: |
-          # Per docs/RELEASE-IDENTITY.md §9, the release context is assembled
+          # Per docs/DISTRIBUTION.md §7.1, the release context is assembled
           # from the namespaced tag (GITHUB_REF_NAME) + upstream lock + the
           # checked-out commit (github.sha) + github.run_id. It is the single
           # source of truth for build, manifest, and embedded identity.
@@ -155,7 +155,7 @@ jobs:
           R2_URL="https://${R2_ENDPOINT}"
           VERSION_PREFIX="ellamaka/v${VERSION}"
 
-          # Per docs/RELEASE-IDENTITY.md §9: versioned R2 paths are immutable.
+          # Per docs/DISTRIBUTION.md §7.1: versioned R2 paths are immutable.
           # If an effective manifest already exists at the target path, fail
           # closed — do not clear, overwrite, or proceed.
           EXISTING_MANIFEST=$(aws s3api head-object \

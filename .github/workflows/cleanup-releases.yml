@@ -1,6 +1,6 @@
 name: Clean up releases
 
-# Independent release cleanup workflow. Per docs/RELEASE-IDENTITY.md §9.1,
+# Independent release cleanup workflow. Per docs/DISTRIBUTION.md §7.2,
 # cleanup uses the protection model: latest/updater-referenced releases are
 # always protected; only standard SemVer releases within the same
 # product/channel become retention candidates; legacy/unknown objects fail
