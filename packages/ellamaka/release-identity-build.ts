@@ -40,7 +40,7 @@ export function buildReleaseIdentityForBuild(input: BuildIdentityInput): Identit
     }
   }
 
-  // Development identity. Per docs/RELEASE-IDENTITY.md §5.4, dev identities
+  // Development identity. Per docs/DISTRIBUTION.md §5.4, dev identities
   // must not carry build.sourceTag or build.workflowRunId. gitCommit and
   // builtAt are optional and only present if available.
   const devChannel = input.channel === "main" ? "main" : "local"

@@ -4,7 +4,7 @@ set -euo pipefail
 #
 # The baseline commit is read from release/upstreams.lock.json
 # (componentBaselines["packages/desktop"].gitCommit). Per
-# docs/RELEASE-IDENTITY.md §6, the lock is the single source of truth for
+# docs/DISTRIBUTION.md §3.3, the lock is the single source of truth for
 # frozen component baselines; this script must not hardcode the commit.
 #
 # Usage:

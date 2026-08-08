@@ -73,7 +73,7 @@ describe("desktop release repair", () => {
   test("tag helper dispatches workflows with namespaced product tags", async () => {
     const script = await source("scripts/tag-release.sh")
 
-    // New namespaced product tag model (docs/RELEASE-IDENTITY.md §8).
+    // New namespaced product tag model (docs/DISTRIBUTION.md §4.1).
     // tag-release.sh accepts a product + explicit Ellamaka product version
     // and creates ellamaka-{cli,desktop}-vX.Y.Z tags. It no longer accepts
     // implicit -N suffix iteration or --retag that deletes committed tags.
@@ -108,7 +108,7 @@ describe("desktop release repair", () => {
   test("tag helper rejects withdrawn versions before mutation", async () => {
     const script = await source("scripts/tag-release.sh")
 
-    // Per docs/RELEASE-IDENTITY.md §9.2, withdrawn-versions.json is the
+    // Per docs/DISTRIBUTION.md §7.3, withdrawn-versions.json is the
     // permanent record of versions that must never be reused.
     expect(script).toContain("withdrawn-versions.json")
     expect(script).toContain("withdrawn")

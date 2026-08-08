@@ -5,7 +5,7 @@
 // steps all read. The context is not version-controlled; it lives in the
 // workflow run only.
 //
-// See docs/RELEASE-IDENTITY.md §9.
+// See docs/DISTRIBUTION.md §7.1.
 
 import { buildNamespacedTag, parseNamespacedTag, parseReleaseVersion, buildReleaseIdentity } from "./release-identity.mjs"
 

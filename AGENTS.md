@@ -116,12 +116,12 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 - `main` is for local `build.sh desktop --channel main` verification only. Release workflows accept only `beta` and `prod`.
 - Windows Desktop UI changes require native Windows CI and runtime validation. macOS builds are insufficient.
 - Release workflows use only Node 24-native official JavaScript actions. Before adding or upgrading an action, inspect its `action.yml`; `runs.using` must be `node24`. `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` is a compatibility guard, never a substitute for the upgrade. Release workflow tests lock the approved action baseline.
-- Product versions use namespaced tags (`ellamaka-cli-vX.Y.Z`, `ellamaka-desktop-vX.Y.Z`) per `docs/RELEASE-IDENTITY.md` §8. Committed releases are immutable: the same `product + version` tag is never deleted, moved, or re-built. Pre-commit failed attempts may be retried at the same version after controlled cleanup; post-commit major failures require whole-version withdrawal (record in `release/withdrawn-versions.json`, restore aliases, delete versioned objects) and the version is permanently retired.
+- Product versions use namespaced tags (`ellamaka-cli-vX.Y.Z`, `ellamaka-desktop-vX.Y.Z`) per `docs/DISTRIBUTION.md` §4.1. Committed releases are immutable: the same `product + version` tag is never deleted, moved, or re-built. Pre-commit failed attempts may be retried at the same version after controlled cleanup; post-commit major failures require whole-version withdrawal (record in `release/withdrawn-versions.json`, restore aliases, delete versioned objects) and the version is permanently retired.
 - Windows quit waits for the SidecarSupervisor to stop before Electron terminates.
 - Beta versions use `X.Y.Z-beta.N` and publish to `ellamaka-desktop/beta/`. Prod publishes to `ellamaka-desktop/`.
 - Sidecar, Electron Main/Renderer, icons, and electron-builder share the same channel/version environment variables.
 - Public macOS packages use ad-hoc signing. This guarantees bundle signature integrity, but users must still accept Gatekeeper risk manually.
-- Versioned R2 paths are immutable. Pre-commit failed attempts may clear their own partial objects before retry at the same version; post-commit releases must never be overwritten. Whole-version withdrawal follows `docs/RELEASE-IDENTITY.md` §9.2.
+- Versioned R2 paths are immutable. Pre-commit failed attempts may clear their own partial objects before retry at the same version; post-commit releases must never be overwritten. Whole-version withdrawal follows `docs/DISTRIBUTION.md` §7.3.
 - Download tables show DMG, EXE, AppImage, deb, and rpm. ZIP, blockmap, and `latest-*.yml` are updater assets.
 
 ## 5. Testing & Verification

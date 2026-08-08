@@ -1,7 +1,7 @@
 // packages/ellamaka-desktop/src/main/version-check.ts
 //
 // Runtime version guarantee checks shared by the updater transaction and
-// the onboarding flow (docs/RELEASE-IDENTITY.md §7, DESIGN-capability-contract
+// the onboarding flow (docs/DISTRIBUTION.md §6, DESIGN-capability-contract
 // §7). Pure functions — no electron imports — so they can be tested without
 // the electron mock (same pattern as version-compat.ts).
 //

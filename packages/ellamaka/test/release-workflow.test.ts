@@ -46,7 +46,7 @@ describe("publish-ellamaka workflow", () => {
   })
 
   test("generates release context from namespaced tag + upstream lock", () => {
-    // Per RELEASE-IDENTITY.md §9, the workflow generates a release-context.json
+    // Per DISTRIBUTION.md §7.1, the workflow generates a release-context.json
     // from the checked-out namespaced tag + upstream lock + github.sha +
     // github.run_id. Build and manifest steps both read it.
     expect(workflow).toContain("release-context.json")
@@ -76,7 +76,7 @@ describe("publish-ellamaka workflow", () => {
   })
 
   test("does NOT clear versioned prefix before upload (immutable, fail-closed)", () => {
-    // Per RELEASE-IDENTITY.md §9, versioned R2 paths are immutable. The old
+    // Per DISTRIBUTION.md §7.1, versioned R2 paths are immutable. The old
     // `aws s3 rm --recursive` clear must be removed; if an effective manifest
     // already exists at the target path, the workflow must fail closed.
     expect(workflow).not.toContain('aws s3 rm "s3://wopal-release/${VERSION_PREFIX}/"')

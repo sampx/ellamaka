@@ -4,7 +4,7 @@
  * cleanup-desktop-releases.mjs
  *
  * Protection-model cleanup for ellamaka-desktop releases. Per
- * docs/RELEASE-IDENTITY.md §9.1, this script does not use shell version
+ * docs/DISTRIBUTION.md §7.2, this script does not use shell version
  * sort, mtime, or legacy numeric-suffix comparators. It builds a reference
  * graph (stable and beta latest aliases are protected), and only standard
  * SemVer releases within the same product/channel become retention
@@ -35,7 +35,7 @@ import { execSync } from "child_process";
 import { compareSemVer, parseReleaseVersion, parseLegacyVersion } from "./release-identity.mjs";
 
 // ===========================================================================
-// Task 5: protection model (docs/RELEASE-IDENTITY.md §9.1)
+// Task 5: protection model (docs/DISTRIBUTION.md §7.2)
 // ===========================================================================
 
 const PRODUCT = "ellamaka-desktop";

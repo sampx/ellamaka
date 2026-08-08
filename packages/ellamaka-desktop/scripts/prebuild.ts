@@ -12,7 +12,7 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
 
 await $`cd ../opencode && bun script/build-node.ts`
 
-// Generate resources/release-identity.json. Per docs/RELEASE-IDENTITY.md §5.4,
+// Generate resources/release-identity.json. Per docs/DISTRIBUTION.md §5.4,
 // Desktop packages embed the same release context that produced the build.
 // For local dev builds (channel "main"), a development identity is written;
 // for beta/prod, a release-context.json (if provided via env) is the source.

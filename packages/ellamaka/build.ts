@@ -269,7 +269,7 @@ for (const item of targets) {
       // Embed a structured ReleaseIdentity at build time. Release builds
       // (OPENCODE_RELEASE=1) with a release-context path produce a release
       // identity; otherwise a development identity is embedded. See
-      // docs/RELEASE-IDENTITY.md §5.4.
+      // docs/DISTRIBUTION.md §5.4.
       //
       // The define must be a JSON *string* literal (double-encoded): the
       // runtime reads it as a string and JSON.parses it. A bare object

@@ -4,7 +4,7 @@
 > **更新时间**: 2026-08-03
 > **目标包**: `packages/ellamaka-desktop`
 > **上游基线**: Engine baseline 与冻结 component baselines 均以 `release/upstreams.lock.json` 为准；当前 `packages/desktop` 复制参照为 OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
-> **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`、`RELEASE-IDENTITY.md`
+> **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`、`DISTRIBUTION.md`
 
 本文档描述 ellamaka 官方桌面应用的目标架构。桌面应用承载 `ellamaka-app` Workbench。Electron 主进程管理窗口和本地 sidecar，sidecar 统一管理 Web 与 Desktop 的 PTY 生命周期。
 
@@ -55,7 +55,7 @@ OpenCode v1.15.13 的 desktop 已经采用 Electron。Tauri 运行时不属于 e
 
 `ellamaka-desktop`、`ellamaka-app`、`packages/opencode` 和 JS SDK 在一次 Desktop build 内使用同一 source commit 和 OpenCode upstream lock，避免跨源码快照组合。这个 source 一致性不等于产品版本锁步：`ellamaka-desktop` 与外部 `ellamaka-cli` 各自使用独立 SemVer 和 release tag。
 
-Electron 安全修复、生命周期修复和平台兼容修复可以只发布 Desktop patch。共享 Engine/API 变化或 OpenCode baseline 升级通常协调发布 CLI 与 Desktop，但两个产品版本无需相同。兼容性由 upstream baseline、engine API range 和 CLI stable latest promotion gate 决定，详见 `RELEASE-IDENTITY.md`。
+Electron 安全修复、生命周期修复和平台兼容修复可以只发布 Desktop patch。共享 Engine/API 变化或 OpenCode baseline 升级通常协调发布 CLI 与 Desktop，但两个产品版本无需相同。兼容性由 upstream baseline、engine API range 和 CLI stable latest promotion gate 决定，详见 `DISTRIBUTION.md`。
 
 ## 3. 系统架构
 

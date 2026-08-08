@@ -3,7 +3,7 @@
 > **状态**: Active
 > **更新时间**: 2026-08-03
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
-> **配套文档**: `./DESIGN.md`（架构概览）、`./RELEASE-IDENTITY.md`（版本与兼容契约）、`./DISTRIBUTION.md`（分发设计）
+> **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发与版本身份契约）、`./BRANDING.md`（品牌化真相源）
 
 本文档是 ellamaka 品牌化定制的唯一真相源。记录每项定制设计的**目的、内容、要求和实现逻辑**。具体文件级变更由 `git diff upstream/dev` 回答，不在本文档中维护。
 
@@ -154,7 +154,7 @@ CLI 的所有用户可见输出——命令名、帮助文本、版本号、启�
 
 ### 版本号
 
-`--version` 输出 Ellamaka CLI 自身的标准 SemVer（如 `1.17.1`，开发构建仍可使用明确的 local/dev identity），不输出 OpenCode version。OpenCode baseline、Ellamaka source commit 和 build date 通过 `ellamaka debug release-info --json --api-version 1` 提供；该命令读取 binary 内嵌 identity，不读取安装收据或网络，字段定义见 `RELEASE-IDENTITY.md`。
+`--version` 输出 Ellamaka CLI 自身的标准 SemVer（如 `1.17.1`，开发构建仍可使用明确的 local/dev identity），不输出 OpenCode version。OpenCode baseline、Ellamaka source commit 和 build date 通过 `ellamaka debug release-info --json --api-version 1` 提供；该命令读取 binary 内嵌 identity，不读取安装收据或网络，字段定义见 `DISTRIBUTION.md` §5。
 
 ### 命令名
 
@@ -444,7 +444,7 @@ TUI 启动后 1 秒触发 `checkUpgrade()` → `upgrade()`，流程如下：
 
 ### 9.3 CDN 版本清单
 
-`latest()` 请求 CLI stable `manifest.json`。完整 schema 由 `RELEASE-IDENTITY.md` 定义，最小示例：
+`latest()` 请求 CLI stable `manifest.json`。完整 schema 由 `DISTRIBUTION.md` §5 定义，最小示例：
 
 ```json
 {
@@ -540,7 +540,7 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 | ---------------------------------------------------------------------------------------- | -------------------- |
 | `README.md`、`README.zh-CN.md`                                                           | ellamaka 项目 README |
 | `AGENTS.md`、`AGENTS.zh-CN.md`                                                           | ellamaka 开发规范    |
-| `docs/DESIGN.md`、`docs/DISTRIBUTION.md`、`docs/RELEASE-IDENTITY.md`、`docs/BRANDING.md` | ellamaka 设计文档    |
+| `docs/DESIGN.md`、`docs/DISTRIBUTION.md`、`docs/BRANDING.md` | ellamaka 设计文档    |
 | `docs/UPSTREAM-MERGE-LOG.md`                                                             | 合并历史记录         |
 | `scripts/`                                                                               | ellamaka 自有脚本    |
 | `.github/workflows/publish-ellamaka.yml`                                                 | ellamaka CI          |

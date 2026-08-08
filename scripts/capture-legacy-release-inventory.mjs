@@ -1,6 +1,6 @@
 // capture-legacy-release-inventory.mjs — read-only legacy inventory capture
 //
-// Per docs/RELEASE-IDENTITY.md §12, before switching to the new standard
+// Per docs/DISTRIBUTION.md §11, before switching to the new standard
 // SemVer publisher, the operator must capture a one-time snapshot of the
 // existing remote tags, R2 versioned paths, manifests, artifact SHA-256,
 // channel aliases and confirmable source commits. The output is reviewed

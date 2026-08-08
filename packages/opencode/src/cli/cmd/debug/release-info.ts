@@ -5,7 +5,7 @@
 // Read-only machine interface that outputs the embedded ReleaseIdentity and
 // engine API capability as a single JSON envelope on stdout. Does not access
 // the network, does not read install receipts. Per
-// docs/RELEASE-IDENTITY.md §5.4.
+// docs/DISTRIBUTION.md §5.4.
 //
 // The identity is embedded at build time via the OPENCODE_RELEASE_IDENTITY
 // define (a JSON string). Development builds produce a development identity

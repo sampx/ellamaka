@@ -1,6 +1,6 @@
 // update-upstream-lock.mjs — the ONLY writer for release/upstreams.lock.json
 //
-// Per docs/RELEASE-IDENTITY.md §6, the upstream lock is never updated by
+// Per docs/DISTRIBUTION.md §3.3, the upstream lock is never updated by
 // release workflows, inputs, or environment variables. Only this command,
 // invoked by an operator, resolves a target OpenCode tag's full commit and
 // writes it into the lock. Engine baseline updates and component baseline

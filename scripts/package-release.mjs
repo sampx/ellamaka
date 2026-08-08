@@ -140,7 +140,7 @@ export function buildReleaseNotes(version, artifacts, manifestUrl, checksumsUrl)
  * schema v2 with a structured releaseIdentity. Otherwise emits the legacy
  * v1 shape (version + optional build + artifacts) for backward compat.
  *
- * Per docs/RELEASE-IDENTITY.md §5.3, the top-level `version` must equal
+ * Per docs/DISTRIBUTION.md §5.3, the top-level `version` must equal
  * `releaseIdentity.version` in schema v2.
  */
 export function buildManifest({
@@ -196,7 +196,7 @@ export function manifestCommand(flags) {
   // release context so the manifest can never desync from the build. An
   // explicit --version (legacy callers) may only assert equality with the
   // context — it cannot override it. The versioned path is always v<version>
-  // per RELEASE-IDENTITY.md §9.
+  // per DISTRIBUTION.md §7.1.
   let version = flags.version
   let tag = flags.tag
   if (flags.releaseContextPath) {

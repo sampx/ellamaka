@@ -4,7 +4,7 @@
  * cleanup-ellamaka-releases.mjs
  *
  * Protection-model cleanup for ellamaka CLI releases. Per
- * docs/RELEASE-IDENTITY.md §9.1, this script does not use shell version
+ * docs/DISTRIBUTION.md §7.2, this script does not use shell version
  * sort, mtime, or the legacy X.Y.Z-N numeric-suffix comparator. It builds a
  * reference graph (latest aliases are protected), and only standard SemVer
  * releases within the same product/channel become retention candidates.
@@ -35,7 +35,7 @@ import fs from "fs";
 import { compareSemVer, parseReleaseVersion, parseLegacyVersion } from "./release-identity.mjs";
 
 // ===========================================================================
-// Task 5: protection model (docs/RELEASE-IDENTITY.md §9.1)
+// Task 5: protection model (docs/DISTRIBUTION.md §7.2)
 //
 // cleanup must NOT use shell version sort, mtime, or the legacy X.Y.Z-N numeric-suffix
 // comparator. It builds a reference graph (latest + updater aliases are

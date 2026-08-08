@@ -2,7 +2,7 @@
 //
 // Single source of truth for parsing, validating and building the
 // `release`/`development` discriminated union defined in
-// docs/RELEASE-IDENTITY.md. New publishers must consume this module; the
+// docs/DISTRIBUTION.md. New publishers must consume this module; the
 // legacy `X.Y.Z-N` comparator is intentionally not re-exported.
 //
 // This file is consumed by:

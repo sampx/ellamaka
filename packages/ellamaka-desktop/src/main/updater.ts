@@ -89,7 +89,7 @@ async function checkAndDownloadUpdate(): Promise<UpdateCheckResult> {
       return { updateAvailable: false }
     }
     logger.log("update available", { version })
-    // Policy gate (docs/RELEASE-IDENTITY.md §10): authorize BEFORE download.
+    // Policy gate (docs/DISTRIBUTION.md §10): authorize BEFORE download.
     // electron-updater only handles platform feed/download/install; the
     // channel/downgrade/manifest-version authorization is decided here.
     //
@@ -119,7 +119,7 @@ async function checkAndDownloadUpdate(): Promise<UpdateCheckResult> {
       return { updateAvailable: false, failed: true }
     }
     logger.log("update authorized", { version, channel: targetChannel })
-    // Runtime version gate (docs/RELEASE-IDENTITY.md §7): after policy
+    // Runtime version gate (docs/DISTRIBUTION.md §6): after policy
     // authorization, before download. The installed wopal-cli must satisfy
     // the protocol floor and the installed ellamaka CLI must share the
     // Desktop's major.minor. A probe failure (binary missing / unreadable)

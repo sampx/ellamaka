@@ -1,7 +1,7 @@
 // packages/ellamaka-desktop/src/main/version-compat.ts
 //
 // Compatibility gate between Desktop and external CLI. Per
-// docs/RELEASE-IDENTITY.md §7, Desktop reads CLI stable latest and
+// docs/DISTRIBUTION.md §6, Desktop reads CLI stable latest and
 // validates product/channel/upstream baseline (v1) and engine API range.
 // v2 omits upstreamBaseline.
 
@@ -72,7 +72,7 @@ export function parseReleaseIdentity(input: unknown): ReleaseIdentity {
 
 /**
  * Check compatibility between a CLI release identity and Desktop
- * requirements. Per docs/RELEASE-IDENTITY.md §7.1:
+ * requirements. Per docs/DISTRIBUTION.md §6.1:
  * 1. product must match
  * 2. channel must match requirements.externalCli.channel
  * 3. (v1) upstream baseline must be equal

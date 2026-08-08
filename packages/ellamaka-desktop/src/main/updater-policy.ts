@@ -1,6 +1,6 @@
 // packages/ellamaka-desktop/src/main/updater-policy.ts
 //
-// Update authorization policy gate. Per docs/RELEASE-IDENTITY.md §10,
+// Update authorization policy gate. Per docs/DISTRIBUTION.md §10,
 // electron-updater only handles platform feed/download/install. The
 // authorization decision (same channel, no downgrade, manifest version
 // match) is made here before electron-updater is allowed to proceed.

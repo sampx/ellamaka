@@ -19,7 +19,7 @@ const scriptSource = readFileSync(join(currentDir, "..", "scripts", "cleanup-ell
 // ---------------------------------------------------------------------------
 // Task 5: cleanup protection model.
 //
-// Per docs/RELEASE-IDENTITY.md §9.1, cleanup must NOT use sort -V, mtime, or
+// Per docs/DISTRIBUTION.md §7.2, cleanup must NOT use sort -V, mtime, or
 // the legacy X.Y.Z-N numeric-suffix comparator to decide "newer" versions.
 // It builds a reference graph (latest + updater aliases are protected), and
 // only standard SemVer releases within the same product/channel become

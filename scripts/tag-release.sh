@@ -14,7 +14,7 @@ usage() {
   cat <<EOF
 $SCRIPT — 创建 namespaced product tag 并 dispatch publish workflow
 
-按 docs/RELEASE-IDENTITY.md §8，tag-release 接收目标 product 和
+按 docs/DISTRIBUTION.md §4.1，tag-release 接收目标 product 和
 Ellamaka product version（可省略自动建议），创建 ellamaka-{cli,desktop}-vX.Y.Z
 格式的 namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
 触发独立 cleanup workflow（retention 清理历史 release）。
@@ -209,7 +209,7 @@ fi
 # validate_semver <version> <product-label>
 # CLI releases are stable-only (X.Y.Z, monotonic patch/minor bumps).
 # Desktop accepts stable X.Y.Z or beta X.Y.Z-beta.N via --channel beta.
-# rc is not a release shape for either product (see RELEASE-IDENTITY.md §3).
+# rc is not a release shape for either product (see DISTRIBUTION.md §3.1).
 validate_semver() {
   local v="$1" label="$2"
   if [ "$label" = "CLI" ]; then
@@ -589,7 +589,7 @@ echo "✅ Release complete"
 [ -n "$CLI_TAG" ] && echo "   Gitee:       https://gitee.com/wopal-cn/ellamaka/releases/tag/${CLI_TAG}"
 
 # --- Auto-trigger retention cleanup (separate workflow) ---
-# Per docs/RELEASE-IDENTITY.md §9.1, cleanup uses the protection model and
+# Per docs/DISTRIBUTION.md §7.2, cleanup uses the protection model and
 # lives in its own workflow. After a successful release, dispatch it for
 # the released product(s) so historical releases are pruned automatically
 # (mirrors the old inline cleanup convention). --no-cleanup skips this.

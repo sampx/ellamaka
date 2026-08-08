@@ -16,8 +16,7 @@ ellamaka 是 OpenCode fork，WopalSpace 的执行引擎。它同时承载非 Wop
 | ----------------------- | --------------------------------------------------------------------- | ------------------------------------------ |
 | **BRANDING.md**         | 品牌化定制真相源：逐文件、逐行、逐模式记录所有上游注入变更            | 定制实现细节的唯一权威；本文件不重复其内容 |
 | **DESIGN.md**（本文件） | 架构概览：适配点总表、配置契约、ontology 加载契约、状态归属           | 描述"是什么"和"有什么"，不描述"怎么改"     |
-| **RELEASE-IDENTITY.md** | CLI/Desktop 产品 SemVer、OpenCode upstream、build identity 与兼容选择 | 发布身份唯一真相源                         |
-| **DISTRIBUTION.md**     | 发布/分发设计：workflow、artifact contract、安装路径、R2 CDN          | 消费 ReleaseIdentity，不复制版本算法       |
+| **DISTRIBUTION.md**     | 发布/分发设计：产品 SemVer、OpenCode upstream、build identity、兼容选择、workflow、artifact contract、安装路径、R2 CDN | 版本身份与分发唯一真相源               |
 
 定制实现细节（哪些文件改了、用什么模式注入、改动行数）一律见 **BRANDING.md**，本文件仅保留适配点索引和节号引用。
 
@@ -157,8 +156,7 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 | `./BRANDING.md`                   | 品牌化定制唯一真相源—                                          |
 | `./API-CONTRACT.md`               | Runtime API、OpenAPI、生成 SDK 与 Wopal CLI adapter 契约       |
 | `./WORKBENCH.md`                  | ellamaka 自定义工作台 app 设计                                 |
-| `./RELEASE-IDENTITY.md`           | CLI/Desktop 独立 SemVer、OpenCode upstream、构建身份与兼容选择 |
-| `./DISTRIBUTION.md`               | release、artifact、安装契约                                    |
+| `./DISTRIBUTION.md`               | 产品 SemVer、OpenCode upstream、构建身份、兼容选择、release、artifact、安装契约 |
 | `../../wopal-cli/docs/DESIGN.md`  | wopal-cli 如何消费 ellamaka release                            |
 | `UPSTREAM-MERGE-LOG.md`           | 裁剪边界、合并策略、验证经验                                   |
 | `packages/opencode/AGENTS.md`     | engine package 内部规则                                        |
