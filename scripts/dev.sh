@@ -404,7 +404,7 @@ start_backend() {
   local port="$1" debug="$2" debug_modules="$3" preload="$4"
   shift 4
   local plugin_modules=""
-  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") args=(serve --port "$port" --print-logs)
+  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") args=(serve --port "$port" --print-logs)
   if [ "$debug" = true ]; then
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
     args+=(--log-level DEBUG)
@@ -516,7 +516,7 @@ cmd_tui() {
 
   if $attach; then
     mkdir -p "$LOGDIR"
-    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") attach_args=() plugin_modules=""
+    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") attach_args=() plugin_modules=""
     if $debug; then
       attach_args+=(--log-level DEBUG)
       plugin_modules="$(plugin_debug_modules "$debug_modules")"
@@ -548,7 +548,7 @@ cmd_tui() {
   fi
 
   mkdir -p "$LOGDIR"
-  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json") tui_args=() plugin_modules=""
+  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") tui_args=() plugin_modules=""
   if $debug; then
     tui_args+=(--log-level DEBUG)
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
@@ -691,6 +691,8 @@ cmd_desktop() {
   require_stopped desktop || return 1
   require_free_ports 5173 9222 || return 1
   export OPENCODE_CHANNEL="$CHANNEL"
+  source "$root/scripts/lib/version.sh"
+  export MIN_WOPAL_CLI_VERSION="${MIN_WOPAL_CLI_VERSION:-$(resolve_min_wopal_cli_version "$root")}"
 
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."
   if $rebuild; then
@@ -709,7 +711,7 @@ cmd_desktop() {
 
   mkdir -p "$LOGDIR"
   local plugin_modules=""
-  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts")
+  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
   if [ -n "$WOPAL_HOME" ]; then
     desktop_env+=(WOPAL_HOME="$WOPAL_HOME")
     echo "📌 Using Custom WOPAL_HOME: ${WOPAL_HOME}"

@@ -295,6 +295,17 @@ https://download.coursedao.com/ellamaka/latest/manifest.json
 
 Ellamaka v2 不再要求 OpenCode baseline 相等。Desktop 从 `requirements.externalCli` 省略 `upstreamBaseline`，CLI latest 校验只保留 product、channel 和 engine API range；upstream 若存在，仅用于 provenance。
 
+### 7.4 Runtime Version Guarantees
+
+运行时对两种二进制分别做版本保证（`src/main/version-check.ts`，纯函数模块，updater 与 onboarding 共用）：
+
+| 对象 | 约束 | 语义 |
+|------|------|------|
+| wopal-cli | `>= MIN_WOPAL_CLI_VERSION` | 协议兼容域下界（构建注入，`.ci/versions.json` 自动跟随 `@wopal/cli-capability-schema` 依赖下界） |
+| ellamaka CLI（外部 engine） | 主版本 `vX.Y` 与 Desktop 一致 | 同一引擎两种形态，`major.minor` 相等即匹配（Desktop 2.0.1 与 CLI 2.0.3 匹配；Desktop 2.1.0 与 CLI 2.0.x 不匹配） |
+
+检查时点为 onboarding 安装（setup 操作前检查 wopal-cli 下界；装完 engine 后检查主版本匹配）与 Desktop 更新（授权通过后、下载前）。两个时点都是"装之前看一眼，不够先补，补不上就停"，不做启动轮询。检查失败不静默放行：wopal-cli 过低 → 提示先升级；engine 主版本不匹配 → 提示重装 engine。
+
 ## 8. Tags, Channels, and Release Workflows
 
 产品 tag 使用独立命名空间：
@@ -385,8 +396,9 @@ cleanup 输出待删除对象与保护原因的审计清单后才执行。mutabl
 2. 按兼容契约校验目标 latest manifest。
 3. 使用标准 SemVer 比较同一产品、同一 channel 的 `releaseIdentity.version`。
 4. 校验预期 version、source identity 和 artifact SHA-256。
-5. 在修改本机前先形成包含 Desktop、外部 CLI 和 Wopal CLI requirement 的完整安装计划，并确认所有 manifest 和下载均可验证。
-6. 才允许按“外部 CLI → Desktop → 最终健康检查与收据”的顺序落盘；失败不得把未验证的部分安装状态报告为成功。
+5. 运行时版本检查（§7.4）：本机 wopal-cli `>= MIN_WOPAL_CLI_VERSION`，且本机 ellamaka CLI 主版本与目标 Desktop 主版本一致；不满足 → 拒绝更新并提示，不静默放行。
+6. 在修改本机前先形成包含 Desktop、外部 CLI 和 Wopal CLI requirement 的完整安装计划，并确认所有 manifest 和下载均可验证。
+7. 才允许按“外部 CLI → Desktop → 最终健康检查与收据”的顺序落盘；失败不得把未验证的部分安装状态报告为成功。
 
 Desktop 保留自己的 manifest policy gate。electron-updater 负责平台 feed、下载、签名检查和安装，不单独决定跨 channel、兼容性或 release identity 授权。其返回的 update version 必须等于已经授权的 Desktop manifest version。
 

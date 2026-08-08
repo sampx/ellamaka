@@ -11,6 +11,17 @@ const dir = path.resolve(__dirname, "..")
 
 process.chdir(dir)
 
+// Read the effective minimum wopal-cli version from .ci/versions.json.
+// Build scripts (scripts/build.sh / dev.sh) normally export
+// MIN_WOPAL_CLI_VERSION already; this is the fallback for direct invocations.
+function readMinWopalCliVersion(): string {
+  try {
+    const versions = JSON.parse(fs.readFileSync(path.resolve(dir, "../../.ci/versions.json"), "utf8"))
+    if (typeof versions.minWopalCli === "string" && versions.minWopalCli) return versions.minWopalCli
+  } catch {}
+  return "0.3.13"
+}
+
 const generated = await import("./generate.ts")
 
 // Load migrations from migration directories
@@ -62,6 +73,12 @@ await Bun.build({
     // compile-time constants as the CLI build.
     OPENCODE_VERSION: `'${Script.version}'`,
     OPENCODE_CHANNEL: `'${Script.channel}'`,
+    // Inline the effective minimum wopal-cli version so the sidecar enforces
+    // the same protocol floor as the CLI build. The value comes from
+    // MIN_WOPAL_CLI_VERSION (exported by scripts/build.sh / dev.sh via
+    // scripts/lib/version.sh resolve_min_wopal_cli_version); fall back to
+    // .ci/versions.json when unset.
+    "process.env.MIN_WOPAL_CLI_VERSION": `'${process.env.MIN_WOPAL_CLI_VERSION || readMinWopalCliVersion()}'`,
   },
   files: {
     "opencode-web-ui.gen.ts": "",

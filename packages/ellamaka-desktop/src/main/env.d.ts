@@ -1,5 +1,6 @@
 interface ImportMetaEnv {
   readonly OPENCODE_CHANNEL: string
+  readonly MIN_WOPAL_CLI_VERSION: string
 }
 
 interface ImportMeta {

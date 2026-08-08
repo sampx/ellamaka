@@ -199,6 +199,11 @@ function build_desktop() {
 
   export OPENCODE_CHANNEL="$CHANNEL"
 
+  # Inject the effective minimum wopal-cli version (auto-follows the
+  # @wopal/cli-capability-schema dependency floor, config override wins when
+  # higher) so the packaged app enforces the runtime protocol floor.
+  export MIN_WOPAL_CLI_VERSION="${MIN_WOPAL_CLI_VERSION:-$(resolve_min_wopal_cli_version "$PROJECT_ROOT")}"
+
   if [[ -n "${CUSTOM_VERSION:-}" ]]; then
     export OPENCODE_VERSION="$CUSTOM_VERSION"
   elif [[ -z "${OPENCODE_VERSION:-}" ]]; then

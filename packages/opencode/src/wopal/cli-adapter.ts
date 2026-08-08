@@ -1,7 +1,16 @@
 import { Context, Effect, Layer, Schema, Stream } from "effect"
+import { Value } from "@sinclair/typebox/value"
+import type { TSchema } from "@sinclair/typebox"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { CliEnvelope, CapabilityContractError, SpaceControlUnavailable, StableErrorCode } from "./cli-schema"
+import {
+  CliEnvelope,
+  CapabilityContractError,
+  SpaceControlUnavailable,
+  StableErrorCode,
+  type CliEnvelopeError,
+  type CliEnvelopeSuccess,
+} from "./cli-schema"
 
 const defaultTimeout = 15_000
 
@@ -15,7 +24,7 @@ export interface Interface {
     executablePath: string,
     args: string[],
     expectedCapability: string,
-    dataSchema: Schema.Schema<T>,
+    dataSchema: TSchema,
     opts?: { timeout?: number },
   ) => Effect.Effect<T, SpaceControlUnavailable | CapabilityContractError>
 }
@@ -33,7 +42,7 @@ const make = Effect.gen(function* () {
     executablePath: string,
     args: string[],
     expectedCapability: string,
-    dataSchema: Schema.Schema<T>,
+    dataSchema: TSchema,
     opts?: { timeout?: number },
   ): Effect.Effect<T, SpaceControlUnavailable | CapabilityContractError> =>
     // Effect.suspend defers the spawner.spawn call; the spawner is captured from
@@ -130,16 +139,20 @@ const parseEnvelope = Effect.fnUntraced(function* (
     )
   }
 
-  const envelope = yield* Schema.decodeUnknownEffect(CliEnvelope)(raw).pipe(
-    Effect.catch((cause) =>
-      Effect.fail(
-        new SpaceControlUnavailable({
-          message: "CLI stdout does not match capability envelope",
-          reason: String(cause),
-        }),
-      ),
-    ),
-  )
+  if (!Value.Check(CliEnvelope, raw)) {
+    const detail = [...Value.Errors(CliEnvelope, raw)]
+      .slice(0, 3)
+      .map((e) => `${e.path}: ${e.message}`)
+      .join("; ")
+    return yield* Effect.fail(
+      new SpaceControlUnavailable({
+        message: "CLI stdout does not match capability envelope",
+        reason: detail || "unknown shape",
+      }),
+    )
+  }
+
+  const envelope = raw as CliEnvelopeSuccess | CliEnvelopeError
 
   if (envelope.capability !== expectedCapability) {
     return yield* Effect.fail(
@@ -156,28 +169,26 @@ const parseEnvelope = Effect.fnUntraced(function* (
 
 const decodeData = Effect.fnUntraced(function* <T>(
   data: unknown,
-  dataSchema: Schema.Schema<T>,
+  dataSchema: TSchema,
   expectedCapability: string,
 ) {
-  return yield* Schema.decodeUnknownEffect(dataSchema)(data).pipe(
-    Effect.catch((cause) =>
-      Effect.fail(
-        new CapabilityContractError({
-          message: `Capability data schema mismatch for ${expectedCapability}`,
-          capability: expectedCapability,
-          detail: String(cause),
-        }),
-      ),
-    ),
-  )
+  if (!Value.Check(dataSchema, data)) {
+    const detail = [...Value.Errors(dataSchema, data)]
+      .slice(0, 3)
+      .map((e) => `${e.path}: ${e.message}`)
+      .join("; ")
+    return yield* Effect.fail(
+      new CapabilityContractError({
+        message: `Capability data schema mismatch for ${expectedCapability}`,
+        capability: expectedCapability,
+        detail: detail || "unknown shape",
+      }),
+    )
+  }
+  return data as T
 })
 
-const mapError = Effect.fnUntraced(function* (envelope: {
-  apiVersion: string
-  capability: string
-  ok: false
-  error: { code: string; message: string; suggestion?: string }
-}) {
+const mapError = Effect.fnUntraced(function* (envelope: CliEnvelopeError) {
   const code = envelope.error.code
   const isKnown = Schema.is(StableErrorCode)(code)
 

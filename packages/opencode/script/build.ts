@@ -15,6 +15,17 @@ const p1Flag = process.argv.includes("--p1")
 
 process.chdir(dir)
 
+// Read the effective minimum wopal-cli version from .ci/versions.json.
+// Build scripts (scripts/build.sh / dev.sh) normally export
+// MIN_WOPAL_CLI_VERSION already; this is the fallback for direct invocations.
+function readMinWopalCliVersion(): string {
+  try {
+    const versions = JSON.parse(fs.readFileSync(path.resolve(dir, "../../.ci/versions.json"), "utf8"))
+    if (typeof versions.minWopalCli === "string" && versions.minWopalCli) return versions.minWopalCli
+  } catch {}
+  return "0.3.13"
+}
+
 const generated = await import("./generate.ts")
 
 import { Script } from "@opencode-ai/script"
@@ -236,6 +247,10 @@ for (const item of buildTargets) {
       OPENCODE_WORKER_PATH: workerPath,
       OPENCODE_CHANNEL: `'${Script.channel}'`,
       OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
+      // Inline the effective minimum wopal-cli version (exported by
+      // scripts/build.sh via scripts/lib/version.sh; fall back to
+      // .ci/versions.json when unset) so the CLI enforces the protocol floor.
+      "process.env.MIN_WOPAL_CLI_VERSION": `'${process.env.MIN_WOPAL_CLI_VERSION || readMinWopalCliVersion()}'`,
     },
   })
 

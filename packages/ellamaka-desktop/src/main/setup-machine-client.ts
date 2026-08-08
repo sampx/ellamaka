@@ -2,9 +2,9 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import semver from "semver"
 import type { OnboardingStepResult } from "../preload/types"
 import { terminateChildProcessTree } from "./child-process-lifecycle"
+import { checkWopalCliVersion, checkEngineMajorMinor } from "./version-check"
 
 export interface RunSetupOperationOptions {
   binaryPath: string
@@ -105,16 +105,14 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
       const versionResult = spawnSync(command, ["--version"])
       if (versionResult.stdout) {
         const actual = versionResult.stdout.toString().trim().replace(/^v/, "")
-        const minVersion = process.env.MIN_WOPAL_CLI_VERSION || "0.3.4"
-        const normalizedActual = semver.valid(actual) || semver.valid(semver.coerce(actual)?.version || "")
-        const normalizedMin = semver.valid(minVersion) || semver.valid(semver.coerce(minVersion)?.version || "")
-
-        if (normalizedActual && normalizedMin && semver.lt(normalizedActual, normalizedMin)) {
+        const minVersion = import.meta.env.MIN_WOPAL_CLI_VERSION || "0.3.13"
+        const check = checkWopalCliVersion(actual, minVersion)
+        if (!check.ok) {
           return {
             status: "failed",
             error: {
               code: "WOPAL_CLI_INCOMPATIBLE",
-              message: `Wopal CLI version too low (${actual}). Minimum required is ${minVersion}.`,
+              message: check.reason,
             },
           }
         }
@@ -334,9 +332,34 @@ export async function runSetupOperation(options: RunSetupOperationOptions): Prom
           }
 
           // Business result is envelope.data.result (not envelope.data)
+          const result = (envelope.data.result ?? {}) as Record<string, unknown>
+
+          // Engine major.minor gate: after a successful install-engine, the
+          // installed ellamaka CLI must share the Desktop's major.minor
+          // (patch/prerelease ignored). The desktop version comes from the
+          // injected OPENCODE_VERSION (build-time constant) or the process
+          // env; when neither is available the check is skipped.
+          if (operation === "install-engine" && (desktopStatus === "completed" || desktopStatus === "reused")) {
+            const engineVersion = typeof result.version === "string" ? result.version : undefined
+            const desktopVersion = import.meta.env.OPENCODE_VERSION || process.env.OPENCODE_VERSION
+            if (engineVersion && desktopVersion) {
+              const engineCheck = checkEngineMajorMinor(desktopVersion, engineVersion)
+              if (!engineCheck.ok) {
+                return resolve({
+                  status: "failed",
+                  error: {
+                    code: "ENGINE_VERSION_MISMATCH",
+                    message: engineCheck.reason,
+                    suggestion: "请卸载并重新安装 Ellamaka 引擎，确保其主版本与当前 Desktop 一致。",
+                  },
+                })
+              }
+            }
+          }
+
           return resolve({
             status: desktopStatus as OnboardingStepResult["status"],
-            result: (envelope.data.result ?? {}) as Record<string, unknown>,
+            result,
           })
         }
         if (envelope.ok === false && envelope.error) {

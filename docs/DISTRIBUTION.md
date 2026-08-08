@@ -290,6 +290,15 @@ Contract：
 6. release build 的 channel 对外固定为 `latest`（`packages/ellamaka/branding.ts:CHANNEL_RELEASE`）；本地开发 channel 保持 `main`（`CHANNEL_DEV`）。
 7. release workflow 的发布目标为 R2 + GitHub Release（markdown）+ Gitee Release（markdown）。
 
+#### 5.1 Schema 契约单一真相源
+
+ellamaka 的 Wopal 集成模块（`packages/opencode/src/wopal/`）通过 npm 依赖消费共享契约包 `@wopal/cli-capability-schema`（`^` 下界，如 `^0.3.13`），不再维护手写 Schema 副本。npm `^` 语义即最低版本语义：编译期类型、运行时最低版本检查、发布门禁三环节复用同一声明。
+
+- 数据 schema（`spaceListSchema`/`spaceProjectsListSchema`/`spaceSearchSchema`/`skillsListSchema`）从共享包导入，运行时用 `Value.Check`/`Value.Errors` 验证。
+- `CliEnvelope`（稳定协议层）保留本地 TypeBox 定义；运行时错误类（`CapabilityContractError`/`SpaceControlUnavailable`/`StableErrorCode`）保留 Effect。
+- `MIN_WOPAL_CLI_VERSION` 构建注入：`.ci/versions.json` 的 `minWopalCli` 构建时自动跟随依赖下界（`scripts/lib/version.sh` 的 `resolve_min_wopal_cli_version` 取依赖下界与配置的更高者），可手动覆盖（提前声明）。`build.sh`/`dev.sh`/`build-node.ts`/`build.ts`/`electron.vite.config.ts` 统一注入。
+- 开发联调用 `bun link` 本地 schema 包（不修改 package.json），发布前 `bun unlink` 切回 npm 包。
+
 ---
 
 ## 6. Install Contract
@@ -514,9 +523,17 @@ fetch Desktop manifest
   → validate ReleaseIdentity/product/channel/build
   → standard SemVer compare
   → authorize expected version
+  → runtime version checks (wopal-cli floor + engine major.minor)
   → electron-updater check/download/install
   → require updateInfo.version === expected version
 ```
+
+更新事务在 policy 授权通过后、下载前执行运行时版本检查（`authorizeVersionChecks`，见 `src/main/version-check.ts`）：
+
+1. 本机 wopal-cli 必须 `>= MIN_WOPAL_CLI_VERSION`（协议兼容域下界，构建注入，见 §5）。
+2. 本机 ellamaka CLI 主版本 `vX.Y` 必须与目标 Desktop 主版本一致（同一引擎两种形态，`major.minor` 相等即匹配）。
+
+任一检查不满足 → 拒绝更新并提示（先升级 wopal-cli / 重装 engine 后重试），不静默放行。本机 wopal-cli / ellamaka CLI 版本无法探测时跳过对应检查并记日志，不阻塞更新。本 Plan 只做检查与拒绝/提示，不自动升级 wopal-cli（自动升级复用 onboarding 的 `installWopalCli`）。
 
 `src/main/updater.ts` 当前的 electron-updater 参数需要在迁移中收敛：
 

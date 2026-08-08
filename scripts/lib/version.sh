@@ -47,6 +47,53 @@ function resolve_build_version() {
   fi
 }
 
+# resolve_min_wopal_cli_version [project_root]
+#
+# Resolves the effective MIN_WOPAL_CLI_VERSION for build/dev injection:
+# the higher of
+#   1. the @wopal/cli-capability-schema dependency floor in
+#      packages/opencode/package.json (the "^0.3.13" lower bound), and
+#   2. the minWopalCli value in .ci/versions.json (manual override that may
+#      declare a higher floor ahead of a release).
+# Prints the resolved version (or "0.0.0" when neither source is readable).
+function resolve_min_wopal_cli_version() {
+  local project_root="${1:-$PROJECT_ROOT}"
+  local dep_floor="" config_floor=""
+  local pkg_json="$project_root/packages/opencode/package.json"
+  local versions_json="$project_root/.ci/versions.json"
+
+  if [[ -f "$pkg_json" ]]; then
+    dep_floor=$(node -e "
+      const pkg = require(process.argv[1])
+      const range = pkg.dependencies && pkg.dependencies['@wopal/cli-capability-schema']
+      if (!range) process.exit(0)
+      const m = String(range).match(/(\d+)\.(\d+)\.(\d+)/)
+      console.log(m ? m[1] + '.' + m[2] + '.' + m[3] : '')
+    " "$pkg_json" 2>/dev/null || true)
+  fi
+
+  if [[ -f "$versions_json" ]]; then
+    config_floor=$(node -e "
+      const v = require(process.argv[1])
+      console.log(typeof v.minWopalCli === 'string' ? v.minWopalCli : '')
+    " "$versions_json" 2>/dev/null || true)
+  fi
+
+  node -e "
+    const a = process.argv[1], b = process.argv[2]
+    const norm = (s) => {
+      const m = String(s).match(/(\d+)\.(\d+)\.(\d+)/)
+      return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+    }
+    const na = norm(a), nb = norm(b)
+    if (!na && !nb) { console.log('0.0.0'); process.exit(0) }
+    if (!na) { console.log(b); process.exit(0) }
+    if (!nb) { console.log(a); process.exit(0) }
+    const cmp = na[0]-nb[0] || na[1]-nb[1] || na[2]-nb[2]
+    console.log(cmp >= 0 ? a : b)
+  " "$dep_floor" "$config_floor"
+}
+
 # suggest_release_version <product> <channel> [project_root]
 #
 # Suggests the next release version (no timestamp) for tag-release:

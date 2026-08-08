@@ -5,7 +5,14 @@ import { Context, Duration, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Global } from "@opencode-ai/core/global"
-export const MIN_WOPAL_CLI_VERSION = process.env.MIN_WOPAL_CLI_VERSION || "0.3.4"
+// Effective minimum wopal-cli version. Build scripts
+// (scripts/lib/version.sh resolve_min_wopal_cli_version) inject
+// MIN_WOPAL_CLI_VERSION from .ci/versions.json (auto-following the
+// @wopal/cli-capability-schema dependency floor) via bun define, replacing
+// the process.env read at build time. The static fallback below only
+// applies when running from source without a build; keep it in sync with
+// .ci/versions.json.
+export const MIN_WOPAL_CLI_VERSION = process.env.MIN_WOPAL_CLI_VERSION || "0.3.13"
 
 export const CliHealthSchema = Schema.Struct({
   state: Schema.Union([
