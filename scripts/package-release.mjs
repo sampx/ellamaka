@@ -59,7 +59,6 @@ export function parseArgs(argv) {
       baseUrl: flags.baseUrl || "https://download.coursedao.com/ellamaka",
       build: flags.build,
       releaseContextPath: flags.releaseContextPath,
-      engineApi: flags.engineApi,
     },
   }
 }
@@ -151,7 +150,6 @@ export function buildManifest({
   baseUrl,
   build,
   releaseContextPath,
-  engineApi,
 }) {
   if (releaseContextPath) {
     const ctx = JSON.parse(fs.readFileSync(releaseContextPath, "utf8"))
@@ -172,7 +170,6 @@ export function buildManifest({
         upstream: ctx.upstream,
         build: ctx.build,
       },
-      ...(engineApi ? { capabilities: { engineApi } } : {}),
       artifacts,
       checksumsUrl,
     }
@@ -257,7 +254,6 @@ export function manifestCommand(flags) {
     baseUrl,
     build: flags.build,
     releaseContextPath: flags.releaseContextPath,
-    engineApi: flags.engineApi,
   })
   const checksumLines = artifacts.map((artifact) => `${artifact.sha256}  ${artifact.name}`)
 

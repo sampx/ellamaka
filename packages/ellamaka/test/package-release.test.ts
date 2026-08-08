@@ -292,7 +292,6 @@ describe("package-release.mjs", () => {
       outputDir,
       tag: "ellamaka-cli-v1.17.1",
       releaseContextPath: ctxPath,
-      engineApi: "1.2.0",
     })
 
     expect(manifest.manifestSchemaVersion).toBe(2)
@@ -302,7 +301,6 @@ describe("package-release.mjs", () => {
     expect(manifest.releaseIdentity.product).toBe("ellamaka-cli")
     expect(manifest.releaseIdentity.version).toBe("1.17.1")
     expect(manifest.releaseIdentity.build.sourceTag).toBe("ellamaka-cli-v1.17.1")
-    expect(manifest.capabilities.engineApi).toBe("1.2.0")
     // Top-level version must equal releaseIdentity.version
     expect(manifest.version).toBe(manifest.releaseIdentity.version)
   })
@@ -332,13 +330,11 @@ describe("package-release.mjs", () => {
       archivesDir: fixturesDir,
       outputDir,
       releaseContextPath: ctxPath,
-      engineApi: "1.2.0",
     })
 
     expect(manifest.manifestSchemaVersion).toBe(2)
     expect(manifest.version).toBe("1.17.1")
     expect(manifest.releaseIdentity.version).toBe("1.17.1")
-    expect(manifest.capabilities.engineApi).toBe("1.2.0")
     // Versioned artifact URLs use v<version> paths per §9.
     for (const artifact of manifest.artifacts) {
       expect(artifact.url).toContain("/v1.17.1/")

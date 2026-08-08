@@ -488,18 +488,17 @@ Onboarding 过程中若 Desktop 意外退出，下次启动从保存的 UI 状�
 - 状态、阶段、IPC 与组件规范：`DESKTOP-ONBOARDING.md`（本目录）
 - Machine capability 契约：`../../wopal-cli/docs/CAPABILITY-PROTOCOL.md`
 
-### 17.7 启动时版本兼容检查### 17.7 启动时版本兼容检查
+### 17.7 启动时版本兼容检查
 
-Workbench 模式下，Desktop 在 sidecar 启动前执行版本兼容检查。检查基于 Desktop manifest 内嵌的 ReleaseIdentity、`requirements.externalCli`、`requirements.wopalCli` 与本地实际组件 identity。
+Workbench 模式下，Desktop 在 sidecar 启动前执行版本兼容检查。检查基于 Desktop manifest 内嵌的 ReleaseIdentity 与本地实际组件 identity。
 
 Desktop 自身在 `resources/release-identity.json` 中内嵌相同的 ReleaseIdentity（由 `scripts/prebuild.ts` 生成，不进入版本控制）。Main 启动时通过 `validateEmbeddedIdentity` 校验其 product/version/channel 与当前 app package metadata 一致，再用于 updater、兼容门禁和诊断。
 
 **检查流程**：
 
 1. 执行 `ellamaka debug release-info --json --api-version 1` 读取 binary 内嵌 identity，并将 product/version/build identity 与安装收据、目标 manifest 交叉校验；`ellamaka --version` 只作轻量 SemVer 探测。
-2. v1 要求外部 CLI 的 `releaseIdentity.upstream.version` 与 Desktop `requirements.externalCli.upstreamBaseline` 完整相等。
-3. 要求外部 CLI `capabilities.engineApi` 满足 Desktop 声明的 SemVer range；不要求 Desktop 与 CLI 产品版本相同。
-4. Wopal CLI 版本满足 `requirements.wopalCli` SemVer range。
+2. 本机 wopal-cli 必须 `>= MIN_WOPAL_CLI_VERSION`（协议兼容域下界，构建注入）。
+3. 本机 ellamaka CLI 主版本 `vX.Y` 必须与 Desktop 一致（`major.minor` 相等即匹配，patch/prerelease 差异兼容）。
 
 **失败处理**：
 
@@ -508,4 +507,4 @@ Desktop 自身在 `resources/release-identity.json` 中内嵌相同的 ReleaseId
 | 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 onboarding，并调用 `install-engine` 读取、校验并安装 CLI stable latest；仍不兼容则提示更新 Desktop 或稍后重试 |
 | 阻断（Wopal CLI 版本过低） | onboarding 调用第一方 installer 的 install-only 模式，完成后重新 inspect                                                            |
 
-**与自动更新的协作**：Desktop 先校验 manifest ReleaseIdentity 并使用标准 SemVer 授权同 channel 更新，electron-updater 负责下载和安装。新版本首次启动时，在 sidecar 前按 compatibility requirements 准备外部 CLI，然后进入 Workbench。
+**与自动更新的协作**：Desktop 先校验 manifest ReleaseIdentity 并使用标准 SemVer 授权同 channel 更新，electron-updater 负责下载和安装。新版本首次启动时，在 sidecar 前按运行时版本检查准备外部 CLI，然后进入 Workbench。

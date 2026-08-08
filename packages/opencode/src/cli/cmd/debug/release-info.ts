@@ -2,10 +2,9 @@
 //
 // `ellamaka debug release-info --json --api-version 1`
 //
-// Read-only machine interface that outputs the embedded ReleaseIdentity and
-// engine API capability as a single JSON envelope on stdout. Does not access
-// the network, does not read install receipts. Per
-// docs/DISTRIBUTION.md §5.4.
+// Read-only machine interface that outputs the embedded ReleaseIdentity as a
+// single JSON envelope on stdout. Does not access the network, does not read
+// install receipts. Per docs/DISTRIBUTION.md §5.4.
 //
 // The identity is embedded at build time via the OPENCODE_RELEASE_IDENTITY
 // define (a JSON string). Development builds produce a development identity
@@ -15,16 +14,12 @@ import { cmd } from "../cmd"
 import { parseReleaseIdentity, ReleaseIdentityError } from "@/release/identity"
 
 // OPENCODE_VERSION / OPENCODE_CHANNEL are declared globally by
-// packages/core/src/installation/version.ts. OPENCODE_RELEASE_IDENTITY and
-// OPENCODE_ENGINE_API are declared by packages/opencode/src/release/identity.ts.
-
-const ENGINE_API: string | undefined =
-  typeof OPENCODE_ENGINE_API === "string" ? OPENCODE_ENGINE_API : undefined
+// packages/core/src/installation/version.ts. OPENCODE_RELEASE_IDENTITY is
+// declared by packages/opencode/src/release/identity.ts.
 
 export type ReleaseInfoEnvelope = {
   apiVersion: 1
   releaseIdentity: unknown
-  capabilities: { engineApi?: string }
 }
 
 export type ReleaseInfoErrorEnvelope = {
@@ -87,7 +82,6 @@ function readEmbeddedIdentity(): unknown {
  */
 export function buildReleaseInfoEnvelope(opts: {
   identity: unknown
-  engineApi?: string
 }): ReleaseInfoEnvelope {
   let identity = opts.identity
   if (!identity) {
@@ -114,13 +108,12 @@ export function buildReleaseInfoEnvelope(opts: {
   return {
     apiVersion: 1,
     releaseIdentity: parsed,
-    capabilities: { ...(opts.engineApi ? { engineApi: opts.engineApi } : {}) },
   }
 }
 
 export const ReleaseInfoCommand = cmd({
   command: "release-info",
-  describe: "output structured release identity and engine API as JSON (machine interface)",
+  describe: "output structured release identity as JSON (machine interface)",
   builder: (yargs) =>
     yargs
       .option("json", { type: "boolean", description: "output JSON envelope (required)", demandOption: true })
@@ -138,7 +131,7 @@ export const ReleaseInfoCommand = cmd({
 
     try {
       const identity = readEmbeddedIdentity()
-      const envelope = buildReleaseInfoEnvelope({ identity, engineApi: ENGINE_API })
+      const envelope = buildReleaseInfoEnvelope({ identity })
       void apiVersion
       process.stdout.write(JSON.stringify(envelope) + "\n")
     } catch (err) {

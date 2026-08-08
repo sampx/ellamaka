@@ -48,22 +48,19 @@ describe("release-info: api-version parsing", () => {
 })
 
 describe("release-info: envelope builder", () => {
-  test("builds envelope from release identity with engineApi capability", () => {
+  test("builds envelope from release identity", () => {
     const envelope = buildReleaseInfoEnvelope({
       identity: validReleaseIdentity(),
-      engineApi: "1.2.0",
     })
     expect(envelope.apiVersion).toBe(1)
     const ri = envelope.releaseIdentity as { kind: string; product: string }
     expect(ri.kind).toBe("release")
     expect(ri.product).toBe("ellamaka-cli")
-    expect(envelope.capabilities.engineApi).toBe("1.2.0")
   })
 
   test("builds envelope from development identity", () => {
     const envelope = buildReleaseInfoEnvelope({
       identity: validDevIdentity(),
-      engineApi: "1.2.0",
     })
     const ri = envelope.releaseIdentity as { kind: string; channel: string; build: { sourceTag?: string } }
     expect(ri.kind).toBe("development")
@@ -73,25 +70,24 @@ describe("release-info: envelope builder", () => {
 
   test("rejects identity with wrong product for CLI command", () => {
     const bad = { ...validReleaseIdentity(), product: "ellamaka-desktop" }
-    expect(() => buildReleaseInfoEnvelope({ identity: bad, engineApi: "1.2.0" })).toThrow(/product/)
+    expect(() => buildReleaseInfoEnvelope({ identity: bad })).toThrow(/product/)
   })
 
   test("rejects corrupt identity (missing required field)", () => {
     const bad = { ...validReleaseIdentity(), build: { ...validReleaseIdentity().build, sourceTag: undefined } }
-    expect(() => buildReleaseInfoEnvelope({ identity: bad, engineApi: "1.2.0" })).toThrow(/sourceTag/)
+    expect(() => buildReleaseInfoEnvelope({ identity: bad })).toThrow(/sourceTag/)
   })
 
   test("envelope is pure JSON (no non-serializable fields)", () => {
     const envelope = buildReleaseInfoEnvelope({
       identity: validReleaseIdentity(),
-      engineApi: "1.2.0",
     })
     const json = JSON.stringify(envelope)
     expect(JSON.parse(json)).toEqual(envelope)
   })
 
   test("missing identity (local build with no embedded context) returns development fallback", () => {
-    const envelope = buildReleaseInfoEnvelope({ identity: null, engineApi: "1.2.0" })
+    const envelope = buildReleaseInfoEnvelope({ identity: null })
     const ri = envelope.releaseIdentity as { kind: string; channel: string; version: string }
     expect(ri.kind).toBe("development")
     expect(ri.channel).toBe("local")

@@ -178,14 +178,6 @@ export function validateUpstreamLock(lock) {
   if (!COMMIT_RE.test(src.gitCommit)) {
     fail("ECOMMIT", `upstream gitCommit ${src.gitCommit} is not a 40-char SHA`)
   }
-  for (const [key, entry] of Object.entries(lock.componentBaselines || {})) {
-    if (!SEMVER_RE.test(entry.version)) {
-      fail("EVERSION", `component ${key} version ${entry.version} is not stable SemVer`)
-    }
-    if (!COMMIT_RE.test(entry.gitCommit)) {
-      fail("ECOMMIT", `component ${key} gitCommit ${entry.gitCommit} is not a 40-char SHA`)
-    }
-  }
   return lock
 }
 

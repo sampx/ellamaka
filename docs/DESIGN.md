@@ -83,7 +83,7 @@ WopalSpace 模式下配置加载优先级（低→高）：
 
 ## 6. Distribution
 
-Ellamaka CLI 构建为多平台 standalone binary，Desktop 构建为原生安装包。两者分别使用标准 SemVer、namespaced tag、workflow 和 latest feed。Desktop manifest 声明 upstream baseline、engine API range 与 Wopal CLI requirement；Wopal 读取 CLI stable latest 并验证 requirements，把两个独立制品组合为完整产品。`wopal ellamaka install` 默认安装完整产品，`--cli` 只安装外部 CLI。
+Ellamaka CLI 构建为多平台 standalone binary，Desktop 构建为原生安装包。两者分别使用标准 SemVer、namespaced tag、workflow 和 latest feed。Desktop 与 CLI 是同一产品的两种形态，运行时版本保证为 wopal-cli `>= MIN_WOPAL_CLI_VERSION` 与 CLI 主版本 `vX.Y` 与 Desktop 一致。`wopal ellamaka install` 默认安装完整产品，`--cli` 只安装外部 CLI。
 
 构建入口：CI 中 `publish-ellamaka.yml` 直接调用 `packages/opencode/script/build.ts --p1` 并注入 env；本地开发使用 `packages/ellamaka/build.ts` 包装脚本。
 

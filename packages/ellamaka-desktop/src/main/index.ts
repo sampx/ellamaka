@@ -40,9 +40,6 @@ import { getReleaseInfo } from "./release-info"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { resolveOnboardingMode, probeWopalHomeFromShell } from "./onboarding-gate"
 import { getOnboardingLogger } from "./onboarding-logger"
-// version-compat gate is exercised by the updater policy path (B-04):
-// updater.ts calls authorizeUpdate; version-compat's checkVersionCompatibility
-// is the shared CLI/Desktop compatibility validator used by the coordinator.
 import { Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {

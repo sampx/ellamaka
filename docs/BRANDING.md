@@ -417,7 +417,7 @@ WopalSpace 模式下，`<spaceRoot>/.wopal/skills/` 的同名技能显式优先�
 
 ### 目的
 
-Ellamaka 通过 wopal-cli 分发安装。`wopal ellamaka install` 默认安装 Desktop latest 与 CLI stable latest，并在落盘前验证 Desktop requirements；`--cli` 只安装 CLI stable latest。制品使用自有 CDN，不依赖 OpenCode 的 GitHub/npm/brew 更新通道。
+Ellamaka 通过 wopal-cli 分发安装。`wopal ellamaka install` 默认安装 Desktop latest 与 CLI stable latest；`--cli` 只安装 CLI stable latest。制品使用自有 CDN，不依赖 OpenCode 的 GitHub/npm/brew 更新通道。
 
 ### 9.1 安装方法
 
@@ -436,7 +436,7 @@ TUI 启动后 1 秒触发 `checkUpgrade()` → `upgrade()`，流程如下：
    - `"notify"` → 仅通知，不自动安装
    - `true` 或未配置 → 启用（patch 版本自动安装，minor/major 仅通知）
 2. **版本查询**：cli-only 自更新和完整产品安装都读取 `https://download.coursedao.com/ellamaka/latest/manifest.json`
-3. **身份校验与版本比对**：校验 product/channel/ReleaseIdentity；完整安装额外校验 Desktop requirements，再用标准 SemVer 对比当前 CLI 产品版本与 latest 版本
+3. **身份校验与版本比对**：校验 product/channel/ReleaseIdentity；完整安装额外执行运行时版本检查（wopal-cli 下界 + CLI 主版本与 Desktop 一致），再用标准 SemVer 对比当前 CLI 产品版本与 latest 版本
 4. **通知/升级**：
    - 版本相同 → 跳过
    - minor/major 版本 → 通过 Bus 事件通知 UI 显示更新提示，不自动安装
@@ -459,7 +459,6 @@ TUI 启动后 1 秒触发 `checkUpgrade()` → `upgrade()`，流程如下：
     "upstream": { "name": "opencode", "version": "1.18.10", "gitCommit": "..." },
     "build": { "sourceTag": "ellamaka-cli-v1.17.1", "gitCommit": "...", "builtAt": "...", "workflowRunId": "..." }
   },
-  "capabilities": { "engineApi": "1.2.0" },
   "artifacts": [
     { "name": "ellamaka-darwin-arm64.tar.gz", "os": "darwin", "arch": "arm64", "url": "...", "sha256": "..." }
   ],

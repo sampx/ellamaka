@@ -106,7 +106,7 @@ Desktop prod: X.Y.Z
 1. **产品版本独立**：CLI 与 Desktop 是两个独立发布单元，各自使用标准 SemVer 2.0、tag、workflow、latest feed 和 changelog。
 2. **上游不是产品版本**：OpenCode version/commit 是 provenance 与 v1 兼容基线，不参与 Ellamaka 产品版本排序。
 3. **兼容性不是版本相等**：Desktop 不锁定外部 CLI 的精确产品版本；安装器读取 CLI stable `latest` 并验证其满足 Desktop 兼容约束。
-4. **一个排序真相源**：发布顺序只比较 `releaseIdentity.version`。upstream、build date、Git hash、artifact hash 和 `testedWith` 都不参与排序。
+4. **一个排序真相源**：发布顺序只比较 `releaseIdentity.version`。upstream、build date、Git hash 和 artifact hash 都不参与排序。
 5. **提交后不可变**：有效 versioned manifest 是正式发布提交点；提交后同一个 `product + version` 只能对应一个 source tag、一个 Ellamaka commit 和一组固定 artifact hashes。
 6. **安全迁移**：新 manifest 在迁移期保留必要的顶层兼容字段；旧 `X.Y.Z-N` 只读不写。
 
@@ -199,7 +199,7 @@ CLI 发布流程（release job）：
 5. 直接更新 CLI stable latest（CLI 是独立产品，发布不受任何 Desktop 版本约束）并主动 purge CDN。
 6. 创建 4 个 markdown-only release 条目（GitHub/Gitee × `wopal-cn/ellamaka`/`wopal-cn/wopal-space-ontology`），不挂 binary；ontology 仓库使用独立索引 tag/body，不复用 Ellamaka 产品 tag namespace。
 
-Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb+rpm），发布前验证 CLI stable latest 满足自身 requirements；不满足时 fail closed。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
+Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb+rpm）。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
 
 **重试状态**：不存在 tag 且 versioned path 为空时可创建新 release；tag/partial objects 存在但没有有效 versioned manifest、latest/updater 或正式 Release 页面引用时，只有显式 `retry` 才能清理该 attempt 可证明 ownership 的对象，并允许从修复后的 commit 重建 tag、同版本重新 dispatch；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
 
@@ -230,9 +230,6 @@ Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest
       "builtAt": "2026-08-03T08:30:00Z",
       "workflowRunId": "123456789"
     }
-  },
-  "capabilities": {
-    "engineApi": "1.2.0"
   },
   "artifacts": [
     {
@@ -272,26 +269,6 @@ Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest
       "workflowRunId": "123456789"
     }
   },
-  "embeddedComponents": {
-    "sidecar": {
-      "gitCommit": "<40-char-ellamaka-commit>",
-      "engineApi": "1.2.0",
-      "upstreamBaseline": "1.18.10"
-    }
-  },
-  "requirements": {
-    "externalCli": {
-      "product": "ellamaka-cli",
-      "channel": "stable",
-      "engineApi": ">=1.2.0 <2.0.0",
-      "upstreamBaseline": "1.15.13",
-      "selection": "latest"
-    },
-    "wopalCli": ">=0.3.8"
-  },
-  "testedWith": {
-    "ellamakaCli": "1.17.1"
-  },
   "artifacts": []
 }
 ```
@@ -308,8 +285,6 @@ Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest
 | `build.sourceTag` | 触发发布的 namespaced tag | 否 |
 | `build.gitCommit` | workflow checkout commit | 否 |
 | `build.builtAt` | release context 生成时间 | 否 |
-| `capabilities.engineApi` | Engine API contract | 只用于兼容过滤 |
-| `testedWith` | release integration test | 否，不是安装 pin |
 | artifact `sha256` | 实际构建产物 | 否，只用于完整性 |
 
 顶层 `version` 是 `releaseIdentity.version` 的兼容别名，二者必须完全相等。`channel` 与 SemVer 必须一致：stable 不含 prerelease；Desktop beta 只接受 `-beta.N`。Desktop 内部 feed 名 `prod` 映射为 identity channel `stable`。
@@ -318,7 +293,7 @@ Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest
 
 manifest 只能证明远端 release，不能单独证明本机正在运行的 binary/app。release build 必须把同一个 release context 嵌入产物，并提供只读身份表面：
 
-- CLI 内嵌 ReleaseIdentity 与 `capabilities.engineApi`，通过 `ellamaka debug release-info --json --api-version 1` 输出 `{ releaseIdentity, capabilities }`。命令不访问网络、不读取安装收据；`ellamaka --version` 继续只输出产品 SemVer。
+- CLI 内嵌 ReleaseIdentity，通过 `ellamaka debug release-info --json --api-version 1` 输出 `{ releaseIdentity }`。命令不访问网络、不读取安装收据；`ellamaka --version` 继续只输出产品 SemVer。
 - Desktop package 在 resources 中内嵌 `release-identity.json`。Main 启动时验证其 product/version 与当前 app package version、channel/appId 一致，再用于 updater、兼容门禁和诊断。
 - `$WOPAL_HOME/ellamaka/state/ellamaka-install.json` 只缓存安装来源、artifact hash 和上次探测 identity。Wopal status/repair 必须以 binary machine identity + 实际 artifact/文件探测为准，不能仅信任收据。
 
@@ -333,24 +308,20 @@ consumer 必须先按 `kind` 选择 schema，再校验对应 required/forbidden 
 
 ## 6. Compatibility and Latest Consumption
 
-### 6.1 v1 Compatibility
+### 6.1 运行时版本保证
 
-完整产品安装固定读取当前 CLI stable latest（`https://download.coursedao.com/ellamaka/latest/manifest.json`），读取后必须同时满足：
+Desktop 与 CLI 是同一产品的两种形态，运行时对两种二进制分别做版本保证（`src/main/version-check.ts`，纯函数模块，updater 与 onboarding 共用）：
 
-1. `product === "ellamaka-cli"`。
-2. CLI channel 必须等于 `requirements.externalCli.channel`；Desktop stable 和 beta 默认都声明 `stable`。
-3. CLI `releaseIdentity.upstream.version` 与 Desktop `requirements.externalCli.upstreamBaseline` 的完整 `X.Y.Z` 相等。
-4. CLI `capabilities.engineApi` 满足 Desktop `requirements.externalCli.engineApi` SemVer range。
+| 对象 | 约束 | 语义 |
+| ---- | ---- | ---- |
+| wopal-cli | `>= MIN_WOPAL_CLI_VERSION` | 协议兼容域下界（构建注入，`.ci/versions.json` 自动跟随 `@wopal/cli-capability-schema` 依赖下界） |
+| ellamaka CLI（外部 engine） | 主版本 `vX.Y` 与 Desktop 一致 | 同一引擎两种形态，`major.minor` 相等即匹配（Desktop 2.0.1 与 CLI 2.0.3 匹配；Desktop 2.1.0 与 CLI 2.0.x 不匹配） |
 
-CLI latest 不满足全部要求时，安装必须以明确的 compatibility error 终止并建议刷新或重试；不得退回某个旧 versioned manifest、最近 baseline、`testedWith` 或低一档 engine API。
+检查时点为 onboarding 安装（setup 操作前检查 wopal-cli 下界；装完 engine 后检查主版本匹配）与 Desktop 更新（授权通过后、下载前）。两个时点都是"装之前看一眼，不够先补，补不上就停"，不做启动轮询。检查失败不静默放行：wopal-cli 过低 → 提示先升级；engine 主版本不匹配 → 提示重装 engine。版本无法探测时跳过对应检查并记日志，不阻塞流程。
 
-### 6.2 v2 Compatibility
+### 6.2 Current-Release Support Policy
 
-Ellamaka v2 不再要求 OpenCode baseline 相等。Desktop 从 `requirements.externalCli` 省略 `upstreamBaseline`，CLI latest 校验只保留 product、channel 和 engine API range；upstream 若存在，仅用于 provenance。
-
-### 6.3 Current-Release Support Policy
-
-自动安装只支持当前公开推荐组合：Desktop stable latest、Desktop beta latest（若已发布）和 CLI stable latest。版本化 manifest/artifact 继续保留用于审计、手动回滚和显式迁移，但不建立 release index，也不用于默认兼容版本搜索。发布系统保证：CLI stable latest 是独立发布面；Desktop 发布时其 requirements 必须与当前 CLI stable latest 兼容，不兼容时 fail closed；aliases 顺序更新产生的短暂不一致由 consumer fail-closed 并提示重试；较旧 Desktop 若已不符合当前 CLI latest，必须先更新 Desktop。
+自动安装只支持当前公开推荐组合：Desktop stable latest、Desktop beta latest（若已发布）和 CLI stable latest。版本化 manifest/artifact 继续保留用于审计、手动回滚和显式迁移，但不建立 release index，也不用于默认兼容版本搜索。发布系统保证：CLI stable latest 是独立发布面；aliases 顺序更新产生的短暂不一致由 consumer fail-closed 并提示重试；较旧 Desktop 若已不符合当前 CLI latest，必须先更新 Desktop。
 
 ### 6.4 Runtime Version Guarantees
 
@@ -505,8 +476,8 @@ ellamaka CLI 的分发渠道：主路径 `wopal ellamaka install` 完整安装�
 consumer（wopal-cli 或 Desktop）安装 ellamaka 时遵循以下契约：
 
 - 只从 R2 读取机器契约：cli-only 读取 CLI `latest/manifest.json`；完整产品读取 Desktop channel latest 与 CLI stable latest。
-- CLI-only 安装默认使用 Engine stable latest；完整产品安装和 onboarding 根据 Desktop requirements 校验同一个 CLI stable latest。
-- 修改本机前解析并验证完整安装计划；CLI latest 不兼容时明确失败并建议刷新或重试，不搜索历史版本或回退到 `testedWith`。
+- CLI-only 安装默认使用 Engine stable latest；完整产品安装和 onboarding 校验同一个 CLI stable latest。
+- 修改本机前解析并验证完整安装计划；CLI latest 不兼容时明确失败并建议刷新或重试，不搜索历史版本。
 - 根据平台和稳定 artifact naming 计算目标文件名，不依赖 GitHub API 解析 release 页面。
 - 安装目标固定为上述 binary path；放置前必须校验 SHA-256；安装后执行 `ellamaka --version` 作为健康验证。
 - `$WOPAL_HOME/bin/` 只保存 executable。artifact 收据写入 `$WOPAL_HOME/ellamaka/state/ellamaka-install.json`；旧 `.ellamaka.meta.json` 在成功安装时迁移并删除。
@@ -514,7 +485,7 @@ consumer（wopal-cli 或 Desktop）安装 ellamaka 时遵循以下契约：
 
 ### 9.2 Channel Consumption
 
-`wopal ellamaka install --beta` 安装 beta Desktop 与满足其 requirements 的 stable CLI。`--beta` 只影响 Desktop manifest 来源，不把 CLI 隐式切换到 prerelease channel。`--beta --cli` 是无意义的参数组合，必须返回 option conflict。CLI stable latest 永不包含 RC；RC 在独立 feed 落地前只存在于 versioned path；Desktop beta 也不会自动获得 CLI RC。
+`wopal ellamaka install --beta` 安装 beta Desktop 与 stable CLI。`--beta` 只影响 Desktop manifest 来源，不把 CLI 隐式切换到 prerelease channel。`--beta --cli` 是无意义的参数组合，必须返回 option conflict。CLI stable latest 永不包含 RC；RC 在独立 feed 落地前只存在于 versioned path；Desktop beta 也不会自动获得 CLI RC。
 
 ### 9.3 Runtime Handoff
 

@@ -265,7 +265,6 @@ export const DEV_CHANNELS_LIST = DEV_CHANNELS
 // packages/core/src/installation/version.ts.
 declare global {
   const OPENCODE_RELEASE_IDENTITY: string | undefined
-  const OPENCODE_ENGINE_API: string | undefined
 }
 
 export * as ReleaseIdentity from "./identity"

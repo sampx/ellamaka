@@ -208,8 +208,7 @@ jobs:
             --archives-dir dist \
             --output-dir release-output \
             --release-context-path release-context.json \
-            --base-url "$BASE_URL" \
-            --engine-api "1.2.0"
+            --base-url "$BASE_URL"
 
       - name: Upload binaries and metadata to Cloudflare R2
         run: |

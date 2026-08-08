@@ -141,8 +141,7 @@ jobs:
           node scripts/package-release.mjs manifest \
             --archives-dir dist \
             --output-dir release-output \
-            --release-context-path release-context.json \
-            --engine-api "1.2.0"
+            --release-context-path release-context.json
 
       - name: Upload binaries and metadata to Cloudflare R2
         if: needs.version.outputs.release != ''

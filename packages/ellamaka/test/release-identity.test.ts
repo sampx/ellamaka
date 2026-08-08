@@ -213,13 +213,11 @@ describe("release-identity: unknown kind", () => {
 })
 
 describe("release-identity: upstream lock", () => {
-  test("loads lock fixture with sources.opencode and componentBaselines", () => {
+  test("loads lock fixture with sources.opencode", () => {
     const lock = identity.loadUpstreamLock(join(fixturesDir, "upstream-lock", "valid.lock.json"))
     expect(lock.schemaVersion).toBe(1)
     expect(lock.sources.opencode.version).toBe("1.15.13")
     expect(lock.sources.opencode.gitCommit).toBe(COMMIT_40)
-    expect(lock.componentBaselines["packages/app"].version).toBe("1.15.13")
-    expect(lock.componentBaselines["packages/desktop"].gitCommit).toBe(COMMIT_40)
   })
 
   test("validates lock: all versions stable SemVer, commits 40-char SHA", () => {

@@ -3,13 +3,10 @@
 // Per docs/DISTRIBUTION.md §3.3, the upstream lock is never updated by
 // release workflows, inputs, or environment variables. Only this command,
 // invoked by an operator, resolves a target OpenCode tag's full commit and
-// writes it into the lock. Engine baseline updates and component baseline
-// updates use separate invocations — the latter never cascade from the
-// former.
+// writes it into the lock.
 //
 // Usage:
 //   node scripts/update-upstream-lock.mjs engine --version 1.18.10
-//   node scripts/update-upstream-lock.mjs component --path packages/app --version 1.15.13
 //
 // This script performs a real `git ls-remote` against the upstream repo to
 // resolve the tag commit. In dry-run mode (--dry-run) it only prints what
@@ -29,7 +26,6 @@ function usage() {
   process.stderr.write(
     `Usage:
   node scripts/update-upstream-lock.mjs engine --version <X.Y.Z> [--dry-run]
-  node scripts/update-upstream-lock.mjs component --path <packages/app|packages/desktop> --version <X.Y.Z> [--dry-run]
 `,
   )
   process.exit(2)
@@ -38,7 +34,7 @@ function usage() {
 function parseArgs(argv) {
   const args = argv.slice(2)
   const mode = args[0]
-  if (mode !== "engine" && mode !== "component") usage()
+  if (mode !== "engine") usage()
 
   const flags = {}
   for (let i = 1; i < args.length; i++) {
@@ -50,15 +46,10 @@ function parseArgs(argv) {
       flags.version = args[++i]
       continue
     }
-    if (args[i] === "--path") {
-      flags.path = args[++i]
-      continue
-    }
     usage()
   }
 
   if (!flags.version) usage()
-  if (mode === "component" && !flags.path) usage()
   return { mode, ...flags }
 }
 
@@ -89,26 +80,12 @@ function main() {
   const opts = parseArgs(process.argv)
   const lock = JSON.parse(fs.readFileSync(LOCK_PATH, "utf8"))
 
-  if (opts.mode === "engine") {
-    const commit = resolveUpstreamCommit(opts.version)
-    lock.sources.opencode.version = opts.version
-    lock.sources.opencode.gitCommit = commit
-    process.stdout.write(
-      `[engine] sources.opencode → version=${opts.version}, commit=${commit}\n`,
-    )
-  } else {
-    const entry = lock.componentBaselines[opts.path]
-    if (!entry) {
-      process.stderr.write(`component ${opts.path} not found in lock\n`)
-      process.exit(1)
-    }
-    const commit = resolveUpstreamCommit(opts.version)
-    entry.version = opts.version
-    entry.gitCommit = commit
-    process.stdout.write(
-      `[component] ${opts.path} → version=${opts.version}, commit=${commit}\n`,
-    )
-  }
+  const commit = resolveUpstreamCommit(opts.version)
+  lock.sources.opencode.version = opts.version
+  lock.sources.opencode.gitCommit = commit
+  process.stdout.write(
+    `[engine] sources.opencode → version=${opts.version}, commit=${commit}\n`,
+  )
 
   validateUpstreamLock(lock)
   if (opts.dryRun) {
