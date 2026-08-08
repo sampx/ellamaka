@@ -121,6 +121,20 @@ if [ -z "$SUBCOMMAND" ]; then
   exit 1
 fi
 
+# --- Locate repo ---
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WITHDRAWN_FILE="$REPO_ROOT/release/withdrawn-versions.json"
+LEGACY_INVENTORY_FILE="$REPO_ROOT/release/legacy-inventory.json"
+
+# --- Shared version resolution ---
+source "$REPO_ROOT/scripts/lib/version.sh"
+
+# --- Inject CLI Version ---
+if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then
+  export MIN_WOPAL_CLI_VERSION=$(jq -r .minWopalCli "$REPO_ROOT/.ci/versions.json")
+fi
+
 # Map subcommand
 case "$SUBCOMMAND" in
   cli)
@@ -183,20 +197,6 @@ esac
 HAVE_GH=false
 if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
   HAVE_GH=true
-fi
-
-# --- Locate repo ---
-SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-WITHDRAWN_FILE="$REPO_ROOT/release/withdrawn-versions.json"
-LEGACY_INVENTORY_FILE="$REPO_ROOT/release/legacy-inventory.json"
-
-# --- Shared version resolution ---
-source "$SCRIPT_DIR/lib/version.sh"
-
-# --- Inject CLI Version ---
-if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then
-  export MIN_WOPAL_CLI_VERSION=$(jq -r .minWopalCli "$REPO_ROOT/.ci/versions.json")
 fi
 
 # --- Repo guard ---
