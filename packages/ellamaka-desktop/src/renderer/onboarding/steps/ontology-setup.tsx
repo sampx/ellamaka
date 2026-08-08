@@ -187,6 +187,19 @@ export function OntologySetupStep(props: StepProps) {
       if (response.status === "completed" || response.status === "reused") {
         setGithubToken("")
         setIsEditingGithub(false)
+        // The save response carries the API verification result — surface it
+        // immediately (the follow-up probe is async) so the card flips to
+        // "@账号 已连接" without waiting for a second network round-trip.
+        if (response.result?.verified === true) {
+          const savedAccount = typeof response.result.account === "string" ? response.result.account : null
+          setGithubAuth((auth) => ({
+            ...auth,
+            detected: true,
+            account: savedAccount ?? auth.account,
+            ghCliAuthenticated: response.result?.loginGh === true ? true : auth.ghCliAuthenticated,
+          }))
+          setGithubError(null)
+        }
         await applyGithubProbe()
         restoreStepStatus()
       } else {
@@ -266,11 +279,19 @@ export function OntologySetupStep(props: StepProps) {
 
   return (
     <form id="onboarding-step-ontology-setup" class="ob-step-content ob-ontology-flow" onSubmit={handleSubmit}>
-      <Show when={isProbing()}>
-        <ProgressDisplay phase={probePhase()} />
+      <Show when={isProbing() || isSubmitting()}>
+        <ProgressDisplay
+          phase={
+            isSubmitting()
+              ? mode() === "fork"
+                ? "正在准备 Fork 仓库并配置空间能力与运行时…"
+                : "正在克隆能力本体并配置空间能力与运行时…"
+              : probePhase()
+          }
+        />
       </Show>
 
-      <Show when={!isProbing() && !resultInfo()}>
+      <Show when={!isProbing() && !isSubmitting() && !resultInfo()}>
         <div class={`ob-github-card ${githubAuth().detected ? "ready" : "required"}`}>
           <div class="ob-github-card-header">
             <span class="ob-github-card-icon">{githubAuth().detected ? "✓" : "GH"}</span>
@@ -319,7 +340,7 @@ export function OntologySetupStep(props: StepProps) {
                   setGithubError(null)
                 }}
               />
-              <p class="ob-field-help">Token 仅写入当前设备的 WopalSpace 本地配置，不会在界面中回显。</p>
+              <p class="ob-field-help">Token 仅写入当前设备的 WopalSpace 本地配置，不会在界面中回显。保存时将验证 Token 有效性；若已安装 gh CLI，会自动执行 gh auth login。</p>
               <Show when={githubError()}><p class="ob-field-error">{githubError()}</p></Show>
               <div class="ob-github-config-actions">
                 <Show when={githubAuth().detected}>

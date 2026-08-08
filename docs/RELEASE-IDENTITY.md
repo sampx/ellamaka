@@ -199,7 +199,7 @@ ReleaseIdentity 是显式判别联合：
   "schemaVersion": 2,
   "kind": "development",
   "product": "ellamaka-cli",
-  "version": "0.0.0-dev.385cb694",
+  "version": "2.0.2-dev",
   "channel": "local",
   "build": {
     "gitCommit": "<40-char-ellamaka-commit>",
@@ -307,7 +307,7 @@ ellamaka-desktop-v1.17.0-beta.1
 
 禁止再创建通用 `vX.Y.Z` Ellamaka tag，避免与 OpenCode 上游 tag 冲突。CLI 与 Desktop workflow 独立触发、独立 checkout tag、独立发布和回滚。可以提供一次协调触发两个 workflow 的命令，但它必须接收两个独立版本，不能重新引入共享版本身份。
 
-`tag-release` 只接收目标 product 和显式 Ellamaka product version，不接收 OpenCode baseline/revision，也不自动生成 `-N`。它必须在写入前校验：版本符合本文 SemVer 子集、version/channel 一致、目标 namespaced tag 和 versioned path 状态、目标版本未列入 `release/withdrawn-versions.json` 且高于该产品已发布的最高标准版本；第一批标准版本还必须高于 §12 的 migration floor。已提交 release 的 tag 永远不得删除或移动；无有效 versioned manifest、latest/updater 或正式 Release 页面引用的失败 attempt 可在证明 ownership 后受控清理并从修复 commit 重建 tag。OpenCode baseline 始终由 upstream lock 随最终 source commit 确定。
+`tag-release` 接收目标 product 和 Ellamaka product version。version 可省略：脚本按该产品既有 tag 自动建议下一版本（CLI/Desktop stable 升 patch；Desktop beta 序列进行中同 base 升 `-beta.N`、否则新 base 的 `-beta.1`），operator 交互确认或输入覆盖后使用；显式输入仍适用于 minor 等人工决策。它不接收 OpenCode baseline/revision，也不自动生成 `-N`。它必须在写入前校验：版本符合本文 SemVer 子集、version/channel 一致、目标 namespaced tag 和 versioned path 状态、目标版本未列入 `release/withdrawn-versions.json` 且高于该产品已发布的最高标准版本；第一批标准版本还必须高于 §12 的 migration floor。已提交 release 的 tag 永远不得删除或移动；无有效 versioned manifest、latest/updater 或正式 Release 页面引用的失败 attempt 可在证明 ownership 后受控清理并从修复 commit 重建 tag。OpenCode baseline 始终由 upstream lock 随最终 source commit 确定。
 
 重试状态固定如下：不存在 tag 且 versioned path 为空时可创建新 release；tag/partial objects 存在但没有有效 versioned manifest、latest/updater 或正式 Release 页面引用时，只有显式 `retry` 才能清理该 attempt 可证明 ownership 的对象，并允许从修复后的 commit 重建 tag、同版本重新 dispatch；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §9.2 整版 withdrawal，版本号永久作废，后续使用更高版本。
 

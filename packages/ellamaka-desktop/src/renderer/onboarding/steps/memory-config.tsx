@@ -11,6 +11,7 @@ import {
   createMemoryScopeDrafts,
   hasMemorySpaceTarget,
   refreshMemoryScopeDraftsAfterSave,
+  shouldAutoConfirmMemoryProbe,
   switchMemoryScopeDraft,
   type MemoryProbeResult,
   type MemoryFormState,
@@ -116,7 +117,7 @@ export function MemoryConfigStep(props: StepProps) {
         return
       }
       applyProbe(p)
-      if (p.globalMemory || p.spaceMemory || p.effectiveSpace) {
+      if (shouldAutoConfirmMemoryProbe(p)) {
         // Auto-confirm reuse: execute backend with current probed config to mark step done
         try {
           const form = getFormState()

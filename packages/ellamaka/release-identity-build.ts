@@ -48,7 +48,7 @@ export function buildReleaseIdentityForBuild(input: BuildIdentityInput): Identit
     schemaVersion: 2,
     kind: "development",
     product: "ellamaka-cli",
-    version: devVersion(input.version),
+    version: input.version,
     channel: devChannel,
   }
   const build: Record<string, unknown> = {}
@@ -58,11 +58,6 @@ export function buildReleaseIdentityForBuild(input: BuildIdentityInput): Identit
   build.builtAt = builtAt
   if (Object.keys(build).length > 0) identity.build = build
   return identity
-}
-
-function devVersion(version: string): string {
-  if (version.startsWith("0.0.0")) return version
-  return `0.0.0-dev.${version}`
 }
 
 // Inline readFileSync to avoid a top import that breaks when this module is

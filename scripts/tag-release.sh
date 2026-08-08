@@ -14,19 +14,22 @@ usage() {
   cat <<EOF
 $SCRIPT — 创建 namespaced product tag 并 dispatch publish workflow
 
-按 docs/RELEASE-IDENTITY.md §8，tag-release 只接收目标 product 和显式
-Ellamaka product version，创建 ellamaka-{cli,desktop}-vX.Y.Z 格式的
-namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
+按 docs/RELEASE-IDENTITY.md §8，tag-release 接收目标 product 和
+Ellamaka product version（可省略自动建议），创建 ellamaka-{cli,desktop}-vX.Y.Z
+格式的 namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
 触发独立 cleanup workflow（retention 清理历史 release）。
 
-版本号必须显式输入完整（无自动递增）：
+版本号可省略：省略时按产品 tag 自动建议下一版本（CLI/Desktop stable
+升 patch；Desktop beta 进行中升 N、否则新 base 的 -beta.1），交互
+确认或输入覆盖后发布。显式输入仍可用（如 minor/beta 决策）：
+
   cli:     仅接受 X.Y.Z（每次发布递增 patch/minor）
   desktop: X.Y.Z（prod）或 X.Y.Z-beta.N（beta）
 
 不支持：隐式 -N 自增、通用 vX.Y.Z tag、已提交 release 的 retag/覆盖。
 
 用法:
-  $SCRIPT <子命令> <version> [选项]
+  $SCRIPT <子命令> [version] [选项]
 
 ━━━ 子命令 ━━━
   cli        仅发布 CLI（dispatch publish-ellamaka）
@@ -34,7 +37,7 @@ namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
   all        双发：CLI + Desktop（需 --cli-version 和 --desktop-version）
 
 ━━━ 参数 ━━━
-  version    产品版本号（必填，cli/desktop 子命令）
+  version    产品版本号（可选；cli/desktop 子命令省略时自动建议并交互确认）
 
 ━━━ 选项 ━━━
   -h, --help            显示此帮助
@@ -52,11 +55,17 @@ namespaced tag，dispatch 对应 publish workflow，并在发布成功后自动
   5. 版本高于该产品 migration floor / 已发布最高标准版本
 
 ━━━ 示例 ━━━
-  # CLI 正式版
-  $SCRIPT cli 1.17.1
+  # CLI 正式版（省略版本 → 交互建议 next patch，如 2.0.2）
+  $SCRIPT cli
 
-  # Desktop beta
-  $SCRIPT desktop 1.17.0-beta.1 --channel beta
+  # CLI 正式版（显式 minor 决策）
+  $SCRIPT cli 2.1.0
+
+  # Desktop beta（省略版本 → 交互建议）
+  $SCRIPT desktop --channel beta
+
+  # Desktop beta（显式版本）
+  $SCRIPT desktop 1.17.0-beta.2 --channel beta
 
   # Desktop 正式版
   $SCRIPT desktop 1.16.2 --channel prod
@@ -139,7 +148,22 @@ if [ "$SUBCOMMAND" = "all" ]; then
   DESKTOP_VER_INPUT="$DESKTOP_VERSION"
 else
   VERSION="${ARGS[0]:-}"
-  [ -z "$VERSION" ] && die "缺少版本参数\n用法: $SCRIPT $SUBCOMMAND <version> [选项]\n试试: $SCRIPT --help"
+  if [ -z "$VERSION" ]; then
+    # Suggest next version from product tags and confirm interactively
+    if [ "$SUBCOMMAND" = "cli" ]; then
+      VERSION="$(suggest_release_version "ellamaka-cli" "stable" "$REPO_ROOT")"
+    else
+      VERSION="$(suggest_release_version "ellamaka-desktop" "$CHANNEL" "$REPO_ROOT")"
+    fi
+    [ -z "$VERSION" ] && die "无法自动建议版本号，请显式输入\n用法: $SCRIPT $SUBCOMMAND <version> [选项]"
+    echo ""
+    echo "→ 建议版本: $VERSION (按 Enter 确认，或输入其他版本号)"
+    read -r -p "  版本号: " answer
+    if [ -n "$answer" ]; then
+      VERSION="$answer"
+    fi
+    echo ""
+  fi
   if [ "$SUBCOMMAND" = "cli" ]; then
     CLI_VER_INPUT="$VERSION"
     DESKTOP_VER_INPUT=""
@@ -166,6 +190,9 @@ SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WITHDRAWN_FILE="$REPO_ROOT/release/withdrawn-versions.json"
 LEGACY_INVENTORY_FILE="$REPO_ROOT/release/legacy-inventory.json"
+
+# --- Shared version resolution ---
+source "$SCRIPT_DIR/lib/version.sh"
 
 # --- Inject CLI Version ---
 if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then

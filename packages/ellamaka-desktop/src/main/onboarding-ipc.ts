@@ -216,6 +216,22 @@ export async function verifyGithubTokenViaApi(token: string): Promise<{ account:
   }
 }
 
+export function loginGhWithToken(
+  token: string,
+  deps: {
+    spawnFn?: (command: string, args: string[], options: { input: string; stdio: string }) => { status: number | null }
+  } = {},
+): boolean {
+  try {
+    const spawnFn = deps.spawnFn ?? spawnSync
+    const res = spawnFn("gh", ["auth", "login", "--with-token"], { input: token, stdio: "pipe" })
+    return res.status === 0
+  } catch {
+    // gh login failure is not fatal — fork falls back to API-based auth.
+    return false
+  }
+}
+
 export async function probeGithubAuthentication(
   homePath?: string,
   deps: GithubAuthenticationProbeDeps = {},
@@ -713,7 +729,9 @@ export function buildMemoryOperationInput(input?: unknown, homePath?: string): R
     } catch {}
   }
 
-  if (payload.skip || payload.enabled === false || payload.spaceMode === "disabled") {
+  // Skip is handled at the memory-config case level (returns "skipped"
+  // without writing anything); it never reaches payload building.
+  if (payload.enabled === false || payload.spaceMode === "disabled") {
     result.enabled = false
     return result
   }
@@ -737,7 +755,7 @@ export function buildMemoryOperationInput(input?: unknown, homePath?: string): R
 }
 
 export type StepExecutor = (
-  step: OnboardingStepName | "inspect",
+  step: OnboardingStepName | "inspect" | "github-auth",
   input?: unknown,
   onProgress?: (progress: any) => void,
   abortSignal?: AbortSignal,
@@ -751,6 +769,11 @@ export interface OnboardingIpcDeps {
   // tests never rewrite the real user shell profile; production wiring injects
   // the real implementation (see main/ipc.ts).
   persistWopalHomeEnv?: (wopalHome: string) => { success: boolean; message?: string }
+  // GitHub auth step hooks. Defaults are used in production; tests inject
+  // stubs so the github-auth step never touches the network or gh CLI.
+  verifyGithubToken?: (token: string) => Promise<{ account: string | null; valid: boolean }>
+  probeGhCli?: () => GithubCliProbe
+  loginGhWithToken?: (token: string) => boolean
 }
 
 function noopPersistWopalHomeEnv(_wopalHome: string): { success: boolean; message?: string } {
@@ -913,12 +936,10 @@ switch (step as string) {
           deps.homePath = resolvedHome
           process.env.WOPAL_HOME = resolvedHome
           ;(deps.persistWopalHomeEnv ?? noopPersistWopalHomeEnv)(resolvedHome)
-          // Establish the inspect snapshot once the user confirms WOPAL_HOME.
-          // Every later step reads from this in-memory snapshot instead of
-          // re-running the (network-heavy) inspection.
-          if (!inspectSnapshot) {
-            await getInspection(resolvedHome)
-          }
+          // Always invalidate existing inspect snapshot and re-inspect for the confirmed WOPAL_HOME directory,
+          // ensuring later steps get fresh status for the newly selected path.
+          inspectSnapshot = null
+          await getInspection(resolvedHome)
           return performSystemCheck(resolvedHome)
         }
 
@@ -966,8 +987,9 @@ switch (step as string) {
             return res
           }
           if (subStep === "ellamaka") {
-            // Engine already installed per snapshot → reuse without re-download.
-            if (inspectSnapshot?.engineInstalled === true) {
+            const engineBinary = join(homePath, "bin", process.platform === "win32" ? "ellamaka.exe" : "ellamaka")
+            // Engine already installed per snapshot AND physical binary exists in target home → reuse without re-download.
+            if (inspectSnapshot?.engineInstalled === true && existsSync(engineBinary)) {
               return {
                 status: "reused",
                 result: { version: inspectSnapshot.engineVersion ?? undefined, upgraded: false },
@@ -1051,13 +1073,46 @@ switch (step as string) {
           if (!token) {
             return { status: "skipped" }
           }
-          return normalizeSetupResult(await runSetupOperation({
+
+          // Verify the token against the GitHub API before persisting it.
+          // An invalid token must not reach configure-github (no .env write).
+          const verify = deps.verifyGithubToken ?? verifyGithubTokenViaApi
+          const verification = await verify(token)
+          if (!verification.valid) {
+            return {
+              status: "failed",
+              error: { code: "GITHUB_TOKEN_INVALID", message: "GitHub Token 无效，请检查后重试。" },
+            }
+          }
+
+          // Auto-login gh when available so CLI-based fork operations work
+          // out of the box. Login failure is not fatal — the fork falls back
+          // to API auth via the token written to .env below.
+          const ghCli = deps.probeGhCli ? deps.probeGhCli() : probeGithubCli()
+          let loginGh = false
+          if (ghCli.installed) {
+            loginGh = (deps.loginGhWithToken ?? loginGhWithToken)(token)
+          }
+
+          const setupResult = normalizeSetupResult(await runSetupOperation({
             binaryPath: binPath,
             operation: "configure-github",
             input: { token },
             onProgress,
             abortSignal,
           }))
+          if (setupResult.status === "failed") {
+            return setupResult
+          }
+          return {
+            status: "completed",
+            result: {
+              ...setupResult.result,
+              verified: true,
+              account: verification.account,
+              loginGh,
+            },
+          }
         }
 
         case "ai-provider": {
@@ -1140,24 +1195,15 @@ switch (step as string) {
         case "memory-config": {
           const isSkip = Boolean((input as Record<string, unknown> | undefined)?.skip)
           if (isSkip) {
-            const globalEnvPath = join(homePath, ".env")
-            writeMemoryEnvFile(globalEnvPath, { enabled: false }, homePath)
-
-            const memInput = buildMemoryOperationInput(input, homePath)
-            const spacePath = typeof memInput.spacePath === "string" ? memInput.spacePath : undefined
-            if (spacePath) {
-              clearSpaceMemoryEnvFile(join(spacePath, ".wopal", ".env"))
-            }
-
+            // Skip = "don't configure memory", not "disable memory".
+            // No env file is written and no space env file is cleared.
             return {
-              status: "completed",
+              status: "skipped",
               result: {
                 memoryEnabled: false,
-                memoryInjectionEnabled: false,
                 scope: "global",
-                envPath: globalEnvPath,
-                state: "disabled",
-                outcome: "disabled_all",
+                state: "unconfigured",
+                outcome: "skipped",
               },
             }
           }
@@ -1462,6 +1508,28 @@ switch (step as string) {
             try {
               const detected = detectMemoryConfig(homePath)
               if (detected) {
+                if (!detected.effectiveSpace) {
+                  // The wopal CLI probe can fail (missing binary, timeout,
+                  // path mismatch). Fall back to the inspect snapshot, which
+                  // create-space already keeps fresh, so the space scope tab
+                  // stays clickable even when the CLI query fails.
+                  const { result: inspection } = await getInspection(homePath)
+                  const spaces = Array.isArray(inspection?.spaces) ? inspection.spaces : []
+                  if (spaces.length > 0) {
+                    detected.effectiveSpace = spaces[0] as { name: string; path: string; type?: string | null }
+                  }
+                }
+                if (detected.effectiveSpace && !detected.spaceMemory) {
+                  // The CLI probe also failed to read the space env, so
+                  // detectMemoryConfig reported no space config. Re-read the
+                  // real space .env from the snapshot path — a force-disabled
+                  // space must surface as spaceMemory, otherwise the renderer
+                  // misreads it as "inherit global".
+                  const spaceConfig = readEnvConfig(join(detected.effectiveSpace.path, ".wopal", ".env"))
+                  if (spaceConfig) {
+                    detected.spaceMemory = { ...spaceConfig, state: spaceConfig.enabled ? "ready" : "disabled" }
+                  }
+                }
                 return detected
               }
               const { result: inspection, error: inspectionError } = await getInspection(homePath)
@@ -1500,10 +1568,13 @@ switch (step as string) {
 
       "onboarding-execute-step": async (
       _event: unknown,
-      stepName: OnboardingStepName,
+      stepName: OnboardingStepName | "github-auth",
       input?: unknown,
     ): Promise<OnboardingStepResult> => {
-      if (!ONBOARDING_STEPS.includes(stepName)) {
+      // github-auth is a sub-operation of the ontology-setup step (no longer a
+      // wizard step itself): it may be invoked directly with a token payload.
+      const isKnownStep = ONBOARDING_STEPS.includes(stepName as OnboardingStepName) || stepName === "github-auth"
+      if (!isKnownStep) {
         return {
           status: "failed",
           error: {
@@ -1533,10 +1604,15 @@ switch (step as string) {
           phase: "starting",
           message: startingMessage,
         })
+        // github-auth is a sub-operation of the ontology-setup step, not a
+        // wizard step — it must not pollute the onboarding state's steps map.
+        const isWizardStep = ONBOARDING_STEPS.includes(stepName as OnboardingStepName)
         let state = readOnboardingState(deps.homePath) ?? createDefaultOnboardingState()
         state = markStarted(state)
-        state = updateStep(state, stepName, "in-progress")
-        writeOnboardingState(state, deps.homePath)
+        if (isWizardStep) {
+          state = updateStep(state, stepName as OnboardingStepName, "in-progress")
+          writeOnboardingState(state, deps.homePath)
+        }
 
         const abortController = new AbortController()
         currentAbortController = abortController
@@ -1546,16 +1622,20 @@ switch (step as string) {
           const res = await executor(stepName, input, (p) => deps.broadcastProgress?.({ step: stepName, ...p }), abortController.signal)
 
           state = readOnboardingState(deps.homePath) ?? state
-          if (res.status === "completed" || res.status === "reused") {
-            state = updateStep(state, stepName, "done")
+          if (isWizardStep) {
+            if (res.status === "completed" || res.status === "reused") {
+              state = updateStep(state, stepName as OnboardingStepName, "done")
+              updateInspectionFromStep(stepName, input, res.result)
+            } else if (res.status === "skipped") {
+              state = updateStep(state, stepName as OnboardingStepName, "skipped")
+            } else {
+              state = updateStep(state, stepName as OnboardingStepName, "failed", res.error?.message ?? "Execution failed")
+            }
+            writeOnboardingState(state, deps.homePath)
+          } else if (res.status === "completed" || res.status === "reused") {
+            // Sub-operations still refresh the inspect snapshot in place.
             updateInspectionFromStep(stepName, input, res.result)
-          } else if (res.status === "skipped") {
-            state = updateStep(state, stepName, "skipped")
-          } else {
-            state = updateStep(state, stepName, "failed", res.error?.message ?? "Execution failed")
           }
-
-          writeOnboardingState(state, deps.homePath)
           if (res.status === "failed") {
             const code = res.error?.code ?? "STEP_FAILED"
             const message = res.error?.message ?? "执行失败"
@@ -1594,8 +1674,8 @@ switch (step as string) {
             message: failureMessage,
             details,
           })
-          state = updateStep(state, stepName, "failed", msg)
-          writeOnboardingState(state, deps.homePath)
+          state = updateStep(state, stepName as OnboardingStepName, "failed", msg)
+          if (isWizardStep) writeOnboardingState(state, deps.homePath)
           return {
             status: "failed",
             error: { code: "STEP_EXECUTION_ERROR", message: msg, details },

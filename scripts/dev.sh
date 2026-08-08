@@ -695,6 +695,11 @@ cmd_desktop() {
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."
   if $rebuild; then
     echo "==> Rebuilding sidecar (packages/opencode)..."
+    source "$root/scripts/lib/version.sh"
+    if [ -z "${OPENCODE_VERSION:-}" ]; then
+      export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$root")"
+    fi
+    echo "==> Sidecar version: $OPENCODE_VERSION"
     (cd "$opencode_dir" && bun script/build-node.ts)
     echo "==> Copying icons..."
     (cd "$DESKTOP_DIR" && bun ./scripts/copy-icons.ts "$CHANNEL")

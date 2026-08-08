@@ -95,7 +95,9 @@ describe("release-info: envelope builder", () => {
     const ri = envelope.releaseIdentity as { kind: string; channel: string; version: string }
     expect(ri.kind).toBe("development")
     expect(ri.channel).toBe("local")
-    expect(ri.version).toMatch(/^0\.0\.0-dev/)
+    // The fallback identity version equals OPENCODE_VERSION verbatim when
+    // defined; otherwise it is "0.0.0-dev".
+    expect(ri.version).toBe(typeof OPENCODE_VERSION === "string" && OPENCODE_VERSION ? OPENCODE_VERSION : "0.0.0-dev")
   })
 })
 

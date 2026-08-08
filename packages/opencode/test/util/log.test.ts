@@ -40,6 +40,8 @@ it.live("init cleanup keeps the newest timestamped logs", () =>
     yield* Effect.all(list.map((file) => Effect.promise(() => fs.writeFile(path.join(dir, file), file))))
 
     yield* Effect.promise(() => Log.init({ print: false, dev: false }))
+    // The log file is created lazily on first write; a write also triggers cleanup.
+    Log.Default.info("trigger lazy init")
 
     const next = yield* files(dir)
 
@@ -152,10 +154,57 @@ it.live("cleanup matches role-prefixed files", () =>
     yield* Effect.all(list.map((file) => Effect.promise(() => fs.writeFile(path.join(dir, file), file))))
 
     yield* Effect.promise(() => Log.init({ print: false, dev: false, role: "serve" }))
+    // A write triggers lazy file creation and cleanup.
+    Log.Default.info("trigger lazy init")
 
     const next = yield* files(dir)
 
     expect(next).not.toContain(list[0]!)
     expect(next).toContain(list.at(-1)!)
+  }),
+)
+
+it.live("init without any log write does not create a log file", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    yield* Effect.addFinalizer(() => Effect.sync(() => (Global.Path.log = log)))
+    const dir = yield* tmpdirScoped()
+    Global.Path.log = dir
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: false, role: "tui" }))
+
+    const file = Log.file()
+    expect(file).toMatch(/tui-\d{4}-\d{2}-\d{2}T\d{6}\.log$/)
+    const exists = yield* Effect.promise(() =>
+      fs.access(file).then(() => true).catch(() => false),
+    )
+    expect(exists).toBe(false)
+  }),
+)
+
+it.live("first log write creates the file and cleanup runs once", () =>
+  Effect.gen(function* () {
+    const log = Global.Path.log
+    yield* Effect.addFinalizer(() => Effect.sync(() => (Global.Path.log = log)))
+    const dir = yield* tmpdirScoped()
+    Global.Path.log = dir
+
+    const list = Array.from({ length: 12 }, (_, i) => `2000-01-${String(i + 1).padStart(2, "0")}T000000.log`)
+    yield* Effect.all(list.map((file) => Effect.promise(() => fs.writeFile(path.join(dir, file), file))))
+
+    yield* Effect.promise(() => Log.init({ print: false, dev: false, role: "tui" }))
+    Log.Default.info("first line")
+
+    const next = yield* files(dir)
+    // Cleanup keeps the newest 10 timestamped files, plus the new tui file.
+    expect(next.length).toBe(11)
+    expect(next).toContain(list.at(-1)!)
+    expect(next).not.toContain(list[0]!)
+    expect(next).not.toContain(list[1]!)
+
+    const logFile = next.find((f) => f.startsWith("tui-"))
+    expect(logFile).toBeDefined()
+    const content = yield* Effect.promise(() => fs.readFile(path.join(dir, logFile!), "utf8"))
+    expect(content).toContain("first line")
   }),
 )

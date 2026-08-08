@@ -64,10 +64,16 @@ let logpath = ""
 export function file() {
   return logpath
 }
-let write = (msg: any) => {
+let write: Write = (msg: any) => {
   process.stderr.write(msg)
   return msg.length
 }
+type Write = (msg: any) => any
+
+let options: Options | null = null
+let initialized = false
+let initializing: Promise<void> | null = null
+let generation = 0
 
 function localStamp() {
   const now = new Date()
@@ -83,35 +89,65 @@ function dir(options: Options) {
   throw new Error("local Ellamaka logging requires WOPAL_DEBUG_LOG_DIR or WOPAL_SPACE_ROOT")
 }
 
-export async function init(options: Options) {
-  if (options.level) level = options.level
-  if (options.print) return
-  const logdir = dir(options)
-  await fs.mkdir(logdir, { recursive: true })
-  void cleanup(logdir)
+export async function init(next: Options) {
+  if (next.level) level = next.level
+  if (next.print) return
+  options = next
+  // Re-init (e.g. between tests or after a failed first write) must start a
+  // fresh generation so a stale in-flight stream is never reused.
+  generation++
+  initialized = false
+  initializing = null
+  // The log file is created lazily on the first actual write, so read-only
+  // machine commands (e.g. `debug release-info`) never leave empty log files.
   logpath = path.join(
-    logdir,
-    options.dev
-      ? options.devFile ?? "dev.log"
-      : (options.role ? `${options.role}-${localStamp()}.log` : `${localStamp()}.log`),
+    dir(next),
+    next.dev
+      ? next.devFile ?? "dev.log"
+      : (next.role ? `${next.role}-${localStamp()}.log` : `${localStamp()}.log`),
   )
-  const runID = process.env.OPENCODE_RUN_ID
-  const shouldTruncate = !options.dev || !runID || process.env[initializedRunID] !== runID
-  if (shouldTruncate) await fs.truncate(logpath).catch(() => {})
-  if (options.dev && runID) process.env[initializedRunID] = runID
-  const stream = createWriteStream(logpath, { flags: "a" })
-  await new Promise<void>((resolve, reject) => {
-    stream.once("open", () => resolve())
-    stream.once("error", reject)
-  })
-  write = async (msg: any) => {
-    return new Promise((resolve, reject) => {
-      stream.write(msg, (err) => {
-        if (err) reject(err)
-        else resolve(msg.length)
-      })
+}
+
+// Ensure the log file and write stream exist exactly once per process. On
+// failure the stderr fallback keeps working so log output is never lost.
+async function ensureFile(): Promise<void> {
+  if (initialized) return
+  if (initializing) return initializing
+  const opts = options
+  const gen = generation
+  if (!opts) return
+  initializing = (async () => {
+    const logdir = path.dirname(logpath)
+    await fs.mkdir(logdir, { recursive: true })
+    void cleanup(logdir)
+    const runID = process.env.OPENCODE_RUN_ID
+    const shouldTruncate = !opts.dev || !runID || process.env[initializedRunID] !== runID
+    if (shouldTruncate) await fs.truncate(logpath).catch(() => {})
+    if (opts.dev && runID) process.env[initializedRunID] = runID
+    const stream = createWriteStream(logpath, { flags: "a" })
+    await new Promise<void>((resolve, reject) => {
+      stream.once("open", () => resolve())
+      stream.once("error", reject)
     })
+    write = (msg: any) => {
+      return new Promise((resolve, reject) => {
+        stream.write(msg, (err) => {
+          if (err) reject(err)
+          else resolve(msg.length)
+        })
+      })
+    }
+    if (gen === generation) initialized = true
+  })().catch(() => {})
+  try {
+    await initializing
+  } finally {
+    initializing = null
   }
+}
+
+function emit(msg: string) {
+  void ensureFile().then(() => write(msg))
 }
 
 async function cleanup(dir: string) {
@@ -171,22 +207,22 @@ export function create(tags?: Record<string, any>) {
   const result: Logger = {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
-        write("DEBUG " + build(message, extra))
+        emit("DEBUG " + build(message, extra))
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
-        write("INFO  " + build(message, extra))
+        emit("INFO  " + build(message, extra))
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
-        write("ERROR " + build(message, extra))
+        emit("ERROR " + build(message, extra))
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
-        write("WARN  " + build(message, extra))
+        emit("WARN  " + build(message, extra))
       }
     },
     tag(key: string, value: string) {

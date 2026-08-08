@@ -11,6 +11,7 @@ import {
   isMemoryProbeSatisfied,
   refreshMemoryScopeDraftsAfterSave,
   switchMemoryScopeDraft,
+  shouldAutoConfirmMemoryProbe,
   type MemoryProbeResult,
   type MemoryFormState,
   type MemoryFormErrors,
@@ -731,5 +732,39 @@ describe("memory-config-flow | isMemoryProbeSatisfied", () => {
   test("rejects incomplete or failed verification", () => {
     expect(isMemoryProbeSatisfied({ ...base, state: "incomplete" }, true)).toBe(false)
     expect(isMemoryProbeSatisfied({ ...base, error: "检查失败" }, true)).toBe(false)
+  })
+})
+
+describe("memory-config-flow | shouldAutoConfirmMemoryProbe", () => {
+  const base: MemoryProbeResult = {
+    state: "unconfigured",
+    enabled: false,
+    envPath: "/tmp/.env",
+    llmEndpoint: "",
+    llmModel: "",
+    llmKeyConfigured: false,
+    embeddingEndpoint: "",
+    embeddingModel: "",
+    embeddingKeyConfigured: false,
+    error: null,
+  }
+
+  test("auto-confirms when global memory is configured", () => {
+    expect(shouldAutoConfirmMemoryProbe({ ...base, globalMemory: { enabled: true } })).toBe(true)
+  })
+
+  test("auto-confirms when space memory is configured", () => {
+    expect(shouldAutoConfirmMemoryProbe({ ...base, spaceMemory: { enabled: false } })).toBe(true)
+  })
+
+  test("does not auto-confirm on a fresh environment with only an effective space", () => {
+    expect(shouldAutoConfirmMemoryProbe({
+      ...base,
+      effectiveSpace: { name: "coding", path: "/spaces/coding" },
+    })).toBe(false)
+  })
+
+  test("does not auto-confirm on a completely fresh environment", () => {
+    expect(shouldAutoConfirmMemoryProbe({ ...base })).toBe(false)
   })
 })

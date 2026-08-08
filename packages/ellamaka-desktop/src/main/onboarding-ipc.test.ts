@@ -8,6 +8,7 @@ import {
   createOnboardingIpcHandlers,
   detectMemoryConfig,
   detectGithubToken,
+  loginGhWithToken,
   probeGithubAuthentication,
   probeLocalCli,
 } from "./onboarding-ipc"
@@ -463,6 +464,126 @@ describe("onboarding-ipc", () => {
     expect(verifyCalled).toBe(false)
   })
 
+  test("onboardingExecuteStep github-auth verifies a valid token and logs into gh", async () => {
+    const loginCalls: string[] = []
+    let configureCalls = 0
+    let configureInput: any = null
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      expect(opts.operation).toBe("configure-github")
+      configureCalls += 1
+      configureInput = opts.input
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({
+        homePath: testHome,
+        verifyGithubToken: async () => ({ account: "testuser", valid: true }),
+        probeGhCli: () => ({ installed: true, authenticated: false, account: null }),
+        loginGhWithToken: (token: string) => {
+          loginCalls.push(token)
+          return true
+        },
+      })
+
+      const result = await handlers["onboarding-execute-step"]({}, "github-auth", { token: "gho_valid" })
+
+      expect(result.status).toBe("completed")
+      expect(result.result).toMatchObject({ verified: true, account: "testuser", loginGh: true })
+      expect(loginCalls).toEqual(["gho_valid"])
+      expect(configureCalls).toBe(1)
+      expect(configureInput).toEqual({ token: "gho_valid" })
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("onboardingExecuteStep github-auth rejects an invalid token without writing .env", async () => {
+    let configureCalls = 0
+    let loginCalls = 0
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async () => {
+      configureCalls += 1
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({
+        homePath: testHome,
+        verifyGithubToken: async () => ({ account: null, valid: false }),
+        probeGhCli: () => ({ installed: true, authenticated: false, account: null }),
+        loginGhWithToken: () => {
+          loginCalls += 1
+          return true
+        },
+      })
+
+      const result = await handlers["onboarding-execute-step"]({}, "github-auth", { token: "gho_invalid" })
+
+      expect(result.status).toBe("failed")
+      expect(result.error?.code).toBe("GITHUB_TOKEN_INVALID")
+      expect(configureCalls).toBe(0)
+      expect(loginCalls).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("onboardingExecuteStep github-auth skips gh login when gh is not installed", async () => {
+    let loginCalls = 0
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async () => {
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({
+        homePath: testHome,
+        verifyGithubToken: async () => ({ account: "cli-free-user", valid: true }),
+        probeGhCli: () => ({ installed: false, authenticated: false, account: null }),
+        loginGhWithToken: () => {
+          loginCalls += 1
+          return true
+        },
+      })
+
+      const result = await handlers["onboarding-execute-step"]({}, "github-auth", { token: "gho_no_gh_cli" })
+
+      expect(result.status).toBe("completed")
+      expect(result.result).toMatchObject({ verified: true, account: "cli-free-user", loginGh: false })
+      expect(loginCalls).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  test("loginGhWithToken pipes the token into gh auth login via stdin", () => {
+    const spawnCalls: any[] = []
+    const spawned: any = { status: 0 }
+
+    const ok = loginGhWithToken("gho_piped_token", {
+      spawnFn: (command: string, args: string[], options: any) => {
+        spawnCalls.push({ command, args, options })
+        return spawned
+      },
+    })
+
+    expect(ok).toBe(true)
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0].command).toBe("gh")
+    expect(spawnCalls[0].args).toEqual(["auth", "login", "--with-token"])
+    expect(spawnCalls[0].options.input).toBe("gho_piped_token")
+    expect(spawnCalls[0].options.stdio).toBe("pipe")
+  })
+
+  test("loginGhWithToken reports false when gh login fails", () => {
+    const spawned: any = { status: 1 }
+
+    const ok = loginGhWithToken("gho_bad", {
+      spawnFn: () => spawned,
+    })
+
+    expect(ok).toBe(false)
+  })
+
   test("onboardingProbe ai-provider returns hasKey", async () => {
     const handlers = createOnboardingIpcHandlers({ homePath: testHome })
     const result = await handlers["onboarding-probe"]({}, "ai-provider")
@@ -612,6 +733,65 @@ describe("onboarding-ipc", () => {
     expect(result).toEqual({ ...memory, effectiveSpace: space })
   })
 
+  test("onboardingProbe memory falls back to the inspect snapshot when CLI space detection fails", async () => {
+    // Global .env exists so detectMemoryConfig returns a config object, but
+    // the wopal CLI probe fails (no bin binary) leaving effectiveSpace null.
+    const globalEnvPath = join(testHome, ".env")
+    writeFileSync(globalEnvPath, "WOPAL_MEMORY_ENABLED=true\n", "utf-8")
+
+    const space = { name: "space1", path: join(testHome, "space1"), type: "common" }
+    const memory = {
+      state: "ready",
+      enabled: true,
+      envPath: globalEnvPath,
+    }
+    const handlers = createOnboardingIpcHandlers({
+      homePath: testHome,
+      executeStep: async () => ({ status: "reused", result: { memory, spaces: [space] } }),
+    })
+
+    const result = await handlers["onboarding-probe"]({}, "memory")
+
+    expect(result.effectiveSpace).toEqual(space)
+  })
+
+  test("onboardingProbe memory keeps effectiveSpace null when no snapshot space exists", async () => {
+    const globalEnvPath = join(testHome, ".env")
+    writeFileSync(globalEnvPath, "WOPAL_MEMORY_ENABLED=true\n", "utf-8")
+
+    const handlers = createOnboardingIpcHandlers({
+      homePath: testHome,
+      executeStep: async () => ({ status: "reused", result: { memory: { state: "ready", enabled: true } } }),
+    })
+
+    const result = await handlers["onboarding-probe"]({}, "memory")
+
+    expect(result.effectiveSpace).toBeNull()
+  })
+
+  test("onboardingProbe memory reads the real space env when CLI detection fails", async () => {
+    // Global disabled + space force-disabled: space .env MUST be reported as
+    // spaceMemory (not null), otherwise the renderer shows "inherit global".
+    const globalEnvPath = join(testHome, ".env")
+    writeFileSync(globalEnvPath, "WOPAL_MEMORY_ENABLED=false\n", "utf-8")
+
+    const space = { name: "space1", path: join(testHome, "space1"), type: "common" }
+    mkdirSync(join(space.path, ".wopal"), { recursive: true })
+    writeFileSync(join(space.path, ".wopal", ".env"), "WOPAL_MEMORY_ENABLED=false\nWOPAL_LLM_BASE_URL=https://space.api.com\n", "utf-8")
+
+    const handlers = createOnboardingIpcHandlers({
+      homePath: testHome,
+      executeStep: async () => ({ status: "reused", result: { memory: { state: "unconfigured", enabled: false }, spaces: [space] } }),
+    })
+
+    const result = await handlers["onboarding-probe"]({}, "memory")
+
+    expect(result.effectiveSpace).toEqual(space)
+    expect(result.spaceMemory).not.toBeNull()
+    expect(result.spaceMemory).toMatchObject({ enabled: false })
+    expect(result.spaceMemory).toMatchObject({ llmEndpoint: "https://space.api.com" })
+  })
+
   test("detectMemoryConfig preserves the effective space when memory is not configured", () => {
     const spacePath = join(testHome, "space1")
 
@@ -628,8 +808,38 @@ describe("onboarding-ipc", () => {
     })
   })
 
-  test("buildMemoryOperationInput maps skip to a real disable", () => {
-    expect(buildMemoryOperationInput({ skip: true, advanced: { backend: "sqlite" } })).toEqual({ enabled: false })
+  test("buildMemoryOperationInput maps a disable payload to enabled false", () => {
+    expect(buildMemoryOperationInput({ enabled: false, advanced: { backend: "sqlite" } })).toEqual({ enabled: false })
+  })
+
+  test("onboardingExecuteStep memory-config skip does not write any env file", async () => {
+    const globalEnvPath = join(testHome, ".env")
+    writeFileSync(globalEnvPath, "WOPAL_MEMORY_ENABLED=true\n", "utf-8")
+
+    const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+    const result = await handlers["onboarding-execute-step"]({}, "memory-config", { skip: true })
+
+    expect(result.status).toBe("skipped")
+    // Global env must be untouched — skip means "don't configure", not "disable".
+    expect(readFileSync(globalEnvPath, "utf-8")).toContain("WOPAL_MEMORY_ENABLED=true")
+
+    const state = readOnboardingState(testHome)
+    expect(state?.steps["memory-config"]).toBe("skipped")
+  })
+
+  test("onboardingExecuteStep memory-config skip keeps an existing space env file intact", async () => {
+    const spaceDir = join(testHome, "space1")
+    const spaceWopalDir = join(spaceDir, ".wopal")
+    mkdirSync(spaceWopalDir, { recursive: true })
+    const spaceEnvPath = join(spaceWopalDir, ".env")
+    writeFileSync(spaceEnvPath, "WOPAL_MEMORY_ENABLED=true\nWOPAL_LLM_BASE_URL=https://space.api.com\n", "utf-8")
+
+    const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+    await handlers["onboarding-execute-step"]({}, "memory-config", { skip: true, spacePath: spaceDir })
+
+    const spaceContent = readFileSync(spaceEnvPath, "utf-8")
+    expect(spaceContent).toContain("WOPAL_MEMORY_ENABLED=true")
+    expect(spaceContent).toContain("WOPAL_LLM_BASE_URL=https://space.api.com")
   })
 
   test("buildMemoryOperationInput forwards only supported fields", () => {

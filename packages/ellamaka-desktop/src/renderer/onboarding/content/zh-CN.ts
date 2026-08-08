@@ -39,7 +39,6 @@ export interface OnboardingContent {
     clear: string
     close: string
     save: string
-    disableMemory: string
   }
   status: {
     working: string
@@ -158,7 +157,7 @@ export const zhCN: OnboardingContent = {
       notes: "跳过后仍可使用 Ellamaka 默认免费模型。当前优惠期首月 5 美元，后续 10 美元/月，可随时取消订阅。",
     },
     "ontology-setup": {
-      title: "选择空间能力本体",
+      title: "配置空间能力本体",
       shortTitle: "能力本体",
       goal: "选择能力来源与同步方式",
       why: "Fork 会保留并同步你的能力演化；Clone 只保存在当前电脑。",
@@ -221,7 +220,6 @@ export const zhCN: OnboardingContent = {
     clear: "清空",
     close: "关闭",
     save: "保存记忆配置",
-    disableMemory: "暂不启用长期记忆",
   },
   status: {
     working: "正在处理，请稍候…",

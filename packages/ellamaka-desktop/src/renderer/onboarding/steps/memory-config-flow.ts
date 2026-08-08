@@ -450,3 +450,14 @@ export function isMemoryProbeSatisfied(
     ? probe.state === "ready" && probe.enabled
     : probe.state === "disabled" && !probe.enabled
 }
+
+/**
+ * Decide whether the memory step may auto-confirm by reusing the probed
+ * configuration. Only true when a memory configuration actually exists
+ * (global or space). A fresh environment with just an effective space
+ * must NOT auto-confirm — the user still needs to configure memory
+ * explicitly via the form.
+ */
+export function shouldAutoConfirmMemoryProbe(probe: MemoryProbeResult): boolean {
+  return Boolean(probe.globalMemory || probe.spaceMemory)
+}

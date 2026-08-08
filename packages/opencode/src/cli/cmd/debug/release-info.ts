@@ -62,7 +62,7 @@ function localDevIdentity(): unknown {
     schemaVersion: 2,
     kind: "development",
     product: "ellamaka-cli",
-    version: version.startsWith("0.0.0") ? version : `0.0.0-dev.${version}`,
+    version,
     channel: devChannel,
   }
   // Dev identity may carry gitCommit/builtAt if available at build time, but

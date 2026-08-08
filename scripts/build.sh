@@ -39,6 +39,9 @@ EOF
 TARGET="${1:-}"
 shift 2>/dev/null || true
 
+# Shared version resolution for CLI / Desktop builds.
+source "$PROJECT_ROOT/scripts/lib/version.sh"
+
 # ── CLI build ──────────────────────────────────────────────
 
 function build_cli() {
@@ -121,31 +124,9 @@ function build_cli() {
   if [[ -n "${CUSTOM_VERSION:-}" ]]; then
     export OPENCODE_VERSION="$CUSTOM_VERSION"
   elif [[ -z "${OPENCODE_VERSION:-}" ]]; then
-    EXACT_TAG=$(git -C "$PROJECT_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
-    EXACT_TAG="${EXACT_TAG#v}"
-    if [[ -n "$EXACT_TAG" ]]; then
-      export OPENCODE_VERSION="$EXACT_TAG"
-    else
-      LATEST_TAG=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)
-      LATEST_TAG="${LATEST_TAG#v}"
-      BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-      SUFFIX="${BRANCH}"
-      [[ "$SUFFIX" == "HEAD" ]] && SUFFIX="dev"
-
-      if [[ -n "$LATEST_TAG" ]]; then
-        VERSION_TAG=$(node -p "
-          (() => {
-            const match = '$LATEST_TAG'.match(/^(\d+\.\d+\.\d+)/);
-            return match ? match[1] : '$LATEST_TAG';
-          })()
-        " 2>/dev/null || echo "$LATEST_TAG")
-        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
-        export OPENCODE_VERSION="${VERSION_TAG}-${SUFFIX}.${TIMESTAMP}"
-      else
-        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
-        export OPENCODE_VERSION="0.0.0-${SUFFIX}.${TIMESTAMP}"
-      fi
-    fi
+    # CLI builds always use the "main" suffix; the branch name is not part
+    # of the version string.
+    export OPENCODE_VERSION="$(resolve_build_version "ellamaka-cli" "main")"
   fi
   BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka/build.ts" "${BUILD_ARGS[@]}"
 
@@ -221,29 +202,7 @@ function build_desktop() {
   if [[ -n "${CUSTOM_VERSION:-}" ]]; then
     export OPENCODE_VERSION="$CUSTOM_VERSION"
   elif [[ -z "${OPENCODE_VERSION:-}" ]]; then
-    EXACT_TAG=$(git -C "$PROJECT_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)
-    EXACT_TAG="${EXACT_TAG#v}"
-    if [[ -n "$EXACT_TAG" ]]; then
-      export OPENCODE_VERSION="$EXACT_TAG"
-    else
-      LATEST_TAG=$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 HEAD 2>/dev/null || true)
-      LATEST_TAG="${LATEST_TAG#v}"
-      SUFFIX="${CHANNEL}"
-
-      if [[ -n "$LATEST_TAG" ]]; then
-        VERSION_TAG=$(node -p "
-          (() => {
-            const match = '$LATEST_TAG'.match(/^(\d+\.\d+\.\d+)/);
-            return match ? match[1] : '$LATEST_TAG';
-          })()
-        " 2>/dev/null || echo "$LATEST_TAG")
-        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
-        export OPENCODE_VERSION="${VERSION_TAG}-${SUFFIX}.${TIMESTAMP}"
-      else
-        TIMESTAMP=$(date +"%Y%m%d%H%M%S")
-        export OPENCODE_VERSION="0.0.0-${SUFFIX}.${TIMESTAMP}"
-      fi
-    fi
+    export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL")"
   fi
 
   # Inject build hash so the packaged app shows which commit it was built from

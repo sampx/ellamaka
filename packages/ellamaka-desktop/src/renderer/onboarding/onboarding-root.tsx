@@ -491,7 +491,7 @@ export function OnboardingRoot() {
                         class="ob-button ob-button-secondary"
                         onClick={handleSkip}
                       >
-                        {currentStep() === "memory-config" ? zhCN.actions.disableMemory : "跳过本步骤"}
+                        跳过本步骤
                       </button>
                     </Show>
                   </div>

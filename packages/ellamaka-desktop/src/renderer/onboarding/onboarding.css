@@ -421,7 +421,7 @@
 }
 
 .ob-card-description {
-  max-width: 560px;
+  max-width: min(100%, 720px);
   margin: 0;
   color: var(--ob-text-muted);
   font-size: 14px;
@@ -580,7 +580,7 @@
   align-items: center;
   gap: 20px;
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   margin: auto 0;
   align-self: center;
   padding: 24px;
@@ -639,7 +639,7 @@
 }
 
 .ob-result-panel-message {
-  max-width: 560px;
+  max-width: min(100%, 700px);
   margin: 8px 0 0;
   color: var(--ob-text-muted);
   font-size: 14px;
@@ -1120,7 +1120,7 @@
 .ob-ontology-flow .ob-ontology-section {
   gap: 10px;
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
 }
 
@@ -1211,7 +1211,7 @@
 
 .ob-ontology-flow .ob-space-types {
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
 }
 
 .ob-github-card {
@@ -1219,7 +1219,7 @@
   flex-direction: column;
   gap: 14px;
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
   padding: 16px;
   border: 1px solid var(--ob-card-border);
@@ -1277,7 +1277,7 @@
 
 .ob-github-details {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1834,6 +1834,8 @@
   align-items: center;
   gap: 20px;
   width: 100%;
+  max-width: min(100%, 780px);
+  align-self: center;
   margin: auto 0;
   padding: 16px 0;
 }
@@ -1865,7 +1867,7 @@
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
   padding: 22px 24px;
   border: 1px solid var(--ob-card-border);
@@ -1924,7 +1926,7 @@
   align-items: flex-start;
   gap: 12px;
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
   padding: 14px 18px;
   border: 1px solid rgba(244, 63, 94, 0.3);
@@ -2028,7 +2030,7 @@
 
 .ob-done-subtitle {
   margin: 0;
-  max-width: 560px;
+  max-width: min(100%, 720px);
   font-size: 16px;
   color: var(--ob-text-muted);
   line-height: 1.65;
@@ -2036,7 +2038,7 @@
 
 .ob-done-card {
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
   padding: 22px 24px;
   border: 1px solid var(--ob-card-border);
@@ -2097,7 +2099,7 @@
 .ob-done-warning,
 .ob-done-error {
   width: 100%;
-  max-width: 640px;
+  max-width: min(100%, 780px);
   align-self: center;
   padding: 14px 18px;
   border-radius: 10px;
