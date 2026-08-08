@@ -1,63 +1,74 @@
-name: 自动清理 Actions 历史记录与缓存
+name: Clean up Actions history and caches
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天国际标准时间 0:00 (北京时间早上 8:00) 自动运行
-  workflow_dispatch: # 允许在 GitHub UI 界面手动一键触发
+    - cron: '0 0 * * *' # Every day at 00:00 UTC (08:00 Beijing time)
+  workflow_dispatch: # Allow manual one-click trigger from the GitHub UI
 
 permissions:
   contents: read
-  actions: write # 必须赋予显式的 actions 写权限才能执行删除操作
+  actions: write # Required to delete runs and caches
 
 jobs:
   cleanup:
-    name: 执行空间清理
+    name: Run cleanup
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'wopal-cn' # 确保仅在您的组织主仓库下运行，防止 Fork 仓库报错
-    
+    if: github.repository_owner == 'wopal-cn' # Only run on the org's primary repo, not forks
+
     steps:
-      - name: 检查代码仓库
-        uses: actions/checkout@v5
-
-      - name: 清理历史 Workflow 运行记录
-        uses: Mattraks/delete-workflow-runs@v2
-        continue-on-error: true # 防止删除某条特定记录失败导致整个工作流中断
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 7       # 保留最近 7 天的记录
-          keep_minimum_runs: 3 # 无论历史多长，至少保留最近 3 次记录，防误删
-
-      - name: 清理过期的 Actions Cache (缓存)
+      - name: Delete old workflow runs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 安装 gh-actions-cache 扩展（如果尚未安装）
-          gh extension install actions/gh-actions-cache || true
-          
-          # 获取缓存列表并循环删除
-          caches=$(gh actions-cache list --limit 100 || echo "")
-          if [ -n "$caches" ]; then
-            echo "正在清理缓存..."
-            gh actions-cache list --limit 100 | cut -f 1 | while read -r cache_key; do
-              if [ -n "$cache_key" ]; then
-                gh actions-cache delete "$cache_key" --confirm || true
-              fi
-            done
-          else
-            echo "未找到任何构建缓存。"
-          fi
-        continue-on-error: true
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          CUTOFF="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
 
-      - name: 生成清理报告摘要
-        if: always() # 无论前面的步骤成功还是失败，都生成最终的步骤摘要
+          # List all runs (newest first) via the official REST API, group by
+          # workflow, keep the latest 3 runs per workflow plus everything
+          # from the last 7 days, delete the rest.
+          gh api --paginate "repos/${REPO}/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | {id, workflow_id, created_at}' \
+            | jq -s --arg cutoff "$CUTOFF" '
+                group_by(.workflow_id)
+                | .[]
+                | sort_by(.created_at) | reverse
+                | to_entries[]
+                | select(.key >= 3)
+                | select(.value.created_at < $cutoff)
+                | .value.id
+              ' \
+            | while read -r run_id; do
+                echo "Deleting run ${run_id}"
+                gh api -X DELETE "repos/${REPO}/actions/runs/${run_id}" || echo "Failed to delete run ${run_id}"
+              done
+
+          echo "Run history cleanup done (kept: last 7 days, min 3 runs per workflow)"
+
+      - name: Delete Actions caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+
+          # Delete every cache entry via the official REST API.
+          gh api --paginate "repos/${REPO}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | .id' \
+            | while read -r cache_id; do
+                echo "Deleting cache ${cache_id}"
+                gh api -X DELETE "repos/${REPO}/actions/caches/${cache_id}" || echo "Failed to delete cache ${cache_id}"
+              done
+
+          echo "Cache cleanup done"
+
+      - name: Generate cleanup report
+        if: always()
         run: |
           {
-            echo "## 🧹 Actions 空间清理完成"
+            echo "## Actions cleanup complete"
             echo ""
-            echo "   清理策略已成功执行："
-            echo "- **保留策略**：保留最近 **7天** 内的运行历史，且每个工作流至少保留 **3次** 记录。"
-            echo "- **缓存清理**：已使用 GitHub CLI 尝试清空当前仓库中所有可释放的构建缓存。"
-            echo ""
-            echo "💡 *提示：GitHub 计费账单的存储容量进度条存在几小时的延迟，释放的空间稍后会在 [Billing Overview](https://github.com/organizations/wopal-cn/settings/billing) 中同步。*"
+            echo "Cleanup strategy executed:"
+            echo "- **Run history**: keep the last **7 days** of runs, with at least **3 runs** per workflow."
+            echo "- **Caches**: deleted all releasable build caches in this repository."
           } >> $GITHUB_STEP_SUMMARY

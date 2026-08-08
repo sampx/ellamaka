@@ -1,4 +1,4 @@
-name: publish-ellamaka
+name: Publish Ellamaka CLI
 
 on:
   workflow_dispatch:
