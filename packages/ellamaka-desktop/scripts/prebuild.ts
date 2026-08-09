@@ -41,7 +41,7 @@ async function writeEmbeddedReleaseIdentity(channel: "main" | "beta" | "prod") {
       schemaVersion: 2,
       kind: "development",
       product: "ellamaka-desktop",
-      version: version.startsWith("0.0.0") ? version : `0.0.0-dev.${version}`,
+      version,
       channel: channel === "main" ? "main" : "local",
       build: {
         ...(process.env.OPENCODE_BUILD_ID && /^[0-9a-f]{40}$/.test(process.env.OPENCODE_BUILD_ID)
