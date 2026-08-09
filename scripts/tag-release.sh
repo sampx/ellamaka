@@ -396,11 +396,11 @@ dispatch_workflow() {
   local channel_arg=""
 
   if [[ "$wf" == publish-ellamaka-desktop.yml ]]; then
-    channel_arg="-f channel=$CHANNEL"
+    channel_arg="-f channel=$CHANNEL -f publish=true"
   fi
 
   local output
-  echo "→ dispatch $label workflow: $wf (ref=$tag, version=$plain_version${channel_arg:+, channel=$CHANNEL})" >&2
+  echo "→ dispatch $label workflow: $wf (ref=$tag, version=$plain_version, channel=$CHANNEL, publish=true)" >&2
   # shellcheck disable=SC2086
   if ! output=$(gh workflow run "$wf" -R wopal-cn/ellamaka \
     --ref "$tag" \

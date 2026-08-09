@@ -40,6 +40,8 @@ import { getReleaseInfo } from "./release-info"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
 import { resolveOnboardingMode, probeWopalHomeFromShell } from "./onboarding-gate"
 import { getOnboardingLogger } from "./onboarding-logger"
+import { isVmwareVirtualGpu } from "./gpu-detect"
+import { recoverMainWindow } from "./window-show-guard"
 import { Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
@@ -368,6 +370,15 @@ const main = Effect.gen(function* () {
   logger = initLogging()
   initCrashReporter()
 
+  // On Windows VMs (VMware SVGA 3D virtual GPU) the GPU compositor never
+  // completes the first frame, so `ready-to-show` never fires and the window
+  // stays hidden. Disable hardware acceleration before any window is created.
+  // Fail-open: detection errors never block startup.
+  if (isVmwareVirtualGpu()) {
+    app.disableHardwareAcceleration()
+    writeLog("main", "hardware acceleration disabled", { reason: "vmware-svga" })
+  }
+
   try {
     setDefaultCACertificates([...new Set([...getCACertificates("default"), ...getCACertificates("system")])])
   } catch (error) {
@@ -400,10 +411,11 @@ const main = Effect.gen(function* () {
       logger.log("deep link received via second-instance", { urls })
       emitDeepLinks(urls)
     }
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-    }
+    // Show + focus the existing window, or recreate it if it was destroyed or
+    // never created. The new window shows itself via ready-to-show/fallback;
+    // it decides its own mode (onboarding vs workbench) from state, so no
+    // IPC re-registration or onboarding setup is needed here.
+    mainWindow = recoverMainWindow(mainWindow, () => createMainWindow())
   })
 
   app.on("open-url", (event: Event, url: string) => {

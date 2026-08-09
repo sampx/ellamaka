@@ -10,6 +10,7 @@ import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { createWindowShowGuard } from "./window-show-guard"
 import { mainWindowChrome } from "./window-chrome"
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -162,8 +163,16 @@ export function createMainWindow() {
   loadWindow(win, "index.html")
   wireZoom(win)
 
+  // On some Windows VMs (VMware SVGA 3D virtual GPU) the GPU-composited first
+  // frame never completes, so `ready-to-show` never fires and the window
+  // stays hidden. The guard shows the window on ready-to-show as usual, and
+  // force-shows it after a fallback timeout if the first frame never lands.
+  const showGuard = createWindowShowGuard(win)
   win.once("ready-to-show", () => {
-    win.show()
+    showGuard.showIfNeeded()
+  })
+  win.once("closed", () => {
+    showGuard.cancel()
   })
 
   return win
