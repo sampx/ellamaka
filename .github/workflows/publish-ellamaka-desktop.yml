@@ -13,8 +13,24 @@ on:
         default: "prod"
         type: choice
         options:
+          - main
           - beta
           - prod
+      os:
+        description: "Target platform(s) to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - windows
+          - mac
+          - linux
+      publish:
+        description: "Publish to R2/CDN and create releases (requires version)"
+        required: false
+        default: "false"
+        type: boolean
 
 # tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
 # Per docs/DISTRIBUTION.md §4.1/§7, releases are immutable: versioned R2
@@ -34,18 +50,26 @@ jobs:
       release: ${{ steps.version.outputs.release }}
       tag: ${{ steps.version.outputs.tag }}
       channel: ${{ steps.version.outputs.channel }}
+      matrix: ${{ steps.version.outputs.matrix }}
     steps:
       - name: Derive version
         id: version
         run: |
           if [[ -n "${{ inputs.version }}" ]]; then
             version="${{ inputs.version }}"
-            release="true"
             tag="v${version}"
           else
             version="0.0.0-${{ inputs.channel || 'prod' }}.0"
-            release=""
             tag=""
+          fi
+
+          # Publishing is explicit: only when the publish input is set AND a
+          # version is provided. A version alone no longer implies a release
+          # (build-win.sh passes a dev version with publish=false).
+          if [[ "${{ inputs.publish }}" == "true" && -n "${{ inputs.version }}" ]]; then
+            release="true"
+          else
+            release=""
           fi
 
           if [[ "$version" =~ -beta\.[0-9]+$ ]]; then
@@ -64,27 +88,30 @@ jobs:
             echo "ERROR: beta versions require channel=beta"
             exit 1
           fi
+
+          # Build matrix: all platforms by default, or a single platform when
+          # the os input selects one. tag-release.sh dispatches without the
+          # os input, so the default keeps the full three-platform matrix.
+          case "${{ inputs.os || 'all' }}" in
+            windows) matrix='[{"os":"windows-latest","package_cmd":"package:win"}]' ;;
+            mac) matrix='[{"os":"macos-latest","package_cmd":"package:mac --arm64 --x64"}]' ;;
+            linux) matrix='[{"os":"ubuntu-latest","package_cmd":"package:linux"}]' ;;
+            *) matrix='[{"os":"macos-latest","package_cmd":"package:mac --arm64 --x64"},{"os":"windows-latest","package_cmd":"package:win"},{"os":"ubuntu-latest","package_cmd":"package:linux"}]' ;;
+          esac
+
           {
             echo "version=${version}"
             echo "release=${release}"
             echo "tag=${tag}"
             echo "channel=${channel}"
+            echo "matrix=${matrix}"
           } >> "$GITHUB_OUTPUT"
 
   build-desktop:
     needs: version
     strategy:
       matrix:
-        include:
-          # macOS: dmg + zip（arm64 + x64）
-          - os: macos-latest
-            package_cmd: "package:mac --arm64 --x64"
-          # Windows: NSIS（.exe）
-          - os: windows-latest
-            package_cmd: "package:win"
-          # Linux: AppImage + deb + rpm
-          - os: ubuntu-latest
-            package_cmd: "package:linux"
+        include: ${{ fromJSON(needs.version.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     if: github.repository == 'wopal-cn/ellamaka'
     env:
