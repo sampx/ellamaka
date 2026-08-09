@@ -233,7 +233,7 @@ if [ -z "$VERSION" ]; then
     CHANNEL="beta"
     LATEST="$LATEST_BETA"
   fi
-  echo "  当前最高已发布版本: v$LATEST（channel=$CHANNEL）"
+  echo "  当前最高已发布版本: v${LATEST}（channel=${CHANNEL}）"
   VERSION="$(find_previous_version "$PRODUCT" "$CHANNEL" "$LATEST")"
   if [ -z "$VERSION" ]; then
     die "没有低于 v$LATEST 的同渠道版本可撤回"
@@ -241,7 +241,7 @@ if [ -z "$VERSION" ]; then
   echo "  自动选择上一个版本: v$VERSION"
 else
   CHANNEL="$(channel_of "$VERSION")"
-  echo "  指定撤回版本: v$VERSION（channel=$CHANNEL）"
+  echo "  指定撤回版本: v${VERSION}（channel=${CHANNEL}）"
   if [ "$CHANNEL" = "stable" ]; then
     LATEST="$LATEST_STABLE"
   else
@@ -258,7 +258,7 @@ if [ -z "$FALLBACK" ]; then
   echo "  fallback 默认取同渠道当前最高版本: v$FALLBACK"
 else
   if [ "$(channel_of "$FALLBACK")" != "$CHANNEL" ]; then
-    die "fallback v$FALLBACK 与撤回版本 v$VERSION 渠道不一致（$CHANNEL 只能回退 $CHANNEL）"
+    die "fallback v${FALLBACK} 与撤回版本 v${VERSION} 渠道不一致（${CHANNEL} 只能回退 ${CHANNEL}）"
   fi
   echo "  指定 fallback: v$FALLBACK"
 fi
@@ -275,7 +275,7 @@ fi
 
 # --- Record + dispatch ---
 echo ""
-echo "→ 撤回计划: $PRODUCT v$VERSION（fallback: v$FALLBACK）"
+echo "→ 撤回计划: $PRODUCT v${VERSION}（fallback: v${FALLBACK}）"
 echo "  1. 登记 withdrawn-versions.json 并推送"
 echo "  2. dispatch cleanup-releases.yml withdraw 模式（apply=true）"
 echo ""
@@ -298,4 +298,4 @@ gh workflow run cleanup-releases.yml -R wopal-cn/ellamaka \
   -f apply=true || echo "⚠️  withdraw workflow 触发失败（可手动触发）"
 
 echo ""
-echo "✅ 撤回已触发: $PRODUCT v$VERSION（fallback: v$FALLBACK）"
+echo "✅ 撤回已触发: $PRODUCT v${VERSION}（fallback: v${FALLBACK}）"
