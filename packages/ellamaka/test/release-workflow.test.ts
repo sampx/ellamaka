@@ -57,12 +57,13 @@ describe("publish-ellamaka workflow", () => {
   })
 
   test("generates schema v2 manifest from release context (not override params)", () => {
-    // package-release.mjs manifest must receive --release-context-path and
-    // --engine-api; it must NOT receive --version/--tag/--build as override
-    // params that could desync from the release context.
+    // package-release.mjs manifest must receive --release-context-path; it
+    // must NOT receive --version/--tag/--build as override params that could
+    // desync from the release context. The engineApi mechanism was removed
+    // (07d38d89ec), so --engine-api must not appear either.
     expect(workflow).toContain("node scripts/package-release.mjs manifest")
     expect(workflow).toContain("--release-context-path")
-    expect(workflow).toContain("--engine-api")
+    expect(workflow).not.toContain("--engine-api")
     expect(workflow).not.toMatch(/--tag v"\$VERSION"/)
     expect(workflow).not.toMatch(/--build "\$BUILD"/)
     expect(workflow).toContain("ellamaka/latest/manifest.json")

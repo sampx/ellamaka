@@ -149,4 +149,45 @@ describe("desktop release repair", () => {
     expect(cli).toContain("ELLAMAKA_RELEASE_CONTEXT_PATH")
     expect(cli).toContain("--release-context-path release-context.json")
   })
+
+  test("withdraw script requires exactly one product (cli or desktop)", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("cli")
+    expect(script).toContain("desktop")
+    // 二选一：不能同时撤回两个产品
+    expect(script).toContain("不能同时")
+  })
+
+  test("withdraw script auto-selects the previous version when version is omitted", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 无 version 参数时自动找"上一个版本"（低于当前 latest 的最高已发布版本）
+    expect(script).toContain("find_previous_version")
+    expect(script).toContain("ls-remote")
+  })
+
+  test("withdraw script records the version and dispatches the cleanup workflow", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 登记 withdrawn-versions.json（提交 + push）
+    expect(script).toContain("withdrawn-versions.json")
+    expect(script).toContain('git -C "$REPO_ROOT" commit')
+    expect(script).toContain('git -C "$REPO_ROOT" push')
+
+    // dispatch cleanup-releases.yml withdraw 模式（保留 action，脚本传参触发）
+    expect(script).toContain("gh workflow run cleanup-releases.yml")
+    expect(script).toContain("mode=withdraw")
+    expect(script).toContain("withdraw-version")
+    expect(script).toContain("fallback-version")
+    expect(script).toContain("apply=true")
+  })
+
+  test("withdraw script supports explicit version and fallback", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("--fallback")
+    // 撤回版本不能等于 fallback
+    expect(script).toContain("fallback")
+  })
 })
