@@ -190,4 +190,43 @@ describe("desktop release repair", () => {
     // 撤回版本不能等于 fallback
     expect(script).toContain("fallback")
   })
+
+  test("withdraw script matches namespaced product tags", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 实际 tag 是 ellamaka-cli-vX.Y.Z / ellamaka-desktop-vX.Y.Z，
+    // 不能用裸 ${product}-v* 前缀（cli-v* / desktop-v* 永远匹配不到）
+    expect(script).toContain('ls-remote --tags origin "ellamaka-${product}-v*"')
+    expect(script).not.toContain('ls-remote --tags origin "${product}-v*"')
+  })
+
+  test("withdraw script resolves versions within a single channel", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 版本解析必须带 channel：stable 只与 stable 比较，beta 只与 beta 比较
+    expect(script).toContain("highest_released")
+    expect(script).toContain("find_previous_version")
+    expect(script).toContain("channel")
+    // 渠道判定：-beta.N 属于 beta，其余属于 stable
+    expect(script).toContain("-beta.")
+  })
+
+  test("withdraw script rejects cross-channel fallback", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 显式 --fallback 必须与撤回版本同渠道，跨渠道直接拒绝
+    expect(script).toContain("--fallback")
+    expect(script).toContain("渠道")
+  })
+
+  test("withdraw script maps product to full registry key", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // withdrawn-versions.json 与 cleanup workflow 使用全名 key
+    // （ellamaka-cli / ellamaka-desktop），脚本参数 cli|desktop 必须映射
+    expect(script).toContain("ellamaka-desktop")
+    expect(script).toContain("ellamaka-cli")
+    // 登记与 dispatch 使用映射后的全名，而非裸参数
+    expect(script).toMatch(/PRODUCT_KEY/)
+  })
 })

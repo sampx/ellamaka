@@ -378,6 +378,8 @@ cleanup 输出待删除对象与保护原因的审计清单后才执行。mutabl
 
 `withdrawn-versions.json` 使用最小、受版本控制的 schema，数组内版本唯一并按标准 SemVer 排序。该文件是 tag allocator 防止版本复用的唯一真相源；它不参与版本 precedence，也不形成在线 release index 或 consumer revocation API。操作员必须先将待撤回版本加入该文件并提交，再运行 withdraw dry-run/apply；workflow 回读当前 ref 中的记录后才允许远端删除。withdraw 支持相同输入的幂等重试；未记录 withdrawn、仍被 alias 引用、fallback 未验证或删除范围不能精确限定到单一 product/version 时一律 fail closed。已撤回版本永久跳过，修复使用更高 PATCH 或 prerelease 序号。
 
+撤回与回退必须同渠道：stable 只回退 stable，beta 只回退 beta，禁止跨渠道。`withdraw-release.sh` 按渠道独立解析版本——省略撤回版本时先取跨渠道最高已发布版本（stable 优先）确定渠道，再撤回该渠道低于当前最高版本的最高版本；fallback 默认取同渠道当前最高已发布版本，显式 `--fallback` 必须与撤回版本同渠道，否则拒绝执行。
+
 ---
 
 ## 8. Desktop Distribution

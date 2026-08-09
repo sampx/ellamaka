@@ -19,9 +19,11 @@ $SCRIPT — 整版撤回 ellamaka 产品版本
 （提交并推送），再 dispatch cleanup-releases.yml withdraw 模式执行
 远端删除（恢复 aliases → 删 R2 prefix → 删 Release 页面与 tag）。
 
-version 省略时自动撤回该产品"上一个版本"：低于当前最高已发布版本
-的最高版本（fallback 自动取当前最高版本）。显式指定 version 时
-fallback 默认取当前最高已发布版本，也可用 --fallback 覆盖。
+version 省略时自动撤回该产品"上一个版本"：取跨渠道最高已发布版本
+（stable 优先）确定渠道，再撤回该渠道低于当前最高版本的最高版本。
+fallback 默认取同渠道当前最高版本。显式指定 version 时 fallback 默认
+取该渠道当前最高已发布版本，也可用 --fallback 覆盖。撤回与回退
+必须同渠道：stable 只回退 stable，beta 只回退 beta，禁止跨渠道。
 
 用法:
   $SCRIPT <cli|desktop> [version] [--fallback <version>]
@@ -37,7 +39,7 @@ fallback 默认取当前最高已发布版本，也可用 --fallback 覆盖。
 ━━━ 校验 ━━━
   1. product 必须为 cli 或 desktop
   2. version 必须已登记到 withdrawn-versions.json（脚本自动登记）
-  3. fallback 必须存在且不等于 version
+  3. fallback 必须存在、不等于 version，且与 version 同渠道
   4. 登记、提交、推送失败时中止（fail-closed）
 
 ━━━ 示例 ━━━
@@ -88,6 +90,14 @@ fi
 
 VERSION="${ARGS[0]:-}"
 
+# --- Product key mapping ---
+# withdrawn-versions.json 与 cleanup workflow 使用全名 key
+# （ellamaka-cli / ellamaka-desktop），cli|desktop 参数映射为全名。
+case "$PRODUCT" in
+  cli)     PRODUCT_KEY="ellamaka-cli" ;;
+  desktop) PRODUCT_KEY="ellamaka-desktop" ;;
+esac
+
 # --- Locate repo ---
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -106,11 +116,17 @@ if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
 fi
 
 # --- Version helpers ---
-# highest_released <product> — 该产品远端最高已发布版本（SemVer，stable 优先）
+# channel_of <version> — 输出 stable | beta（-beta.N 属于 beta，其余 stable）
+channel_of() {
+  if [[ "$1" == *-beta.* ]]; then echo "beta"; else echo "stable"; fi
+}
+
+# highest_released <product> <channel> — 该产品远端该渠道最高已发布版本
 highest_released() {
-  local product="$1"
-  git -C "$REPO_ROOT" ls-remote --tags origin "${product}-v*" 2>/dev/null | node -e "
+  local product="$1" channel="$2"
+  git -C "$REPO_ROOT" ls-remote --tags origin "ellamaka-${product}-v*" 2>/dev/null | node -e "
     const product = process.argv[1]
+    const channel = process.argv[2]
     const cmp = (a, b) => {
       const pa = a.split('-'), pb = b.split('-')
       const ca = pa[0].split('.').map(Number), cb = pb[0].split('.').map(Number)
@@ -121,21 +137,24 @@ highest_released() {
     }
     let best = null
     for (const line of require('fs').readFileSync(0, 'utf8').split('\n')) {
-      const m = line.match(new RegExp('refs/tags/' + product + '-v(\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-beta\\\\.\\\\d+)?)\\\$'))
+      const m = line.match(new RegExp('refs/tags/ellamaka-' + product + '-v(\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-beta\\\\.\\\\d+)?)\\\$'))
       if (!m) continue
       const v = m[1]
+      const isBeta = v.includes('-beta.')
+      if (channel === 'beta' ? !isBeta : isBeta) continue
       if (!best || cmp(v, best) > 0) best = v
     }
     console.log(best || '')
-  " "$product"
+  " "$product" "$channel"
 }
 
-# find_previous_version <product> <current> — 低于 current 的最高已发布版本
+# find_previous_version <product> <channel> <current> — 同渠道低于 current 的最高已发布版本
 find_previous_version() {
-  local product="$1" current="$2"
-  git -C "$REPO_ROOT" ls-remote --tags origin "${product}-v*" 2>/dev/null | node -e "
+  local product="$1" channel="$2" current="$3"
+  git -C "$REPO_ROOT" ls-remote --tags origin "ellamaka-${product}-v*" 2>/dev/null | node -e "
     const product = process.argv[1]
-    const current = process.argv[2]
+    const channel = process.argv[2]
+    const current = process.argv[3]
     const cmp = (a, b) => {
       const pa = a.split('-'), pb = b.split('-')
       const ca = pa[0].split('.').map(Number), cb = pb[0].split('.').map(Number)
@@ -146,14 +165,16 @@ find_previous_version() {
     }
     let best = null
     for (const line of require('fs').readFileSync(0, 'utf8').split('\n')) {
-      const m = line.match(new RegExp('refs/tags/' + product + '-v(\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-beta\\\\.\\\\d+)?)\\\$'))
+      const m = line.match(new RegExp('refs/tags/ellamaka-' + product + '-v(\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-beta\\\\.\\\\d+)?)\\\$'))
       if (!m) continue
       const v = m[1]
+      const isBeta = v.includes('-beta.')
+      if (channel === 'beta' ? !isBeta : isBeta) continue
       if (v === current || cmp(v, current) > 0) continue
       if (!best || cmp(v, best) > 0) best = v
     }
     console.log(best || '')
-  " "$product" "$current"
+  " "$product" "$channel" "$current"
 }
 
 # is_withdrawn <product> <version> — 输出 yes/no
@@ -197,26 +218,48 @@ record_withdrawn() {
 
 # --- Resolve versions ---
 echo "→ 解析 $PRODUCT 版本..."
-LATEST="$(highest_released "$PRODUCT")"
-if [ -z "$LATEST" ]; then
+LATEST_STABLE="$(highest_released "$PRODUCT" stable)"
+LATEST_BETA="$(highest_released "$PRODUCT" beta)"
+if [ -z "$LATEST_STABLE" ] && [ -z "$LATEST_BETA" ]; then
   die "远端没有 $PRODUCT 的已发布版本，无法撤回"
 fi
-echo "  当前最高已发布版本: v$LATEST"
 
 if [ -z "$VERSION" ]; then
-  VERSION="$(find_previous_version "$PRODUCT" "$LATEST")"
+  # 省略 version：取跨渠道最高（stable 优先）确定渠道，再撤回该渠道上一版
+  if [ -n "$LATEST_STABLE" ]; then
+    CHANNEL="stable"
+    LATEST="$LATEST_STABLE"
+  else
+    CHANNEL="beta"
+    LATEST="$LATEST_BETA"
+  fi
+  echo "  当前最高已发布版本: v$LATEST（channel=$CHANNEL）"
+  VERSION="$(find_previous_version "$PRODUCT" "$CHANNEL" "$LATEST")"
   if [ -z "$VERSION" ]; then
-    die "没有低于 v$LATEST 的版本可撤回"
+    die "没有低于 v$LATEST 的同渠道版本可撤回"
   fi
   echo "  自动选择上一个版本: v$VERSION"
 else
-  echo "  指定撤回版本: v$VERSION"
+  CHANNEL="$(channel_of "$VERSION")"
+  echo "  指定撤回版本: v$VERSION（channel=$CHANNEL）"
+  if [ "$CHANNEL" = "stable" ]; then
+    LATEST="$LATEST_STABLE"
+  else
+    LATEST="$LATEST_BETA"
+  fi
+  if [ -z "$LATEST" ]; then
+    die "远端没有 $PRODUCT 的 $CHANNEL 渠道已发布版本，无法撤回"
+  fi
+  echo "  该渠道当前最高已发布版本: v$LATEST"
 fi
 
 if [ -z "$FALLBACK" ]; then
   FALLBACK="$LATEST"
-  echo "  fallback 默认取当前最高版本: v$FALLBACK"
+  echo "  fallback 默认取同渠道当前最高版本: v$FALLBACK"
 else
+  if [ "$(channel_of "$FALLBACK")" != "$CHANNEL" ]; then
+    die "fallback v$FALLBACK 与撤回版本 v$VERSION 渠道不一致（$CHANNEL 只能回退 $CHANNEL）"
+  fi
   echo "  指定 fallback: v$FALLBACK"
 fi
 
@@ -225,7 +268,7 @@ if [ "$VERSION" = "$FALLBACK" ]; then
   die "撤回版本 v$VERSION 不能等于 fallback v$FALLBACK"
 fi
 
-if [ "$(is_withdrawn "$PRODUCT" "$VERSION")" = "yes" ]; then
+if [ "$(is_withdrawn "$PRODUCT_KEY" "$VERSION")" = "yes" ]; then
   echo "→ $PRODUCT v$VERSION 已在 withdrawn-versions.json 中"
   echo "  如需重新执行撤回，请先确认远端状态（幂等重试）"
 fi
@@ -240,16 +283,16 @@ echo ""
 if [ "$HAVE_GH" = false ]; then
   echo "ℹ️  gh CLI 不可用或未认证，仅登记 withdrawn-versions.json。"
   echo "   请手动在 GitHub Actions 触发 cleanup-releases.yml（mode=withdraw）。"
-  record_withdrawn "$PRODUCT" "$VERSION"
+  record_withdrawn "$PRODUCT_KEY" "$VERSION"
   exit 0
 fi
 
-record_withdrawn "$PRODUCT" "$VERSION"
+record_withdrawn "$PRODUCT_KEY" "$VERSION"
 
 echo "→ 触发 withdraw workflow ($PRODUCT v$VERSION → fallback v$FALLBACK)..."
 gh workflow run cleanup-releases.yml -R wopal-cn/ellamaka \
   -f mode=withdraw \
-  -f product="$PRODUCT" \
+  -f product="$PRODUCT_KEY" \
   -f withdraw-version="$VERSION" \
   -f fallback-version="$FALLBACK" \
   -f apply=true || echo "⚠️  withdraw workflow 触发失败（可手动触发）"
