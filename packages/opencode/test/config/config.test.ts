@@ -33,6 +33,7 @@ import { pathToFileURL } from "url"
 import { Global } from "@opencode-ai/core/global"
 import { ProjectID } from "../../src/project/schema"
 import { Filesystem } from "@/util/filesystem"
+import { isRecord } from "@/util/record"
 import { ConfigPlugin } from "@/config/plugin"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
@@ -370,27 +371,72 @@ it.instance("updates config and preserves empty shell sentinel", () =>
 )
 
 it.effect("updates global config and omits empty shell key in json", () =>
-  withGlobalConfig({ config: { shell: "bash" } }, ({ dir }) =>
+  withGlobalConfig({ config: { shell: "bash" }, name: "settings.jsonc" }, ({ dir }) =>
     Effect.gen(function* () {
       yield* Config.use.updateGlobal({ shell: "" })
 
-      const writtenConfig = yield* AppFileSystem.use.readJson(path.join(dir, "opencode.json"))
+      const writtenConfig = yield* AppFileSystem.use.readJson(path.join(dir, "settings.jsonc"))
       expect(writtenConfig).not.toHaveProperty("shell")
     }),
   ),
 )
 
 it.effect("updates global config and omits empty shell key in jsonc", () =>
-  withGlobalConfig({ config: { shell: "bash", model: "test/model" }, name: "opencode.jsonc" }, ({ dir }) =>
+  withGlobalConfig({ config: { shell: "bash", model: "test/model" }, name: "settings.jsonc" }, ({ dir }) =>
     Effect.gen(function* () {
       yield* Config.use.updateGlobal({ shell: "" })
 
-      const file = path.join(dir, "opencode.jsonc")
+      const file = path.join(dir, "settings.jsonc")
       const writtenConfig = yield* AppFileSystem.use.readFileString(file)
       const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
       expect(writtenConfig).not.toContain('"shell"')
       expect(parsed.shell).toBeUndefined()
       expect(parsed.model).toBe("test/model")
+    }),
+  ),
+)
+
+it.effect("updates global config inside ellamaka wrapper and preserves top-level keys", () =>
+  withGlobalConfig({}, ({ dir }) =>
+    Effect.gen(function* () {
+      yield* writeConfigEffect(
+        dir,
+        { ellamaka: { shell: "bash", model: "test/model" }, spaces: { active: "x" } },
+        "settings.jsonc",
+      )
+
+      yield* Config.use.updateGlobal({ model: "new/model" })
+
+      const file = path.join(dir, "settings.jsonc")
+      const writtenConfig = yield* AppFileSystem.use.readFileString(file)
+      const parsed = ConfigParse.jsonc(writtenConfig, file)
+      expect(isRecord(parsed)).toBe(true)
+      if (!isRecord(parsed)) return
+      const ellamaka = parsed.ellamaka
+      expect(isRecord(ellamaka)).toBe(true)
+      if (!isRecord(ellamaka)) return
+      expect(ellamaka.model).toBe("new/model")
+      expect(ellamaka.shell).toBe("bash")
+      expect(parsed.spaces).toEqual({ active: "x" })
+      expect(parsed).not.toHaveProperty("model")
+    }),
+  ),
+)
+
+it.effect("returns global config info consistent with getGlobal reload after ellamaka wrapper update", () =>
+  withGlobalConfig({}, ({ dir }) =>
+    Effect.gen(function* () {
+      yield* writeConfigEffect(
+        dir,
+        { ellamaka: { shell: "bash", model: "test/model" }, spaces: { active: "x" } },
+        "settings.jsonc",
+      )
+
+      const result = yield* Config.use.updateGlobal({ model: "new/model" })
+
+      expect(result.info.model).toBe("new/model")
+      expect(result.info.shell).toBe("bash")
+      expect(result.info).toEqual(yield* Config.use.getGlobal())
     }),
   ),
 )

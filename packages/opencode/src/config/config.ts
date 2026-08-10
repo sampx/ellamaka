@@ -955,21 +955,29 @@ export const layer = Layer.effect(
       const before = (yield* readConfigFile(file)) ?? "{}"
       const patch = writableGlobal(config)
 
-      let next: Info
+      // Wrapper detection: same check as loadSettingsFile, only decides the patch target
+      const raw = ConfigParse.jsonc(before, file)
+      const wrapped = isRecord(raw) && isRecord(raw.ellamaka)
+
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
-        const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
+        const existingRaw = ConfigParse.jsonc(before, file)
+        const wrappedRaw = isRecord(existingRaw) && isRecord(existingRaw.ellamaka) ? existingRaw : null
+        const existing = ConfigParse.schema(Info, wrappedRaw ? wrappedRaw.ellamaka : existingRaw, file)
         const merged = mergeDeep(writable(existing), patch)
-        const serialized = JSON.stringify(merged, null, 2)
+        const serialized = wrappedRaw
+          ? JSON.stringify({ ...wrappedRaw, ellamaka: merged }, null, 2)
+          : JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
-        next = merged
       } else {
-        const updated = patchJsonc(before, patch)
-        next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
+        const updated = wrapped ? patchJsonc(before, patch, ["ellamaka"]) : patchJsonc(before, patch)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
+
+      // Same loading semantics as getGlobal (wrapper detection + variable substitution + normalization)
+      const next = yield* loadSettingsFile(file)
 
       if (changed) yield* invalidate()
       return { info: next, changed }
