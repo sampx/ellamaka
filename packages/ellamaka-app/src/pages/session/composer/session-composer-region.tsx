@@ -17,6 +17,8 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
+import { promptSurfaceMode } from "./session-composer-surface"
+import { PromptSurfaceGate } from "./prompt-surface-gate"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -60,7 +62,7 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => (route.params.id ? sync.session.get(route.params.id) : undefined))
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
-  const showComposer = createMemo(() => !props.state.blocked() || child())
+  const surface = createMemo(() => promptSurfaceMode({ blocked: props.state.blocked(), child: child() }))
 
   const previewPrompt = () =>
     prompt
@@ -179,122 +181,120 @@ export function SessionComposerRegion(props: {
           )}
         </Show>
 
-        <Show when={showComposer()}>
-          <Show
-            when={prompt.ready()}
-            fallback={
-              <>
-                <Show when={rolled()} keyed>
-                  {(revert) => (
-                    <div class="pb-2">
-                      <SessionRevertDock
-                        items={revert.items}
-                        restoring={revert.restoring}
-                        disabled={revert.disabled}
-                        onRestore={revert.onRestore}
-                      />
-                    </div>
-                  )}
-                </Show>
-                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
-                  {handoffPrompt() || language.t("prompt.loading")}
-                </div>
-              </>
-            }
-          >
-            <Show when={dock()}>
-              <div
-                classList={{
-                  "overflow-hidden": true,
-                  "pointer-events-none": value() < 0.98,
-                }}
-                style={{
-                  "max-height": `${full() * value()}px`,
-                }}
-              >
-                <div ref={(el) => setStore("body", el)}>
-                  <SessionTodoDock
-                    sessionID={route.params.id}
-                    todos={props.state.todos()}
-                    collapsed={view.todoCollapsed.get()}
-                    onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
-                    collapseLabel={language.t("session.todo.collapse")}
-                    expandLabel={language.t("session.todo.expand")}
-                    dockProgress={value()}
-                  />
-                </div>
+        <Show
+          when={prompt.ready()}
+          fallback={
+            <>
+              <Show when={rolled()} keyed>
+                {(revert) => (
+                  <div class="pb-2">
+                    <SessionRevertDock
+                      items={revert.items}
+                      restoring={revert.restoring}
+                      disabled={revert.disabled}
+                      onRestore={revert.onRestore}
+                    />
+                  </div>
+                )}
+              </Show>
+              <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
+                {handoffPrompt() || language.t("prompt.loading")}
               </div>
-            </Show>
-            <Show when={rolled()} keyed>
-              {(revert) => (
-                <div
-                  style={{
-                    "margin-top": `${-36 * value()}px`,
-                  }}
-                >
-                  <SessionRevertDock
-                    items={revert.items}
-                    restoring={revert.restoring}
-                    disabled={revert.disabled}
-                    onRestore={revert.onRestore}
-                  />
-                </div>
-              )}
-            </Show>
+            </>
+          }
+        >
+          <Show when={dock()}>
             <div
               classList={{
-                "relative z-10": true,
+                "overflow-hidden": true,
+                "pointer-events-none": value() < 0.98,
               }}
               style={{
-                "margin-top": `${-lift()}px`,
+                "max-height": `${full() * value()}px`,
               }}
             >
-              <Show when={props.followup?.items.length}>
-                <SessionFollowupDock
-                  items={props.followup!.items}
-                  sending={props.followup!.sending}
-                  onSend={props.followup!.onSend}
-                  onEdit={props.followup!.onEdit}
+              <div ref={(el) => setStore("body", el)}>
+                <SessionTodoDock
+                  sessionID={route.params.id}
+                  todos={props.state.todos()}
+                  collapsed={view.todoCollapsed.get()}
+                  onToggle={() => view.todoCollapsed.set(!view.todoCollapsed.get())}
+                  collapseLabel={language.t("session.todo.collapse")}
+                  expandLabel={language.t("session.todo.expand")}
+                  dockProgress={value()}
                 />
-              </Show>
-              <Show
-                when={child()}
-                fallback={
-                  <Show when={!props.state.blocked()}>
-                    <PromptInput
-                      variant={props.placement === "inline" ? "new-session" : props.placement === "dock" ? "dock" : undefined}
-                      ref={props.inputRef}
-                      canRestoreFocus={props.canRestorePromptFocus}
-                      newSessionWorktree={props.newSessionWorktree}
-                      onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
-                      edit={props.followup?.edit}
-                      onEditLoaded={props.followup?.onEditLoaded}
-                      shouldQueue={props.followup?.queue}
-                      onQueue={props.followup?.onQueue}
-                      onAbort={props.followup?.onAbort}
-                      onSubmit={props.onSubmit}
-                    />
-                  </Show>
-                }
-              >
-                <div
-                  ref={props.inputRef}
-                  class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
-                >
-                  <span>{language.t("session.child.promptDisabled")} </span>
-                  <Show when={parentID()}>
-                    <button
-                      type="button"
-                      class="text-text-base transition-colors hover:text-text-strong"
-                      onClick={openParent}
-                    >
-                      {language.t("session.child.backToParent")}
-                    </button>
-                  </Show>
-                </div>
-              </Show>
+              </div>
             </div>
           </Show>
+          <Show when={rolled()} keyed>
+            {(revert) => (
+              <div
+                style={{
+                  "margin-top": `${-36 * value()}px`,
+                }}
+              >
+                <SessionRevertDock
+                  items={revert.items}
+                  restoring={revert.restoring}
+                  disabled={revert.disabled}
+                  onRestore={revert.onRestore}
+                />
+              </div>
+            )}
+          </Show>
+          <div
+            classList={{
+              "relative z-10": true,
+            }}
+            style={{
+              "margin-top": `${-lift()}px`,
+            }}
+          >
+            <Show when={props.followup?.items.length}>
+              <SessionFollowupDock
+                items={props.followup!.items}
+                sending={props.followup!.sending}
+                onSend={props.followup!.onSend}
+                onEdit={props.followup!.onEdit}
+              />
+            </Show>
+            <Show
+              when={surface() === "child-disabled"}
+              fallback={
+                <PromptSurfaceGate mode={surface() === "prompt-disabled" ? "prompt-disabled" : "prompt"}>
+                  <PromptInput
+                    variant={props.placement === "inline" ? "new-session" : props.placement === "dock" ? "dock" : undefined}
+                    ref={props.inputRef}
+                    canRestoreFocus={props.canRestorePromptFocus}
+                    newSessionWorktree={props.newSessionWorktree}
+                    onNewSessionWorktreeReset={props.onNewSessionWorktreeReset}
+                    edit={props.followup?.edit}
+                    onEditLoaded={props.followup?.onEditLoaded}
+                    shouldQueue={props.followup?.queue}
+                    onQueue={props.followup?.onQueue}
+                    onAbort={props.followup?.onAbort}
+                    onSubmit={props.onSubmit}
+                  />
+                </PromptSurfaceGate>
+              }
+            >
+              <div
+                ref={props.inputRef}
+                class="w-full rounded-[12px] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+              >
+                <span>{language.t("session.child.promptDisabled")} </span>
+                <Show when={parentID()}>
+                  <button
+                    type="button"
+                    class="text-text-base transition-colors hover:text-text-strong"
+                    onClick={openParent}
+                  >
+                    {language.t("session.child.backToParent")}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+          </div>
         </Show>
       </div>
     </div>

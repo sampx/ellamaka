@@ -228,6 +228,64 @@ describe("panel prompt focus", () => {
     expect(selection.getRangeAt(0).startOffset).toBe(3)
   })
 
+  test("does not steal focus from a terminal input in another panel", () => {
+    const { root } = createPanel()
+    const otherPanel = document.createElement("div")
+    otherPanel.dataset.panelId = "panel-2"
+    const terminal = document.createElement("div")
+    terminal.dataset.component = "terminal"
+    const terminalInput = document.createElement("textarea")
+    terminal.append(terminalInput)
+    otherPanel.append(terminal)
+    document.body.append(otherPanel)
+
+    const scheduler = createScheduler()
+    terminalInput.focus()
+    expect(document.activeElement).toBe(terminalInput)
+
+    startPanelPromptFocus({
+      root: () => root,
+      shouldFocus: () => true,
+      isPointerDown: () => false,
+      delays: [0],
+      ...scheduler,
+    })
+
+    scheduler.frames.shift()?.(0)
+    expect(document.activeElement).toBe(terminalInput)
+    expect(scheduler.timers).toHaveLength(0)
+  })
+
+  test("does not steal focus from another panel's prompt editor", () => {
+    const { root } = createPanel()
+    const otherPanel = document.createElement("div")
+    otherPanel.dataset.panelId = "panel-2"
+    const otherDock = document.createElement("div")
+    otherDock.dataset.component = "session-prompt-dock"
+    const otherEditor = document.createElement("div")
+    otherEditor.dataset.component = "prompt-input"
+    otherEditor.contentEditable = "true"
+    otherDock.append(otherEditor)
+    otherPanel.append(otherDock)
+    document.body.append(otherPanel)
+
+    const scheduler = createScheduler()
+    otherEditor.focus()
+    expect(document.activeElement).toBe(otherEditor)
+
+    startPanelPromptFocus({
+      root: () => root,
+      shouldFocus: () => true,
+      isPointerDown: () => false,
+      delays: [0],
+      ...scheduler,
+    })
+
+    scheduler.frames.shift()?.(0)
+    expect(document.activeElement).toBe(otherEditor)
+    expect(scheduler.timers).toHaveLength(0)
+  })
+
   test("focuses the panel editor and places the caret at the end", () => {
     const { root, editor } = createPanel()
 

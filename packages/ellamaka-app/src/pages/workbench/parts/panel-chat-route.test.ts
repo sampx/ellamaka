@@ -27,4 +27,12 @@ describe("panelChatRoute", () => {
     expect(panel).toContain("onPromptReady: handlePromptReady")
     expect(panel).toContain("canRestorePromptFocus: () =>")
   })
+
+  test("keeps the panel prompt focus guard global instead of panel-bounded", async () => {
+    const panel = await Bun.file(new URL("./panel.tsx", import.meta.url)).text()
+
+    expect(panel).toContain("shouldPreservePanelPointerFocus(active)")
+    expect(panel).not.toContain("panel?.contains(active)")
+    expect(panel).not.toContain("panel.contains(active)")
+  })
 })

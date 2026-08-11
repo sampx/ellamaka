@@ -30,9 +30,9 @@ function hasExpandedSelection(): boolean {
   return !!selection && selection.rangeCount > 0 && !selection.isCollapsed
 }
 
-function focusBelongsToPanelControl(root: HTMLElement): boolean {
+function focusBelongsToAnyInputControl(): boolean {
   const active = document.activeElement
-  if (!(active instanceof HTMLElement) || !root.contains(active)) return false
+  if (!(active instanceof HTMLElement) || !active.isConnected) return false
   return !!active.closest(PANEL_FOCUS_OWNER_SELECTOR)
 }
 
@@ -150,7 +150,7 @@ export function startPanelPromptFocus(options: PanelPromptFocusOptions): () => v
 
       const root = options.root()
       if (root) {
-        if (focusBelongsToPanelControl(root)) {
+        if (focusBelongsToAnyInputControl()) {
           stop()
           return
         }

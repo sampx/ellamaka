@@ -136,9 +136,8 @@ export function Panel(props: {
       const selection = window.getSelection()
       if (selection && selection.rangeCount > 0 && !selection.isCollapsed) return
 
-      const panel = editor.closest("[data-panel-id]")
       const active = document.activeElement
-      if (active instanceof Element && panel?.contains(active) && shouldPreservePanelPointerFocus(active)) return
+      if (active instanceof Element && shouldPreservePanelPointerFocus(active)) return
       focusPromptEditor(editor)
     })
   }

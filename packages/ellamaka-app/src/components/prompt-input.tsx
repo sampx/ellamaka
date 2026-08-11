@@ -1,5 +1,6 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { shouldSkipRestoreFocus } from "@/components/prompt-input/focus-guard"
 import {
   createEffect,
   on,
@@ -556,6 +557,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
     requestAnimationFrame(() => {
       if (props.canRestoreFocus && !props.canRestoreFocus()) return
+      if (shouldSkipRestoreFocus(editorRef)) return
       const cursor = prompt.cursor() ?? promptLength(prompt.current())
       editorRef?.focus()
       if (editorRef) setCursorPosition(editorRef, cursor)
