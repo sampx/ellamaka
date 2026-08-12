@@ -4,7 +4,7 @@
 
 本报告针对 **Ellamaka Workbench** 项目在 Git 状态展示、文件树探查、空间级多 Repo 嵌套架构兼容性，以及 Session 闭环内部代码审查（Code Review）与批注系统的可行性与架构进行了深入调研与系统分析。
 
-调研明确了 Ellamaka 现有的前端组件能力及其边界，剖析了在 Wopal 空间多仓库嵌套架构下的底层缺陷，纠正了脱离真实 DOM 结构的 UI 假设，并提出了基于当前 `Session.tsx` 页面结构的会话内代码审查与批注闭环架构方案。
+调研明确了 Ellamaka 现有的前端组件能力及其边界，剖析了在 Wopal 空间多仓库嵌套架构下的底层缺陷，纠正了脱离真实 DOM 结构的 UI 假设，并提出了两个方向的架构方案：基于当前 `Session.tsx` 页面结构的会话内代码审查与批注闭环（§4），以及覆盖空间全部仓库的仓库总览与 Git API 服务（§5）。两个方向共享同一后端地基 `Git.Service`，按 §6 的分期推进。
 
 ---
 
@@ -56,6 +56,20 @@
 分析 `packages/opencode/src/project/vcs.ts` 和 `packages/app/src/pages/session.tsx` (L485) 发现：
 - 前端 `reviewDiffs()` 底层调用的 `vcsQuery` 仅针对单一工作目录（`cwd`）执行 `git status` 或 `git diff`。
 - **缺陷**：在多 Repo 嵌套空间中，如果单个 AI 会话同时修改了位于不同子项目 Repo 中的文件，当前的后端 `vcs` 无法跨多个 Repo 归集修改，会导致代码改动的漏报与错报。
+
+### 2.3 已有 `Git.Service` 的能力边界
+`packages/opencode/src/git/index.ts` 已提供完整的 `Git.Service`（Effect service，`@opencode/Git`），核心为通用执行原语：
+
+```ts
+run(args: string[], opts: { cwd, env?, maxOutputBytes?, stdin? }): Effect<Result>
+```
+
+并封装 `branch / status / diff / stats / patch / patchAll / patchUntracked / statUntracked / applyPatch / show / mergeBase / hasHead / defaultBranch / prefix` 等便捷方法。
+
+能力边界结论：
+- `cwd` 是每个方法的入参，服务本身不绑定任何特定仓库，**天然支持任意仓库路径**（等价 `git -C` 语义），多仓库调用不构成架构障碍。
+- `run()` 是万能底层，`log / commit / push / stage` 等缺失原语可作为薄封装逐步补充，无需新建平行服务。
+- 仓库发现（枚举空间根与 `projects/*`）不在该服务职责内，由上层复用 `SpaceRegistry`。
 
 ---
 
@@ -127,14 +141,87 @@
 
 ---
 
-## 5. 重构与实施建议
+## 5. 空间仓库总览与 Git API 服务架构方案
 
-1. **后端扩展 (VCS 模块)**：
-   在 `packages/opencode/src/project/vcs.ts` 中增加空间多 Repo 发现与跨仓库 Diff 聚合计算逻辑，使得 `reviewDiffs` 能准确收集当前 Session 在多个嵌套仓库中所做的代码修改。
-2. **前端视图重构 (Session 页面)**：
-   在 `SessionHeader` 中增加视角控制状态，将 `SessionReviewTab` 作为 `MessageTimeline` 的同级可切换视图嵌入 `session.tsx`。
-3. **保持 Prompt 联动**：
-   复用 `addCommentToContext` 逻辑，确保会话内审查的批注能平滑送达 Prompt 触发 AI 迭代。
+### 5.1 目标
+
+在 Workbench 中呈现空间及其全部项目仓库的变更情况：空间根仓库与 `projects/*` 下每个仓库的分支、未提交变更、ahead/behind 状态一屏总览，并支持查看 diff、暂存、提交、推送。后端以 HTTP API 服务提供这些能力，管理仓库的变更、提交、push 与 diff。
+
+### 5.2 后端分层
+
+| 层 | 组件 | 职责 |
+|---|---|---|
+| 原语层 | `Git.Service`（已有，`@opencode/Git`） | git 命令执行与输出解析，`cwd` 定位仓库；扩展 `log / stage / unstage / commit / push / aheadBehind` 原语（均为 `run()` 薄封装） |
+| 聚合层 | `Vcs`（已有，`@opencode/Vcs`） | 会话级 diff 聚合与批注依赖，保持现状 |
+| API 层 | 新增 `/git/*` HttpApi group（Root 级） | 把 `Git.Service` 原语暴露为 HTTP API；handler 只做 HTTP 到领域服务的翻译，注册于 `server.ts` 组合根，继承现有 Authorization |
+
+不新建平行 git 服务，`Git.Service` 是唯一原语提供者；`/git/*` 是唯一的网络入口。
+
+### 5.3 仓库发现
+
+仓库清单复用 `SpaceRegistry`（消费 wopal CLI `space.projects.list` v2，返回注册 projects 与 linked worktrees），空间根仓库作为固定条目补充。后端不重复实现仓库发现逻辑，CLI 清单是事实来源；未能发现的仓库不出现在总览中。
+
+### 5.4 API 端点草案
+
+| 端点 | 语义 | 关键约束 |
+|---|---|---|
+| `GET /git/repos` | 全部仓库状态摘要（分支、变更文件数、ahead/behind） | 总览主数据；仓库按 registried 顺序排列 |
+| `GET /git/repos/{repoId}/status` | 单仓库详细状态（变更文件列表与类型） | `repoId` 为空间相对路径，realpath 二次过滤，仅接受已注册 space 内的 projects |
+| `GET /git/repos/{repoId}/diff?path=&staged=` | 指定文件 diff 文本 | 复用 `Git.patch` 能力 |
+| `GET /git/repos/{repoId}/log?limit=` | 提交历史 | 默认 20 条 |
+| `POST /git/repos/{repoId}/stage` / `unstage` | 暂存/取消暂存 `{paths[] \| all}` | 写操作 |
+| `POST /git/repos/{repoId}/commit` | 提交 `{message}` | **确认流** |
+| `POST /git/repos/{repoId}/push` | 推送 | **确认流** |
+
+### 5.5 写操作确认流
+
+`commit` / `push` 采用两阶段：
+
+1. **preview**（`POST .../preview`）：dry-run，返回将执行的完整 git 命令与影响摘要（commit：staged 变更 + message；push：ahead 数量 + 待推送 commit 列表）。
+2. **execute**（`POST .../execute`）：带 `requestId` 幂等执行，复用 `POST /workbench/sessions` 的 requestID 先例；重复提交同一 `requestId` 返回同一结果。
+
+前端交互：用户点击提交/推送 → 展示 preview 内容 → 确认 → execute。
+
+### 5.6 安全与并发
+
+| 风险 | 对策 |
+|---|---|
+| 路径穿越（伪造 repoId 读任意目录 git） | repoId 仅接受已注册 space 的 projects 相对路径，realpath 二次过滤（复用 `/workbench/locations` 边界模式） |
+| shell 注入（commit message 等） | git 命令一律 `args[]` 数组 spawn，不经 shell，天然免疫 |
+| 同仓库并发写 | 写操作过 Effect Semaphore 按 repo 串行化；`.git/index.lock` 兜底，冲突返回 409 |
+| push 长操作 | 同步执行 + 超时；后续经 `/global/event` SSE 做进度推送 |
+
+### 5.7 前端视图挂载
+
+Workbench 已有 `ViewRegistry` 多视图机制（`view-registry.ts` + `registerDefaultViews`），总览视图注册为独立视图。文件树与 diff 分别复用现有组件：
+
+- `FileTree`：git 状态着色（A/M/D）与 changes/all 视图切换，直接用于仓库变更文件树。
+- `SessionReviewTab`：unified/split diff 展示与行级批注，直接用于 diff 查看。
+
+不新建平行 UI 组件；总览视图是现有组件的编排层。
+
+### 5.8 与 §4 会话审查方案的关系
+
+两个方案共享同一后端地基 `Git.Service`，投影维度不同：
+
+- §4 会话审查：**file-centric**——本次会话跨仓库改了哪些文件，供 `reviewDiffs` 归集。
+- §5 空间总览：**repo-centric**——每个仓库的分支与变更状态，供总览视图展示。
+
+status 数据按仓库组织，file-centric 是前端聚合维度，不增加后端负担。
+
+## 6. 重构与实施建议
+
+1. **P1 后端地基（仓库总览 API）**：
+   - 扩展 `Git.Service`：`log / stage / unstage / commit / push / aheadBehind` 原语（`run()` 薄封装）。
+   - 新增 `/git/*` HttpApi group（Root 级），含 preview/execute 确认流；按 API-CONTRACT.md 门禁：Schema 声明、错误映射、SDK 重新生成、测试。
+   - 仓库清单接入 `SpaceRegistry`，空间根仓库作为固定条目补充。
+2. **P2 空间总览视图（Workbench）**：
+   - 在 `ViewRegistry` 注册总览视图，复用 `FileTree` 与 `SessionReviewTab` 展示仓库变更与 diff。
+   - 提交/推送走确认流（preview 弹窗 → execute）。
+3. **P3 会话跨仓库归集（§4 闭环）**：
+   - 增强 `Vcs`：会话归集时发现多仓库 → 逐仓库调 `Git.Service` 聚合，修复 `reviewDiffs` 跨仓库漏报。
+   - 按 §4 在 `SessionHeader` 增加对话/审查视角切换，批注联动 Prompt。
 
 ---
-*报告生成时间: 2026-07-30*
+
+*报告生成时间: 2026-07-30* ｜ *更新: 2026-08-12 融合空间仓库总览与 Git API 服务方案（§2.3、§5、§6）*
