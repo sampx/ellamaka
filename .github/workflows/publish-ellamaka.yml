@@ -16,6 +16,11 @@ on:
           - ellamaka-app
           - app
           - none
+      publish:
+        description: "Publish to R2/CDN and create releases (requires version)"
+        required: false
+        default: "false"
+        type: boolean
 
 # tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
 # 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
@@ -42,12 +47,15 @@ jobs:
         run: |
           if [[ -n "${{ inputs.version }}" ]]; then
             version="${{ inputs.version }}"
-            release="true"
             tag="v${version}"
           else
             version="0.0.0-dev"
-            release=""
             tag=""
+          fi
+          if [[ "${{ inputs.publish }}" == "true" && -n "${{ inputs.version }}" ]]; then
+            release="true"
+          else
+            release=""
           fi
           {
             echo "version=${version}"
@@ -127,6 +135,16 @@ jobs:
               tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
             fi
           done
+
+      - name: Upload preview artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-preview-${{ github.sha }}
+          path: |
+            dist/ellamaka-*.tar.gz
+            dist/ellamaka-*.zip
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Verify archives
         if: needs.version.outputs.release != ''
