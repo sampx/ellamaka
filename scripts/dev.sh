@@ -692,6 +692,9 @@ cmd_desktop() {
   require_free_ports 5173 9222 || return 1
   export OPENCODE_CHANNEL="$CHANNEL"
   source "$root/scripts/lib/version.sh"
+  # Keep the schema dependency floor in lockstep with .ci/versions.json
+  # before resolving MIN_WOPAL_CLI_VERSION (idempotent no-op when aligned).
+  sync_min_wopal_cli_version "$root"
   export MIN_WOPAL_CLI_VERSION="${MIN_WOPAL_CLI_VERSION:-$(resolve_min_wopal_cli_version "$root")}"
 
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."

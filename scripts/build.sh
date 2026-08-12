@@ -42,6 +42,11 @@ shift 2>/dev/null || true
 # Shared version resolution for CLI / Desktop builds.
 source "$PROJECT_ROOT/scripts/lib/version.sh"
 
+# Keep the @wopal/cli-capability-schema dependency floor in lockstep with
+# .ci/versions.json before resolving MIN_WOPAL_CLI_VERSION, so compile-time
+# schema types match the runtime floor during development and verification.
+sync_min_wopal_cli_version "$PROJECT_ROOT"
+
 # ── CLI build ──────────────────────────────────────────────
 
 function build_cli() {

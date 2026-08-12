@@ -130,6 +130,12 @@ LEGACY_INVENTORY_FILE="$REPO_ROOT/release/legacy-inventory.json"
 # --- Shared version resolution ---
 source "$REPO_ROOT/scripts/lib/version.sh"
 
+# Keep the @wopal/cli-capability-schema dependency floor in lockstep with
+# .ci/versions.json before resolving MIN_WOPAL_CLI_VERSION, so the release
+# gate and the committed dependency floor agree (idempotent no-op when
+# already aligned).
+sync_min_wopal_cli_version "$REPO_ROOT"
+
 # --- Inject CLI Version ---
 if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then
   export MIN_WOPAL_CLI_VERSION=$(jq -r .minWopalCli "$REPO_ROOT/.ci/versions.json")
