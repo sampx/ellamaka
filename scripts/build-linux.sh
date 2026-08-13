@@ -1,33 +1,52 @@
 #!/bin/bash
-# scripts/build-linux.sh — build Ellamaka Desktop or CLI for Linux via CI.
+# scripts/build-linux.sh — build Ellamaka Desktop and/or CLI for Linux via CI.
 #
-# Dispatches the selected workflow on the current branch with publish=false,
-# waits for completion, downloads the Linux artifact, and prints its run link.
+# Dispatches the selected workflow(s) on the current branch with publish=false,
+# waits for completion, downloads the Linux artifact(s), and prints run links.
+#
+# Usage:
+#   build-linux.sh [desktop|cli] [options]
+#
+# Subcommands:
+#   desktop   Build Linux Desktop (default when no subcommand)
+#   cli       Build Linux CLI
+#   (none)    Build both Desktop and CLI
+#
+# Options:
+#   --arch <arch>    Linux architecture: x64 or arm64 (default: x64)
+#   --channel <name> Desktop channel: main, beta, or prod (default: main)
+#   --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
+#   --out <dir>      Download directory (default: <repo>/dist/ci)
+#   --no-wait        Trigger the workflow and exit without waiting
+#   --force          Skip the interactive working-tree / push confirmation
+#   -h, --help       Show this help
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="wopal-cn/ellamaka"
-TARGET="desktop"
-TARGET_EXPLICIT=false
 CHANNEL="main"
 WEB_UI="ellamaka-app"
 OUT_DIR="$PROJECT_ROOT/dist/ci"
 NO_WAIT=false
 FORCE=false
 ARCH="x64"
+TARGETS=()
 
 show_help() {
   cat <<'EOF'
-Usage: build-linux.sh [options]
+Usage: build-linux.sh [desktop|cli] [options]
 
-Build the Ellamaka Desktop or CLI for Linux via CI, without publishing, then
-download the Linux artifact. The default target is Desktop.
+Build the Ellamaka Desktop and/or CLI for Linux via CI, without publishing,
+then download the Linux artifact(s). With no subcommand, both are built.
+
+Subcommands:
+  desktop        Build Linux Desktop
+  cli            Build Linux CLI
+  (none)         Build both Desktop and CLI
 
 Options:
-  --desktop        Build Linux Desktop (default)
-  --cli            Build Linux CLI
   --arch <arch>    Linux architecture: x64 or arm64 (default: x64)
   --channel <name> Desktop channel: main, beta, or prod (default: main)
   --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
@@ -44,14 +63,8 @@ while [[ $# -gt 0 ]]; do
       show_help
       exit 0
       ;;
-    --desktop|--cli)
-      requested_target="${1#--}"
-      if $TARGET_EXPLICIT && [[ "$TARGET" != "$requested_target" ]]; then
-        echo "Cannot select both --desktop and --cli" >&2
-        exit 1
-      fi
-      TARGET="$requested_target"
-      TARGET_EXPLICIT=true
+    desktop|cli)
+      TARGETS+=("$1")
       shift
       ;;
     --arch)
@@ -101,6 +114,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# No subcommand → build both.
+if [[ ${#TARGETS[@]} -eq 0 ]]; then
+  TARGETS=(desktop cli)
+fi
 
 case "$CHANNEL" in
   main|beta|prod) ;;
@@ -165,148 +183,168 @@ if [[ -n "$DIRTY" || -z "$UPSTREAM" || ( -n "$AHEAD" && "$AHEAD" != "0" ) ]]; th
   fi
 fi
 
-# ── Resolve version and workflow ───────────────────────────
-
 source "$SCRIPT_DIR/lib/version.sh"
 
-if [[ "$TARGET" == "desktop" ]]; then
-  WORKFLOW="publish-ellamaka-desktop.yml"
-  ARTIFACT_NAME="desktop-ubuntu-latest"
-  VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$PROJECT_ROOT")"
-  DESKTOP_ARTIFACT_PREFIX="ellamaka-desktop"
-  if [[ "$CHANNEL" == "beta" ]]; then
-    DESKTOP_ARTIFACT_PREFIX="ellamaka-desktop-beta"
+# ── Build one target ───────────────────────────────────────
+
+build_one() {
+  local target="$1"
+  local workflow artifact_name version
+  local -a workflow_args
+
+  if [[ "$target" == "desktop" ]]; then
+    workflow="publish-ellamaka-desktop.yml"
+    artifact_name="desktop-ubuntu-latest"
+    version="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$PROJECT_ROOT")"
+    local prefix="ellamaka-desktop"
+    if [[ "$CHANNEL" == "beta" ]]; then
+      prefix="ellamaka-desktop-beta"
+    fi
+
+    # The desktop workflow maps these inputs and github.sha to the same values
+    # remotely, ensuring electron-builder produces the requested artifact name.
+    export OPENCODE_VERSION="$version"
+    export OPENCODE_CHANNEL="$CHANNEL"
+    export OPENCODE_BUILD_ID="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
+
+    workflow_args=(
+      -f "channel=$CHANNEL"
+      -f "os=linux"
+      -f "version=$version"
+      -f "publish=false"
+    )
+    echo "Building Linux Desktop ($ARCH, channel: $CHANNEL, version: $version, branch: $BRANCH)"
+  else
+    workflow="publish-ellamaka.yml"
+    version="$(resolve_build_version "ellamaka-cli" "main" "$PROJECT_ROOT")"
+    workflow_args=(
+      -f "version=$version"
+      -f "web_ui=$WEB_UI"
+      -f "platform=linux"
+      -f "publish=false"
+    )
+    echo "Building Linux CLI ($ARCH, web UI: $WEB_UI, version: $version, branch: $BRANCH)"
   fi
 
-  # The desktop workflow maps these inputs and github.sha to the same values
-  # remotely, ensuring electron-builder produces the requested artifact name.
-  export OPENCODE_VERSION="$VERSION"
-  export OPENCODE_CHANNEL="$CHANNEL"
-  export OPENCODE_BUILD_ID="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
-
-  WORKFLOW_ARGS=(
-    -f "channel=$CHANNEL"
-    -f "os=linux"
-    -f "version=$VERSION"
-    -f "publish=false"
-  )
-  echo "Building Linux Desktop ($ARCH, channel: $CHANNEL, version: $VERSION, branch: $BRANCH)"
-else
-  WORKFLOW="publish-ellamaka.yml"
-  VERSION="$(resolve_build_version "ellamaka-cli" "main" "$PROJECT_ROOT")"
-  WORKFLOW_ARGS=(
-    -f "version=$VERSION"
-    -f "web_ui=$WEB_UI"
-    -f "platform=linux"
-    -f "publish=false"
-  )
-  echo "Building Linux CLI ($ARCH, web UI: $WEB_UI, version: $VERSION, branch: $BRANCH)"
-fi
-
-# ── Trigger workflow ───────────────────────────────────────
-
-echo "Dispatching $WORKFLOW (ref=$BRANCH, version=$VERSION, publish=false)"
-if ! gh workflow run "$WORKFLOW" -R "$REPO" --ref "$BRANCH" "${WORKFLOW_ARGS[@]}"; then
-  echo "Failed to dispatch workflow" >&2
-  exit 1
-fi
-
-# The dispatch response does not include a run id; poll the run list for the
-# newest run on this branch. Sleep briefly so the new run appears first.
-sleep 3
-RUN_ID="$(gh run list --workflow "$WORKFLOW" -R "$REPO" --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
-if [[ -z "$RUN_ID" ]]; then
-  echo "Could not determine the workflow run id. Check https://github.com/$REPO/actions" >&2
-  exit 1
-fi
-RUN_URL="https://github.com/$REPO/actions/runs/$RUN_ID"
-echo "Workflow run: $RUN_URL"
-
-if [[ "$TARGET" == "cli" ]]; then
-  HEAD_SHA="$(gh run view "$RUN_ID" -R "$REPO" --json headSha -q '.headSha' 2>/dev/null || true)"
-  if [[ -z "$HEAD_SHA" ]]; then
-    echo "Could not determine the workflow commit for CLI artifact download" >&2
-    exit 1
-  fi
-  ARTIFACT_NAME="cli-preview-$HEAD_SHA"
-fi
-
-print_download_links() {
-  echo "Download links:"
-  echo "  Run: $RUN_URL"
-  echo "  Artifacts: $RUN_URL/artifacts"
-}
-
-if $NO_WAIT; then
-  echo "--no-wait: run triggered, not waiting. Download later with:"
-  echo "  gh run download $RUN_ID -R $REPO --name $ARTIFACT_NAME --dir $OUT_DIR"
-  print_download_links
-  exit 0
-fi
-
-# ── Wait for completion ─────────────────────────────────────
-
-if ! gh run watch "$RUN_ID" -R "$REPO" --exit-status >/dev/null 2>&1; then
-  echo "Workflow run $RUN_ID failed. Failed step logs:" >&2
-  gh run view "$RUN_ID" -R "$REPO" --log-failed 2>/dev/null | tail -50 >&2 || true
-  echo "Full logs: gh run view $RUN_ID -R $REPO --log" >&2
-  exit 1
-fi
-
-# ── Download artifact ───────────────────────────────────────
-
-mkdir -p "$OUT_DIR"
-echo "Downloading $ARTIFACT_NAME to $OUT_DIR"
-if ! gh run download "$RUN_ID" -R "$REPO" --name "$ARTIFACT_NAME" --dir "$OUT_DIR"; then
-  echo "Artifact download failed" >&2
-  exit 1
-fi
-
-flatten_artifact() {
-  local name="$1" source destination
-  source="$(find "$OUT_DIR" -type f -name "$name" -print -quit 2>/dev/null)"
-  if [[ -z "$source" ]]; then
+  echo "Dispatching $workflow (ref=$BRANCH, version=$version, publish=false)"
+  if ! gh workflow run "$workflow" -R "$REPO" --ref "$BRANCH" "${workflow_args[@]}"; then
+    echo "Failed to dispatch workflow" >&2
     return 1
   fi
-  destination="$OUT_DIR/$(basename "$source")"
-  if [[ "$source" != "$destination" ]]; then
-    mv "$source" "$destination"
+
+  # The dispatch response does not include a run id; poll the run list for the
+  # newest run on this branch. Sleep briefly so the new run appears first.
+  sleep 3
+  local run_id
+  run_id="$(gh run list --workflow "$workflow" -R "$REPO" --branch "$BRANCH" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+  if [[ -z "$run_id" ]]; then
+    echo "Could not determine the workflow run id. Check https://github.com/$REPO/actions" >&2
+    return 1
   fi
-  printf '%s\n' "$destination"
+  local run_url="https://github.com/$REPO/actions/runs/$run_id"
+  echo "Workflow run: $run_url"
+
+  if [[ "$target" == "cli" ]]; then
+    local head_sha
+    head_sha="$(gh run view "$run_id" -R "$REPO" --json headSha -q '.headSha' 2>/dev/null || true)"
+    if [[ -z "$head_sha" ]]; then
+      echo "Could not determine the workflow commit for CLI artifact download" >&2
+      return 1
+    fi
+    artifact_name="cli-preview-$head_sha"
+  fi
+
+  if $NO_WAIT; then
+    echo "--no-wait: run triggered, not waiting. Download later with:"
+    echo "  gh run download $run_id -R $REPO --name $artifact_name --dir $OUT_DIR"
+    echo "Download links:"
+    echo "  Run: $run_url"
+    echo "  Artifacts: $run_url/artifacts"
+    return 0
+  fi
+
+  if ! gh run watch "$run_id" -R "$REPO" --exit-status >/dev/null 2>&1; then
+    echo "Workflow run $run_id failed. Failed step logs:" >&2
+    gh run view "$run_id" -R "$REPO" --log-failed 2>/dev/null | tail -50 >&2 || true
+    echo "Full logs: gh run view $run_id -R $REPO --log" >&2
+    return 1
+  fi
+
+  mkdir -p "$OUT_DIR"
+  echo "Downloading $artifact_name to $OUT_DIR"
+  if ! gh run download "$run_id" -R "$REPO" --name "$artifact_name" --dir "$OUT_DIR"; then
+    echo "Artifact download failed" >&2
+    return 1
+  fi
+
+  flatten_artifact() {
+    local name="$1" source destination
+    source="$(find "$OUT_DIR" -type f -name "$name" -print -quit 2>/dev/null)"
+    if [[ -z "$source" ]]; then
+      return 1
+    fi
+    destination="$OUT_DIR/$(basename "$source")"
+    if [[ "$source" != "$destination" ]]; then
+      mv "$source" "$destination"
+    fi
+    printf '%s\n' "$destination"
+  }
+
+  if [[ "$target" == "desktop" ]]; then
+    local appimage
+    appimage="$(flatten_artifact "$prefix-linux-$ARCH.AppImage" || true)"
+    if [[ -z "$appimage" ]]; then
+      echo "$prefix-linux-$ARCH.AppImage not found in downloaded artifact" >&2
+      return 1
+    fi
+
+    local -a packages=("$appimage")
+    local extension package
+    for extension in deb rpm; do
+      package="$(flatten_artifact "$prefix-linux-$ARCH.$extension" || true)"
+      if [[ -n "$package" ]]; then
+        packages+=("$package")
+      fi
+    done
+
+    local size
+    size="$(du -h "$appimage" | cut -f1)"
+    echo "Linux Desktop build ready:"
+    for package in "${packages[@]}"; do
+      echo "  $package"
+    done
+    echo "  AppImage size: $size"
+  else
+    local cli_archive
+    cli_archive="$(flatten_artifact "ellamaka-linux-$ARCH.tar.gz" || true)"
+    if [[ -z "$cli_archive" ]]; then
+      echo "ellamaka-linux-$ARCH.tar.gz not found in downloaded artifact" >&2
+      return 1
+    fi
+
+    local size
+    size="$(du -h "$cli_archive" | cut -f1)"
+    echo "Linux CLI build ready:"
+    echo "  $cli_archive"
+    echo "  size: $size"
+  fi
+
+  echo "Download links:"
+  echo "  Run: $run_url"
+  echo "  Artifacts: $run_url/artifacts"
 }
 
-if [[ "$TARGET" == "desktop" ]]; then
-  APPIMAGE="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.AppImage" || true)"
-  if [[ -z "$APPIMAGE" ]]; then
-    echo "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.AppImage not found in downloaded artifact" >&2
-    exit 1
+# ── Build all selected targets ─────────────────────────────
+
+FAILED=()
+for target in "${TARGETS[@]}"; do
+  if ! build_one "$target"; then
+    FAILED+=("$target")
   fi
+done
 
-  LINUX_PACKAGES=("$APPIMAGE")
-  for extension in deb rpm; do
-    package="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.$extension" || true)"
-    if [[ -n "$package" ]]; then
-      LINUX_PACKAGES+=("$package")
-    fi
-  done
-
-  SIZE="$(du -h "$APPIMAGE" | cut -f1)"
-  echo "Linux Desktop build ready:"
-  for package in "${LINUX_PACKAGES[@]}"; do
-    echo "  $package"
-  done
-  echo "  AppImage size: $SIZE"
-else
-  CLI_ARCHIVE="$(flatten_artifact "ellamaka-linux-$ARCH.tar.gz" || true)"
-  if [[ -z "$CLI_ARCHIVE" ]]; then
-    echo "ellamaka-linux-$ARCH.tar.gz not found in downloaded artifact" >&2
-    exit 1
-  fi
-
-  SIZE="$(du -h "$CLI_ARCHIVE" | cut -f1)"
-  echo "Linux CLI build ready:"
-  echo "  $CLI_ARCHIVE"
-  echo "  size: $SIZE"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  echo "Failed target(s): ${FAILED[*]}" >&2
+  exit 1
 fi
-
-print_download_links
+echo "All selected targets built successfully."
