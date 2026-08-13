@@ -21,6 +21,16 @@ on:
         required: false
         default: "false"
         type: boolean
+      platform:
+        description: "Target platform(s) to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - linux
+          - mac
+          - windows
 
 # tag-release.sh 触发本 workflow：仅 dispatch，不监听 push:tags。
 # 现在触发权归 tag-release.sh，按 --cli/--desktop 选择性 dispatch。
@@ -117,16 +127,25 @@ jobs:
       - name: Build
         run: |
           echo "Embedding web UI: ${WEB_UI}"
-          bash scripts/build.sh cli --arch primary --web-ui "${WEB_UI}"
+          bash scripts/build.sh cli --platform "${PLATFORM}" --arch primary --web-ui "${WEB_UI}"
         env:
           WEB_UI: ${{ github.event.inputs.web_ui || 'ellamaka-app' }}
+          PLATFORM: ${{ github.event.inputs.platform || 'all' }}
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
           ELLAMAKA_RELEASE_CONTEXT_PATH: ${{ github.workspace }}/release-context.json
 
       - name: Create archives
         run: |
-          for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-darwin-x64-baseline ellamaka-linux-arm64 ellamaka-linux-x64 ellamaka-linux-x64-baseline ellamaka-windows-x64 ellamaka-windows-x64-baseline; do
+          # Select platform targets based on the platform input.
+          # all → every primary platform; otherwise only the chosen OS.
+          case "${PLATFORM}" in
+            linux)   NAMES="ellamaka-linux-arm64 ellamaka-linux-x64 ellamaka-linux-x64-baseline" ;;
+            mac)     NAMES="ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-darwin-x64-baseline" ;;
+            windows) NAMES="ellamaka-windows-x64 ellamaka-windows-x64-baseline" ;;
+            *)       NAMES="ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-darwin-x64-baseline ellamaka-linux-arm64 ellamaka-linux-x64 ellamaka-linux-x64-baseline ellamaka-windows-x64 ellamaka-windows-x64-baseline" ;;
+          esac
+          for name in $NAMES; do
             test -d "dist/${name}/bin" || { echo "MISSING: dist/${name}/bin"; exit 1; }
             cp LICENSE "dist/${name}/bin/LICENSE"
             if [[ "$name" == *"windows"* ]]; then
@@ -135,6 +154,8 @@ jobs:
               tar -czf "dist/${name}.tar.gz" -C "dist/${name}/bin" .
             fi
           done
+        env:
+          PLATFORM: ${{ github.event.inputs.platform || 'all' }}
 
       - name: Upload preview artifacts
         uses: actions/upload-artifact@v7
@@ -149,9 +170,17 @@ jobs:
       - name: Verify archives
         if: needs.version.outputs.release != ''
         run: |
-          for f in dist/ellamaka-darwin-arm64.tar.gz dist/ellamaka-darwin-x64.tar.gz dist/ellamaka-darwin-x64-baseline.tar.gz dist/ellamaka-linux-arm64.tar.gz dist/ellamaka-linux-x64.tar.gz dist/ellamaka-linux-x64-baseline.tar.gz dist/ellamaka-windows-x64.zip dist/ellamaka-windows-x64-baseline.zip; do
+          case "${PLATFORM}" in
+            linux)   FILES="dist/ellamaka-linux-arm64.tar.gz dist/ellamaka-linux-x64.tar.gz dist/ellamaka-linux-x64-baseline.tar.gz" ;;
+            mac)     FILES="dist/ellamaka-darwin-arm64.tar.gz dist/ellamaka-darwin-x64.tar.gz dist/ellamaka-darwin-x64-baseline.tar.gz" ;;
+            windows) FILES="dist/ellamaka-windows-x64.zip dist/ellamaka-windows-x64-baseline.zip" ;;
+            *)       FILES="dist/ellamaka-darwin-arm64.tar.gz dist/ellamaka-darwin-x64.tar.gz dist/ellamaka-darwin-x64-baseline.tar.gz dist/ellamaka-linux-arm64.tar.gz dist/ellamaka-linux-x64.tar.gz dist/ellamaka-linux-x64-baseline.tar.gz dist/ellamaka-windows-x64.zip dist/ellamaka-windows-x64-baseline.zip" ;;
+          esac
+          for f in $FILES; do
             test -f "$f" || { echo "MISSING: $f"; exit 1; }
           done
+        env:
+          PLATFORM: ${{ github.event.inputs.platform || 'all' }}
 
       - name: Generate schema v2 manifest from release context
         if: needs.version.outputs.release != ''

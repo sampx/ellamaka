@@ -197,6 +197,7 @@ else
   WORKFLOW_ARGS=(
     -f "version=$VERSION"
     -f "web_ui=$WEB_UI"
+    -f "platform=linux"
     -f "publish=false"
   )
   echo "Building Linux CLI ($ARCH, web UI: $WEB_UI, version: $VERSION, branch: $BRANCH)"
