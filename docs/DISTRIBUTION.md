@@ -38,7 +38,7 @@ Release identity 必须回答四个互不混淆的问题：
 
 ellamaka 是 OpenCode 的 fork，构建体系通过 `@opencode-ai/script` 包引入上游脚本，`packages/ellamaka/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
 
-- **平台裁剪**：`--arch primary` 构建 7 个平台（4 native + 3 baseline），排除 musl、arm64 变体；baseline 兼容不支持 AVX2 的老 x64 CPU。
+- **平台裁剪**：`--arch primary` 构建 8 个平台（5 native + 3 baseline），排除 musl、Windows arm64 变体；baseline 兼容不支持 AVX2 的老 x64 CPU。
 - **发布位置**：binary 分发从 GitHub Release 迁移到 Cloudflare R2。
 
 canonical release source：Cloudflare R2（`https://download.coursedao.com/ellamaka/`）是唯一 binary 分发源；`wopal-cn/ellamaka` 与 `wopal-cn/wopal-space-ontology` 的 GitHub/Gitee Releases 仅保留 markdown 索引页面，不携带 binary 附件。
@@ -52,6 +52,7 @@ canonical consumer：`wopal ellamaka install`（完整产品 / `--cli`）、`wop
 | macOS | arm64 | native | `ellamaka-darwin-arm64.tar.gz` |
 | macOS | x64 | native | `ellamaka-darwin-x64.tar.gz` |
 | macOS | x64 | baseline | `ellamaka-darwin-x64-baseline.tar.gz` |
+| Linux | arm64 | glibc | `ellamaka-linux-arm64.tar.gz` |
 | Linux | x64 | glibc | `ellamaka-linux-x64.tar.gz` |
 | Linux | x64 | glibc-baseline | `ellamaka-linux-x64-baseline.tar.gz` |
 | Windows | x64 | native | `ellamaka-windows-x64.zip` |
@@ -406,6 +407,7 @@ Sidecar 是 Node.js runtime（`build-node.ts` 产 `dist/node/`），**不是** B
 | macOS | arm64 | `.dmg` + `.zip` | DMG 是用户安装包；ZIP 供 electron-updater 使用 |
 | macOS | x64 | `.dmg` + `.zip` | 同上 |
 | Windows | x64 | `.exe`（NSIS） | 一键安装及 updater payload |
+| Linux | arm64 | `.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
 | Linux | x64 | `.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
 
 Contract：

@@ -182,12 +182,13 @@ if (platformArg) {
   targets = targets.filter((item) => platforms.includes(item.os))
 }
 
-// --arch filter: comma-separated arch values
+// --arch filter: comma-separated values; primary includes native linux-arm64
 if (archArg === "primary") {
   targets = targets.filter((item) => {
     if (item.os === "darwin" && item.arch === "arm64") return true
     if (item.os === "darwin" && item.arch === "x64") return true
     if (item.os === "linux" && item.arch === "x64" && item.abi === undefined) return true
+    if (item.os === "linux" && item.arch === "arm64" && item.abi === undefined) return true
     if (item.os === "win32" && item.arch === "x64") return true
     return false
   })

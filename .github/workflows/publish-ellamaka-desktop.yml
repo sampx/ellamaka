@@ -95,8 +95,8 @@ jobs:
           case "${{ inputs.os || 'all' }}" in
             windows) matrix='[{"os":"windows-latest","package_cmd":"package:win"}]' ;;
             mac) matrix='[{"os":"macos-latest","package_cmd":"package:mac --arm64 --x64"}]' ;;
-            linux) matrix='[{"os":"ubuntu-latest","package_cmd":"package:linux"}]' ;;
-            *) matrix='[{"os":"macos-latest","package_cmd":"package:mac --arm64 --x64"},{"os":"windows-latest","package_cmd":"package:win"},{"os":"ubuntu-latest","package_cmd":"package:linux"}]' ;;
+            linux) matrix='[{"os":"ubuntu-latest","package_cmd":"package:linux --arm64 --x64"}]' ;;
+            *) matrix='[{"os":"macos-latest","package_cmd":"package:mac --arm64 --x64"},{"os":"windows-latest","package_cmd":"package:win"},{"os":"ubuntu-latest","package_cmd":"package:linux --arm64 --x64"}]' ;;
           esac
 
           {

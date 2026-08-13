@@ -126,7 +126,7 @@ jobs:
 
       - name: Create archives
         run: |
-          for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-darwin-x64-baseline ellamaka-linux-x64 ellamaka-linux-x64-baseline ellamaka-windows-x64 ellamaka-windows-x64-baseline; do
+          for name in ellamaka-darwin-arm64 ellamaka-darwin-x64 ellamaka-darwin-x64-baseline ellamaka-linux-arm64 ellamaka-linux-x64 ellamaka-linux-x64-baseline ellamaka-windows-x64 ellamaka-windows-x64-baseline; do
             test -d "dist/${name}/bin" || { echo "MISSING: dist/${name}/bin"; exit 1; }
             cp LICENSE "dist/${name}/bin/LICENSE"
             if [[ "$name" == *"windows"* ]]; then
@@ -149,7 +149,7 @@ jobs:
       - name: Verify archives
         if: needs.version.outputs.release != ''
         run: |
-          for f in dist/ellamaka-darwin-arm64.tar.gz dist/ellamaka-darwin-x64.tar.gz dist/ellamaka-darwin-x64-baseline.tar.gz dist/ellamaka-linux-x64.tar.gz dist/ellamaka-linux-x64-baseline.tar.gz dist/ellamaka-windows-x64.zip dist/ellamaka-windows-x64-baseline.zip; do
+          for f in dist/ellamaka-darwin-arm64.tar.gz dist/ellamaka-darwin-x64.tar.gz dist/ellamaka-darwin-x64-baseline.tar.gz dist/ellamaka-linux-arm64.tar.gz dist/ellamaka-linux-x64.tar.gz dist/ellamaka-linux-x64-baseline.tar.gz dist/ellamaka-windows-x64.zip dist/ellamaka-windows-x64-baseline.zip; do
             test -f "$f" || { echo "MISSING: $f"; exit 1; }
           done
 
