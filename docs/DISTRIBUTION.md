@@ -194,7 +194,7 @@ channel 规则：
 CLI 发布流程（release job）：
 
 1. 验证 tag 指向当前 checkout、version/channel 合法、`sources.opencode.gitCommit` 是当前 release commit 的祖先，并对每个冻结 component baseline 执行目录 drift check。
-2. 构建 CLI（`BINARY_NAME=ellamaka OPENCODE_VERSION=<ver> OPENCODE_RELEASE=true bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app`），产出 7 平台产物。
+2. 构建 CLI（`BINARY_NAME=ellamaka OPENCODE_VERSION=<ver> OPENCODE_RELEASE=true bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app`），产出 8 平台产物。
 3. 运行 `scripts/package-release.mjs manifest` 生成 `manifest.json`、`checksums.txt`、`release-notes.md`。
 4. 按 manifest-last 提交点协议发布：staging 上传 → 回读校验 → 禁止覆盖写入 versioned path → 最后写 `manifest.json` 作为提交点（契约细节见 `DESIGN-distribution.md` §2.2）。
 5. 直接更新 CLI stable latest（CLI 是独立产品，发布不受任何 Desktop 版本约束）并主动 purge CDN。
