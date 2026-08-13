@@ -45,12 +45,16 @@ Subcommands:
   (none)         Build both Desktop and CLI
 
 Options:
-  --channel <name> Desktop channel: main, beta, or prod (default: main)
-  --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
   --out <dir>      Download directory (default: <repo>/dist/ci)
   --no-wait        Trigger the workflow and exit without waiting
   --force          Skip the interactive working-tree / push confirmation
   -h, --help       Show this help
+
+Desktop-only options:
+  --channel <name> Desktop channel: main, beta, or prod (default: main)
+
+CLI-only options:
+  --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
 EOF
 }
 
