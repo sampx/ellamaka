@@ -16,6 +16,7 @@ WEB_UI="ellamaka-app"
 OUT_DIR="$PROJECT_ROOT/dist/ci"
 NO_WAIT=false
 FORCE=false
+ARCH="x64"
 
 show_help() {
   cat <<'EOF'
@@ -27,6 +28,7 @@ download the Linux artifact. The default target is Desktop.
 Options:
   --desktop        Build Linux Desktop (default)
   --cli            Build Linux CLI
+  --arch <arch>    Linux architecture: x64 or arm64 (default: x64)
   --channel <name> Desktop channel: main, beta, or prod (default: main)
   --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
   --out <dir>      Download directory (default: <repo>/dist/ci)
@@ -51,6 +53,14 @@ while [[ $# -gt 0 ]]; do
       TARGET="$requested_target"
       TARGET_EXPLICIT=true
       shift
+      ;;
+    --arch)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "--arch requires x64 or arm64" >&2
+        exit 1
+      fi
+      ARCH="$2"
+      shift 2
       ;;
     --channel)
       if [[ $# -lt 2 || "$2" == --* ]]; then
@@ -96,6 +106,14 @@ case "$CHANNEL" in
   main|beta|prod) ;;
   *)
     echo "Unsupported channel: $CHANNEL (expected main, beta, or prod)" >&2
+    exit 1
+    ;;
+esac
+
+case "$ARCH" in
+  x64|arm64) ;;
+  *)
+    echo "Unsupported architecture: $ARCH (expected x64 or arm64)" >&2
     exit 1
     ;;
 esac
@@ -172,7 +190,7 @@ if [[ "$TARGET" == "desktop" ]]; then
     -f "version=$VERSION"
     -f "publish=false"
   )
-  echo "Building Linux Desktop (channel: $CHANNEL, version: $VERSION, branch: $BRANCH)"
+  echo "Building Linux Desktop ($ARCH, channel: $CHANNEL, version: $VERSION, branch: $BRANCH)"
 else
   WORKFLOW="publish-ellamaka.yml"
   VERSION="$(resolve_build_version "ellamaka-cli" "main" "$PROJECT_ROOT")"
@@ -181,7 +199,7 @@ else
     -f "web_ui=$WEB_UI"
     -f "publish=false"
   )
-  echo "Building Linux CLI (web UI: $WEB_UI, version: $VERSION, branch: $BRANCH)"
+  echo "Building Linux CLI ($ARCH, web UI: $WEB_UI, version: $VERSION, branch: $BRANCH)"
 fi
 
 # ── Trigger workflow ───────────────────────────────────────
@@ -257,15 +275,15 @@ flatten_artifact() {
 }
 
 if [[ "$TARGET" == "desktop" ]]; then
-  APPIMAGE="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-x64.AppImage" || true)"
+  APPIMAGE="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.AppImage" || true)"
   if [[ -z "$APPIMAGE" ]]; then
-    echo "$DESKTOP_ARTIFACT_PREFIX-linux-x64.AppImage not found in downloaded artifact" >&2
+    echo "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.AppImage not found in downloaded artifact" >&2
     exit 1
   fi
 
   LINUX_PACKAGES=("$APPIMAGE")
   for extension in deb rpm; do
-    package="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-x64.$extension" || true)"
+    package="$(flatten_artifact "$DESKTOP_ARTIFACT_PREFIX-linux-$ARCH.$extension" || true)"
     if [[ -n "$package" ]]; then
       LINUX_PACKAGES+=("$package")
     fi
@@ -278,9 +296,9 @@ if [[ "$TARGET" == "desktop" ]]; then
   done
   echo "  AppImage size: $SIZE"
 else
-  CLI_ARCHIVE="$(flatten_artifact "ellamaka-linux-x64.tar.gz" || true)"
+  CLI_ARCHIVE="$(flatten_artifact "ellamaka-linux-$ARCH.tar.gz" || true)"
   if [[ -z "$CLI_ARCHIVE" ]]; then
-    echo "ellamaka-linux-x64.tar.gz not found in downloaded artifact" >&2
+    echo "ellamaka-linux-$ARCH.tar.gz not found in downloaded artifact" >&2
     exit 1
   fi
 
