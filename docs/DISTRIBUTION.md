@@ -370,6 +370,16 @@ release cleanup 不得使用字符串比较、`sort -V`、文件修改时间或�
 
 cleanup 输出待删除对象与保护原因的审计清单后才执行。mutable latest aliases 和正式 product tags 不属于 retention cleanup 的删除候选。任何 cleanup 失败都不能阻止客户端继续读取上一次有效 aliases。
 
+**Retention 保留数量**（`release.sh` 发布成功后自动触发 cleanup 时使用的默认值）：
+
+| 产品 | 渠道 | 保留数量 | 说明 |
+|------|------|---------|------|
+| `ellamaka-cli` | stable | 5 | 保留最新 5 个 stable 版本 |
+| `ellamaka-desktop` | stable | 3 | 保留最新 3 个 stable 版本 |
+| `ellamaka-desktop` | beta | 2 | 保留最新 2 个 beta 版本 |
+
+保留数量按同一 product/channel 内标准 SemVer 降序计数，latest/updater 引用的 protected 版本不计入保留名额且永不删除；legacy 版本 fail-closed 保留。超出保留数量的版本进入删除候选。`cleanup-releases.yml` 的 `keep-stable`/`keep-beta` inputs 可覆盖这些默认值。
+
 ### 7.3 Failed Attempt and Whole-Version Withdrawal
 
 发布失败处理只保留两个边界：
