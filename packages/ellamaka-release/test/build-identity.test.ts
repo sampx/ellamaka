@@ -43,6 +43,32 @@ describe("buildReleaseIdentityForBuild: development identity", () => {
     expect(identity.version).toBe("0.0.0-local-202608070916")
   })
 
+  test("reports prod channel verbatim (not folded to local)", () => {
+    delete process.env.ELLAMAKA_BUILD_COMMIT
+    delete process.env.ELLAMAKA_RELEASE_CONTEXT_PATH
+
+    const identity = buildReleaseIdentityForBuild({
+      isRelease: false,
+      version: "2.0.2-prod.202608141200",
+      channel: "prod",
+    })
+
+    expect(identity.channel).toBe("prod")
+  })
+
+  test("reports local channel verbatim", () => {
+    delete process.env.ELLAMAKA_BUILD_COMMIT
+    delete process.env.ELLAMAKA_RELEASE_CONTEXT_PATH
+
+    const identity = buildReleaseIdentityForBuild({
+      isRelease: false,
+      version: "0.0.0-local-202608070916",
+      channel: "local",
+    })
+
+    expect(identity.channel).toBe("local")
+  })
+
   test("records gitCommit and builtAt when available", () => {
     process.env.ELLAMAKA_BUILD_COMMIT = COMMIT_40
     delete process.env.ELLAMAKA_RELEASE_CONTEXT_PATH

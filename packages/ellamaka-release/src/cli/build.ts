@@ -5,7 +5,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
-import { BINARY_NAME, CHANNEL_RELEASE, CHANNEL_DEV } from "@ellamaka/build/branding"
+import { BINARY_NAME, CHANNEL_RELEASE } from "@ellamaka/build/branding"
 import { buildReleaseIdentityForBuild } from "../build-identity"
 import { filterTargets, type BuildTarget } from "../build-targets"
 
@@ -21,7 +21,11 @@ const generated = await import("../../../opencode/script/generate.ts")
 import { Script } from "@opencode-ai/script"
 import pkg from "../../../opencode/package.json"
 
-const channel = Script.release ? CHANNEL_RELEASE : CHANNEL_DEV
+// Release builds always use the release channel (latest). Development builds
+// respect the channel passed via OPENCODE_CHANNEL (build.sh cli --channel
+// main|prod; dev.sh sets local), so the binary's channel and its database
+// name agree.
+const channel = Script.release ? CHANNEL_RELEASE : Script.channel
 
 // Load migrations from migration directories
 const migrationDirs = (

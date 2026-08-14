@@ -43,7 +43,9 @@ export function buildReleaseIdentityForBuild(input: BuildIdentityInput): Identit
   // Development identity. Per docs/DISTRIBUTION.md §5.4, dev identities
   // must not carry build.sourceTag or build.workflowRunId. gitCommit and
   // builtAt are optional and only present if available.
-  const devChannel = input.channel === "main" ? "main" : "local"
+  // The channel is reported verbatim for the known dev channels (main, prod,
+  // local); anything else folds to local defensively.
+  const devChannel = ["main", "prod", "local"].includes(input.channel) ? input.channel : "local"
   const identity: Identity = {
     schemaVersion: 2,
     kind: "development",

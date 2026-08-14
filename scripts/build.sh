@@ -26,13 +26,13 @@ Targets:
 
 CLI options:
   --version <ver>         Override build version (e.g. "1.15.14-dev")
+  --channel <main|prod>   Channel (default: main). main → ellamaka-main.db;
+                          prod → ellamaka.db (shared release database).
   --platform <mac|linux|win>
                           Target platform (comma-separated, e.g. "mac,linux")
   --arch <arm64|x64>      Target architecture (comma-separated)
-  --all                   Build all 12 platform+arch combinations
   --web-ui <value>        Embedded web UI: "ellamaka-app" (default), "app", "none"
   --install               Install binary (symlink to ~/.wopal/bin)
-  --sourcemaps            Generate sourcemaps
 
 Desktop options:
   --channel <main|beta|prod>
@@ -69,6 +69,7 @@ function build_cli() {
   MODE="single"
   INSTALL=false
   CUSTOM_VERSION=""
+  CHANNEL="main"
   BUILD_ARGS=()
 
   while [[ $# -gt 0 ]]; do
@@ -84,9 +85,16 @@ function build_cli() {
         CUSTOM_VERSION="$2"
         shift 2
         ;;
-      --all)
-        MODE="all"
-        shift
+      --channel)
+        if [[ $# -lt 2 || "$2" == --* ]]; then
+          echo "❌ --channel requires a value: main or prod"
+          exit 1
+        fi
+        case "$2" in
+          main|prod) CHANNEL="$2" ;;
+          *) echo "❌ Invalid channel: $2 (must be main or prod)"; exit 1 ;;
+        esac
+        shift 2
         ;;
       --platform)
         if [[ $# -lt 2 || "$2" == --* ]]; then
@@ -113,10 +121,6 @@ function build_cli() {
         INSTALL=true
         shift
         ;;
-      --sourcemaps)
-        BUILD_ARGS+=("--sourcemaps")
-        shift
-        ;;
       --single|--skip-deps|--skip-install)
         shift
         ;;
@@ -137,18 +141,16 @@ function build_cli() {
     arch)
       echo "🔨 Building CLI with --arch filter..."
       ;;
-    all)
-      echo "🔨 Building CLI for all platforms..."
-      ;;
   esac
 
   if [[ -n "${CUSTOM_VERSION:-}" ]]; then
     export OPENCODE_VERSION="$CUSTOM_VERSION"
   elif [[ -z "${OPENCODE_VERSION:-}" ]]; then
-    # CLI builds always use the "main" suffix; the branch name is not part
-    # of the version string.
-    export OPENCODE_VERSION="$(resolve_build_version "ellamaka-cli" "main")"
+    # CLI builds use the channel as the version suffix; the branch name is
+    # not part of the version string.
+    export OPENCODE_VERSION="$(resolve_build_version "ellamaka-cli" "$CHANNEL")"
   fi
+  export OPENCODE_CHANNEL="$CHANNEL"
   BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka-release/src/cli/build.ts" "${BUILD_ARGS[@]}"
 
   if $INSTALL; then
