@@ -23,6 +23,7 @@ import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
 import { useSDK } from "@tui/context/sdk"
 import { Binary } from "@opencode-ai/core/util/binary"
+import { mergeMessages } from "./sync-merge"
 import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
@@ -537,7 +538,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
                 infos.push(message.info)
                 draft.part[message.info.id] = message.parts
               }
-              draft.message[sessionID] = infos
+              draft.message[sessionID] = mergeMessages(draft.message[sessionID] ?? [], infos)
               draft.session_diff[sessionID] = diff.data ?? []
             }),
           )
