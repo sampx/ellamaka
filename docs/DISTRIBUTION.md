@@ -406,7 +406,7 @@ cleanup 输出待删除对象与保护原因的审计清单后才执行。mutabl
 
 Sidecar 是 Node.js runtime（`build-node.ts` 产 `dist/node/`），**不是** Bun compile 的 CLI binary，因此不存在 CLI 的 native vs baseline（AVX2）二分——Node.js 代码由 V8 JIT 在运行时自适应 CPU 指令集。
 
-构建链路：`bun packages/opencode/script/build-node.ts`（sidecar）→ `cd packages/ellamaka-desktop && bun run build`（electron-vite 编译 main/preload/renderer）→ `bun run package:mac|win|linux`（electron-builder 打包）。本地快捷方式：`./scripts/build.sh desktop [--channel main|beta|prod] [--install]`。
+构建链路：`bun packages/opencode/script/build-node.ts`（sidecar）→ `cd packages/ellamaka-desktop && bun run build`（electron-vite 编译 main/preload/renderer）→ `bun run package:mac|win|linux`（electron-builder 打包）。本地快捷方式：`./scripts/build.sh desktop [--channel main|beta|prod] [--platform mac|linux|win] [--install]`——mac 平台本地打包，linux/win 平台自动走 GitHub Actions 构建并下载产物（CI 仅支持 beta|prod 渠道，`--install` 仅本地构建生效）。
 
 ### 8.2 Artifact Contract
 

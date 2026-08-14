@@ -65,7 +65,7 @@ jobs:
 
           # Publishing is explicit: only when the publish input is set AND a
           # version is provided. A version alone no longer implies a release
-          # (build-on-github.sh passes a dev version with publish=false).
+          # (build.sh CI path passes a dev version with publish=false).
           if [[ "${{ inputs.publish }}" == "true" && -n "${{ inputs.version }}" ]]; then
             release="true"
           else
