@@ -318,9 +318,20 @@ dispatch_workflow() {
 }
 
 poll_run() {
+  # 判定完成以 jobs 为准：run 级 status/conclusion 在最后一个 job 完成后
+  # 有短暂翻转延迟，若只看 run 字段会多等一轮造成"watch 不结束"的错觉。
   gh run view "$1" -R wopal-cn/ellamaka --json status,conclusion,jobs -q '
-    "\(.status) \(.conclusion // "")",
-    (.jobs // [] | map("       [\(.status)] \(.name): \(.conclusion // "running...")") | join("\n"))
+    . as $r | ($r.jobs // []) as $jobs |
+    if $r.status == "completed" then
+      "completed \($r.conclusion // "unknown")"
+    elif ($jobs | length > 0) and all($jobs[]; .status == "completed") then
+      if any($jobs[]; .conclusion == "failure") then "completed failure"
+      elif any($jobs[]; .conclusion == "cancelled") then "completed cancelled"
+      else "completed success" end
+    else
+      "\($r.status) \($r.conclusion // "")"
+    end,
+    ($jobs | map("       [\(.status)] \(.name): \(.conclusion // "running...")") | join("\n"))
   ' 2>/dev/null || echo "unknown"
 }
 
