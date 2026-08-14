@@ -163,6 +163,31 @@ function resolve_min_wopal_cli_version() {
   " "$dep_floor" "$config_floor"
 }
 
+# highest_release_tag <product> <channel> [project_root]
+#
+# Prints the highest SemVer tag for the product/channel: stable-only tags
+# for stable/prod channels, -beta.N tags for beta. Prints nothing when no
+# such tag exists. Used by tag-release.sh to detect failed-attempt retries
+# (highest tag without an effective manifest was never released).
+function highest_release_tag() {
+  local product="$1" channel="$2" project_root="${3:-$PROJECT_ROOT}"
+  git -C "$project_root" tag -l "${product}-v*" 2>/dev/null | node -e "
+    const stable = [], beta = []
+    for (const raw of require('fs').readFileSync(0, 'utf8').split('\n')) {
+      const m = raw.trim().match(/(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?\$/)
+      if (!m) continue
+      const key = [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? null : Number(m[4])]
+      ;(key[3] === null ? stable : beta).push(key)
+    }
+    const cmp = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2] || (a[3] ?? 0) - (b[3] ?? 0)
+    const list = '$channel' === 'beta' ? beta : stable
+    list.sort((a, b) => cmp(b, a))
+    const top = list[0]
+    if (!top) { console.log(''); process.exit(0) }
+    console.log(top[0] + '.' + top[1] + '.' + top[2] + (top[3] !== null ? '-beta.' + top[3] : ''))
+  "
+}
+
 # suggest_release_version <product> <channel> [project_root]
 #
 # Suggests the next release version (no timestamp) for tag-release:

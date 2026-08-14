@@ -21,7 +21,9 @@ Ellamaka product version（可省略自动建议），创建 ellamaka-{cli,deskt
 
 版本号可省略：省略时按产品 tag 自动建议下一版本（CLI/Desktop stable
 升 patch；Desktop beta 进行中升 N、否则新 base 的 -beta.1），交互
-确认或输入覆盖后发布。显式输入仍可用（如 minor/beta 决策）：
+确认或输入覆盖后发布。若该渠道最高版本的 tag 存在但无有效 manifest
+（failed attempt，未发布成功），则优先建议重发该版本——移动远端 tag
+到当前 HEAD 后重新 dispatch。显式输入仍可用（如 minor/beta 决策）：
 
   cli:     仅接受 X.Y.Z（每次发布递增 patch/minor）
   desktop: X.Y.Z（prod）或 X.Y.Z-beta.N（beta）
@@ -51,7 +53,9 @@ Ellamaka product version（可省略自动建议），创建 ellamaka-{cli,deskt
   1. 版本符合标准 SemVer 子集（cli: X.Y.Z；desktop: X.Y.Z 或 X.Y.Z-beta.N）
   2. version/channel 一致
   3. 目标版本未列入 release/withdrawn-versions.json
-  4. 目标 namespaced tag 远端不存在（或仅存在无有效 manifest 的 failed attempt）
+  4. 目标 namespaced tag 远端不存在，或存在但无有效 manifest
+     （failed attempt）——后者确认后移动 tag 到当前 HEAD 重发；
+     有 manifest 的已提交 release 拒绝移动
   5. 版本高于该产品 migration floor / 已发布最高标准版本
 
 ━━━ 示例 ━━━
@@ -169,15 +173,32 @@ if [ "$SUBCOMMAND" = "all" ]; then
 else
   VERSION="${ARGS[0]:-}"
   if [ -z "$VERSION" ]; then
-    # Suggest next version from product tags and confirm interactively
+    suggest_product=""
+    suggest_channel=""
+    retry=""
     if [ "$SUBCOMMAND" = "cli" ]; then
-      VERSION="$(suggest_release_version "ellamaka-cli" "stable" "$REPO_ROOT")"
+      suggest_product="ellamaka-cli"
+      suggest_channel="stable"
     else
-      VERSION="$(suggest_release_version "ellamaka-desktop" "$CHANNEL" "$REPO_ROOT")"
+      suggest_product="ellamaka-desktop"
+      suggest_channel="$CHANNEL"
     fi
-    [ -z "$VERSION" ] && die "无法自动建议版本号，请显式输入\n用法: $SCRIPT $SUBCOMMAND <version> [选项]"
-    echo ""
-    echo "→ 建议版本: $VERSION (按 Enter 确认，或输入其他版本号)"
+    # Failed-attempt retry takes precedence over next-version suggestion:
+    # the highest channel tag without an effective manifest was never
+    # released, so re-releasing it is the natural next step.
+    retry="$(highest_release_tag "$suggest_product" "$suggest_channel" "$REPO_ROOT")"
+    if [ -n "$retry" ] && ! has_effective_manifest "$suggest_product" "$retry" "$suggest_channel"; then
+      VERSION="$retry"
+      echo ""
+      echo "⚠️  检测到 failed attempt：${suggest_product}-v${retry} 无有效 manifest（未发布成功）"
+      echo "→ 建议重发版本: $VERSION (按 Enter 确认，或输入其他版本号)"
+    else
+      # Suggest next version from product tags and confirm interactively
+      VERSION="$(suggest_release_version "$suggest_product" "$suggest_channel" "$REPO_ROOT")"
+      [ -z "$VERSION" ] && die "无法自动建议版本号，请显式输入\n用法: $SCRIPT $SUBCOMMAND <version> [选项]"
+      echo ""
+      echo "→ 建议版本: $VERSION (按 Enter 确认，或输入其他版本号)"
+    fi
     read -r -p "  版本号: " answer
     if [ -n "$answer" ]; then
       VERSION="$answer"
@@ -317,17 +338,80 @@ if (cmp(vkey, floor) < 0) {
 }
 }
 
-# check_tag_absent <tag>
-# Per §8/§9.2, a namespaced tag that exists remotely without an effective
-# versioned manifest is a failed attempt; the operator must use an explicit
-# retry after controlled cleanup. This script does not auto-delete committed
-# tags. We only check that the tag is absent here; failed-attempt retry is
-# handled by the cleanup scripts.
-check_tag_absent() {
-  local tag="$1"
-  if git -C "$REPO_ROOT" ls-remote --tags origin "$tag" 2>/dev/null | grep -q "refs/tags/${tag}$"; then
-    die "namespaced tag $tag 已存在于远端。若为 failed attempt，请先用 cleanup 脚本清理后再用显式 retry；已提交 release 的 tag 不可删除或覆盖。"
+# --- Failed-attempt detection & retry ---
+# Per §7.1 manifest-last protocol, the versioned manifest is the release
+# commit point: a remote namespaced tag WITHOUT an effective manifest was
+# never released and is a retryable failed attempt. A tag WITH a manifest
+# is a committed release and is immutable.
+
+# manifest_url <product> <version> <channel>
+# CDN URL of the effective versioned manifest.
+manifest_url() {
+  local product="$1" version="$2" channel="$3"
+  case "$product" in
+    ellamaka-cli) echo "https://download.coursedao.com/ellamaka/v${version}/manifest.json" ;;
+    ellamaka-desktop)
+      if [ "$channel" = "beta" ]; then
+        echo "https://download.coursedao.com/ellamaka-desktop/beta/v${version}/manifest.json"
+      else
+        echo "https://download.coursedao.com/ellamaka-desktop/v${version}/manifest.json"
+      fi
+      ;;
+    *) die "unknown product: $product" ;;
+  esac
+}
+
+# has_effective_manifest <product> <version> <channel>
+# True when the CDN serves the versioned manifest.
+has_effective_manifest() {
+  command -v curl >/dev/null 2>&1 || die "curl 不可用，无法判定远端 tag 是否为 failed attempt"
+  local url code
+  url="$(manifest_url "$1" "$2" "$3")"
+  code=$(curl -s -o /dev/null -w "%{http_code}" --noproxy '*' --max-time 15 "$url" 2>/dev/null || echo "000")
+  [ "$code" = "200" ]
+}
+
+# resolve_tag_state <tag> <product> <version> <channel>
+#   absent    — remote tag does not exist → fresh release
+#   failed    — tag exists without effective manifest → retryable failed attempt
+#   committed — tag exists with manifest → immutable release
+resolve_tag_state() {
+  local tag="$1" product="$2" version="$3" channel="$4"
+  if ! git -C "$REPO_ROOT" ls-remote --tags origin "$tag" 2>/dev/null | grep -q "refs/tags/${tag}$"; then
+    echo "absent"
+    return 0
   fi
+  if has_effective_manifest "$product" "$version" "$channel"; then
+    echo "committed"
+  else
+    echo "failed"
+  fi
+}
+
+# ensure_tag_releasable <tag> <product> <version> <channel>
+# Enforces release immutability while allowing failed-attempt retry:
+# committed releases are never moved; a failed attempt (tag without
+# manifest) may be retried by moving the tag to the current HEAD after
+# explicit confirmation.
+ensure_tag_releasable() {
+  local tag="$1" product="$2" version="$3" channel="$4" state
+  state="$(resolve_tag_state "$tag" "$product" "$version" "$channel")"
+  case "$state" in
+    absent) return 0 ;;
+    committed)
+      die "namespaced tag $tag 已存在且已发布有效 manifest —— 已提交 release 不可删除或覆盖。请使用更高版本号。"
+      ;;
+    failed)
+      echo "⚠️  远端 tag $tag 存在但无有效 manifest —— 判定为 failed attempt（未发布成功）。"
+      read -r -p "  移动远端 tag 到当前 HEAD 并重发 ${version}？ [y/N] " answer
+      case "$answer" in
+        y|Y|yes|YES) ;;
+        *) die "已取消（可手动清理：git push origin --delete $tag，或选择其他版本号）" ;;
+      esac
+      git -C "$REPO_ROOT" push origin --delete "$tag" || die "删除远端 tag 失败: $tag"
+      echo "  ✓ 已删除远端 failed-attempt tag: $tag"
+      ;;
+  esac
 }
 
 # check_min_wopal_cli_released
@@ -469,7 +553,7 @@ if [ -n "$CLI_VER_INPUT" ]; then
   check_migration_floor "ellamaka-cli" "$CLI_VER_INPUT"
   CLI_TAG="ellamaka-cli-v${CLI_VER_INPUT}"
   CLI_PLAIN="$CLI_VER_INPUT"
-  check_tag_absent "$CLI_TAG"
+  ensure_tag_releasable "$CLI_TAG" "ellamaka-cli" "$CLI_VER_INPUT" "stable"
   echo "  ℹ️  CLI tag: $CLI_TAG (channel=stable)"
 fi
 
@@ -489,7 +573,7 @@ if [ -n "$DESKTOP_VER_INPUT" ]; then
   check_migration_floor "ellamaka-desktop" "$DESKTOP_VER_INPUT"
   DESKTOP_TAG="ellamaka-desktop-v${DESKTOP_VER_INPUT}"
   DESKTOP_PLAIN="$DESKTOP_VER_INPUT"
-  check_tag_absent "$DESKTOP_TAG"
+  ensure_tag_releasable "$DESKTOP_TAG" "ellamaka-desktop" "$DESKTOP_VER_INPUT" "$CHANNEL"
   echo "  ℹ️  Desktop tag: $DESKTOP_TAG"
 fi
 
