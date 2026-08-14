@@ -294,8 +294,98 @@ graph LR
 
 ---
 
-## 7. 总结
+## 7. Ellamaka 打通与复用 `dsh` 插件生态的可行性方案
+
+**核心结论**：**完全有可能，而且在工程架构上有两条非常清晰、渐进式的打通路线！**
+
+`dsh` 的插件虽然编写在 Cordis 容器之上，但其暴露的能力本质上是标准的 **JSON Schema 工具** 与 **TypeScript Service 契约**。Ellamaka 完全可以通过适配器模式，将 `dsh` 生态中的 50+ 插件包直接纳为己用。
+
+```mermaid
+graph TD
+    subgraph EllamakaRuntime ["Ellamaka 核心引擎 (Effect TS)"]
+        ToolRegistry["ToolRegistry (工具注册表)"]
+        EffectLayer["Effect Service & Scoped Layers"]
+    end
+
+    subgraph BridgeLayer ["适配与打通桥接层 (Bridge Layer)"]
+        MCPBridge["方案 1: MCP / JSON-RPC 协议代理桥接"]
+        ContainerLayer["方案 2: Effect CordisContainer Layer (容器层融合)"]
+    end
+
+    subgraph DshEcosystem ["dsh 插件生态 (@deepseek-ai/dsh-*)"]
+        FsSearch["dsh-tool-fs-search (ripgrep)"]
+        E2BSandbox["dsh-e2b (云端沙箱)"]
+        LSPTool["dsh-tool-lsp (语言服务协议)"]
+        AskUser["dsh-tool-ask-user (人类交互)"]
+    end
+
+    DshEcosystem --> BridgeLayer
+    BridgeLayer --> EllamakaRuntime
+```
+
+---
+
+### 7.1 方案 1：应用/协议层轻量代理桥接 (MCP / JSON-RPC Bridge)
+**—— 收益最大、成本最低、主引擎绝对安全**
+
+* **实现原理**：
+  `dsh` 的工具包遵循标准的 JSON Schema 规范。利用 `dsh` 官方的 `@deepseek-ai/dsh-sdk` 或 MCP 导出，Ellamaka 启动一个极轻量的 Node.js 子进程 (Sidecar) 加载 `dsh` 插件包，并通过标准的 **MCP (Model Context Protocol)** 或 **JSON-RPC** 桥接给 Ellamaka 的 `ToolRegistry`。
+* **架构优势**：
+  1. **零代码改动**：不需要修改 `dsh` 插件的一行代码。
+  2. **引擎隔离**：`dsh` 插件运行在独立的子进程中，即使插件发生崩溃或内存泄漏，也绝对不会影响 Ellamaka 引擎的稳定。
+  3. **保持纯正**：Ellamaka 继续保持纯正强类型的 Effect TS 架构。
+
+---
+
+### 7.2 方案 2：底层容器融合 (Effect CordisContainer Layer)
+**—— 深度打通，把 Cordis 挂载为 Effect TS 的 Service Layer**
+
+* **实现原理**：
+  利用 Effect 的 `Layer.scoped`，将 Cordis `Context` 实例作为一个原生的 Effect Service 进行封装管理：
+  ```ts
+  // 伪代码：在 Ellamaka 中用 Effect 管控 Cordis 容器
+  import { Layer, Effect, Context } from "effect"
+  import { Context as CordisContext } from "@deepseek-ai/cordis"
+
+  export class CordisBridge extends Context.Tag("CordisBridge")<
+    CordisBridge,
+    CordisContext
+  >() {}
+
+  export const CordisLiveLayer = Layer.scoped(
+    CordisBridge,
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        const ctx = new CordisContext()
+        // 挂载 dsh 的优秀能力插件
+        ctx.plugin(DshToolFsSearch)
+        ctx.plugin(DshToolLsp)
+        return ctx
+      }),
+      // 利用 Effect 的 acquireRelease 完美反向管控 Cordis 的 dispose()
+      (ctx) => Effect.promise(() => ctx.dispose()) 
+    )
+  )
+  ```
+* **架构优势**：
+  通过 Effect 的 `acquireRelease` 生命周期，Ellamaka 可以**优雅地反向管控 Cordis 容器的垃圾回收与卸载**，真正实现两套框架在运行时的深层次无缝融合。
+
+---
+
+### 7.3 首批最值得 Ellamaka 打通的 `dsh` 插件推荐
+
+| 推荐插件包 | 对 Ellamaka 的核心价值 | 推荐打通方案 |
+| :--- | :--- | :--- |
+| **`@deepseek-ai/dsh-tool-fs-search`** | **嵌入式超级搜索**：内置自包含 `@vscode/ripgrep` 二进制，无需宿主机环境安装 `rg`，即刻赋予 Ellamaka 百万行代码极速搜索能力。 | Direct Import / Effect Layer |
+| **`@deepseek-ai/dsh-e2b`** | **云端隔离沙箱**：为 Ellamaka 瞬间补充云端 E2B 容器沙箱执行能力，安全运行高危 Bash/Python 代码。 | Effect Service Layer |
+| **`@deepseek-ai/dsh-tool-lsp`** | **语言服务感知**：为 Ellamaka 提供 IDE 级的 LSP 转定义、代码诊断与引用查找能力。 | MCP / Tool Registry Bridge |
+| **`@deepseek-ai/dsh-tool-str-replace-editor`** | **精准行内替换**：精准替换文本块，有效避免模型在编辑大文件时的格式幻觉。 | Tool Adapter |
+
+---
+
+## 8. 总结
 
 DeepSeek Harness 与 Cordis 展现了微内核与动态插件架构的极致解耦美感，特别是在 Service/Inject 依赖驱动、可逆副作用和瀑布流拦截方面给出了极佳示范。而 Ellamaka 拥有更坚实的 Effect TS 类型防线与全栈产品形态。
 
-通过吸收 Cordis 的“能力缝隙”与“瀑布拦截”优秀设计，Ellamaka 可以在不破坏现有工程安全性的基础上，实现架构灵活性与生态扩展力的全面飞跃。
+通过吸收 Cordis 的“能力缝隙”与“瀑布拦截”优秀设计，并建立适配器桥接打通 `dsh` 的 50+ 优秀插件包，Ellamaka 可以在不破坏现有工程安全性的基础上，实现架构灵活性、功能丰富度与生态扩展力的全面飞跃。
+
