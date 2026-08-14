@@ -1,63 +1,66 @@
 #!/bin/bash
-# scripts/build-linux.sh — build Ellamaka Desktop and/or CLI for Linux via CI.
+# scripts/build-on-github.sh — build Ellamaka Desktop and/or CLI via GitHub Actions CI.
 #
 # Dispatches the selected workflow(s) on the current branch with publish=false,
-# waits for completion, downloads the Linux artifact(s), and prints run links.
+# waits for completion, downloads the artifact(s), and prints run links.
 #
 # Usage:
-#   build-linux.sh [desktop|cli] [options]
+#   build-on-github.sh [desktop|cli] [options]
 #
 # Subcommands:
-#   desktop   Build Linux Desktop (default when no subcommand)
-#   cli       Build Linux CLI
+#   desktop   Build Desktop (default when no subcommand)
+#   cli       Build CLI
 #   (none)    Build both Desktop and CLI
 #
 # Options:
-#   --arch <arch>    Linux architecture: x64 or arm64 (default: x64)
-#   --channel <name> Desktop channel: main, beta, or prod (default: main)
-#   --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
-#   --out <dir>      Download directory (default: <repo>/dist/ci)
-#   --no-wait        Trigger the workflow and exit without waiting
-#   --force          Skip the interactive working-tree / push confirmation
-#   -h, --help       Show this help
+#   --os <linux|windows>  Target OS for CI build (default: linux)
+#   --arch <x64|arm64>    Architecture (default: x64; Windows supports x64 only)
+#   --channel <name>      Desktop channel: main, beta, or prod (default: main)
+#   --web-ui <value>      Embedded web UI for CLI (default: ellamaka-app)
+#   --out <dir>           Download directory (default: <repo>/dist/ci)
+#   --no-wait             Trigger the workflow and exit without waiting
+#   --force               Skip the interactive working-tree / push confirmation
+#   -h, --help            Show this help
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO="wopal-cn/ellamaka"
+OS="linux"
+ARCH="x64"
 CHANNEL="main"
 WEB_UI="ellamaka-app"
 OUT_DIR="$PROJECT_ROOT/dist/ci"
 NO_WAIT=false
 FORCE=false
-ARCH="x64"
 TARGETS=()
 
 show_help() {
   cat <<'EOF'
-Usage: build-linux.sh [desktop|cli] [options]
+Usage: build-on-github.sh [desktop|cli] [options]
 
-Build the Ellamaka Desktop and/or CLI for Linux via CI, without publishing,
-then download the Linux artifact(s). With no subcommand, both are built.
+Build the Ellamaka Desktop and/or CLI via CI, without publishing,
+then download the artifact(s). With no subcommand, both are built.
 
 Subcommands:
-  desktop        Build Linux Desktop
-  cli            Build Linux CLI
+  desktop        Build Desktop
+  cli            Build CLI
   (none)         Build both Desktop and CLI
 
 Options:
-  --arch <arch>    Linux architecture: x64 or arm64 (default: x64)
-  --out <dir>      Download directory (default: <repo>/dist/ci)
-  --no-wait        Trigger the workflow and exit without waiting
-  --force          Skip the interactive working-tree / push confirmation
-  -h, --help       Show this help
+  --os <os>         Target OS: linux or windows (default: linux)
+  --arch <arch>     Architecture: x64 or arm64 (default: x64; Windows: x64 only)
+  --out <dir>       Download directory (default: <repo>/dist/ci)
+  --no-wait         Trigger the workflow and exit without waiting
+  --force           Skip the interactive working-tree / push confirmation
+  -h, --help        Show this help
 
 Desktop-only options:
-  --channel <name> Desktop channel: main, beta, or prod (default: main)
+  --channel <name>  Desktop channel: main, beta, or prod (default: main)
 
 CLI-only options:
-  --web-ui <value> Embedded web UI for CLI (default: ellamaka-app)
+  --web-ui <value>  Embedded web UI for CLI (default: ellamaka-app)
 EOF
 }
 
@@ -70,6 +73,14 @@ while [[ $# -gt 0 ]]; do
     desktop|cli)
       TARGETS+=("$1")
       shift
+      ;;
+    --os)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "--os requires linux or windows" >&2
+        exit 1
+      fi
+      OS="$2"
+      shift 2
       ;;
     --arch)
       if [[ $# -lt 2 || "$2" == --* ]]; then
@@ -124,18 +135,39 @@ if [[ ${#TARGETS[@]} -eq 0 ]]; then
   TARGETS=(desktop cli)
 fi
 
-case "$CHANNEL" in
-  main|beta|prod) ;;
+case "$OS" in
+  linux)
+    OS_LABEL="Linux"
+    DESKTOP_RUNNER="ubuntu-latest"
+    ;;
+  windows)
+    OS_LABEL="Windows"
+    DESKTOP_RUNNER="windows-latest"
+    ;;
   *)
-    echo "Unsupported channel: $CHANNEL (expected main, beta, or prod)" >&2
+    echo "Unsupported OS: $OS (expected linux or windows)" >&2
     exit 1
     ;;
 esac
 
 case "$ARCH" in
-  x64|arm64) ;;
+  x64) ;;
+  arm64)
+    if [[ "$OS" != "linux" ]]; then
+      echo "Unsupported architecture: arm64 (Windows builds support x64 only)" >&2
+      exit 1
+    fi
+    ;;
   *)
     echo "Unsupported architecture: $ARCH (expected x64 or arm64)" >&2
+    exit 1
+    ;;
+esac
+
+case "$CHANNEL" in
+  main|beta|prod) ;;
+  *)
+    echo "Unsupported channel: $CHANNEL (expected main, beta, or prod)" >&2
     exit 1
     ;;
 esac
@@ -198,12 +230,8 @@ build_one() {
 
   if [[ "$target" == "desktop" ]]; then
     workflow="publish-ellamaka-desktop.yml"
-    artifact_name="desktop-ubuntu-latest"
+    artifact_name="desktop-$DESKTOP_RUNNER"
     version="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$PROJECT_ROOT")"
-    local prefix="ellamaka-desktop"
-    if [[ "$CHANNEL" == "beta" ]]; then
-      prefix="ellamaka-desktop-beta"
-    fi
 
     # The desktop workflow maps these inputs and github.sha to the same values
     # remotely, ensuring electron-builder produces the requested artifact name.
@@ -213,21 +241,21 @@ build_one() {
 
     workflow_args=(
       -f "channel=$CHANNEL"
-      -f "os=linux"
+      -f "os=$OS"
       -f "version=$version"
       -f "publish=false"
     )
-    echo "Building Linux Desktop ($ARCH, channel: $CHANNEL, version: $version, branch: $BRANCH)"
+    echo "Building $OS_LABEL Desktop (arch: $ARCH, channel: $CHANNEL, version: $version, branch: $BRANCH)"
   else
     workflow="publish-ellamaka.yml"
     version="$(resolve_build_version "ellamaka-cli" "main" "$PROJECT_ROOT")"
     workflow_args=(
       -f "version=$version"
       -f "web_ui=$WEB_UI"
-      -f "platform=linux"
+      -f "platform=$OS"
       -f "publish=false"
     )
-    echo "Building Linux CLI ($ARCH, web UI: $WEB_UI, version: $version, branch: $BRANCH)"
+    echo "Building $OS_LABEL CLI (arch: $ARCH, web UI: $WEB_UI, version: $version, branch: $BRANCH)"
   fi
 
   echo "Dispatching $workflow (ref=$BRANCH, version=$version, publish=false)"
@@ -295,40 +323,56 @@ build_one() {
   }
 
   if [[ "$target" == "desktop" ]]; then
-    local appimage
-    appimage="$(flatten_artifact "$prefix-linux-$ARCH.AppImage" || true)"
-    if [[ -z "$appimage" ]]; then
-      echo "$prefix-linux-$ARCH.AppImage not found in downloaded artifact" >&2
+    # electron-builder artifact prefix: beta channel gets -beta suffix.
+    local primary_prefix="ellamaka-desktop"
+    [[ "$CHANNEL" == "beta" ]] && primary_prefix="ellamaka-desktop-beta"
+    local primary
+    if [[ "$OS" == "linux" ]]; then
+      primary="${primary_prefix}-linux-${ARCH}.AppImage"
+    else
+      primary="${primary_prefix}-win-${ARCH}.exe"
+    fi
+
+    local app
+    app="$(flatten_artifact "$primary" || true)"
+    if [[ -z "$app" ]]; then
+      echo "$primary not found in downloaded artifact" >&2
+      find "$OUT_DIR" -type f | head -20 >&2
       return 1
     fi
 
-    local -a packages=("$appimage")
-    local extension package
-    for extension in deb rpm; do
-      package="$(flatten_artifact "$prefix-linux-$ARCH.$extension" || true)"
-      if [[ -n "$package" ]]; then
-        packages+=("$package")
+    local -a packages=("$app")
+    if [[ "$OS" == "linux" ]]; then
+      local deb_package
+      deb_package="$(flatten_artifact "${primary_prefix}-linux-${ARCH}.deb" || true)"
+      if [[ -n "$deb_package" ]]; then
+        packages+=("$deb_package")
       fi
-    done
+    fi
 
     local size
-    size="$(du -h "$appimage" | cut -f1)"
-    echo "Linux Desktop build ready:"
+    size="$(du -h "$app" | cut -f1)"
+    echo "$OS_LABEL Desktop build ready:"
     for package in "${packages[@]}"; do
       echo "  $package"
     done
-    echo "  AppImage size: $size"
+    echo "  size: $size"
   else
     local cli_archive
-    cli_archive="$(flatten_artifact "ellamaka-linux-$ARCH.tar.gz" || true)"
+    if [[ "$OS" == "linux" ]]; then
+      cli_archive="$(flatten_artifact "ellamaka-linux-${ARCH}.tar.gz" || true)"
+    else
+      cli_archive="$(flatten_artifact "ellamaka-windows-x64.zip" || true)"
+    fi
     if [[ -z "$cli_archive" ]]; then
-      echo "ellamaka-linux-$ARCH.tar.gz not found in downloaded artifact" >&2
+      echo "CLI archive not found in downloaded artifact" >&2
+      find "$OUT_DIR" -type f | head -20 >&2
       return 1
     fi
 
     local size
     size="$(du -h "$cli_archive" | cut -f1)"
-    echo "Linux CLI build ready:"
+    echo "$OS_LABEL CLI build ready:"
     echo "  $cli_archive"
     echo "  size: $size"
   fi

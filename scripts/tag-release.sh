@@ -285,12 +285,16 @@ if (inv.source !== 'live') {
 }
 const entries = inv.products && inv.products['$product'];
 if (!entries) process.exit(0);
+// Numeric tuple comparison — lexicographic string comparison of
+// dotted version strings misorders components of different widths
+// (e.g. '1.9.13' > '1.15.13').
+const cmp = (a, b) => { for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; if (d) return d; } return 0; };
 let highest = null;
 for (const t of (entries.tags || [])) {
   const m = t.name.replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)-(\d+)/);
   if (!m) continue;
   const key = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
-  if (!highest || key.join('.') > highest.join('.')) highest = key;
+  if (!highest || cmp(key, highest) > 0) highest = key;
 }
 if (!highest) process.exit(0);
 // Legacy shapes are X.Y.Z-N prereleases; per SemVer 2.0 the same-base
@@ -300,7 +304,7 @@ if (!highest) process.exit(0);
 const floor = [highest[0], highest[1], highest[2]];
 const v = '$version'.split(/[.-]/).map(Number);
 const vkey = [v[0], v[1], v[2]];
-if (vkey.join('.') < floor.join('.')) {
+if (cmp(vkey, floor) < 0) {
   console.error('版本 ' + '$version' + ' 低于 migration floor ' + floor.join('.'));
   process.exit(1);
 }
@@ -399,11 +403,16 @@ dispatch_workflow() {
   local label="$2"
   local tag="$3"
   local plain_version="$4"
-  local channel_arg=""
+  local -a extra_args=()
 
   if [[ "$wf" == publish-ellamaka-desktop.yml ]]; then
-    channel_arg="-f channel=$CHANNEL -f publish=true"
+    extra_args+=(-f "channel=$CHANNEL")
   fi
+  # Both workflows gate the release on publish=true (CLI since 3e7a13f4,
+  # desktop since 69c1e0ae). A tag-release dispatch without it would build
+  # preview artifacts only and never release — fail loudly here instead of
+  # watching a run that cannot succeed.
+  extra_args+=(-f "publish=true")
 
   local output
   echo "→ dispatch $label workflow: $wf (ref=$tag, version=$plain_version, channel=$CHANNEL, publish=true)" >&2
@@ -411,7 +420,7 @@ dispatch_workflow() {
   if ! output=$(gh workflow run "$wf" -R wopal-cn/ellamaka \
     --ref "$tag" \
     -f "version=$plain_version" \
-    $channel_arg 2>&1); then
+    "${extra_args[@]}" 2>&1); then
     echo "$output" >&2
     return 1
   fi

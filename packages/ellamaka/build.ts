@@ -7,6 +7,7 @@ import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 import { BINARY_NAME, CHANNEL_RELEASE, CHANNEL_DEV } from "./branding"
 import { buildReleaseIdentityForBuild } from "./release-identity-build"
+import { filterTargets, type BuildTarget } from "./build-targets"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -110,102 +111,14 @@ const createEmbeddedWebUIBundle = async (webUi: Exclude<WebUiOption, "none">) =>
 
 const embeddedFileMap = webUi === "none" ? null : await createEmbeddedWebUIBundle(webUi)
 
-const allTargets: {
-  os: string
-  arch: "arm64" | "x64"
-  abi?: "musl"
-  avx2?: false
-}[] = [
-  {
-    os: "linux",
-    arch: "arm64",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    avx2: false,
-  },
-  {
-    os: "linux",
-    arch: "arm64",
-    abi: "musl",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    abi: "musl",
-  },
-  {
-    os: "linux",
-    arch: "x64",
-    abi: "musl",
-    avx2: false,
-  },
-  {
-    os: "darwin",
-    arch: "arm64",
-  },
-  {
-    os: "darwin",
-    arch: "x64",
-  },
-  {
-    os: "darwin",
-    arch: "x64",
-    avx2: false,
-  },
-  {
-    os: "win32",
-    arch: "arm64",
-  },
-  {
-    os: "win32",
-    arch: "x64",
-  },
-  {
-    os: "win32",
-    arch: "x64",
-    avx2: false,
-  },
-]
-
-let targets: typeof allTargets = [...allTargets]
-
-// --platform filter: user-friendly names, comma-separated
-if (platformArg) {
-  const map: Record<string, string> = { mac: "darwin", linux: "linux", win: "win32" }
-  const platforms = platformArg.split(",").map((p) => map[p.trim()] ?? p.trim())
-  targets = targets.filter((item) => platforms.includes(item.os))
-}
-
-// --arch filter: comma-separated values; primary includes native linux-arm64
-if (archArg === "primary") {
-  targets = targets.filter((item) => {
-    if (item.os === "darwin" && item.arch === "arm64") return true
-    if (item.os === "darwin" && item.arch === "x64") return true
-    if (item.os === "linux" && item.arch === "x64" && item.abi === undefined) return true
-    if (item.os === "linux" && item.arch === "arm64" && item.abi === undefined) return true
-    if (item.os === "win32" && item.arch === "x64") return true
-    return false
-  })
-} else if (archArg) {
-  const arches = archArg.split(",")
-  targets = targets.filter((item) => arches.includes(item.arch))
-}
-
-if (singleFlag) {
-  const arches = archArg && archArg !== "primary" ? archArg.split(",") : [process.arch]
-  targets = targets.filter((item) => {
-    if (item.os !== process.platform) return false
-    if (!arches.includes(item.arch)) return false
-    if (item.avx2 === false && !baselineFlag) return false
-    if (item.abi !== undefined) return false
-    return true
-  })
+// Filter the target matrix. filterTargets fails fast on an empty result —
+// building zero targets must never look like a successful build.
+let targets: BuildTarget[]
+try {
+  targets = filterTargets({ platformArg, archArg, singleFlag, baselineFlag })
+} catch (err) {
+  console.error((err as Error).message)
+  process.exit(1)
 }
 
 await $`rm -rf ${distDir}`
