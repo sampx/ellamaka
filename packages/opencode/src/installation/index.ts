@@ -37,11 +37,20 @@ export const Event = {
 }
 
 export function getReleaseType(current: string, latest: string): ReleaseType {
+  // Use semver.diff so prerelease versions compare per SemVer 2.0 instead of
+  // naive numeric major/minor comparison. A dev build (e.g. "2.0.2-main.1")
+  // numerically ahead of the CDN stable ("2.0.1") would otherwise be reported
+  // as a patch downgrade; semver.diff correctly classifies the stable bump.
+  const kind = semver.diff(current, latest)
+  if (kind === "major") return "major"
+  if (kind === "minor" || kind === "premajor" || kind === "preminor") return "minor"
+  if (kind === "patch" || kind === "prepatch" || kind === "prerelease") return "patch"
+  // Equal or non-comparable: fall back to numeric major/minor, which the
+  // caller only reaches when isUpdateAvailable already passed.
   const currMajor = semver.major(current)
   const currMinor = semver.minor(current)
   const newMajor = semver.major(latest)
   const newMinor = semver.minor(latest)
-
   if (newMajor > currMajor) return "major"
   if (newMinor > currMinor) return "minor"
   return "patch"

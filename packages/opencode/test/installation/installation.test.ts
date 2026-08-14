@@ -6,7 +6,12 @@ import { Installation } from "../../src/installation"
 import { findEllamakaArtifact } from "../../src/installation"
 import { AppProcess } from "@opencode-ai/core/process"
 import { testEffect } from "../lib/effect"
-import { readJsoncConfig, getWorkspaceAutoupdate, shouldSkipAutoUpgrade } from "../../src/cli/upgrade"
+import {
+  readJsoncConfig,
+  getWorkspaceAutoupdate,
+  shouldSkipAutoUpgrade,
+  isUpdateAvailable,
+} from "../../src/cli/upgrade"
 import { mkdirSync, writeFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -279,5 +284,54 @@ describe("shouldSkipAutoUpgrade", () => {
 
   test("unknown preview channel should skip auto-upgrade", () => {
     expect(shouldSkipAutoUpgrade("beta", "1.15.14-beta.1")).toBe(true)
+  })
+})
+
+describe("isUpdateAvailable", () => {
+  test("stable version lower than latest returns true", () => {
+    expect(isUpdateAvailable("1.15.13", "2.0.0")).toBe(true)
+  })
+
+  test("same version returns false", () => {
+    expect(isUpdateAvailable("1.15.13", "1.15.13")).toBe(false)
+  })
+
+  test("current version higher than latest returns false (dev build ahead of stable)", () => {
+    expect(isUpdateAvailable("2.0.2-main.20260813132430", "2.0.1")).toBe(false)
+  })
+
+  test("dev prerelease numerically ahead of stable returns false", () => {
+    // 2.0.2-main.1 has a higher numeric X.Y.Z than 2.0.1, so it is NOT behind
+    expect(isUpdateAvailable("2.0.2-main.1", "2.0.1")).toBe(false)
+  })
+
+  test("dev prerelease with lower stable number returns true (newer stable available)", () => {
+    expect(isUpdateAvailable("2.0.2-main.1", "2.0.3")).toBe(true)
+  })
+
+  test("invalid current version treated as needing update", () => {
+    expect(isUpdateAvailable("local", "2.0.0")).toBe(true)
+  })
+})
+
+describe("getReleaseType", () => {
+  test("patch update", () => {
+    expect(Installation.getReleaseType("2.0.1", "2.0.2")).toBe("patch")
+  })
+
+  test("minor update", () => {
+    expect(Installation.getReleaseType("2.0.1", "2.1.0")).toBe("minor")
+  })
+
+  test("major update", () => {
+    expect(Installation.getReleaseType("2.0.1", "3.0.0")).toBe("major")
+  })
+
+  test("prerelease to stable of same numbers is a patch", () => {
+    expect(Installation.getReleaseType("2.0.2-main.1", "2.0.2")).toBe("patch")
+  })
+
+  test("prerelease numerically ahead of stable is not an upgrade (major/minor/patch still patch)", () => {
+    expect(Installation.getReleaseType("2.0.2-main.1", "2.0.1")).toBe("patch")
   })
 })

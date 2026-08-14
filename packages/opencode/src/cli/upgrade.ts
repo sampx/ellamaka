@@ -7,6 +7,7 @@ import { GlobalBus } from "@/bus/global"
 import { existsSync, readFileSync } from "fs"
 import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
+import semver from "semver"
 
 const log = Log.create({ service: "upgrade" })
 
@@ -21,6 +22,20 @@ const log = Log.create({ service: "upgrade" })
  */
 export function shouldSkipAutoUpgrade(channel: string, currentVersion: string): boolean {
   return channel !== "latest"
+}
+
+/**
+ * Whether `latest` is strictly newer than `current` per SemVer 2.0.
+ *
+ * Uses `semver.lt` instead of string equality so prerelease builds compare
+ * correctly: a dev build (e.g. "2.0.2-main.20260813") that is numerically
+ * ahead of the CDN stable (e.g. "2.0.1") is NOT considered an upgrade. A
+ * non-SemVer current value (e.g. the "local" dev channel) cannot be compared
+ * and is treated as needing an update.
+ */
+export function isUpdateAvailable(current: string, latest: string): boolean {
+  if (!semver.valid(current)) return true
+  return semver.lt(current, latest)
 }
 
 export function readJsoncConfig(filepath: string): Record<string, unknown> | null {
@@ -69,7 +84,10 @@ export async function upgrade() {
   })
   if (!latest) return
 
-  if (InstallationVersion === latest) {
+  // Only treat a strictly newer stable version (SemVer 2.0) as an upgrade.
+  // String equality would misclassify dev builds that are numerically ahead
+  // of the CDN stable as "behind", prompting a spurious update notification.
+  if (!isUpdateAvailable(InstallationVersion, latest)) {
     log.info(`already latest (${latest})`)
     return
   }
