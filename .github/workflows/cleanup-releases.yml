@@ -130,11 +130,16 @@ jobs:
             "https://download.coursedao.com/${ROOT}/v${WITHDRAW_VER}/checksums.txt"
             "https://download.coursedao.com/${ROOT}/v${WITHDRAW_VER}/release-notes.md"
             "https://download.coursedao.com/${ROOT}/latest/manifest.json"
+            "https://download.coursedao.com/${ROOT}/latest/latest-mac.yml"
+            "https://download.coursedao.com/${ROOT}/latest/latest.yml"
+            "https://download.coursedao.com/${ROOT}/latest/latest-linux.yml"
           )
 
           # Artifact files are versioned objects too; derive their names from
           # the healthy fallback manifest (same product/channel artifact set)
-          # and swap in the withdrawn version.
+          # and swap in the withdrawn version. Latest-prefix updater copies
+          # (zip/exe/AppImage + blockmaps) are restored from the same
+          # fallback objects during withdrawal and must be purged as well.
           FALLBACK_MANIFEST_URL="https://download.coursedao.com/${ROOT}/v${FALLBACK_VER}/manifest.json"
           curl -sS -o "${RUNNER_TEMP}/fallback-manifest.json" "$FALLBACK_MANIFEST_URL" || true
           if [ -s "${RUNNER_TEMP}/fallback-manifest.json" ]; then
@@ -144,6 +149,14 @@ jobs:
             done < <(node -e '
               const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
               for (const a of m.artifacts || []) if (a.url) console.log(a.url);
+            ' "${RUNNER_TEMP}/fallback-manifest.json")
+            while IFS= read -r name; do
+              PURGE_URLS+=("https://download.coursedao.com/${ROOT}/latest/${name}" "https://download.coursedao.com/${ROOT}/latest/${name}.blockmap")
+            done < <(node -e '
+              const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              for (const a of m.artifacts || []) {
+                if (a.ext === "zip" || a.ext === "exe" || a.ext === "AppImage") console.log(a.name);
+              }
             ' "${RUNNER_TEMP}/fallback-manifest.json")
           fi
 

@@ -301,6 +301,26 @@ jobs:
             for (const a of m.artifacts) console.log([a.name, a.ext].join("\t"));
           ')
 
+          # Updater feeds and blockmaps are part of the release record:
+          # versioning them lets whole-version withdrawal restore a healthy
+          # latest channel (manifest + feeds + updater assets). Without this,
+          # a withdrawn latest version leaves dangling feeds that cannot be
+          # rebuilt (electron-builder generates them only at build time).
+          for feed in latest-mac.yml latest.yml latest-linux.yml; do
+            if [ -f "dist/${feed}" ]; then
+              put_with_cache "dist/${feed}" "${VERSION_PREFIX}/${feed}" "public, max-age=2592000, immutable" "application/x-yaml"
+              echo "  uploaded versioned feed: ${VERSION_PREFIX}/${feed}"
+            else
+              echo "  WARNING: feed not found, skipping: dist/${feed}"
+            fi
+          done
+
+          for f in dist/ellamaka-desktop-*.blockmap; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "application/octet-stream"
+          done
+
           # Metadata — manifest is written LAST as the release commit point.
           put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000, immutable" "text/plain"
           put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"

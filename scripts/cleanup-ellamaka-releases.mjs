@@ -265,17 +265,25 @@ export function planWithdraw({
     return { allowed: false, reason: `version ${version} not in withdrawn-versions.json`, steps: [] };
   }
 
-  // Fallback must exist in versioned paths.
-  const fallbackPath = `ellamaka/v${fallbackVersion}`;
-  if (!snapshot.versionedPaths.includes(fallbackPath)) {
-    return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
-  }
-
   const steps = [];
   // 1. Restore aliases pointing to the withdrawn version.
   for (const [alias, aliasVersion] of Object.entries(aliases)) {
     if (aliasVersion === version) {
       steps.push({ action: "restore-alias", target: alias });
+    }
+  }
+
+  // Fallback is only meaningful when the latest alias must be restored
+  // (withdrawing the channel's current latest). Withdrawing an older
+  // version never touches the alias, so the fallback is inert.
+  const needsRestore = steps.length > 0;
+  if (needsRestore) {
+    if (withdrawnList.includes(fallbackVersion)) {
+      return { allowed: false, reason: `fallback ${fallbackVersion} is itself withdrawn — latest must never be restored to a withdrawn version`, steps: [] };
+    }
+    const fallbackPath = `ellamaka/v${fallbackVersion}`;
+    if (!snapshot.versionedPaths.includes(fallbackPath)) {
+      return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
     }
   }
   // 2. Delete the versioned path.

@@ -159,10 +159,11 @@ describe("desktop release repair", () => {
     expect(script).toContain("不能同时")
   })
 
-  test("withdraw script auto-selects the previous version when version is omitted", async () => {
+  test("withdraw script defaults to the latest released version of the selected channel", async () => {
     const script = await source("scripts/withdraw-release.sh")
 
-    // 无 version 参数时自动找"上一个版本"（低于当前 latest 的最高已发布版本）
+    // 省略 version 时撤回该渠道最新发布版本（不是"上一个"）
+    expect(script).toContain("默认撤回最新发布版本")
     expect(script).toContain("find_previous_version")
     expect(script).toContain("ls-remote")
   })
@@ -183,12 +184,12 @@ describe("desktop release repair", () => {
     expect(script).toContain("apply=true")
   })
 
-  test("withdraw script supports explicit version and fallback", async () => {
+  test("withdraw script has no manual fallback knob — it is always derived", async () => {
     const script = await source("scripts/withdraw-release.sh")
 
-    expect(script).toContain("--fallback")
-    // 撤回版本不能等于 fallback
-    expect(script).toContain("fallback")
+    // fallback 固定取同渠道上一版本，不接受用户输入（减少出错面）
+    expect(script).not.toContain("--fallback")
+    expect(script).toContain("fallback 自动取同渠道上一版本")
   })
 
   test("withdraw script matches namespaced product tags", async () => {
@@ -198,6 +199,48 @@ describe("desktop release repair", () => {
     // 不能用裸 ${product}-v* 前缀（cli-v* / desktop-v* 永远匹配不到）
     expect(script).toContain('ls-remote --tags origin "ellamaka-${product}-v*"')
     expect(script).not.toContain('ls-remote --tags origin "${product}-v*"')
+  })
+
+  test("withdraw script validates the target version exists before recording", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 版本必须真实存在：远端 tag + R2 versioned manifest，否则在登记前中止
+    expect(script).toContain("tag_exists")
+    expect(script).toContain("manifest_exists")
+    expect(script).toContain("validate_version_exists")
+    // 校验先于登记：validate 调用必须出现在 record 调用之前
+    const validateIdx = script.indexOf("validate_version_exists")
+    const recordIdx = script.indexOf('record_withdrawn "$PRODUCT_KEY" "$VERSION"')
+    expect(validateIdx).toBeGreaterThan(-1)
+    expect(recordIdx).toBeGreaterThan(validateIdx)
+  })
+
+  test("withdraw script rejects a fallback that is itself withdrawn", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("本身已被撤回")
+  })
+
+  test("withdraw script supports dry-run without recording or dispatching", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("--dry-run")
+    expect(script).toContain("DRY_RUN")
+    expect(script).toContain("[DRY RUN] 不 dispatch")
+  })
+
+  test("withdraw script fails closed on dirty branch or uncommitted withdrawn file", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("当前分支不是 main")
+    expect(script).toContain("未提交修改")
+  })
+
+  test("withdraw script is idempotent for already-withdrawn versions", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    expect(script).toContain("已在 withdrawn-versions.json 中登记（已执行过撤回）")
+    expect(script).toContain("无需重复撤回")
   })
 
   test("withdraw script resolves versions within a single channel", async () => {
@@ -211,12 +254,20 @@ describe("desktop release repair", () => {
     expect(script).toContain("-beta.")
   })
 
-  test("withdraw script rejects cross-channel fallback", async () => {
+  test("withdraw script requires channel selection for the multi-channel desktop product", async () => {
     const script = await source("scripts/withdraw-release.sh")
 
-    // 显式 --fallback 必须与撤回版本同渠道，跨渠道直接拒绝
-    expect(script).toContain("--fallback")
-    expect(script).toContain("渠道")
+    // desktop 多渠道，必须显式 --channel；cli 只有 stable
+    expect(script).toContain("--channel")
+    expect(script).toContain("desktop 是多渠道产品，必须用 --channel 指定撤回渠道")
+    expect(script).toContain("cli 只有 stable 渠道")
+  })
+
+  test("withdraw script rejects channel/version mismatch", async () => {
+    const script = await source("scripts/withdraw-release.sh")
+
+    // 显式 version 的渠道必须与 --channel 一致
+    expect(script).toContain("与 --channel")
   })
 
   test("withdraw script maps product to full registry key", async () => {

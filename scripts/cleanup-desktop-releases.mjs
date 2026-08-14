@@ -239,17 +239,31 @@ export function planWithdraw({
 
   // Determine channel from the version.
   const channel = version.includes("-beta.") ? "beta" : "stable";
-  const fallbackPath = pathForVersion(fallbackVersion, channel);
-  if (!snapshot.versionedPaths.includes(fallbackPath)) {
-    return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
-  }
 
   const steps = [];
   for (const [alias, aliasVersion] of Object.entries(aliases)) {
     if (aliasVersion === version) {
-      steps.push({ action: "restore-alias", target: alias });
+      // Restore the whole latest channel (manifest + updater feeds +
+      // updater asset copies), not just the manifest — a dangling feed
+      // breaks auto-update for every user of the channel.
+      steps.push({ action: "restore-latest-channel", target: alias.replace(/\/manifest\.json$/, "") });
     }
   }
+
+  // Fallback is only meaningful when the latest alias must be restored
+  // (withdrawing the channel's current latest). Withdrawing an older
+  // version never touches the alias, so the fallback is inert.
+  const needsRestore = steps.some((s) => s.action === "restore-latest-channel");
+  if (needsRestore) {
+    if (withdrawnList.includes(fallbackVersion)) {
+      return { allowed: false, reason: `fallback ${fallbackVersion} is itself withdrawn — latest must never be restored to a withdrawn version`, steps: [] };
+    }
+    const fallbackPath = pathForVersion(fallbackVersion, channel);
+    if (!snapshot.versionedPaths.includes(fallbackPath)) {
+      return { allowed: false, reason: `fallback ${fallbackVersion} not found in versioned paths`, steps: [] };
+    }
+  }
+
   steps.push({ action: "delete-versioned-path", target: pathForVersion(version, channel) });
   steps.push({ action: "delete-tag", target: `ellamaka-desktop-v${version}` });
 
@@ -285,6 +299,35 @@ function listR2VersionedPaths(r2Url, r2Root) {
       const name = p.replace(r2Root + "/", "");
       return name.startsWith("v");
     });
+}
+
+function listR2ObjectKeys(r2Url, prefix) {
+  const cmd = `aws s3api list-objects-v2 \
+    --bucket ${R2_BUCKET} \
+    --prefix "${prefix}" \
+    --endpoint-url "${r2Url}" \
+    --query "Contents[].Key" \
+    --output json`;
+  try {
+    const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    const keys = JSON.parse(output || "[]");
+    return Array.isArray(keys) ? keys : [];
+  } catch {
+    return [];
+  }
+}
+
+function headR2Object(r2Url, key) {
+  const cmd = `aws s3api head-object \
+    --bucket ${R2_BUCKET} \
+    --key "${key}" \
+    --endpoint-url "${r2Url}"`;
+  try {
+    execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function deleteR2Prefix(r2Url, versionedPath, dryRun) {
@@ -628,13 +671,27 @@ async function runWithdraw({ flags, r2Url, ghToken, giteeToken }) {
   }
 
   for (const step of plan.steps) {
-    if (step.action === "restore-alias") {
-      console.log(`  restoring alias ${step.target} → ${flags.fallback}`);
-      const fallbackManifestKey = `${r2Root}/v${flags.fallback}/manifest.json`;
-      execSync(
-        `aws s3 cp "s3://${R2_BUCKET}/${fallbackManifestKey}" "s3://${R2_BUCKET}/${step.target}" --endpoint-url "${r2Url}"`,
-        { stdio: "inherit" },
-      );
+    if (step.action === "restore-latest-channel") {
+      const latestPrefix = step.target;
+      const fallbackPrefix = `${r2Root}/v${flags.fallback}`;
+      const latestKeys = listR2ObjectKeys(r2Url, `${latestPrefix}/`);
+      if (latestKeys.length === 0) {
+        console.error(`  ERROR: no objects found under ${latestPrefix}/ — cannot restore latest channel`);
+        process.exit(1);
+      }
+      for (const key of latestKeys) {
+        const name = key.split("/").pop();
+        const src = `${fallbackPrefix}/${name}`;
+        if (!headR2Object(r2Url, src)) {
+          console.warn(`  WARN: cannot restore ${key} — ${src} missing (fallback predates feed/asset versioning); the next release of this channel self-heals`);
+          continue;
+        }
+        console.log(`  restoring ${key} ← ${src}`);
+        execSync(
+          `aws s3 cp "s3://${R2_BUCKET}/${src}" "s3://${R2_BUCKET}/${key}" --endpoint-url "${r2Url}"`,
+          { stdio: "inherit" },
+        );
+      }
     } else if (step.action === "delete-versioned-path") {
       deleteR2Prefix(r2Url, step.target, false);
     } else if (step.action === "delete-tag") {

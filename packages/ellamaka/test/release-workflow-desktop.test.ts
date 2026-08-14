@@ -44,4 +44,29 @@ describe("publish-ellamaka-desktop workflow", () => {
     expect(builderConfig).not.toMatch(/rpm/)
     expect(finalizeScript).not.toMatch(/\.rpm/)
   })
+
+  test("versions updater feeds and blockmaps for withdrawal restore", () => {
+    // 撤回需要从 fallback 的 versioned prefix 恢复 latest（manifest + feeds
+    // + updater 资产）。feeds 只在构建期生成，必须随版本归档，否则撤回后
+    // latest feeds 悬空、自动更新全渠道失效。
+    expect(workflow).toContain('"${VERSION_PREFIX}/${feed}"')
+    expect(workflow).toContain("versioned feed")
+    expect(workflow).toContain("dist/ellamaka-desktop-*.blockmap")
+  })
+
+  test("cleanup withdraw restores the whole latest channel and guards fallback health", () => {
+    const cleanup = readFileSync(join(root, "scripts", "cleanup-desktop-releases.mjs"), "utf8")
+
+    // 恢复整个 latest 通道（不止 manifest），fallback 自身已撤回时拒绝
+    expect(cleanup).toContain("restore-latest-channel")
+    expect(cleanup).toContain("listR2ObjectKeys")
+    expect(cleanup).toContain("is itself withdrawn")
+  })
+
+  test("withdraw purge covers latest feeds and updater copies", () => {
+    const cleanupYml = readFileSync(join(root, ".github", "workflows", "cleanup-releases.yml"), "utf8")
+
+    expect(cleanupYml).toContain("${ROOT}/latest/latest.yml")
+    expect(cleanupYml).toContain("${ROOT}/latest/${name}.blockmap")
+  })
 })
