@@ -238,13 +238,21 @@ jobs:
             done
           }
 
-          # Binary archives (immutable, 30-day cache)
-          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
-            name="$(basename "$f")"
+          # Versioned upload is driven by the manifest (the declaration),
+          # never by dist globs: the uploaded set equals the declared set by
+          # construction.
+          echo "Uploading versioned artifacts (declared set)..."
+          while IFS=$'\t' read -r name ext; do
             ct="application/octet-stream"
-            case "$name" in *.tar.gz) ct="application/x-tar";; *.zip) ct="application/zip";; esac
-            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
-          done
+            case "$ext" in
+              tar.gz) ct="application/x-tar" ;;
+              zip) ct="application/zip" ;;
+            esac
+            put_with_cache "dist/${name}" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.ext].join("\t"));
+          ')
 
           # Metadata (30-day cache with immutable) — manifest is written LAST
           # as the release commit point per §9 manifest-last protocol.
@@ -252,25 +260,26 @@ jobs:
           put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
           put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
 
-          # Latest alias: manifest only (60-second TTL).
-          # CLI publishes stable only (rc mechanism removed); every release
-          # updates the stable alias.
-          put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=60" "application/json"
-
           # Verify: head-object for size first (fast), full download only if
           # size mismatches. R2 single PUT can silently truncate; size check
           # catches truncation without re-downloading ~200MB of archives.
+          # Iterates the manifest (the declaration), never local dist files —
+          # a dist file absent from the manifest can no longer fake a
+          # mismatch via empty array lookups.
           echo "Verifying R2 uploads against manifest..."
           declare -A manifest_sha manifest_size
           while IFS=$'\t' read -r mname msha msize; do
+            if [ -z "$msha" ] || [ -z "$msize" ]; then
+              echo "ERROR: manifest artifact missing sha256/size: $mname"
+              exit 1
+            fi
             manifest_sha["$mname"]="$msha"
             manifest_size["$mname"]="$msize"
           done < <(node -e '
             const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
             for (const a of m.artifacts) console.log([a.name, a.sha256, a.size].join("\t"));
           ')
-          for f in dist/ellamaka-*.tar.gz dist/ellamaka-*.zip; do
-            name="$(basename "$f")"
+          while IFS=$'\t' read -r name ext; do
             key="${VERSION_PREFIX}/${name}"
             remote_size=$(aws s3api head-object \
               --bucket wopal-release \
@@ -300,7 +309,17 @@ jobs:
             else
               echo "  OK: $name (size=$remote_size) [head-only]"
             fi
-          done
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.ext].join("\t"));
+          ')
+
+          # Latest alias: manifest only (60-second TTL). Promotion runs only
+          # after versioned verification passes, so a failed verify can never
+          # point the stable alias at a broken release. CLI publishes stable
+          # only (rc mechanism removed); every release updates the alias.
+          put_with_cache "release-output/manifest.json" "ellamaka/latest/manifest.json" "public, max-age=60" "application/json"
+          echo "  promoted latest manifest: ellamaka/latest/manifest.json"
 
           echo "R2 upload complete for ellamaka v${VERSION}"
 

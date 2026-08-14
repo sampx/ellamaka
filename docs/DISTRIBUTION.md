@@ -200,7 +200,7 @@ CLI 发布流程（release job）：
 5. 直接更新 CLI stable latest（CLI 是独立产品，发布不受任何 Desktop 版本约束）并主动 purge CDN。
 6. 创建 4 个 markdown-only release 条目（GitHub/Gitee × `wopal-cn/ellamaka`/`wopal-cn/wopal-space-ontology`），不挂 binary；ontology 仓库使用独立索引 tag/body，不复用 Ellamaka 产品 tag namespace。
 
-Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb+rpm）。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
+Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb）。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
 
 **重试状态**：不存在 tag 且 versioned path 为空时可创建新 release；tag/partial objects 存在但没有有效 versioned manifest、latest/updater 或正式 Release 页面引用时，只有显式 `retry` 才能清理该 attempt 可证明 ownership 的对象，并允许从修复后的 commit 重建 tag、同版本重新 dispatch；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
 
@@ -407,8 +407,8 @@ Sidecar 是 Node.js runtime（`build-node.ts` 产 `dist/node/`），**不是** B
 | macOS | arm64 | `.dmg` + `.zip` | DMG 是用户安装包；ZIP 供 electron-updater 使用 |
 | macOS | x64 | `.dmg` + `.zip` | 同上 |
 | Windows | x64 | `.exe`（NSIS） | 一键安装及 updater payload |
-| Linux | arm64 | `.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
-| Linux | x64 | `.AppImage` + `.deb` + `.rpm` | AppImage 免安装，deb/rpm 可选 |
+| Linux | arm64 | `.AppImage` + `.deb` | AppImage 免安装，deb 可选 |
+| Linux | x64 | `.AppImage` + `.deb` | AppImage 免安装，deb 可选 |
 
 Contract：
 
@@ -416,7 +416,7 @@ Contract：
 2. `prod` channel 的 `appId` 为 `ai.ellamaka.desktop`，deep link scheme 为 `ellamaka://`。
 3. beta 与 prod 的版本化目录和 latest feed 相互独立，也不与 CLI 混用。
 4. 自动更新 feed（`latest-mac.yml` / `latest.yml` / `latest-linux.yml`）与安装包同传 R2。
-5. Release 下载表展示 DMG、EXE、AppImage、deb 和 rpm。ZIP 与 blockmap 属于 updater 资产。
+5. Release 下载表展示 DMG、EXE、AppImage 和 deb。ZIP 与 blockmap 属于 updater 资产。
 
 ### 8.3 安装入口
 

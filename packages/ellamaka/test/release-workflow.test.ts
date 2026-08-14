@@ -27,7 +27,7 @@ describe("publish-ellamaka workflow", () => {
 
   test("builds release binaries with release channel and archives the 4 P1 artifacts", () => {
     expect(workflow).toContain("OPENCODE_RELEASE: ${{ needs.version.outputs.release }}")
-    expect(workflow).toContain("bash scripts/build.sh cli --arch primary --web-ui \"${WEB_UI}\"")
+    expect(workflow).toContain("bash scripts/build.sh cli --platform \"${PLATFORM}\" --arch primary --web-ui \"${WEB_UI}\"")
     expect(workflow).toContain("ellamaka-darwin-arm64.tar.gz")
     expect(workflow).toContain("ellamaka-darwin-x64.tar.gz")
     expect(workflow).toContain("ellamaka-linux-x64.tar.gz")
@@ -90,7 +90,7 @@ describe("publish-ellamaka workflow", () => {
     // Per §9, the manifest is written last as the release commit point. The
     // `put_with_cache` for manifest.json must come after artifacts.
     const manifestIdx = workflow.indexOf('put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json"')
-    const artifactIdx = workflow.indexOf('put_with_cache "$f" "${VERSION_PREFIX}/${name}"')
+    const artifactIdx = workflow.indexOf('put_with_cache "dist/${name}" "${VERSION_PREFIX}/${name}"')
     expect(manifestIdx).toBeGreaterThan(artifactIdx)
     expect(manifestIdx).toBeGreaterThan(-1)
   })
@@ -103,6 +103,21 @@ describe("publish-ellamaka workflow", () => {
     expect(workflow).toContain("expected_hash")
     expect(workflow).not.toContain("local  sha256")
     expect(workflow).not.toContain("local_hash")
+    // The verify loop iterates manifest artifacts, never dist globs — a dist
+    // file absent from the manifest must not fake a mismatch via empty
+    // array lookups.
+    expect(workflow).not.toMatch(/for f in dist\/ellamaka-\*/)
+    expect(workflow).toContain('while IFS=$\'\\t\' read -r name ext; do')
+    expect(workflow).toContain('console.log([a.name, a.ext].join("\\t"))')
+  })
+
+  test("promotes latest alias only after versioned verification passes", () => {
+    // A failed verify must never point the stable alias at a broken release.
+    // Previously the latest manifest was written before verification.
+    const verifyIdx = workflow.indexOf("Verifying R2 uploads against manifest...")
+    const promoteIdx = workflow.indexOf("promoted latest manifest: ellamaka/latest/manifest.json")
+    expect(verifyIdx).toBeGreaterThan(-1)
+    expect(promoteIdx).toBeGreaterThan(verifyIdx)
   })
 
   test("purges CDN cache for latest alias and release artifacts", () => {

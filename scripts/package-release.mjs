@@ -68,12 +68,14 @@ export function parseArgs(argv) {
 // Desktop artifact naming: ellamaka-desktop-<os>-<arch>.<ext>
 //   os ∈ {darwin, win32, linux} (win32 normalized to windows),
 //   arch ∈ {arm64, x64} — but electron-builder uses platform-specific
-//   arch names for linux: amd64 (deb), x86_64 (AppImage, rpm). Both are
-//   normalized to x64 in the manifest.
+//   arch names for linux: amd64 (deb), x86_64 (AppImage), aarch64
+//   (rpm, RPM-native arch name). All normalize to x64/arm64 in the
+//   manifest. The ext set is a historical superset — rpm is no longer
+//   produced, but older versioned manifests still declare it.
 const CLI_ARCHIVE_RE = /^ellamaka-([^-]+)-(arm64|x64)(?:-(baseline))?\.(tar\.gz|zip)$/
-const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-(?:beta-)?([^-]+)-(arm64|x64|amd64|x86_64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
+const DESKTOP_ARCHIVE_RE = /^ellamaka-desktop-(?:beta-)?([^-]+)-(arm64|x64|amd64|x86_64|aarch64)\.(dmg|zip|exe|AppImage|deb|rpm)$/
 const DESKTOP_OS_MAP = { darwin: "darwin", mac: "darwin", win32: "windows", win: "windows", linux: "linux" }
-const DESKTOP_ARCH_MAP = { arm64: "arm64", x64: "x64", amd64: "x64", x86_64: "x64" }
+const DESKTOP_ARCH_MAP = { arm64: "arm64", x64: "x64", amd64: "x64", x86_64: "x64", aarch64: "arm64" }
 const ARCHIVE_EXT_RE = /\.(tar\.gz|zip|dmg|exe|AppImage|deb|rpm)$/
 
 export function parseArchiveName(filename) {
@@ -213,17 +215,21 @@ export function manifestCommand(flags) {
   const files = fs
     .readdirSync(archivesDir)
     .filter((file) => file.startsWith("ellamaka-") && ARCHIVE_EXT_RE.test(file))
-    // Only keep files whose names actually parse (CLI + desktop artifacts).
-    // A stray ellamaka- prefixed file with an unknown layout is skipped.
-    .filter((file) => {
-      try {
-        parseArchiveName(file)
-        return true
-      } catch {
-        return false
-      }
-    })
     .sort()
+
+  // Fail fast on naming drift: every archive-shaped file must parse. A
+  // silent skip would upload an undeclared artifact (or leave it out of
+  // the manifest) — both are release-integrity bugs. Stray non-archive
+  // files (updater feeds, blockmaps) never reach this check.
+  for (const file of files) {
+    try {
+      parseArchiveName(file)
+    } catch {
+      throw new Error(
+        `Cannot parse archive name: ${file} — update the archive regexes in scripts/package-release.mjs or fix the artifact naming`,
+      )
+    }
+  }
 
   if (files.length === 0) throw new Error("No archive files found matching ellamaka-*-*.{tar.gz,zip,dmg,exe,AppImage,deb,rpm}")
 

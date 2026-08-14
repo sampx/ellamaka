@@ -122,7 +122,7 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 - sidecar、Electron Main/Renderer、图标和 electron-builder 共用同一组 channel/version 环境变量。
 - macOS 公共包使用 ad-hoc 签名。它保证 bundle 签名结构完整，但用户仍需主动接受 Gatekeeper 风险。
 - 版本化 R2 路径不可变。提交前 failed attempt 可清空自身 partial 对象后同版本重试；提交后 release 不得覆盖。整版撤回遵循 `docs/DISTRIBUTION.md` §7.3。
-- 下载表展示 DMG、EXE、AppImage、deb 和 rpm。ZIP、blockmap 与 `latest-*.yml` 属于 updater 资产。
+- 下载表展示 DMG、EXE、AppImage 和 deb。ZIP、blockmap 与 `latest-*.yml` 属于 updater 资产。
 
 ## 5. Testing
 

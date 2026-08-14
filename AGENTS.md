@@ -122,7 +122,7 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 - Sidecar, Electron Main/Renderer, icons, and electron-builder share the same channel/version environment variables.
 - Public macOS packages use ad-hoc signing. This guarantees bundle signature integrity, but users must still accept Gatekeeper risk manually.
 - Versioned R2 paths are immutable. Pre-commit failed attempts may clear their own partial objects before retry at the same version; post-commit releases must never be overwritten. Whole-version withdrawal follows `docs/DISTRIBUTION.md` §7.3.
-- Download tables show DMG, EXE, AppImage, deb, and rpm. ZIP, blockmap, and `latest-*.yml` are updater assets.
+- Download tables show DMG, EXE, AppImage, and deb. ZIP, blockmap, and `latest-*.yml` are updater assets.
 
 ## 5. Testing & Verification
 

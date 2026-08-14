@@ -86,7 +86,7 @@ const getBase = (): Configuration => ({
   linux: {
     icon: "resources/icons",
     category: "Development",
-    target: ["AppImage", "deb", "rpm"],
+    target: ["AppImage", "deb"],
     artifactName: `${artifactPrefix}-\${os}-\${arch}.\${ext}`,
     executableName: "ellamaka",
   },
@@ -103,7 +103,6 @@ function getConfig(): Configuration {
         ...base,
         appId: "ai.ellamaka.desktop.main",
         productName: "Ellamaka Main",
-        rpm: { packageName: "ellamaka-main" },
       }
     }
     case "beta": {
@@ -113,7 +112,6 @@ function getConfig(): Configuration {
         productName: "Ellamaka Beta",
         publish,
         protocols: { name: "Ellamaka Beta", schemes: ["ellamaka"] },
-        rpm: { packageName: "ellamaka-beta" },
       }
     }
     case "prod": {
@@ -123,7 +121,6 @@ function getConfig(): Configuration {
         productName: "Ellamaka",
         publish,
         protocols: { name: "Ellamaka", schemes: ["ellamaka"] },
-        rpm: { packageName: "ellamaka" },
       }
     }
   }

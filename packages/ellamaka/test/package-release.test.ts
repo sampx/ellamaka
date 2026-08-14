@@ -102,9 +102,10 @@ describe("package-release.mjs", () => {
     })
   })
 
-  test("normalizes electron-builder arch names to x64", () => {
+  test("normalizes electron-builder arch names to x64/arm64", () => {
     // electron-builder uses platform-specific arch names for linux:
-    // amd64 (deb), x86_64 (AppImage, rpm). Both must normalize to x64.
+    // amd64 (deb), x86_64 (AppImage, rpm), aarch64 (rpm, RPM-native).
+    // All must normalize to x64/arm64 in the manifest.
     expect(script.parseArchiveName("ellamaka-desktop-linux-amd64.deb")).toEqual({
       os: "linux",
       arch: "x64",
@@ -122,6 +123,13 @@ describe("package-release.mjs", () => {
     expect(script.parseArchiveName("ellamaka-desktop-linux-x86_64.rpm")).toEqual({
       os: "linux",
       arch: "x64",
+      variant: null,
+      ext: "rpm",
+      product: "desktop",
+    })
+    expect(script.parseArchiveName("ellamaka-desktop-beta-linux-aarch64.rpm")).toEqual({
+      os: "linux",
+      arch: "arm64",
       variant: null,
       ext: "rpm",
       product: "desktop",
@@ -204,6 +212,40 @@ describe("package-release.mjs", () => {
       expect(artifact.size).toBeGreaterThan(0)
       expect(artifact.product).toBe("desktop")
     }
+  })
+
+  test("fails fast on archive-shaped files with unparsable names", () => {
+    // Naming drift must surface at manifest generation, before any R2
+    // upload — a silent skip would leave an uploaded artifact undeclared
+    // (the aarch64.rpm failure mode).
+    const archivesDir = makeTempdir()
+    writeFileSync(join(archivesDir, "ellamaka-desktop-linux-riscv64.AppImage"), "fake")
+    expect(() =>
+      script.manifestCommand({
+        archivesDir,
+        version: "0.1.0-test",
+        outputDir: resolve(makeTempdir(), "output"),
+        tag: "v0.1.0-test",
+        baseUrl: defaultBaseUrl,
+      }),
+    ).toThrow(/Cannot parse archive name: ellamaka-desktop-linux-riscv64\.AppImage/)
+  })
+
+  test("ignores stray non-archive files alongside artifacts", () => {
+    // Updater feeds and blockmaps share the dist dir; they never enter the
+    // manifest and never trigger the fail-fast parse check.
+    const archivesDir = makeTempdir()
+    writeFileSync(join(archivesDir, "ellamaka-darwin-arm64.tar.gz"), "fake-cli")
+    writeFileSync(join(archivesDir, "latest-mac.yml"), "feed")
+    writeFileSync(join(archivesDir, "ellamaka-desktop-mac-x64.zip.blockmap"), "blockmap")
+    const { artifacts } = script.manifestCommand({
+      archivesDir,
+      version: "0.1.0-test",
+      outputDir: resolve(makeTempdir(), "output"),
+      tag: "v0.1.0-test",
+      baseUrl: defaultBaseUrl,
+    })
+    expect(artifacts.map((a) => a.name)).toEqual(["ellamaka-darwin-arm64.tar.gz"])
   })
 
   test("accepts a custom base URL", () => {    const outputDir = resolve(makeTempdir(), "output")

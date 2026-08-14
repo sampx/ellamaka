@@ -283,70 +283,48 @@ jobs:
             done
           }
 
-          for f in dist/ellamaka-desktop-*; do
-            [ -f "$f" ] || continue
-            name="$(basename "$f")"
-            case "$name" in
-              *.dmg|*.zip|*.exe|*.AppImage|*.deb|*.rpm|*.zip.blockmap|*.exe.blockmap) ;;
-              *) continue ;;
-            esac
+          # Versioned upload is driven by the manifest (the declaration),
+          # never by dist globs: the uploaded set equals the declared set by
+          # construction. Blockmaps stay out of the versioned prefix (they
+          # are updater assets, §7.1).
+          echo "Uploading versioned artifacts (declared set)..."
+          while IFS=$'\t' read -r name ext; do
             ct="application/octet-stream"
-            case "$name" in
-              *.dmg) ct="application/x-apple-diskimage" ;;
-              *.zip) ct="application/zip" ;;
-              *.deb) ct="application/vnd.debian.binary-package" ;;
-              *.rpm) ct="application/x-rpm" ;;
+            case "$ext" in
+              dmg) ct="application/x-apple-diskimage" ;;
+              zip) ct="application/zip" ;;
+              deb) ct="application/vnd.debian.binary-package" ;;
             esac
-            put_with_cache "$f" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
-          done
+            put_with_cache "dist/${name}" "${VERSION_PREFIX}/${name}" "public, max-age=2592000, immutable" "$ct"
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.ext].join("\t"));
+          ')
 
           # Metadata — manifest is written LAST as the release commit point.
           put_with_cache "release-output/checksums.txt" "${VERSION_PREFIX}/checksums.txt" "public, max-age=2592000, immutable" "text/plain"
           put_with_cache "release-output/release-notes.md" "${VERSION_PREFIX}/release-notes.md" "public, max-age=2592000, immutable" "text/markdown"
           put_with_cache "release-output/manifest.json" "${VERSION_PREFIX}/manifest.json" "public, max-age=2592000, immutable" "application/json"
 
-          put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
-          echo "  uploaded manifest: ${LATEST_PREFIX}/manifest.json"
-
-          for f in dist/ellamaka-desktop-*; do
-            [ -f "$f" ] || continue
-            name="$(basename "$f")"
-            case "$name" in
-              *.zip|*.exe|*.AppImage|*.zip.blockmap|*.exe.blockmap) ;;
-              *) continue ;;
-            esac
-            ct="application/octet-stream"
-            case "$name" in
-              *.zip) ct="application/zip" ;;
-            esac
-            put_with_cache "$f" "${LATEST_PREFIX}/${name}" "public, max-age=60" "$ct"
-          done
-
-          for feed in latest-mac.yml latest.yml latest-linux.yml; do
-            if [ -f "dist/${feed}" ]; then
-              put_with_cache "dist/${feed}" "${LATEST_PREFIX}/${feed}" "public, max-age=60" "application/x-yaml"
-              echo "  uploaded feed: ${LATEST_PREFIX}/${feed}"
-            else
-              echo "  WARNING: feed not found, skipping: dist/${feed}"
-            fi
-          done
-
+          # Verify: every declared artifact must exist remotely with the
+          # manifest size; full hash re-check on mismatch. Iterates the
+          # manifest (the declaration), never local dist files — a dist file
+          # absent from the manifest can no longer fake a mismatch via empty
+          # array lookups (the aarch64.rpm failure mode).
           echo "Verifying R2 uploads against manifest..."
           declare -A manifest_sha manifest_size
           while IFS=$'\t' read -r mname msha msize; do
+            if [ -z "$msha" ] || [ -z "$msize" ]; then
+              echo "ERROR: manifest artifact missing sha256/size: $mname"
+              exit 1
+            fi
             manifest_sha["$mname"]="$msha"
             manifest_size["$mname"]="$msize"
           done < <(node -e '
             const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
             for (const a of m.artifacts) console.log([a.name, a.sha256, a.size].join("\t"));
           ')
-          for f in dist/ellamaka-desktop-*; do
-            [ -f "$f" ] || continue
-            name="$(basename "$f")"
-            case "$name" in
-              *.dmg|*.zip|*.exe|*.AppImage|*.deb|*.rpm) ;;
-              *) continue ;;
-            esac
+          while IFS=$'\t' read -r name ext; do
             key="${VERSION_PREFIX}/${name}"
             remote_size=$(aws s3api head-object \
               --bucket wopal-release \
@@ -375,6 +353,38 @@ jobs:
               echo "  OK: $name (sha256=$remote_hash size=$remote_size) [full verify]"
             else
               echo "  OK: $name (size=$remote_size) [head-only]"
+            fi
+          done < <(node -e '
+            const m = JSON.parse(require("fs").readFileSync("release-output/manifest.json","utf8"));
+            for (const a of m.artifacts) console.log([a.name, a.ext].join("\t"));
+          ')
+
+          # Latest promotion runs only after versioned verification passes,
+          # so a failed verify can never point the latest channel at a broken
+          # release (previously the aliases were written before verify).
+          put_with_cache "release-output/manifest.json" "${LATEST_PREFIX}/manifest.json" "public, max-age=60" "application/json"
+          echo "  promoted latest manifest: ${LATEST_PREFIX}/manifest.json"
+
+          for f in dist/ellamaka-desktop-*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            case "$name" in
+              *.zip|*.exe|*.AppImage|*.zip.blockmap|*.exe.blockmap) ;;
+              *) continue ;;
+            esac
+            ct="application/octet-stream"
+            case "$name" in
+              *.zip) ct="application/zip" ;;
+            esac
+            put_with_cache "$f" "${LATEST_PREFIX}/${name}" "public, max-age=60" "$ct"
+          done
+
+          for feed in latest-mac.yml latest.yml latest-linux.yml; do
+            if [ -f "dist/${feed}" ]; then
+              put_with_cache "dist/${feed}" "${LATEST_PREFIX}/${feed}" "public, max-age=60" "application/x-yaml"
+              echo "  promoted feed: ${LATEST_PREFIX}/${feed}"
+            else
+              echo "  WARNING: feed not found, skipping: dist/${feed}"
             fi
           done
 
