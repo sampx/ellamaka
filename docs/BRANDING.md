@@ -26,7 +26,7 @@
 | `infra/`                                        | SST 基础设施（AWS/Cloudflare）                      | 无云端部署                                                                            |
 | `nix/`                                          | Nix 构建文件                                        | 不使用 Nix                                                                            |
 | `specs/`                                        | 上游设计 spec 文档                                  | 不参与构建                                                                            |
-| `script/`                                       | 上游发布/变更日志脚本                               | ellamaka 用 `publish-ellamaka.yml` + `build.ts --arch primary`                        |
+| `script/`                                       | 上游发布/变更日志脚本                               | ellamaka 用 `publish-ellamaka-cli.yml` + `ellamaka-release build.ts --arch primary`   |
 | `.opencode/`                                    | opencode 项目级开发配置                             | 上游 IDE 配置，ellamaka 开发不依赖                                                    |
 | `packages/stats/`                               | 云监控面板                                          | v1.15.x 新增，CLI 分发无云监控需求                                                    |
 | `packages/opencode/test/installation/`          | 安装/升级测试                                       | 测试 opencode 的 npm/brew/GitHub 升级链路，ellamaka 由 wopal-cli 接管，该路径为死代码 |
@@ -41,7 +41,7 @@
 | `sst.config.ts`、`sst-env.d.ts`               | 无云端部署                                         |
 | `install`                                     | 上游安装脚本（ellamaka 通过 wopal-cli 安装）       |
 | `.github/ISSUE_TEMPLATE/`                     | 上游 issue 模板                                    |
-| `.github/workflows/publish.yml`、`deploy.yml` | 上游 CI（ellamaka 用 `publish-ellamaka.yml`）      |
+| `.github/workflows/publish.yml`、`deploy.yml` | 上游 CI（ellamaka 用 `publish-ellamaka-cli.yml`）  |
 
 ### 保留文件
 
@@ -50,7 +50,7 @@
 | `README.md`、`README.zh-CN.md`           | ellamaka 项目 README（已替换上游版本）                      |
 | `AGENTS.md`、`AGENTS.zh-CN.md`           | ellamaka 开发规范                                           |
 | `scripts/`                               | ellamaka 自有脚本（区别于上游 `script/`）                   |
-| `.github/workflows/publish-ellamaka.yml` | ellamaka 发布 CI                                            |
+| `.github/workflows/publish-ellamaka-cli.yml` | ellamaka 发布 CI                                            |
 | `.github/TEAM_MEMBERS`                   | 上游构建脚本初始化依赖                                      |
 | `package.json`                           | 构建入口，`"name": "opencode"` 是内部标识不影响用户可见品牌 |
 | `patches/`、`LICENSE`                    | 构建和授权需要                                              |
@@ -127,7 +127,7 @@ Core `Global` 只负责 `WOPAL_HOME` 路径布局，不将 `.env` 文件写入 `
 
 ### 内容
 
-**上游 `script/build.ts` 零侵入**。ellamaka 通过独立 copy 文件 `packages/ellamaka/build.ts` 实现 5 类定制：
+**上游 `script/build.ts` 零侵入**。ellamaka 通过独立 copy 文件 `packages/ellamaka-release/src/cli/build.ts` 实现 5 类定制：
 
 1. **品牌注入**：`BINARY_NAME` 替换硬编码 `"opencode"`，`CHANNEL_RELEASE`/`CHANNEL_DEV` 替换上游渠道
 2. **平台裁剪**：`--arch primary` 构建 7 个 P1 目标（4 个 native + 3 个 x64 baseline），排除 musl、Linux arm64 和 Windows arm64 变体
@@ -542,7 +542,7 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 | `docs/DESIGN.md`、`docs/DISTRIBUTION.md`、`docs/BRANDING.md` | ellamaka 设计文档    |
 | `docs/UPSTREAM-MERGE-LOG.md`                                                             | 合并历史记录         |
 | `scripts/`                                                                               | ellamaka 自有脚本    |
-| `.github/workflows/publish-ellamaka.yml`                                                 | ellamaka CI          |
+| `.github/workflows/publish-ellamaka-cli.yml`                                                 | ellamaka CI          |
 | `packages/ellamaka/`                                                                     | ellamaka 品牌包      |
 
 ### 合并冲突热点
@@ -557,7 +557,7 @@ ellamaka 对上游源码的所有修改遵循以下原则，以最小化每次�
 ### 合并后验证
 
 1. `bun typecheck`
-2. `bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app`
+2. `bun packages/ellamaka-release/src/cli/build.ts --arch primary --web-ui ellamaka-app`
 3. `./dist/ellamaka-darwin-*/bin/ellamaka --version` 输出 `ellamaka/x.y.z`
 4. upstream lock schema、baseline ancestry 与 build identity 校验通过
 5. `./scripts/check-cleanup.sh` 通过
@@ -655,12 +655,12 @@ sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中�
 
 ### 15.3 构建嵌入
 
-`packages/ellamaka/build.ts` 的 `--web-ui` 参数选择嵌入源:
+`packages/ellamaka-release/src/cli/build.ts` 的 `--web-ui` 参数选择嵌入源:
 
 ```bash
-bun packages/ellamaka/build.ts --web-ui ellamaka-app  # ellamaka 官方 Web UI
-bun packages/ellamaka/build.ts --web-ui app           # 上游 app 基线
-bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
+bun packages/ellamaka-release/src/cli/build.ts --web-ui ellamaka-app  # ellamaka 官方 Web UI
+bun packages/ellamaka-release/src/cli/build.ts --web-ui app           # 上游 app 基线
+bun packages/ellamaka-release/src/cli/build.ts --web-ui none          # 不嵌入 Web UI
 ```
 
 默认值是 `ellamaka-app`。嵌入机制不变:Vite build → dist/ → `opencode-web-ui.gen.ts` 编译入二进制。
@@ -705,7 +705,7 @@ bun packages/ellamaka/build.ts --web-ui none          # 不嵌入 Web UI
 
 1. 复制 `packages/app` → `packages/ellamaka-app`(排除 node_modules/dist/.turbo)
 2. 修改 `package.json` 元数据
-3. 在 `packages/ellamaka/build.ts` 切换嵌入源
+3. 在 `packages/ellamaka-release/src/cli/build.ts` 切换嵌入源
 4. 注册 `/workbench` 路由 + 三栏布局骨架(TopBar/ActivityBar/Sidebar/Workspace/StatusBar)
 5. 视图切换 Provider(TUI/Chat/Split)持久化到 localStorage
 6. 空间侧栏接通真实数据:通过 `wopalSpace.spaces` SDK 方法(后端 §16)拉取 `$WOPAL_HOME/config/settings.jsonc` 的 WopalSpace 注册表

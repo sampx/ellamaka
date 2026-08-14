@@ -60,6 +60,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+      - uses: oven-sh/setup-bun@v2
       - name: Run cleanup
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -77,9 +78,9 @@ jobs:
               DRY_FLAG="--dry-run"
             fi
             if [ "$PRODUCT" = "ellamaka-cli" ]; then
-              node scripts/cleanup-ellamaka-releases.mjs --keep "${{ inputs.keep-stable }}" $DRY_FLAG
+              bun packages/ellamaka-release/src/cli/cleanup.ts --product ellamaka-cli --keep-stable "${{ inputs.keep-stable }}" $DRY_FLAG
             else
-              node scripts/cleanup-desktop-releases.mjs --keep-prod "${{ inputs.keep-stable }}" --keep-beta "${{ inputs.keep-beta }}" $DRY_FLAG
+              bun packages/ellamaka-release/src/cli/cleanup.ts --product ellamaka-desktop --keep-stable "${{ inputs.keep-stable }}" --keep-beta "${{ inputs.keep-beta }}" $DRY_FLAG
             fi
           else
             # Withdraw mode: real execution (R2 + GitHub + Gitee mutation).
@@ -97,9 +98,9 @@ jobs:
               DRY_FLAG="--dry-run"
             fi
             if [ "$PRODUCT" = "ellamaka-cli" ]; then
-              node scripts/cleanup-ellamaka-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
+              bun packages/ellamaka-release/src/cli/cleanup.ts --product ellamaka-cli --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
             else
-              node scripts/cleanup-desktop-releases.mjs --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
+              bun packages/ellamaka-release/src/cli/cleanup.ts --product ellamaka-desktop --withdraw "$WITHDRAW_VER" --fallback "$FALLBACK_VER" $DRY_FLAG
             fi
           fi
       - name: Purge withdrawn version from Cloudflare CDN

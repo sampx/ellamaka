@@ -133,7 +133,7 @@ function build_cli() {
     # of the version string.
     export OPENCODE_VERSION="$(resolve_build_version "ellamaka-cli" "main")"
   fi
-  BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka/build.ts" "${BUILD_ARGS[@]}"
+  BINARY_NAME="$BINARY_NAME" bun "$PROJECT_ROOT/packages/ellamaka-release/src/cli/build.ts" "${BUILD_ARGS[@]}"
 
   if $INSTALL; then
     PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"

@@ -77,7 +77,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | opencode 包测试 | `bun test --timeout 30000 --force-exit`（from `packages/opencode`） |
 | opencode 构建 | `bun run build`（from `packages/opencode`） |
 | ellamaka 包测试 | `bun test`（from `packages/ellamaka`） |
-| 构建 ellamaka 品牌 CLI | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` |
+| 构建 ellamaka 品牌 CLI | `bun packages/ellamaka-release/src/cli/build.ts --web-ui ellamaka-app` |
 | 构建 CLI 二进制 | `./scripts/build.sh cli` |
 | 构建桌面应用 | `./scripts/build.sh desktop` |
 | 发布 Desktop beta | `./scripts/tag-release.sh X.Y.Z-beta.N --channel beta --desktop` |

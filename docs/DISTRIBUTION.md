@@ -36,7 +36,7 @@ Release identity 必须回答四个互不混淆的问题：
 
 ## 2. Release Backbone
 
-ellamaka 是 OpenCode 的 fork，构建体系通过 `@opencode-ai/script` 包引入上游脚本，`packages/ellamaka/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
+ellamaka 是 OpenCode 的 fork，构建体系通过 `@opencode-ai/script` 包引入上游脚本，`packages/ellamaka-release/src/cli/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
 
 - **平台裁剪**：`--arch primary` 构建 8 个平台（5 native + 3 baseline），排除 musl、Windows arm64 变体；baseline 兼容不支持 AVX2 的老 x64 CPU。
 - **发布位置**：binary 分发从 GitHub Release 迁移到 Cloudflare R2。
@@ -189,13 +189,13 @@ channel 规则：
 
 ### 4.2 发布流程
 
-**触发条件**：仅 `workflow_dispatch`。由 `scripts/tag-release.sh` 创建并推送 namespaced tag 后，以该 tag 作为 `--ref` 触发目标 workflow（`publish-ellamaka.yml` / `publish-ellamaka-desktop.yml`）；workflow 不监听 `push: tags`。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。
+**触发条件**：仅 `workflow_dispatch`。由 `scripts/tag-release.sh` 创建并推送 namespaced tag 后，以该 tag 作为 `--ref` 触发目标 workflow（`publish-ellamaka-cli.yml` / `publish-ellamaka-desktop.yml`）；workflow 不监听 `push: tags`。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。
 
 CLI 发布流程（release job）：
 
 1. 验证 tag 指向当前 checkout、version/channel 合法、`sources.opencode.gitCommit` 是当前 release commit 的祖先，并对每个冻结 component baseline 执行目录 drift check。
-2. 构建 CLI（`BINARY_NAME=ellamaka OPENCODE_VERSION=<ver> OPENCODE_RELEASE=true bun packages/ellamaka/build.ts --arch primary --web-ui ellamaka-app`），产出 8 平台产物。
-3. 运行 `scripts/package-release.mjs manifest` 生成 `manifest.json`、`checksums.txt`、`release-notes.md`。
+2. 构建 CLI（`BINARY_NAME=ellamaka OPENCODE_VERSION=<ver> OPENCODE_RELEASE=true bun packages/ellamaka-release/src/cli/build.ts --arch primary --web-ui ellamaka-app`），产出 8 平台产物。
+3. 运行 `bun packages/ellamaka-release/src/cli/manifest.ts manifest` 生成 `manifest.json`、`checksums.txt`、`release-notes.md`。
 4. 按 manifest-last 提交点协议发布：staging 上传 → 回读校验 → 禁止覆盖写入 versioned path → 最后写 `manifest.json` 作为提交点（契约细节见 `DESIGN-distribution.md` §2.2）。
 5. 直接更新 CLI stable latest（CLI 是独立产品，发布不受任何 Desktop 版本约束）并主动 purge CDN。
 6. 创建 4 个 markdown-only release 条目（GitHub/Gitee × `wopal-cn/ellamaka`/`wopal-cn/wopal-space-ontology`），不挂 binary；ontology 仓库使用独立索引 tag/body，不复用 Ellamaka 产品 tag namespace。

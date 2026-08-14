@@ -77,7 +77,7 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | opencode package tests | `bun test --timeout 30000 --force-exit` (from `packages/opencode`) |
 | opencode build | `bun run build` (from `packages/opencode`) |
 | ellamaka package tests | `bun test` (from `packages/ellamaka`) |
-| Build ellamaka-branded CLI | `bun packages/ellamaka/build.ts --web-ui ellamaka-app` |
+| Build ellamaka-branded CLI | `bun packages/ellamaka-release/src/cli/build.ts --web-ui ellamaka-app` |
 | Build CLI binary | `./scripts/build.sh cli` |
 | Build desktop app | `./scripts/build.sh desktop` |
 | Release Desktop beta | `./scripts/tag-release.sh X.Y.Z-beta.N --channel beta --desktop` |

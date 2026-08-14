@@ -88,7 +88,7 @@ if [ "$SUBCOMMAND" = "cli" ]; then
   fi
   PRODUCT="ellamaka-cli"
   LABEL="CLI"
-  WORKFLOW="publish-ellamaka.yml"
+  WORKFLOW="publish-ellamaka-cli.yml"
   CHANNEL="stable"
 else
   PRODUCT="ellamaka-desktop"
@@ -132,7 +132,7 @@ process.stdout.write(arr.includes('$version') ? 'yes' : 'no');
 
 check_migration_floor() {
   local version="$1"
-  [ -f "$LEGACY_INVENTORY_FILE" ] || die "legacy-inventory.json 缺失；必须先用 capture-legacy-release-inventory.mjs 真实盘点并冻结后才能发布"
+  [ -f "$LEGACY_INVENTORY_FILE" ] || die "legacy-inventory.json 缺失；必须先用 packages/ellamaka-release/src/cli/inventory.ts 真实盘点并冻结后才能发布"
   node -e "
 const inv = JSON.parse(require('fs').readFileSync('$LEGACY_INVENTORY_FILE', 'utf8'));
 if (inv.source !== 'live') {

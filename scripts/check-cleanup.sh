@@ -10,7 +10,7 @@ set -euo pipefail
 # Merge-protected files (NOT in cleanup — always keep ellamaka's version):
 #   README.md, README.zh-CN.md, AGENTS.md, AGENTS.zh-CN.md
 #   UPSTREAM-MERGE-LOG.md, docs/DESIGN.md, docs/DISTRIBUTION.md, docs/BRANDING.md
-#   scripts/, .github/workflows/publish-ellamaka.yml, packages/ellamaka/
+#   scripts/, .github/workflows/publish-ellamaka-cli.yml, packages/ellamaka/
 #
 # During upstream merge conflicts on these files, always resolve in favor
 # of ellamaka's version. See docs/UPSTREAM-MERGE-LOG.md for the full strategy.
@@ -68,7 +68,7 @@ CLEANUP_PATHS=(
   "SECURITY.md"
   # Upstream screenshots (language-specific README assets)
   "screenshot-uk.png"
-  # GitHub — partial: keep publish-ellamaka.yml, TEAM_MEMBERS (runtime dep)
+  # GitHub — partial: keep publish-ellamaka-cli.yml, TEAM_MEMBERS (runtime dep)
   ".github/ISSUE_TEMPLATE"
   ".github/workflows/publish.yml"
   ".github/workflows/deploy.yml"

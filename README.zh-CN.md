@@ -4,7 +4,7 @@
 <p align="center">把你的 Agent 调教好。一次就够了。</p>
 <p align="center">
   <a href="https://github.com/wopal-cn/ellamaka/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/wopal-cn/ellamaka?style=flat-square&label=release" /></a>
-  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka.yml?style=flat-square" /></a>
+  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka-cli.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka-cli.yml?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" /></a>
 </p>
 
@@ -71,7 +71,7 @@ ellamaka
 | 启动桌面开发 | `./scripts/dev.sh desktop` |
 | 编译 CLI 二进制 | `./scripts/build.sh cli` |
 | 编译桌面应用 | `./scripts/build.sh desktop` |
-| 品牌化构建 | `bun packages/ellamaka/build.ts` |
+| 品牌化构建 | `bun packages/ellamaka-release/src/cli/build.ts` |
 | 类型检查 | `bun typecheck` |
 | 上游合并后清理 | `./scripts/check-cleanup.sh --clean` |
 | 浏览 API 文档 | `bun ./scripts/scalar-doc.ts` |

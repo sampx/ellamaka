@@ -11,11 +11,11 @@
 // with channel "local".
 
 import { cmd } from "../cmd"
-import { parseReleaseIdentity, ReleaseIdentityError } from "@/release/identity"
+import { parseReleaseIdentity, ReleaseIdentityError } from "@wopal/ellamaka-release/identity"
 
 // OPENCODE_VERSION / OPENCODE_CHANNEL are declared globally by
 // packages/core/src/installation/version.ts. OPENCODE_RELEASE_IDENTITY is
-// declared by packages/opencode/src/release/identity.ts.
+// declared by @wopal/ellamaka-release/identity.
 
 export type ReleaseInfoEnvelope = {
   apiVersion: 1
@@ -143,4 +143,4 @@ export const ReleaseInfoCommand = cmd({
   },
 })
 
-export * as ReleaseIdentity from "@/release/identity"
+export * as ReleaseIdentity from "@wopal/ellamaka-release/identity"

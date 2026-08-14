@@ -4,7 +4,7 @@
 <p align="center">Train your agent well. Once is enough.</p>
 <p align="center">
   <a href="https://github.com/wopal-cn/ellamaka/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/wopal-cn/ellamaka?style=flat-square&label=release" /></a>
-  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka.yml?style=flat-square" /></a>
+  <a href="https://github.com/wopal-cn/ellamaka/actions/workflows/publish-ellamaka-cli.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/wopal-cn/ellamaka/publish-ellamaka-cli.yml?style=flat-square" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" /></a>
 </p>
 
@@ -72,7 +72,7 @@ ellamaka
 | Start Desktop dev | `./scripts/dev.sh desktop` |
 | Build CLI binary | `./scripts/build.sh cli` |
 | Build Desktop app | `./scripts/build.sh desktop` |
-| Branded build | `bun packages/ellamaka/build.ts` |
+| Branded build | `bun packages/ellamaka-release/src/cli/build.ts` |
 | Type check | `bun typecheck` |
 | Clean up after upstream merge | `./scripts/check-cleanup.sh --clean` |
 | Browse API docs | `bun ./scripts/scalar-doc.ts` |

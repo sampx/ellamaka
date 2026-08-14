@@ -225,7 +225,7 @@ echo -e "${GREEN}New ellamaka-only additions:${NC}"
 echo "  A  packages/ellamaka/"
 echo "  A  scripts/"
 echo "  A  docs/BRANDING.md, DESIGN.md, UPSTREAM-MERGE-LOG.md"
-echo "  A  .github/workflows/publish-ellamaka.yml"
+echo "  A  .github/workflows/publish-ellamaka-cli.yml"
 
 # Classify conflicts: ellamaka real changes vs upstream carry-over
 ELLAMAKA_MODIFIED_FILES=$(mktemp)

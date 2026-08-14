@@ -1,0 +1,20 @@
+{
+  "name": "@wopal/ellamaka-release",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/script": "workspace:*"
+  },
+  "devDependencies": {
+    "@ellamaka/build": "workspace:*",
+    "@opentui/solid": "catalog:",
+    "bun-types": "latest"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsgo --noEmit"
+  }
+}

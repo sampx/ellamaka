@@ -247,7 +247,7 @@ build_one() {
     )
     echo "Building $OS_LABEL Desktop (arch: $ARCH, channel: $CHANNEL, version: $version, branch: $BRANCH)"
   else
-    workflow="publish-ellamaka.yml"
+    workflow="publish-ellamaka-cli.yml"
     version="$(resolve_build_version "ellamaka-cli" "main" "$PROJECT_ROOT")"
     workflow_args=(
       -f "version=$version"
