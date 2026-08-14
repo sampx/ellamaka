@@ -452,7 +452,7 @@
         "@solid-primitives/scheduled": "1.5.2",
         "@standard-schema/spec": "1.0.0",
         "@types/ws": "8.18.1",
-        "@wopal/cli-capability-schema": "^0.3.14",
+        "@wopal/cli-capability-schema": "^0.3.15",
         "@zip.js/zip.js": "2.7.62",
         "ai": "catalog:",
         "ai-gateway-provider": "3.1.2",
@@ -1991,7 +1991,7 @@
 
     "@webcontainer/env": ["@webcontainer/env@1.1.1", "https://registry.npmmirror.com/@webcontainer/env/-/env-1.1.1.tgz", {}, "sha512-6aN99yL695Hi9SuIk1oC88l9o0gmxL1nGWWQ/kNy81HigJ0FoaoTXpytCj6ItzgyCEwA9kF1wixsTuv5cjsgng=="],
 
-    "@wopal/cli-capability-schema": ["@wopal/cli-capability-schema@0.3.14", "https://registry.npmmirror.com/@wopal/cli-capability-schema/-/cli-capability-schema-0.3.14.tgz", { "dependencies": { "@sinclair/typebox": "^0.34.52" } }, "sha512-wyH7+5vPza3NRLCU6Imu8VErIZMaOV+Z27e7a4tmjBq8geiokJCf9CF2yFAsWwoENQp9Z0TMvdOZ0vmmD+7msg=="],
+    "@wopal/cli-capability-schema": ["@wopal/cli-capability-schema@0.3.15", "https://registry.npmmirror.com/@wopal/cli-capability-schema/-/cli-capability-schema-0.3.15.tgz", { "dependencies": { "@sinclair/typebox": "^0.34.52" } }, "sha512-Y32My66v26C7k7586R/NHj4KzMmOeAu/cix5LjB7T93x4eoS7ePeh98i4STWcYqDgh1LTpYPAtiL/QA19TdT8w=="],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.13", "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.8.13.tgz", {}, "sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw=="],
 
