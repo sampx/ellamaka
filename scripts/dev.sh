@@ -33,6 +33,7 @@ find_space_root() {
 }
 
 root="$(cd "$(dirname "$(resolve "$0")")/.." && pwd)"
+source "$root/scripts/lib/version.sh"
 space="$(find_space_root "$root")"
 opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
@@ -691,7 +692,6 @@ cmd_desktop() {
   require_stopped desktop || return 1
   require_free_ports 5173 9222 || return 1
   export OPENCODE_CHANNEL="$CHANNEL"
-  source "$root/scripts/lib/version.sh"
   # Keep the schema dependency floor in lockstep with .ci/versions.json
   # before resolving MIN_WOPAL_CLI_VERSION (idempotent no-op when aligned).
   sync_min_wopal_cli_version "$root"
@@ -700,7 +700,6 @@ cmd_desktop() {
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."
   if $rebuild; then
     echo "==> Rebuilding sidecar (packages/opencode)..."
-    source "$root/scripts/lib/version.sh"
     if [ -z "${OPENCODE_VERSION:-}" ]; then
       export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$root")"
     fi
