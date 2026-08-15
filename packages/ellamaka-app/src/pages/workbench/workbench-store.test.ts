@@ -33,8 +33,8 @@ const fixture = (): PersistedWorkbench => ({
     },
   },
   tabs: [
-    { name: "General", path: "", type: "general" },
-    { name: "Space A", path: "/fixtures/space-a", type: "space" },
+    { id: "General", name: "General", path: "", type: "general" },
+    { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
   ],
   activeTabPath: "/fixtures/space-a",
 })
@@ -49,6 +49,28 @@ describe("WorkbenchStore", () => {
 
     expect(store.spaceState("/fixtures/space-a")?.panels[0]?.directory).toBe("/fixtures/space-a/project-a")
     expect(store.snapshot()).toEqual(fixture())
+  })
+
+  test("backfills the stable id for tabs persisted before the id field existed", () => {
+    // Legacy layout: tabs carry only name/path/type (no id). Hydration must
+    // backfill id = path (General uses its name) so the type contract holds.
+    const legacy = {
+      schemaVersion: 2,
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+      spaces: {},
+      tabs: [
+        { name: "General", path: "", type: "general" },
+        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+      ],
+      activeTabPath: "/fixtures/space-a",
+    } as unknown as PersistedWorkbench
+
+    const store = createWorkbenchStore(legacy)
+
+    expect(store.tabs).toEqual([
+      { id: "General", name: "General", path: "", type: "general" },
+      { id: "/fixtures/space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
+    ])
   })
 
   test("removes a panel synchronously and normalizes the remaining layout", () => {
@@ -99,7 +121,7 @@ describe("WorkbenchStore", () => {
 
     expect(store.removeSpace("/fixtures/space-a")).toBe(true)
     expect(store.spaceState("/fixtures/space-a")).toBeUndefined()
-    expect(store.tabs).toEqual([{ name: "General", path: "", type: "general" }])
+    expect(store.tabs).toEqual([{ id: "General", name: "General", path: "", type: "general" }])
     expect(store.activeSpaceName).toBe("General")
     expect(store.removeSpace("/fixtures/space-a")).toBe(false)
   })
@@ -149,8 +171,8 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
       ],
       activeSpaceName: "Space A",
     })
@@ -165,9 +187,9 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Shared", path: "/fixtures/one", type: "space" },
-        { name: "Shared", path: "/fixtures/two", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "one", name: "Shared", path: "/fixtures/one", type: "space" },
+        { id: "two", name: "Shared", path: "/fixtures/two", type: "space" },
       ],
       activeTabPath: "/fixtures/two",
     })
@@ -185,9 +207,9 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Shared", path: "/fixtures/one", type: "space" },
-        { name: "Shared", path: "/fixtures/two", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "one", name: "Shared", path: "/fixtures/one", type: "space" },
+        { id: "two", name: "Shared", path: "/fixtures/two", type: "space" },
       ],
       activeSpaceName: "Shared",
     })
@@ -207,7 +229,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
           ],
         },
       },
-      tabs: [{ name: "General", path: "", type: "general" }],
+      tabs: [{ id: "General", name: "General", path: "", type: "general" }],
       activeSpaceName: "General",
     } satisfies HydratableWorkbench
 
@@ -226,13 +248,13 @@ describe("WorkbenchStore hydrate/migrate", () => {
     store.hydrate({
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
-      tabs: [{ name: "Space A", path: "/fixtures/space-a", type: "space" }],
+      tabs: [{ id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" }],
       activeSpaceName: "Space A",
     })
 
     expect(store.tabs).toEqual([
-      { name: "General", path: "", type: "general" },
-      { name: "Space A", path: "/fixtures/space-a", type: "space" },
+      { id: "General", name: "General", path: "", type: "general" },
+      { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
     ])
   })
 
@@ -242,8 +264,8 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
       ],
       activeSpaceName: "Space A",
     })
@@ -256,7 +278,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
     store.hydrate({
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
-      tabs: [{ name: "General", path: "", type: "general" }],
+      tabs: [{ id: "General", name: "General", path: "", type: "general" }],
     })
 
     expect(store.activeSpaceName).toBe("General")
@@ -267,9 +289,9 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Space A", path: "/fixtures/space-a", type: "space" },
-        { name: "Space B", path: "/fixtures/space-b", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
+        { id: "space-b", name: "Space B", path: "/fixtures/space-b", type: "space" },
       ],
       activeSpaceName: "Space A",
     })
@@ -277,8 +299,8 @@ describe("WorkbenchStore hydrate/migrate", () => {
     store.validateTabs(new Set(["/fixtures/space-b"]))
 
     expect(store.tabs).toEqual([
-      { name: "General", path: "", type: "general" },
-      { name: "Space B", path: "/fixtures/space-b", type: "space" },
+      { id: "General", name: "General", path: "", type: "general" },
+      { id: "space-b", name: "Space B", path: "/fixtures/space-b", type: "space" },
     ])
     expect(store.activeSpaceName).toBe("General")
   })
@@ -288,8 +310,8 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Space A", path: "/fixtures/space-a", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
       ],
       activeSpaceName: "Space A",
     })
@@ -322,7 +344,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
 
   test("pinning preserves the existing tab order", () => {
     const input = fixture()
-    input.tabs.push({ name: "Space B", path: "/fixtures/space-b", type: "space" })
+    input.tabs.push({ id: "space-b", name: "Space B", path: "/fixtures/space-b", type: "space" })
     const store = createWorkbenchStore(input)
     const initialOrder = store.tabs.map((tab) => tab.path)
 
@@ -353,10 +375,10 @@ describe("WorkbenchStore hydrate/migrate", () => {
       display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
       spaces: {},
       tabs: [
-        { name: "General", path: "", type: "general" },
-        { name: "Space A", path: "/space-a", type: "space", pinned: true },
-        { name: "Space B", path: "/space-b", type: "space" },
-        { name: "Space C", path: "/space-c", type: "space" },
+        { id: "General", name: "General", path: "", type: "general" },
+        { id: "space-a", name: "Space A", path: "/space-a", type: "space", pinned: true },
+        { id: "space-b", name: "Space B", path: "/space-b", type: "space" },
+        { id: "space-c", name: "Space C", path: "/space-c", type: "space" },
       ],
       activeTabPath: "/space-b",
     })
@@ -381,7 +403,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
     const panel = store.spaceState(normPath)?.panels[0]
     expect(panel).toBeDefined()
 
-    store.openTab({ name: "Win Project", path: winPath, type: "space" })
+    store.openTab({ id: "win-project", name: "Win Project", path: winPath, type: "space" })
     expect(store.activeTabPath).toBe(normPath)
     expect(store.tabs.some((t) => t.path === normPath)).toBe(true)
   })

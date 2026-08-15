@@ -1,5 +1,7 @@
 # Ellamaka Workbench — 产品化原型
 
+> **⚠️ 已废弃**：本 PoC 已完成使命，不再维护。桌面 TUI 已进入 Workbench 产品线，移动 Chat 视图即将迁移合并。详见 [DEPRECATED.md](./DEPRECATED.md)。
+
 > 从 POC 到产品形态的快速验证原型。把 PoC 里割裂的"桌面 TUI 嵌入"与"移动 Chat"融合成一个统一的 IDE 风格工作台，通过视图切换探索最终产品形态。
 
 ## 做了什么

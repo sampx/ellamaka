@@ -4,8 +4,8 @@ import { selectActiveWorkbenchContext, type ActiveWorkbenchSnapshot } from "./ac
 const snapshot: ActiveWorkbenchSnapshot = {
   activeSpaceName: "Space A",
   tabs: [
-    { name: "General", path: "", type: "general" },
-    { name: "Space A", path: "/fixtures/workspaces/space-a" },
+    { id: "General", name: "General", path: "", type: "general" },
+    { id: "space-a", name: "Space A", path: "/fixtures/workspaces/space-a" },
   ],
   spaces: {
     "": {

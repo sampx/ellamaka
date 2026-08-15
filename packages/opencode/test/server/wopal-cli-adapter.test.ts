@@ -54,7 +54,7 @@ describe("wopal-cli-adapter", () => {
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()
       const executable = path.join(dir, "wopal.ts")
-      const data = { items: [{ name: "main", path: "/tmp/workspace", type: "local" }], total: 1 }
+      const data = { items: [{ id: "main", name: "main", path: "/tmp/workspace", type: "local" }], total: 1 }
       yield* Effect.promise(() => Bun.write(executable, `process.stdout.write(${JSON.stringify(successEnvelope("space.list", data))})\n`))
 
       const adapter = yield* CliAdapter.Service
@@ -72,7 +72,7 @@ describe("wopal-cli-adapter", () => {
   it.live("decodes v1 success envelope for space.list", () =>
     Effect.gen(function* () {
       const adapter = yield* CliAdapter.Service
-      const data = { items: [{ name: "main", path: "/tmp/workspace", type: "local" }], total: 1 }
+      const data = { items: [{ id: "main", name: "main", path: "/tmp/workspace", type: "local" }], total: 1 }
       const json = successEnvelope("space.list", data)
       const [exec, args] = shellCmd(json)
 
@@ -375,7 +375,7 @@ describe("space-registry", () => {
     Effect.gen(function* () {
       const registry = yield* SpaceRegistry.Service
       const adapter = yield* CliAdapter.Service
-      const data = { items: [{ name: "test-space", path: "/tmp/test", type: "local" }], total: 1 }
+      const data = { items: [{ id: "test-space", name: "test-space", path: "/tmp/test", type: "local" }], total: 1 }
       const json = successEnvelope("space.list", data)
       const [exec, args] = shellCmd(json)
 

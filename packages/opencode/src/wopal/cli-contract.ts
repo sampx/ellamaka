@@ -12,7 +12,7 @@ import { Global } from "@opencode-ai/core/global"
 // the process.env read at build time. The static fallback below only
 // applies when running from source without a build; keep it in sync with
 // .ci/versions.json.
-export const MIN_WOPAL_CLI_VERSION = process.env.MIN_WOPAL_CLI_VERSION || "0.3.13"
+export const MIN_WOPAL_CLI_VERSION = process.env.MIN_WOPAL_CLI_VERSION || "0.3.16"
 
 export const CliHealthSchema = Schema.Struct({
   state: Schema.Union([

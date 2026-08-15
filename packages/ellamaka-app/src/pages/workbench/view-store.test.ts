@@ -77,7 +77,7 @@ describe("view-store reactive guard", () => {
     const store = createWorkbenchStore()
     store.hydrate(PERSISTED_DEFAULTS)
 
-    store.openTab({ name: "Space X", path: "/fixtures/space-x", type: "space" })
+    store.openTab({ id: "space-x", name: "Space X", path: "/fixtures/space-x", type: "space" })
     const snap = store.snapshot()
     expect(snap.tabs.some((tab) => tab.name === "Space X")).toBe(true)
   })

@@ -16,10 +16,11 @@ const generalGroup = (sessions: WorkbenchSessionGroupSummary["sessions"]): Workb
 
 const spaceGroup = (
   id: string,
+  title: string,
   sessions: WorkbenchSessionGroupSummary["sessions"],
 ): WorkbenchSessionGroupSummary => ({
   id,
-  title: id,
+  title,
   type: "space",
   sessions,
 })
@@ -81,13 +82,13 @@ describe("coordinateWorkbenchSessionLink", () => {
     const openTabCalls: unknown[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1", directory: "/sp-a" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1", directory: "/sp-a" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         openTab: (space) => openTabCalls.push(space),
       }),
     )
-    expect(openTabCalls).toEqual([{ name: "Space A", path: "/sp-a", type: "space" }])
+    expect(openTabCalls).toEqual([{ id: "space-a", name: "Space A", path: "/sp-a" }])
     expect(reveal.calls[0].scope).toEqual({ kind: "space", name: "Space A", path: "/sp-a" })
   })
 
@@ -96,8 +97,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         consume: () => consumed.push("c"),
       }),
@@ -117,8 +118,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         showConfirm: (confirm, cancel) => {
           onConfirm = confirm
@@ -146,8 +147,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         showConfirm: (_confirm, cancel) => {
           onCancel = cancel
@@ -166,8 +167,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1", directoryHealth: "unavailable" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1", directoryHealth: "unavailable" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         setStatusMessage: (m) => messages.push(m),
         consume: () => consumed.push("c"),
@@ -184,8 +185,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "other" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "other" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         setStatusMessage: (m) => messages.push(m),
         consume: () => consumed.push("c"),
@@ -202,8 +203,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space X", [session({ id: "ses-1" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-x", "Space X", [session({ id: "ses-1" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         setStatusMessage: (m) => messages.push(m),
         consume: () => consumed.push("c"),
@@ -220,8 +221,8 @@ describe("coordinateWorkbenchSessionLink", () => {
     const consumed: string[] = []
     await coordinateWorkbenchSessionLink(
       baseParams({
-        groups: [spaceGroup("Space A", [session({ id: "ses-1" })])],
-        spaces: [{ name: "Space A", path: "/sp-a" }],
+        groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-1" })])],
+        spaces: [{ id: "space-a", name: "Space A", path: "/sp-a" }],
         reveal: reveal.fn,
         setStatusMessage: (m) => messages.push(m),
         consume: () => consumed.push("c"),
@@ -234,7 +235,7 @@ describe("coordinateWorkbenchSessionLink", () => {
   test("processes only the most recent of two consecutive notifications", async () => {
     const reveal = revealMock(() => ({ status: "loaded", panelID: "p1", scopePath: "/sp-a" }))
     const consumed: string[] = []
-    const spaces: WopalSpace[] = [{ name: "Space A", path: "/sp-a" }]
+    const spaces: WopalSpace[] = [{ id: "space-a", name: "Space A", path: "/sp-a" }]
 
     // Second notification has already incremented the generation by the time
     // the first effect runs, so the stale request bails before revealing.
@@ -243,7 +244,7 @@ describe("coordinateWorkbenchSessionLink", () => {
       coordinateWorkbenchSessionLink(
         baseParams({
           sessionID: "ses-stale",
-          groups: [spaceGroup("Space A", [session({ id: "ses-stale" })])],
+          groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-stale" })])],
           spaces,
           reveal: reveal.fn,
           consume: () => consumed.push("stale"),
@@ -253,7 +254,7 @@ describe("coordinateWorkbenchSessionLink", () => {
       coordinateWorkbenchSessionLink(
         baseParams({
           sessionID: "ses-latest",
-          groups: [spaceGroup("Space A", [session({ id: "ses-latest" })])],
+          groups: [spaceGroup("space-a", "Space A", [session({ id: "ses-latest" })])],
           spaces,
           reveal: reveal.fn,
           consume: () => consumed.push("latest"),

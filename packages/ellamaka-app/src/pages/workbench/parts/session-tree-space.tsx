@@ -206,6 +206,7 @@ function DateLocationItem(props: {
             {(session) => (
               <SessionTreeRow
                 session={session}
+                spaceId={props.space.id}
                 spaceName={props.space.name}
                 spacePath={props.space.path}
                 sessions={props.group.sessions}
@@ -306,6 +307,7 @@ function ProjectLocationItem(props: {
             {(session) => (
               <SessionTreeRow
                 session={session}
+                spaceId={props.space.id}
                 spaceName={props.space.name}
                 spacePath={props.space.path}
                 sessions={props.location.sessions}
@@ -446,6 +448,7 @@ export function SessionTreeSpace(props: {
                             {(session) => (
                               <SessionTreeRow
                                 session={session}
+                                spaceId={props.space.id}
                                 spaceName={props.space.name}
                                 spacePath={props.space.path}
                                 sessions={location.sessions}

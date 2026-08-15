@@ -4,6 +4,7 @@ import { Show, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
+import type { WopalSpace } from "../space-store"
 import { useWorkbenchState } from "../view-store"
 import { useSessionStore } from "../session-store"
 import { GENERAL_SCOPE_NAME, normalizeSpacePath } from "../workbench-scope"
@@ -98,7 +99,7 @@ export function SpaceRail() {
     document.addEventListener("mouseup", onMouseUp)
   }
 
-  function handleSpaceClick(space: { name: string; path: string; type?: string }) {
+  function handleSpaceClick(space: WopalSpace) {
     if (space.path === wb.activeTabPath) return
     wb.openTab(space)
   }
@@ -132,7 +133,8 @@ export function SpaceRail() {
       return
     }
     if (sessionSpacePath !== "") {
-      wb.openTab({ name: session.spaceName ?? sessionSpacePath, path: sessionSpacePath, type: "space" })
+      const space = store.spaces().find((candidate) => normalizeSpacePath(candidate.path) === sessionSpacePath)
+      wb.openTab(space ?? { id: sessionSpacePath, name: session.spaceName ?? sessionSpacePath, path: sessionSpacePath, type: "space" })
       wb.ensureSpace(sessionSpacePath)
     }
   }
@@ -140,7 +142,7 @@ export function SpaceRail() {
   // 单空间会话隔离：仅过滤当前激活空间的 WopalSpace 节点
   const activeSpaces = createMemo(() => {
     const allSpaces = [
-      { name: GENERAL_SCOPE_NAME, path: "", type: "general" },
+      { name: GENERAL_SCOPE_NAME, id: GENERAL_SCOPE_NAME, path: "", type: "general" },
       ...store.spaces(),
     ]
     const currentPath = normalizeSpacePath(wb.activeTabPath)

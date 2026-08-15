@@ -463,7 +463,7 @@
         "@solid-primitives/scheduled": "1.5.2",
         "@standard-schema/spec": "1.0.0",
         "@types/ws": "8.18.1",
-        "@wopal/cli-capability-schema": "^0.3.15",
+        "@wopal/cli-capability-schema": "^0.3.16",
         "@wopal/ellamaka-release": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
         "ai": "catalog:",
@@ -2003,7 +2003,7 @@
 
     "@webcontainer/env": ["@webcontainer/env@1.1.1", "https://registry.npmmirror.com/@webcontainer/env/-/env-1.1.1.tgz", {}, "sha512-6aN99yL695Hi9SuIk1oC88l9o0gmxL1nGWWQ/kNy81HigJ0FoaoTXpytCj6ItzgyCEwA9kF1wixsTuv5cjsgng=="],
 
-    "@wopal/cli-capability-schema": ["@wopal/cli-capability-schema@0.3.15", "https://registry.npmmirror.com/@wopal/cli-capability-schema/-/cli-capability-schema-0.3.15.tgz", { "dependencies": { "@sinclair/typebox": "^0.34.52" } }, "sha512-Y32My66v26C7k7586R/NHj4KzMmOeAu/cix5LjB7T93x4eoS7ePeh98i4STWcYqDgh1LTpYPAtiL/QA19TdT8w=="],
+    "@wopal/cli-capability-schema": ["@wopal/cli-capability-schema@0.3.16", "https://registry.npmmirror.com/@wopal/cli-capability-schema/-/cli-capability-schema-0.3.16.tgz", { "dependencies": { "@sinclair/typebox": "^0.34.52" } }, "sha512-vaUTmVFFjFEvhZxDej7bZCVJYWHZlBYejNLgwyBbBq8Opu/j1HpomLBgsP9pphr/s+yCpRwfliy4zfF5adsjpw=="],
 
     "@wopal/ellamaka-release": ["@wopal/ellamaka-release@workspace:packages/ellamaka-release"],
 

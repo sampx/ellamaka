@@ -33,7 +33,7 @@ const provisionerIt = testEffect(
         check: () => Effect.succeed("healthy" as const),
       }),
       Layer.mock(SpaceRegistry.Service, {
-        getSpaces: () => Effect.succeed({ spaces: [{ name: "main", path: "/tmp" }], refreshedAt: 0 } as never),
+        getSpaces: () => Effect.succeed({ spaces: [{ id: "main", name: "main", path: "/tmp" }], refreshedAt: 0 } as never),
       }),
       Layer.mock(SessionShare.Service, {
         create: (input) =>
@@ -64,6 +64,36 @@ const it = testEffect(
     instanceStoreLayer,
     Layer.mock(Session.Service, { list: () => Effect.succeed([]) }),
   ])),
+)
+
+// Legacy `spaceName` matching must use the stable space id (D-06), not the
+// display name. This layer registers a space whose id and name differ so the
+// two behaviors are distinguishable.
+const legacySpaceNameIt = testEffect(
+  SessionProvisioner.layer.pipe(
+    Layer.provide([
+      Layer.mock(SessionDirectoryHealth.Service, {
+        check: () => Effect.succeed("healthy" as const),
+      }),
+      Layer.mock(SpaceRegistry.Service, {
+        getSpaces: () =>
+          Effect.succeed({ spaces: [{ id: "main", name: "主空间", path: "/tmp" }], refreshedAt: 0 } as never),
+      }),
+      Layer.mock(SessionShare.Service, {
+        create: (input) =>
+          Effect.gen(function* () {
+            createCount += 1
+            createInput = input
+            yield* Effect.sleep("10 millis")
+            return { id: "ses_1", directory: "/tmp", title: "New session - 2026-07-12T00:00:00.000Z" } as never
+          }),
+      }),
+      Layer.mock(Session.Service, {
+        list: () => Effect.succeed([]),
+      }),
+      instanceStoreLayer,
+    ]),
+  ),
 )
 
 describe("workbench-session-api", () => {
@@ -122,6 +152,31 @@ describe("workbench-session-api", () => {
       expect(first.id).toBe("ses_1")
       expect(second.id).toBe("ses_1")
       expect(createCount).toBe(1)
+    }),
+  )
+
+  legacySpaceNameIt.live("legacy spaceName matches the stable space id, not the display name", () =>
+    Effect.gen(function* () {
+      resetCreateCapture()
+      const provisioner = yield* SessionProvisioner.Service
+      const result = yield* provisioner.provisionSpace({ spaceName: "main" })
+
+      expect(createCount).toBe(1)
+      expect(result.id).toBe("ses_1")
+    }),
+  )
+
+  legacySpaceNameIt.live("legacy spaceName rejects the display name as an unknown space", () =>
+    Effect.gen(function* () {
+      resetCreateCapture()
+      const provisioner = yield* SessionProvisioner.Service
+      const result = yield* provisioner.provisionSpace({ spaceName: "主空间" }).pipe(Effect.exit)
+
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect(result.cause.toString()).toContain("InvalidSpaceTarget")
+      }
+      expect(createCount).toBe(0)
     }),
   )
 

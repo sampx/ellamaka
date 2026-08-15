@@ -17,8 +17,8 @@ function mockSdk(spaces: WopalSpace[] | Error) {
 describe("fetchSpaces", () => {
   test("returns spaces list when SDK succeeds", async () => {
     const spaces: WopalSpace[] = [
-      { name: "Space A", path: "/fixtures/space-a", type: "space" },
-      { name: "Space B", path: "/fixtures/space-b", type: "space" },
+      { id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" },
+      { id: "space-b", name: "Space B", path: "/fixtures/space-b", type: "space" },
     ]
     const sdk = mockSdk(spaces)
 
@@ -26,6 +26,7 @@ describe("fetchSpaces", () => {
 
     expect(result).toEqual(spaces)
     expect(result).toHaveLength(2)
+    expect(result[0].id).toBe("space-a")
   })
 
   test("propagates an SDK failure so the store can preserve the last successful list", async () => {
@@ -63,12 +64,13 @@ describe("fetchSpaces", () => {
 
   test("normalizes Windows backslash paths returned by SDK", async () => {
     const rawSpaces: WopalSpace[] = [
-      { name: "Win Space", path: "C:\\Users\\Sam\\Project", type: "space" },
+      { id: "win-space", name: "Win Space", path: "C:\\Users\\Sam\\Project", type: "space" },
     ]
     const sdk = mockSdk(rawSpaces)
 
     const result = await fetchSpaces(sdk)
 
     expect(result[0].path).toBe("C:/Users/Sam/Project")
+    expect(result[0].id).toBe("win-space")
   })
 })

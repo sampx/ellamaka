@@ -101,7 +101,7 @@ function wbWithPanels(
     setStatusMessage: () => {},
     activeTab: () =>
       activeTabPath !== undefined
-        ? { name: "test", path: activeTabPath }
+        ? { id: "test", name: "test", path: activeTabPath }
         : undefined,
     findSessionBinding: (sessionID) => {
       for (const [path, space] of Object.entries(spaces)) {
@@ -728,7 +728,7 @@ describe("openSessionInPanel", () => {
     await openSessionInPanel({
       session: { id: "s-100", title: "General Session" },
       sessionDirectory: "/workspace/proj-a",
-      targetSpace: { name: "General", path: "" },
+      targetSpace: { id: "General", name: "General", path: "" },
       wb,
       actions,
       t: (key) => key,

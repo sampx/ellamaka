@@ -49,9 +49,9 @@ const persisted = (): PersistedWorkbench => ({
     },
   },
   tabs: [
-    { name: WORKBENCH_FIXTURES.general.name, path: WORKBENCH_FIXTURES.general.path, type: "general" },
-    { name: WORKBENCH_FIXTURES.spaceA.name, path: WORKBENCH_FIXTURES.spaceA.path, type: "space" },
-    { name: WORKBENCH_FIXTURES.spaceB.name, path: WORKBENCH_FIXTURES.spaceB.path, type: "space" },
+    { id: WORKBENCH_FIXTURES.general.name, name: WORKBENCH_FIXTURES.general.name, path: WORKBENCH_FIXTURES.general.path, type: "general" },
+    { id: WORKBENCH_FIXTURES.spaceA.name, name: WORKBENCH_FIXTURES.spaceA.name, path: WORKBENCH_FIXTURES.spaceA.path, type: "space" },
+    { id: WORKBENCH_FIXTURES.spaceB.name, name: WORKBENCH_FIXTURES.spaceB.name, path: WORKBENCH_FIXTURES.spaceB.path, type: "space" },
   ],
   activeSpaceName: WORKBENCH_FIXTURES.general.name,
 })

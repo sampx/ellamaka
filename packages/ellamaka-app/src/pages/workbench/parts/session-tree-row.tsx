@@ -67,6 +67,7 @@ export function SessionMarkerIcon(props: {
 
 export function SessionTreeRow(props: {
   session: MergedSession
+  spaceId: string
   spaceName: string
   spacePath: string
   sessions: GroupSession[]
@@ -130,7 +131,7 @@ export function SessionTreeRow(props: {
         // The session belongs to a space whose tab is not open yet. Create
         // the tab from the session's space identity so clicking a session
         // always navigates to its space, instead of silently doing nothing.
-        wb.openTab({ name: props.spaceName, path: props.spacePath, type: "space" })
+        wb.openTab({ id: props.spaceId, name: props.spaceName, path: props.spacePath, type: "space" })
         wb.ensureSpace(props.spacePath)
       }
     }
@@ -147,7 +148,7 @@ export function SessionTreeRow(props: {
     void openSessionInPanel({
       session: { id: props.session.id, title: props.session.title },
       sessionDirectory: sessionData()?.directory ?? "",
-      targetSpace: { name: props.spaceName, path: props.spacePath } satisfies WopalSpace,
+      targetSpace: { id: props.spaceId, name: props.spaceName, path: props.spacePath } satisfies WopalSpace,
       wb,
       actions,
       t,

@@ -67,7 +67,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const result = yield* adapter.execute<SpaceListData>(
         executablePath,
-        ["space", "list", "--json", "--api-version", "1"],
+        ["space", "list", "--json", "--api-version", "2"],
         "space.list",
         spaceListSchema,
       )

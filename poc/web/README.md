@@ -1,5 +1,7 @@
 # Ellamaka Web PoC — TUI + Chat
 
+> **⚠️ 已废弃**：本 PoC 已完成使命，不再维护。桌面 TUI 已进入 Workbench 产品线，移动 Chat 视图即将迁移合并。详见 [DEPRECATED.md](./DEPRECATED.md)。
+
 验证目标：用单一 web server 同时提供桌面端多空间 TUI 嵌入和移动端聊天 UI，根据客户端 UA 自动路由。
 
 ## 架构

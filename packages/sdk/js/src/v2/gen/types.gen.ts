@@ -4224,6 +4224,7 @@ export type WopalSpaceSpacesResponses = {
    */
   200: {
     spaces: Array<{
+      id: string
       name: string
       path: string
       type?: string

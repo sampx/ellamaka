@@ -8,6 +8,7 @@ import { canUseSpaceControl } from "./cli-health"
 import { normalizeSpacePath } from "./workbench-scope"
 
 export type WopalSpace = {
+  id: string
   name: string
   path: string
   type?: string

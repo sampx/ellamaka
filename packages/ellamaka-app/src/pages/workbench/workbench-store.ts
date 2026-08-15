@@ -33,6 +33,7 @@ export type WorkbenchDisplayState = {
 }
 
 export type WopalSpace = {
+  id: string
   name: string
   path: string
   type?: string
@@ -78,7 +79,7 @@ export const PERSISTED_DEFAULTS: PersistedWorkbench = {
   schemaVersion: 2,
   display: { ...DISPLAY_DEFAULTS },
   spaces: {},
-  tabs: [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }],
+  tabs: [{ id: GENERAL_TAB_NAME, name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }],
   activeTabPath: GENERAL_TAB_PATH,
 }
 
@@ -134,9 +135,16 @@ export function clonePersistedWorkbench(value: HydratableWorkbench): HydratableW
 
 function normalizePersistedWorkbench(value: HydratableWorkbench): PersistedWorkbench {
   const snapshot = clonePersistedWorkbench(value)
+  // Backfill the stable space id for tabs persisted before `id` existed. The
+  // General tab uses its name; other tabs fall back to their path. This does
+  // not migrate the legacy `tab.name` (D-05) — it only fills the new id field.
+  const backfillId = (tab: WopalSpace): WopalSpace => ({
+    ...tab,
+    id: tab.id ?? (tab.path === GENERAL_TAB_PATH ? GENERAL_TAB_NAME : tab.path),
+  })
   const tabs = snapshot.tabs.some((tab) => tab.path === GENERAL_TAB_PATH)
-    ? snapshot.tabs
-    : [{ name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...snapshot.tabs]
+    ? snapshot.tabs.map(backfillId)
+    : [{ id: GENERAL_TAB_NAME, name: GENERAL_TAB_NAME, path: GENERAL_TAB_PATH, type: "general" }, ...snapshot.tabs.map(backfillId)]
   const requestedPath = snapshot.activeTabPath
   const legacyMatches = snapshot.activeSpaceName
     ? tabs.filter((tab) => tab.name === snapshot.activeSpaceName)

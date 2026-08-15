@@ -139,15 +139,15 @@ const make = Effect.gen(function* () {
       const normalizedSpaces = registeredSpaces
         .map((space) => ({ ...space, path: normalizeWorkbenchPath(space.path) }))
         .sort((a, b) => b.path.length - a.path.length || a.path.localeCompare(b.path))
-      const grouped = new Map<string, RawSessionRow[]>()
+      const grouped = new Map<string, { title: string; rows: RawSessionRow[] }>()
       const general = new Map<string, RawSessionRow[]>()
 
       for (const row of rows) {
         const match = normalizedSpaces.find((space) => isPathWithin(space.path, row.directory))
         if (match) {
-          const bucket = grouped.get(match.name) ?? []
-          bucket.push(row)
-          grouped.set(match.name, bucket)
+          const bucket = grouped.get(match.id) ?? { title: match.name, rows: [] }
+          bucket.rows.push(row)
+          grouped.set(match.id, bucket)
           continue
         }
         const bucket = general.get(row.directory) ?? []
@@ -156,13 +156,13 @@ const make = Effect.gen(function* () {
       }
 
       const output: SessionGroup[] = []
-      for (const [name, bucket] of grouped) {
+      for (const [id, bucket] of grouped) {
         output.push({
-          id: name,
-          title: name,
+          id,
+          title: bucket.title,
           type: "space",
-          sessionCount: bucket.length,
-          sessions: yield* summaries(bucket, health),
+          sessionCount: bucket.rows.length,
+          sessions: yield* summaries(bucket.rows, health),
         })
       }
       for (const [directory, bucket] of general) {
@@ -189,7 +189,7 @@ const make = Effect.gen(function* () {
       const cli = CliContract.executablePath()
       const projectsPerSpace = yield* Effect.all(
         resolvedSpaces.map((space) =>
-          registry.refreshProjects(cli, space.name).pipe(
+          registry.refreshProjects(cli, space.id).pipe(
             Effect.map((snapshot) =>
               snapshot.items.map((project) => {
                 const absoluteProjectPath = resolveSpaceRootPath(space.path, project.path)
@@ -254,9 +254,9 @@ const make = Effect.gen(function* () {
       }
       const cli = CliContract.executablePath()
       const [projects, rows, searched] = yield* Effect.all([
-        registry.refreshProjects(cli, space.name),
+        registry.refreshProjects(cli, space.id),
         activeRows(),
-        input.query?.trim() ? registry.searchSpace(cli, input.query.trim(), space.name, "dir") : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
+        input.query?.trim() ? registry.searchSpace(cli, input.query.trim(), space.id, "dir") : Effect.succeed({ items: [], total: 0, refreshedAt: 0 }),
       ], { concurrency: 3 })
       const candidates: Array<{ kind: WorkbenchLocation["kind"]; name: string; path: string; lastUsedAt?: number }> = [
         { kind: "space-root" as const, name: space.name, path: space.path },
@@ -319,7 +319,7 @@ function summaries(rows: RawSessionRow[], health: SessionDirectoryHealth) {
 
 function canonicalSpaces(spaces: SpaceEntry[]) {
   return Effect.all(
-    spaces.map((space) => canonicalPath(space.path).pipe(Effect.map((resolved) => ({ name: space.name, path: resolved })))),
+    spaces.map((space) => canonicalPath(space.path).pipe(Effect.map((resolved) => ({ id: space.id, name: space.name, path: resolved })))),
     { concurrency: 16 },
   )
 }

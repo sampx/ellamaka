@@ -207,7 +207,7 @@ const make = Effect.gen(function* () {
       const spaces = yield* registeredSpaces()
       const matching = input.spacePath
         ? yield* matchSpaceByPath(spaces, input.spacePath)
-        : spaces.filter((space) => space.name === input.spaceName)
+        : spaces.filter((space) => space.id === input.spaceName)
       if (matching.length === 0) {
         return yield* new InvalidSpaceTarget({
           message: `Registered Space not found: ${input.spacePath ?? input.spaceName}`,

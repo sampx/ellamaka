@@ -6,7 +6,10 @@ import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware
 import { described } from "./metadata"
 
 // Mirrors the `spaces` entry in ~/.wopal/config/settings.jsonc, written by wopal-cli.
+// `id` is the stable space identifier (CLI Map Key); `name` is the display name
+// (may be Chinese). Aligned with the shared `SpaceEntry` v2 shape.
 const WopalSpaceEntry = Schema.Struct({
+  id: Schema.String,
   name: Schema.String,
   path: Schema.String,
   type: Schema.optional(Schema.String),

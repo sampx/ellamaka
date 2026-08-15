@@ -190,11 +190,12 @@ describe("session-projection-group-resolution", () => {
       const subDir = path.join(dir, "subdir")
       yield* Effect.sync(() => require("fs").mkdirSync(subDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "test-space", name: "测试空间", path: dir, type: "local" }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, dir, subDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
       expect(spaceGroup).toBeDefined()
+      expect(spaceGroup!.title).toBe("测试空间")
       expect(spaceGroup!.sessions.length).toBeGreaterThanOrEqual(2)
       expect(spaceGroup!.sessions.every((s) => s.directoryHealth === "healthy")).toBe(true)
     }),
@@ -207,7 +208,7 @@ describe("session-projection-group-resolution", () => {
       const generalDir = path.join(dir, "general")
       yield* Effect.sync(() => require("fs").mkdirSync(generalDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: path.join(dir, "nonexistent"), type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "test-space", name: "测试空间", path: path.join(dir, "nonexistent"), type: "local" }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, generalDir))
 
       const spaceGroup = groups.find((g) => g.type === "space")
@@ -224,11 +225,12 @@ describe("session-projection-group-resolution", () => {
       const dir = instance.directory
       const missingDir = path.join(dir, "missing")
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: missingDir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "test-space", name: "测试空间", path: missingDir, type: "local" }]
       const groups = yield* Effect.promise(() => queryProjection(spaces, missingDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
       expect(spaceGroup).toBeDefined()
+      expect(spaceGroup!.title).toBe("测试空间")
       expect(spaceGroup!.sessions.length).toBeGreaterThanOrEqual(1)
       expect(spaceGroup!.sessions[0].directoryHealth).toBe("missing")
     }),
@@ -241,11 +243,12 @@ describe("session-projection-group-resolution", () => {
       const subDir = path.join(dir, "subdir")
       yield* Effect.sync(() => require("fs").mkdirSync(subDir, { recursive: true }))
 
-      const spaces: SpaceEntry[] = [{ name: "test-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "test-space", name: "测试空间", path: dir, type: "local" }]
       const groups = yield* Effect.promise(() => queryProjectionColdStart(spaces, dir, subDir))
 
       const spaceGroup = groups.find((g) => g.type === "space" && g.id === "test-space")
       expect(spaceGroup).toBeDefined()
+      expect(spaceGroup!.title).toBe("测试空间")
       expect(spaceGroup!.sessions.length).toBeGreaterThanOrEqual(2)
     }),
   )
@@ -255,12 +258,13 @@ describe("session-projection-group-resolution", () => {
       const instance = yield* TestInstance
       const dir = instance.directory
 
-      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "my-space", name: "我的空间", path: dir, type: "local" }]
       const groups = yield* Effect.promise(() => queryProjectionColdStart(spaces, dir))
 
       const spaceGroup = groups.find((g) => g.type === "space")
       expect(spaceGroup).toBeDefined()
       expect(spaceGroup!.id).toBe("my-space")
+      expect(spaceGroup!.title).toBe("我的空间")
       expect(spaceGroup!.type).toBe("space")
       expect(spaceGroup!.sessions.length).toBeGreaterThanOrEqual(1)
       expect(spaceGroup!.sessions[0].directory).toBe(dir)
@@ -281,7 +285,7 @@ describe("session-projection-group-resolution", () => {
         require("fs").mkdirSync(wtDir, { recursive: true })
       })
 
-      const spaces: SpaceEntry[] = [{ name: "my-space", path: dir, type: "local" }]
+      const spaces: SpaceEntry[] = [{ id: "my-space", name: "我的空间", path: dir, type: "local" }]
       const projects: ProjectEntry[] = [
         {
           id: "p1",
@@ -309,7 +313,7 @@ describe("session-projection-group-resolution", () => {
         ),
       )
 
-      const scope = tree.scopes.find((s) => s.name === "my-space")
+      const scope = tree.scopes.find((s) => s.name === "我的空间")
       expect(scope).toBeDefined()
       const location = scope!.locations.find((l) => l.name === "my-project")
       expect(location).toBeDefined()
@@ -329,8 +333,8 @@ describe("session-projection-group-resolution", () => {
         require("fs").mkdirSync(healthyDir, { recursive: true })
       })
       const spaces: SpaceEntry[] = [
-        { name: "broken", path: brokenDir, type: "local" },
-        { name: "healthy", path: healthyDir, type: "local" },
+        { id: "broken", name: "broken", path: brokenDir, type: "local" },
+        { id: "healthy", name: "healthy", path: healthyDir, type: "local" },
       ]
       const layer = SessionProjection.layer.pipe(
         Layer.provide(SessionDirectoryHealth.defaultLayer),
@@ -359,6 +363,90 @@ describe("session-projection-group-resolution", () => {
       const names = tree.scopes.map((scope) => scope.name)
       expect(names).toContain("broken")
       expect(names).toContain("healthy")
+    }),
+  )
+
+  it.instance("getSessionTree passes the space id (not display name) to refreshProjects", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const dir = yield* Effect.tryPromise(() => realpath(instance.directory))
+      const projDir = path.join(dir, "projects/my-project")
+      yield* Effect.sync(() => require("fs").mkdirSync(projDir, { recursive: true }))
+
+      const spaces: SpaceEntry[] = [{ id: "my-space", name: "我的空间", path: dir, type: "local" }]
+      const projects: ProjectEntry[] = [
+        { id: "p1", name: "my-project", path: "projects/my-project", worktrees: [] },
+      ]
+      const cliArgs: string[] = []
+      const layer = SessionProjection.layer.pipe(
+        Layer.provide(SessionDirectoryHealth.defaultLayer),
+        Layer.provide(
+          Layer.succeed(SpaceRegistry.Service, {
+            getSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshProjects: (_executable, spaceName) => {
+              cliArgs.push(spaceName ?? "")
+              return Effect.succeed({ items: projects, total: projects.length, refreshedAt: 1 })
+            },
+            searchSpace: () => Effect.succeed({ items: [], total: 0, refreshedAt: 1 }),
+          }),
+        ),
+      )
+
+      yield* Effect.sync(() => {
+        ensureGlobalProject()
+        insertSession(projDir, "proj-session")
+      })
+
+      yield* Effect.promise(() =>
+        Effect.runPromise(
+          Effect.gen(function* () {
+            const projection = yield* SessionProjection.Service
+            return yield* projection.getSessionTree()
+          }).pipe(Effect.scoped, Effect.provide(layer)),
+        ),
+      )
+
+      // The CLI --space argument must be the stable id, never the Chinese display name.
+      expect(cliArgs).toContain("my-space")
+      expect(cliArgs).not.toContain("我的空间")
+    }),
+  )
+
+  it.instance("getLocations passes the space id (not display name) to searchSpace", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const dir = yield* Effect.tryPromise(() => realpath(instance.directory))
+
+      const spaces: SpaceEntry[] = [{ id: "my-space", name: "我的空间", path: dir, type: "local" }]
+      const searchArgs: string[] = []
+      const layer = SessionProjection.layer.pipe(
+        Layer.provide(SessionDirectoryHealth.defaultLayer),
+        Layer.provide(
+          Layer.succeed(SpaceRegistry.Service, {
+            getSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshSpaces: () => Effect.succeed({ spaces, refreshedAt: 1 }),
+            refreshProjects: () => Effect.succeed({ items: [], total: 0, refreshedAt: 1 }),
+            searchSpace: (_executable, query, spaceName) => {
+              searchArgs.push(query, spaceName ?? "")
+              return Effect.succeed({ items: [], total: 0, refreshedAt: 1 })
+            },
+          }),
+        ),
+      )
+
+      yield* Effect.promise(() =>
+        Effect.runPromise(
+          Effect.gen(function* () {
+            const projection = yield* SessionProjection.Service
+            return yield* projection.getLocations({ spacePath: dir, query: "foo" })
+          }).pipe(Effect.scoped, Effect.provide(layer)),
+        ),
+      )
+
+      // The CLI --space argument must be the stable id, never the Chinese display name.
+      expect(searchArgs).toContain("my-space")
+      expect(searchArgs).not.toContain("我的空间")
     }),
   )
 })

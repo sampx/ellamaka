@@ -15,6 +15,20 @@ type Location = {
   relativeDirectory: string
 }
 
+export type LoaderLocation = Location
+
+/**
+ * Directory label for the location selector. The backend `name` field is a
+ * display name (space title, project title); the selector shows directories,
+ * so nested locations use their path relative to the space root and the
+ * space root itself falls back to its directory basename.
+ */
+export function directoryLabel(location: Location): string {
+  if (location.relativeDirectory) return location.relativeDirectory
+  const basename = location.path.split("/").filter(Boolean).at(-1)
+  return basename ?? location.path
+}
+
 export function PanelLoader(props: {
   panel: WorkbenchPanel
   spaceName: string
@@ -137,7 +151,7 @@ function ForLocations(props: { locations: () => Location[] | undefined }) {
   return (
     <>
       {(props.locations() ?? []).map((location) => (
-        <option value={location.key}>{location.name}</option>
+        <option value={location.key}>{directoryLabel(location)}</option>
       ))}
     </>
   )

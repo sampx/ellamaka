@@ -67,23 +67,25 @@ export async function coordinateWorkbenchSessionLink(
   }
 
   let scope: SpaceScope
+  let owningSpace: WopalSpace | undefined
   if (group.type === "general") {
     scope = { kind: "general" }
   } else {
-    const space = spaces.find((candidate) => candidate.name === group.id)
+    const space = spaces.find((candidate) => candidate.id === group.id)
     if (!space) {
       setStatusMessage(t("workbench.status.spaceNotRegistered"))
       consume()
       return
     }
+    owningSpace = space
     scope = spaceScope(space.name, space.path)
   }
 
   if (isCurrent && !isCurrent()) return
 
   // Ensure the owning Space Tab exists and is active so the Panel shows.
-  if (scope.kind === "space") {
-    openTab({ name: scope.name, path: scope.path, type: "space" })
+  if (scope.kind === "space" && owningSpace) {
+    openTab(owningSpace)
   }
 
   const result = await reveal({ scope, sessionID, directory: groupSession.directory })
@@ -99,7 +101,7 @@ export async function coordinateWorkbenchSessionLink(
           ? spaces.find((s) => s.path === result.scopePath)
           : undefined
         if (owningSpace) {
-          openTab({ name: owningSpace.name, path: owningSpace.path, type: "space" })
+          openTab(owningSpace)
         }
       }
       break
