@@ -135,10 +135,10 @@ export const makeLayer = (graceMs: number = DEFAULT_GRACE_MS) =>
     const bus = yield* Bus.Service
     const plugin = yield* Plugin.Service
 
-    function teardown(session: Active) {
+    function teardown(session: Active, signal?: string) {
       cancelReaper(session)
       try {
-        session.process.kill()
+        session.process.kill(signal)
       } catch {}
       for (const [sub, ws] of session.subscribers.entries()) {
         try {
@@ -158,7 +158,7 @@ export const makeLayer = (graceMs: number = DEFAULT_GRACE_MS) =>
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             for (const session of state.sessions.values()) {
-              teardown(session)
+              teardown(session, "SIGKILL")
             }
             state.sessions.clear()
           }),

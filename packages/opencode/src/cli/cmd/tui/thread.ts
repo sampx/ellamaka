@@ -21,6 +21,7 @@ import {
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
+import { flushStdout } from "./exit-flush"
 import { BINARY_NAME } from "../../../../../ellamaka/branding"
 
 declare global {
@@ -259,6 +260,10 @@ export const TuiThreadCommand = cmd({
     } finally {
       unguard?.()
     }
+    // Flush stdout so the ANSI restore sequence written by renderer.destroy()
+    // is not truncated by the synchronous process.exit(0). EPIPE and other
+    // errors must not block exit.
+    await flushStdout(process.stdout).catch(() => {})
     process.exit(0)
   },
 })

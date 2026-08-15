@@ -55,6 +55,7 @@ import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
 import { createExit, ExitProvider, useExit, type Exit } from "./context/exit"
+import { restoreTerminal } from "./exit-flush"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
 import { KVProvider, useKV } from "./context/kv"
@@ -325,6 +326,9 @@ function createTuiLifecycle(input: {
   const exit = createExit(async (reason, message) => {
     exiting = true
     await cleanup()
+    // Restore terminal modes before destroying the renderer so the terminal is
+    // left in a usable state even if renderer.destroy() itself hangs.
+    restoreTerminal(process.stdout)
     if (!input.renderer.isDestroyed) {
       input.renderer.setTerminalTitle("")
       input.renderer.destroy()
