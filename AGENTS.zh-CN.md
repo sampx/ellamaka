@@ -8,6 +8,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ## 1. Canonical References
 
 - DESIGN: `docs/DESIGN.md`
+- CORDIS DESIGN: `docs/DESIGN-refactor-cordis.md`
 - API CONTRACT: `docs/API-CONTRACT.md`
 - BRANDING: `docs/BRANDING.md`
 - WORKBENCH: `docs/WORKBENCH.md`
@@ -123,6 +124,13 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 - macOS 公共包使用 ad-hoc 签名。它保证 bundle 签名结构完整，但用户仍需主动接受 Gatekeeper 风险。
 - 版本化 R2 路径不可变。提交前 failed attempt 可清空自身 partial 对象后同版本重试；提交后 release 不得覆盖。整版撤回遵循 `docs/DISTRIBUTION.md` §7.3。
 - 下载表展示 DMG、EXE、AppImage 和 deb。ZIP、blockmap 与 `latest-*.yml` 属于 updater 资产。
+
+### Cordis 开发约束
+
+- **依赖边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）；dsh 深耦合包（agent-loop/session/session-query/compaction/subagent/schedule）禁入主线依赖树——见 CORDIS DESIGN §9 红线
+- **桥接形态**：Effect↔async 桥接一律遵守 CORDIS DESIGN §5.6.1（`ManagedRuntime.runFork` + `forkIn(scope)` 持有 Fiber；禁止 `runPromise` 驱动长任务）
+- **契约纪律**：契约在 `@wopal/ellamaka-cordis` 内自持（形状借鉴 dsh，不 import dsh 契约包、不跟随 rc 演进）；外部插件须通过契约符合性冒烟测试方可挂载（CORDIS DESIGN §10）
+- **测试门禁**：cordis 集成测试放 `packages/opencode/test/cordis/`；桥接包变更保持 opencode 既有测试零回归
 
 ## 5. Testing
 

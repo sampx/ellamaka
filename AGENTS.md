@@ -8,6 +8,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ## 1. Canonical References
 
 - DESIGN: `docs/DESIGN.md`
+- CORDIS DESIGN: `docs/DESIGN-refactor-cordis.md`
 - API CONTRACT: `docs/API-CONTRACT.md`
 - BRANDING: `docs/BRANDING.md`
 - WORKBENCH: `docs/WORKBENCH.md`
@@ -123,6 +124,13 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 - Public macOS packages use ad-hoc signing. This guarantees bundle signature integrity, but users must still accept Gatekeeper risk manually.
 - Versioned R2 paths are immutable. Pre-commit failed attempts may clear their own partial objects before retry at the same version; post-commit releases must never be overwritten. Whole-version withdrawal follows `docs/DISTRIBUTION.md` §7.3.
 - Download tables show DMG, EXE, AppImage, and deb. ZIP, blockmap, and `latest-*.yml` are updater assets.
+
+### Cordis Development Constraints
+
+- **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) never enter the mainline dependency tree — see CORDIS DESIGN §9 red lines
+- **Bridge form**: all Effect↔async bridges follow CORDIS DESIGN §5.6.1 (`ManagedRuntime.runFork` + `forkIn(scope)` with the Fiber held; never drive long-running work via `runPromise`)
+- **Contract discipline**: contracts are self-owned inside `@wopal/ellamaka-cordis` (shapes borrowed from dsh; never import dsh contract packages or track rc releases); external plugins mount only after passing contract conformance smoke tests (CORDIS DESIGN §10)
+- **Test gate**: cordis integration tests live in `packages/opencode/test/cordis/`; bridge package changes keep existing opencode tests green
 
 ## 5. Testing & Verification
 
