@@ -24,3 +24,5 @@ export type {
   HubRuntime,
   HubContext,
 } from "./types.js"
+export { mountSpillPlugins } from "./spill/mount.js"
+export type { MountSpillOptions, MountedSpillPlugins } from "./spill/mount.js"
