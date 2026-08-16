@@ -128,7 +128,7 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 ### Cordis Development Constraints
 
 - **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) never enter the mainline dependency tree — see CORDIS DESIGN §9 red lines
-- **Bridge form**: all Effect↔async bridges follow CORDIS DESIGN §5.6.1 (`ManagedRuntime.runFork` + `forkIn(scope)` with the Fiber held; never drive long-running work via `runPromise`)
+- **Bridge form**: all Effect↔async bridges follow CORDIS DESIGN §5.6.1 (`Effect.forkIn(scope)(work)` with the work Fiber held; interrupt via `runtime.runFork(Fiber.interrupt(fiber))`; never drive long-running work via `runPromise`)
 - **Contract discipline**: contracts are self-owned inside `@wopal/ellamaka-cordis` (shapes borrowed from dsh; never import dsh contract packages or track rc releases); external plugins mount only after passing contract conformance smoke tests (CORDIS DESIGN §10)
 - **Test gate**: cordis integration tests live in `packages/opencode/test/cordis/`; bridge package changes keep existing opencode tests green
 

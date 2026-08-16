@@ -240,11 +240,11 @@ graph TD
 
 全部从 async 侧（Cordis 服务）调回 Effect 世界的桥接遵守以下形态，依据 2026-08-16 spike 实测：
 
-1. **必须 `ManagedRuntime.runFork(effect)` + `Effect.forkIn(scope)`**，持有返回的 Fiber 用于 interrupt。禁止 `runPromise` 驱动长任务：其返回裸 Promise 无中断句柄，未受管的 `forever` 类任务导致进程退出时报 `All fibers interrupted without error`。
+1. **持有 work Fiber 必须 `Effect.forkIn(scope)(work)`**（POC 1.2 实测修正）：在 `Effect.scoped` 内取 scope，`Effect.forkIn(scope)(work)` 直接返回持有的 work fiber，`Fiber.await` 拿到真实 exit。禁止 `ManagedRuntime.runFork(work).pipe(Effect.forkIn(scope))`——该写法双重 fork（外层 runFork 的值是内层 fiber 句柄而非 work 结果，返回值与中断语义错乱）。中断经 `runtime.runFork(Fiber.interrupt(fiber))` 执行（经 hub runtime 启动、不拥有中断权）。禁止 `runPromise` 驱动长任务：其返回裸 Promise 无中断句柄，未受管的 `forever` 类任务导致进程退出时报 `All fibers interrupted without error`。
 2. **顶层 `Effect.runFork/runPromise/runCallback` 在运行时未导出**（仅类型声明存在）——一律经 `ManagedRuntime` 实例方法调用，直接调用运行时报 `not a function`。
 3. **`Effect.scope` 须在 `Effect.scoped` 内获取**，否则以空 defect Die。桥接 scope 由宿主层的 `Effect.scoped` 提供，finalizer 中对 fiber 执行 interrupt 并等待退出。
 4. **ALS 上下文**：effect 体内发起的桥接调用（HTTP handler → 桥 → Cordis 服务 → runFork）沿传播链天然继承 Instance ALS，无需 `Instance.bind`。纯 async 侧发起的轮次（如未来 schedule 插件定时唤醒）不在此列，发起前须捕获-恢复 ALS。
-5. **取消语义**：interrupt 后 finalizer 按子先父后顺序确定性执行，`forkIn(scope)` 的并发子任务级联清理，进程 `beforeExit` 干净——取消路径保持 Effect 原生（SessionRunState 独立路由），Cordis 入口只启动不拥有中断权。
+5. **取消语义**：interrupt 后 finalizer 按子先父后顺序确定性执行，`forkIn(scope)` 的并发子任务级联清理，进程 `beforeExit` 干净——取消路径保持 Effect 原生（SessionRunState 独立路由），Cordis 入口只启动不拥有中断权；Cordis 侧发起中断的唯一通道是 `runtime.runFork(Fiber.interrupt(fiber))`（POC 1.2 实测）。
 
 ### 5.7 session facade — 红线边界
 

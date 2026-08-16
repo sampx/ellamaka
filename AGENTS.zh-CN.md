@@ -128,7 +128,7 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 ### Cordis 开发约束
 
 - **依赖边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）；dsh 深耦合包（agent-loop/session/session-query/compaction/subagent/schedule）禁入主线依赖树——见 CORDIS DESIGN §9 红线
-- **桥接形态**：Effect↔async 桥接一律遵守 CORDIS DESIGN §5.6.1（`ManagedRuntime.runFork` + `forkIn(scope)` 持有 Fiber；禁止 `runPromise` 驱动长任务）
+- **桥接形态**：Effect↔async 桥接一律遵守 CORDIS DESIGN §5.6.1（`Effect.forkIn(scope)(work)` 持有 work Fiber；中断经 `runtime.runFork(Fiber.interrupt(fiber))`；禁止 `runPromise` 驱动长任务）
 - **契约纪律**：契约在 `@wopal/ellamaka-cordis` 内自持（形状借鉴 dsh，不 import dsh 契约包、不跟随 rc 演进）；外部插件须通过契约符合性冒烟测试方可挂载（CORDIS DESIGN §10）
 - **测试门禁**：cordis 集成测试放 `packages/opencode/test/cordis/`；桥接包变更保持 opencode 既有测试零回归
 
