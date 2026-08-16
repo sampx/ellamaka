@@ -38,6 +38,8 @@ import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
+import { TurnDriver } from "@/session/turn-driver"
+import { cordisHubLayer, createTurnDriverLayer } from "@wopal/ellamaka-cordis"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -235,6 +237,7 @@ export function createRoutes(
       Session.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
+      createTurnDriverLayer(TurnDriver.Service).pipe(Layer.provide(cordisHubLayer)),
       SessionRevert.defaultLayer,
       SessionShare.defaultLayer,
       SessionRunState.defaultLayer,
