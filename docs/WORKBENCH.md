@@ -209,9 +209,13 @@ Chat 的信息组织借鉴 Kilo Code 在紧凑开发界面中的成熟经验：�
 
 `packages/app/` 保留为上游应用参考。`packages/ellamaka-app/` 拥有 Workbench Chat 的完整呈现层，可根据产品目标深入定制。
 
-**核心决策：不修改 `packages/ui`，在 `ellamaka-app` 内完全自建 Chat 渲染层。**
+**核心决策：`packages/ui` 零修改；内容块在自建与复用官方组件之间务实选择。**
 
-`packages/ui/` 仅作为基础组件供应商（Markdown、Diff、Icon、Accordion、Card、主题 token）。Workbench Chat 的信息架构、转录行模型、Part 分类、工具呈现和展开策略完全由 `ellamaka-app/src/pages/session/` 下的自有组件实现。Workbench Chat 不调用或复制共享 UI 包的 `groupParts`、`AssistantParts`、`MessagePart` 和工具注册表。
+`packages/ui/` 作为基础组件供应商（Markdown、Diff、File、Icon、Accordion、Card、主题 token 与官方工具渲染器），永远不被 Workbench 修改。所有适配都在 `ellamaka-app` 内完成，手段包括组件包装、扩展点注入与作用域 CSS 覆盖。
+
+Workbench Chat 的信息架构、转录行模型、Part 分类、时间线和导航完全由 `ellamaka-app/src/pages/session/` 下的自有组件实现。单个内容块优先自建；当自建成本过高、流式稳定性不足或官方渲染器即为最佳选择时，复用官方组件链并适配接入。每个块的最终取舍记录在 §4.6.6 对应小节，随验证与调优持续校准。
+
+Workbench Chat 不复刻 Kilo Code 专有实现；Kilo Code 提供信息架构参考，Workbench 主题提供最终视觉表达。
 
 展示层以 Ellamaka 自己的 SDK v2 契约为唯一数据依据。会话消息由 `session.messages` / `session.message` 返回的 `MessageV2.WithParts` 提供；Assistant 通过 `parentID` 归属用户消息；`message.updated`、`message.part.updated`、`message.part.delta` 和 `message.part.removed` 驱动实时更新；`session.diff` 和用户消息的 `summary.diffs` 提供变更汇总。`task` 工具完成或运行时在 `state.metadata.sessionId` 中提供子 Session ID，展开子代理活动时通过现有 Session 消息 API 按需读取该子 Session。Chat 不依赖 Kilo Code 的后端扩展、消息排序补丁或专有 WebView 消息。
 
@@ -240,7 +244,6 @@ PanelChat
    │  │  ├─ ShellActivityBlock
    │  │  ├─ FileChangeBlock
    │  │  ├─ SubagentActivityBlock
-   │  │  ├─ TodoActivityBlock
    │  │  └─ GenericToolBlock
    │  ├─ TurnChangeSummary
    │  └─ TurnOutcome
@@ -272,7 +275,7 @@ PanelChat
 - 消息前插分页时保留稳定 row key、测量缓存与首个可见行偏移。字体、Panel 宽度或设备像素比变化时更新布局指纹并使旧测量失效。
 - 导航索引保存 `userMessageID → 首个转录行 key`。历史目标通过虚拟行索引定位；位于实时尾部的目标通过同一导航入口定位到直接渲染的 DOM 锚点。
 
-所有 Chat 内容共享同一条可读内容轨道。用户消息、Agent 回复、工具块、变更摘要和 Composer 使用相同的水平基准。单 Panel 下内容占据可用宽度并保留 16–20px 内边距；多 Panel 的窄视口下降低水平内边距，内容块保持 `min-width: 0` 和安全换行。正文行宽上限约为 76ch，工具输出和 Diff 可使用完整轨道宽度。
+所有 Chat 内容共享同一条可读内容轨道。用户消息、Agent 回复、工具块、变更摘要、实时状态和 Composer（含 Question、Permission、Todo、Revert Dock）使用相同的水平基准和 `98ch` 最大轨道宽度；禁止消息区限宽而 Composer 继续铺满 Panel。轨道在宽 Panel 下居中并保留 20px 内边距，在窄 Panel 下占满可用宽度；内容块保持 `min-width: 0` 和安全换行。正文行宽上限约为 76ch，工具输出和 Diff 可使用完整轨道宽度。
 
 #### 4.6.4 字体层级
 
@@ -300,6 +303,8 @@ Chat 从 Workbench 主题继承颜色，不引入 VS Code 专用色或 Kilo 品�
 - 运行、成功、警告和错误状态沿用 Workbench 的 `--icon-*` 与语义色 token。
 - 用户气泡、工具块和交互表面沿用 6px 圆角。连续的正文回复保持无框，呈现为清晰文档流。
 - Hover、Focus 和 Pressed 状态沿用现有 Button、Accordion 与 Card 交互反馈。键盘焦点使用主题已有 focus ring。
+- 所有工具块展开内容（Shell、上下文输出、通用工具、文件变更 Diff）统一滚动条策略：默认隐藏滚动条，鼠标进入内容区域时显示 8px 细滚动条；内容超宽时水平滚动，超长时限制最大高度内部垂直滚动，保证块与块之间视觉一致、默认状态安静。
+- 顶部活动会话进度条始终绘制在工具块内容之上（`z-index` 高于工具块定位内容），展开块不得遮挡进度指示。
 
 #### 4.6.6 Agent 内容块类型
 
@@ -314,8 +319,8 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 | `tool` (tool=read/glob/grep/list) | ContextToolBlock | 每次读取或检索独立展示 |
 | `tool` (tool=bash/shell) | ShellActivityBlock | Shell 命令与输出 |
 | `tool` (tool=edit/write/apply_patch) | FileChangeBlock | 文件编辑 |
-| `tool` (tool=task) | SubagentActivityBlock | 子代理任务（内联展开） |
-| `tool` (tool=todowrite) | TodoActivityBlock | 任务进度 |
+| `tool` (tool=task/wopal_task) | SubagentActivityBlock | 子代理任务（内联展开） |
+| `tool` (tool=todowrite/todoread) | **隐藏** | 由 Composer 上方 SessionTodoDock 独占展示，不进入时间线 |
 | `tool` (其他) | GenericToolBlock | 通用工具/MCP |
 | `subtask` | UserMessageBlock | Slash Command 触发的子任务输入，显示 command、description 或 prompt 摘要 |
 | `agent` | UserMessageBlock | 用户提示词中的 Agent 选择，不属于 Assistant 活动 |
@@ -346,19 +351,32 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 
 ##### ContextToolBlock：读取与检索
 
-`read`、`glob`、`grep`、`list` 等上下文获取活动各自形成一个紧凑块，并按 SDK Part 顺序留在实际发生位置。头部显示工具类型、文件名或 pattern、路径与运行状态。展开态显示该次调用的输入和结果。
+`read`、`glob`、`grep`、`list` 等上下文获取活动各自形成一个紧凑块，并按 SDK Part 顺序留在实际发生位置。头部显示工具类型、文件名或 pattern、路径与运行状态。
 
-独立工具块延续 Kilo Code 的扁平、可追溯结构。用户能够准确看到 Agent 依次读取和搜索了什么。运行中的调用保持可见，完成后默认折叠，错误状态保留在对应调用上。Workbench Chat 不再把连续读取合并成 Gathered context 摘要。
+- `read` 渲染为非交互信息条：只显示读取的文件名与运行状态，不展示文件内容、不可点击展开（Kilo Code 行为）。
+- `glob`/`grep`/`list` 保持可折叠块：运行中展开，完成后折叠；展开态显示该次调用的输入和结果，输出限制在约 240px 最大高度内内部滚动。只有用户手动切换的展开状态被记忆并跨虚拟列表重挂载保持。
+
+独立工具块延续 Kilo Code 的扁平、可追溯结构。用户能够准确看到 Agent 依次读取和搜索了什么。错误状态保留在对应调用上。Workbench Chat 不再把连续读取合并成 Gathered context 摘要。
 
 ##### ShellActivityBlock：Shell 与后台进程
 
 `bash`、shell 类 MCP 工具和后台进程活动使用 Shell 块：
 
-- 折叠头部显示终端图标、动作标题、命令摘要、状态和耗时。
-- 运行中默认展开并跟随最新输出。完成后保留用户当前选择；历史回放默认折叠。
+- 折叠头部显示终端图标、`Shell`、模型随工具输入提供的动作说明、状态和耗时。原始命令只进入展开内容；不得用截断后的长命令替代动作说明。旧记录缺少动作说明时使用稳定的通用标题，不在头部铺开原始命令。
+- “展开 shell 工具部分”只决定新出现 Shell 块的初始状态。已经挂载或被虚拟列表回收的调用保持首次解析出的展开状态和用户选择；切换设置不得批量改变当前时间线行高或造成视口跳闪。
 - 命令与输出使用 13px mono。命令、标准输出和错误输出拥有清晰的小节关系。
-- 输出区域设最大高度并允许内部滚动。复制命令和复制输出属于块级操作。
+- 命令区与输出区各自限制在最高 240px，并分别允许内部滚动。任一长区域都不得继续撑高主时间线；运行中仅在输出区内部跟随最新内容。复制命令和复制输出属于块级操作。
 - 后台进程以结构化字段呈现命令、PID、cwd、状态和最后输出，不把字段列表伪装成普通终端文本。
+
+##### LiveActivityStatus：运行阶段提示
+
+Session 处于忙碌状态时，Chat 在实时尾部持续表达当前阶段，避免工具之间或首个 Part 到达前出现无反馈空档：
+
+- 首个模型 Part 尚未到达或 reasoning 正在增长时显示“正在思考”。
+- 文本正在增长时显示“正在组织回复”。
+- 一次工具已经完成、下一 Part 尚未到达时显示“正在考虑下一步”。
+- Shell、编辑等工具处于 pending/running 时，对应工具行继续显示自身状态；实时尾部同时保留“正在运行命令”“正在编辑文件”等阶段提示。工具完成而下一 Part 尚未到达时切换为“正在考虑下一步”。
+- 阶段提示使用轻量活动标记和整轮忙碌计时，不在 Part 之间重置，不伪造模型自然语言内容，也不把 `step-start` / `step-finish` 暴露为转录正文。忙碌结束后保留一个最小高度的尾部槽位，避免状态消失时内容发生跳动。
 
 ##### FileChangeBlock：文件编辑与补丁
 
@@ -366,8 +384,10 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 
 - 头部显示文件图标、操作类型、目录、文件名、状态和增删行统计。
 - 单文件操作使用一个可折叠块。多文件 patch 使用父级摘要与逐文件 Accordion。
-- 展开内容优先显示 hunk 范围内的 Diff。大文件使用延迟渲染和虚拟化，保持快速滚动。
-- 运行中显示正在编辑的文件。完成后默认折叠；失败时展开错误摘要，并保留已成功文件的结果。
+- `edit`、`write`、`apply_patch` 复用 OpenCode App 原有完整展现链路（`MessagePart → edit-tool / write-tool / apply-patch-tool → BasicTool → ToolFileAccordion 或逐文件 Accordion → FileComponent`），不得只把内层 `FileComponent` 嵌入 Workbench 自定义工具外壳，也不得把 unified patch 当作普通 `<pre>` 文本直接铺开。`edit` 渲染 hunk Diff，`write` 渲染完整新内容，`apply_patch` 逐文件渲染 Diff。
+- 单文件块隐藏冗余的文件 Accordion 头，以工具触发行为唯一头部；所有头部不 sticky 悬浮。多文件 patch 保留逐文件 Accordion 头。
+- 展开内容优先显示 hunk 范围内的 Diff，并限制在约 400px 最大高度内内部滚动，不撑高主时间线；超长 Diff 依靠 `content-visibility` 跳过屏幕外渲染，保持快速滚动。
+- 初始展开状态遵循 Workbench“展开编辑工具”设置；运行中默认展开，完成后默认折叠；失败时展开错误摘要，并保留已成功文件的结果。
 - 点击文件名打开对应文件；Diff 行可定位到具体行。
 
 ##### SubagentActivityBlock：子代理任务
@@ -380,9 +400,9 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 - 子代理的最终结果在时间轴末尾显示为摘要。完整子会话通过“打开详情”进入独立视图或标签页。
 - 完成后的子代理块默认折叠为任务标题、结果状态和活动计数。失败与等待用户输入的状态保持醒目。
 
-##### TodoActivityBlock：任务进度
+##### Todo 工具：Composer Dock 独占展示
 
-`todowrite` 投影为任务进度块。它显示当前进行项、已完成数量与总数，并通过可展开列表呈现各项状态。连续更新复用同一个块并更新内容，不在时间线中产生重复快照。
+`todowrite` / `todoread` 不进入时间线。任务进度由 Composer 输入框上方的 `SessionTodoDock` 独占展示（进行中项、进度数与完整列表），时间线内不再重复投影 Todo 块，避免双重呈现同一份状态。
 
 ##### InteractionBlock：问题与权限
 
@@ -390,7 +410,7 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 
 ##### GenericToolBlock：通用工具与 MCP
 
-未注册专用渲染器的工具使用统一通用块。头部由工具图标、工具名、最具说明性的输入字段、状态与耗时组成。展开内容以结构化参数和 Markdown/JSON 输出呈现。通用块遵守相同的字体、间距、状态与折叠规则，保证新工具自然融入 Chat。
+未注册专用渲染器的工具使用统一通用块，任何工具都不会从时间线丢失。头部由工具图标、工具名与最具说明性的输入字段组成：按 `command → action → description → query → url → filePath → path → pattern → name` 的优先级提取第一个有值字段作为副标题（借鉴 Kilo Code 的 GenericTool 启发式，并将 `command`/`action` 提前以适配 WopalSpace 工具生态）；无描述字段时降级展示至多 3 个结构化参数（如 `limit=5`）。展开内容以 JSON/文本输出呈现，限制在约 240px 最大高度内内部滚动。通用块遵守相同的字体、间距、状态与折叠规则，保证新工具自然融入 Chat。
 
 ##### TurnChangeSummary 与 TurnOutcome
 
@@ -410,16 +430,17 @@ Part 分类同时读取所属 Message 的 `role`。`file`、`agent` 和 `subtask
 | Shell | 展开并跟随输出 | 保持当前选择 | 折叠 |
 | 文件变更 | 展开当前文件 | 折叠 | 折叠 |
 | 子代理 | 展开时间轴 | 折叠为摘要 | 折叠 |
-| Todo | 展开当前进行项 | 折叠为进度 | 折叠 |
 | 错误 | 展开错误摘要 | 展开错误摘要 | 展开错误摘要 |
 
-用户手动选择优先于自动策略。折叠状态由 Chat 呈现层的有上限运行时 Map 保存，key 使用 `sessionID + tool + callID/partID`。虚拟列表回收和重挂载组件时可恢复当前应用生命周期内的选择；刷新应用后按默认策略重新计算。Map 达到上限时淘汰最早条目。Session 数据、WorkbenchStore 和 `localStorage` 均不承载折叠状态。
+Shell 和文件编辑的用户设置覆盖表中的初始默认值。设置值只在一个新 Part 首次进入呈现层时读取一次，不作为已经挂载块的实时受控状态。
+
+用户手动选择优先于自动策略。折叠状态由 Chat 呈现层的有上限运行时 Map 保存，key 使用 `sessionID + tool + callID/partID`；Map 同时缓存每个 Part 首次解析出的默认状态。虚拟列表回收和重挂载组件时可恢复相同几何状态；刷新应用后按当时设置与默认策略重新计算。Map 达到上限时淘汰最早条目。Session 数据、WorkbenchStore 和 `localStorage` 均不承载折叠状态。
 
 #### 4.6.8 流式更新、虚拟化与滚动
 
 消息时间线使用“稳定历史虚拟化 + 实时尾部直接渲染”。已完成历史按稳定转录行 key 维持测量缓存。当前增长中的 Assistant 分段离开 Virtualizer 后持续接收 `message.part.delta`，完成并稳定后再进入虚拟历史。新增输出不会重建整个消息列表，也不会改变其它块的展开状态。
 
-自动滚动遵循用户意图：用户位于底部时跟随流式输出；用户主动向上滚动、选择文字、聚焦工具块或打开菜单后暂停粘底；“回到底部”操作恢复跟随。子代理与 Shell 的内部输出在自己的滚动容器内跟随，不抢夺主时间线滚动位置。
+自动滚动遵循用户意图：用户位于底部时跟随流式输出；用户主动向上滚动、选择文字、聚焦工具块或打开菜单后暂停粘底；“回到底部”操作恢复跟随。子代理与 Shell 的内部输出在自己的滚动容器内跟随，不抢夺主时间线滚动位置。用户手动展开或收起工具块时，先记录工具头部的视口位置，并在下一帧按位置差补偿主滚动容器，保持当前阅读锚点不动。
 
 隐藏的 Space 和非活动 Panel 继续接收必要的数据更新，但只有当前 Space 的活动 Chat Panel 获得 Prompt 焦点和主动滚动控制。视图切换与 Panel keep-alive 保留草稿、时间线位置和当前应用生命周期内的内容块展开状态。
 

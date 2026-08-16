@@ -34,6 +34,12 @@ describe("theme preload", () => {
     expect(document.getElementById("oc-theme-preload")).toBeNull()
   })
 
+  test("defaults to ellamaka theme when no theme is stored", () => {
+    run()
+
+    expect(document.documentElement.dataset.theme).toBe("ellamaka")
+  })
+
   test("keeps cached css for non-default themes", () => {
     localStorage.setItem("opencode-theme-id", "nightowl")
     localStorage.setItem("opencode-theme-css-light", "--background-base:#fff;")

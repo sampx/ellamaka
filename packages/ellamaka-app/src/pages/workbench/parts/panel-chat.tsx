@@ -6,20 +6,23 @@ import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 import type { UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
+import { Part as OpenCodeMessagePart } from "@opencode-ai/ui/message-part"
 import { DataProvider } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useProviders } from "@/hooks/use-providers"
 import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
 import { CommentsProvider } from "@/context/comments"
 import { LocalProvider, useLocal } from "@/context/local"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
-import { MessageTimeline } from "@/pages/session/message-timeline"
+import { WorkbenchChatTimeline } from "@/pages/session/workbench-chat-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -51,9 +54,13 @@ function PanelChatInner(props: {
   const sdk = useSDK()
   const prompt = usePrompt()
   const language = useLanguage()
+  const settings = useSettings()
   const actions = useWorkbenchActions()
   const wb = useWorkbenchState()
   const local = useLocal()
+  const providers = useProviders()
+  const modelName = (providerID: string, modelID: string) =>
+    providers.all().get(providerID)?.models[modelID]?.name
   const scope = createMemo(() => scopeFromTab({ name: props.spaceName, path: props.spacePath }))
 
   const panels = () => wb.spaceState(props.spacePath)?.panels ?? []
@@ -362,13 +369,25 @@ function PanelChatInner(props: {
   })
 
   return (
-    <div class="flex flex-col h-full min-h-0 bg-v2-background-bg-deep">
+    <div data-component="workbench-chat" class="flex flex-col h-full min-h-0 bg-v2-background-bg-deep">
       <div class="flex-1 min-h-0 overflow-hidden">
         <Show when={messagesReady()}>
-          <MessageTimeline
+          <WorkbenchChatTimeline
+            sessionID={props.session.id}
+            userMessages={historyLoader.userMessages()}
+            historyShift={historyLoader.shift()}
+            historyMore={historyMore()}
+            historyLoading={historyLoading()}
+            loadOlder={historyLoader.loadAndReveal}
             scroll={ui.scroll}
-            onResumeScroll={resumeScroll}
+            showReasoningSummaries={settings.general.showReasoningSummaries()}
+            shellToolPartsExpanded={settings.general.shellToolPartsExpanded()}
+            editToolPartsExpanded={settings.general.editToolPartsExpanded()}
+            showSessionProgressBar={settings.general.showSessionProgressBar()}
+            editRenderer={OpenCodeMessagePart}
+            revert={revertMessageID()}
             setScrollRef={setScrollRef}
+            setContentRef={setContentRef}
             onScheduleScrollState={scheduleScrollState}
             onAutoScrollHandleScroll={autoScroll.handleScroll}
             onMarkScrollGesture={() => {}}
@@ -377,13 +396,18 @@ function PanelChatInner(props: {
             onHistoryScroll={historyLoader.onScrollerScroll}
             onAutoScrollInteraction={autoScroll.handleInteraction}
             shouldAnchorBottom={() => !autoScroll.userScrolled()}
-            centered={false}
-            setContentRef={setContentRef}
-            historyShift={historyLoader.shift()}
-            userMessages={historyLoader.userMessages()}
-            anchor={() => "#"}
-            setRevealMessage={() => {}}
+            onResumeScroll={resumeScroll}
+            onPauseAutoScroll={autoScroll.pause}
             actions={{ revert, fork: forkMessage, canSplit: canSplit() }}
+            actionLabels={{
+              fork: language.t("ui.message.forkMessage"),
+              forkCurrent: language.t("ui.message.forkCurrent"),
+              forkSplit: language.t("ui.message.forkSplit"),
+              revert: language.t("ui.message.revertMessage"),
+              copy: language.t("ui.message.copyMessage"),
+              copied: language.t("ui.message.copied"),
+            }}
+            modelName={modelName}
           />
         </Show>
       </div>

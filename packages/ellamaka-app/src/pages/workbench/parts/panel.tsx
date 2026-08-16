@@ -501,7 +501,6 @@ export function Panel(props: {
                 <Terminal
                   pty={{ id: ptyId, title: splitTitle(), titleNumber: 3 }}
                   class="w-full h-full"
-                  noPadding={true}
                   onConnectError={() => {
                     void actions.recoverPanelPty({
                       scope: panelScope(),

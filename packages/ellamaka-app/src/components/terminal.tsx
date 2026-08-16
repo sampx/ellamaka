@@ -1,11 +1,10 @@
-import { withAlpha } from "@opencode-ai/ui/theme/color"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
-import type { HexColor } from "@opencode-ai/ui/theme/types"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { FitAddon, Ghostty, Terminal as Term } from "ghostty-web"
 import { type ComponentProps, createEffect, createMemo, onCleanup, onMount, splitProps } from "solid-js"
 import { SerializeAddon } from "@/addons/serialize"
+import { resolveTerminalTheme, type TerminalTheme } from "@/components/terminal-colors"
 import { matchKeybind, parseKeybind } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -49,28 +48,6 @@ const loadGhostty = () => {
   return shared
 }
 
-type TerminalColors = {
-  background: string
-  foreground: string
-  cursor: string
-  selectionBackground: string
-}
-
-const DEFAULT_TERMINAL_COLORS: Record<"light" | "dark", TerminalColors> = {
-  light: {
-    background: "#fcfcfc",
-    foreground: "#211e1e",
-    cursor: "#211e1e",
-    selectionBackground: withAlpha("#211e1e", 0.2),
-  },
-  dark: {
-    background: "#191515",
-    foreground: "#d4d4d4",
-    cursor: "#d4d4d4",
-    selectionBackground: withAlpha("#d4d4d4", 0.25),
-  },
-}
-
 const debugTerminal = (...values: unknown[]) => {
   if (!import.meta.env.DEV) return
   console.debug("[terminal]", ...values)
@@ -82,6 +59,7 @@ const useTerminalUiBindings = (input: {
   cleanups: VoidFunction[]
   handlePointerDown: () => void
   handleLinkClick: (event: MouseEvent) => void
+  onSelectionCopied?: () => void
 }) => {
   const handleCopy = (event: ClipboardEvent) => {
     const selection = input.term.getSelection()
@@ -133,6 +111,27 @@ const useTerminalUiBindings = (input: {
   input.term.textarea?.addEventListener("blur", handleTextareaBlur)
   input.cleanups.push(() => input.term.textarea?.removeEventListener("focus", handleTextareaFocus))
   input.cleanups.push(() => input.term.textarea?.removeEventListener("blur", handleTextareaBlur))
+
+  // ghostty-web copies drag/double/triple-click selections to the clipboard on
+  // mouseup and then fires onSelectionChange. Surface that as a toast so the
+  // copy is discoverable, matching the TUI's "Copied to clipboard" feedback.
+  // Track mouse interaction so programmatic selections (selectAll, clearSelection)
+  // do not trigger the toast.
+  let mouseActive = false
+  const trackMouseDown = () => {
+    mouseActive = true
+  }
+  input.container.addEventListener("mousedown", trackMouseDown, true)
+  input.cleanups.push(() => input.container.removeEventListener("mousedown", trackMouseDown, true))
+
+  const selectionSub = input.term.onSelectionChange(() => {
+    if (!mouseActive) return
+    mouseActive = false
+    if (!input.term.hasSelection()) return
+    if (!input.term.getSelection()) return
+    input.onSelectionCopied?.()
+  })
+  input.cleanups.push(() => disposeIfDisposable(selectionSub))
 }
 
 const persistTerminal = (input: {
@@ -258,25 +257,12 @@ export const Terminal = (props: TerminalProps) => {
       })
   }
 
-  const getTerminalColors = (): TerminalColors => {
-    const mode = theme.mode() === "dark" ? "dark" : "light"
-    const fallback = DEFAULT_TERMINAL_COLORS[mode]
+  const getTerminalColors = (): TerminalTheme => {
+    const isDark = theme.mode() === "dark"
     const currentTheme = theme.themes()[theme.themeId()]
-    if (!currentTheme) return fallback
-    const variant = mode === "dark" ? currentTheme.dark : currentTheme.light
-    if (!variant?.seeds && !variant?.palette) return fallback
-    const resolved = resolveThemeVariant(variant, mode === "dark")
-    const text = resolved["text-stronger"] ?? fallback.foreground
-    const background = resolved["background-stronger"] ?? fallback.background
-    const alpha = mode === "dark" ? 0.25 : 0.2
-    const base = text.startsWith("#") ? (text as HexColor) : (fallback.foreground as HexColor)
-    const selectionBackground = withAlpha(base, alpha)
-    return {
-      background,
-      foreground: text,
-      cursor: text,
-      selectionBackground,
-    }
+    const variant = currentTheme ? (isDark ? currentTheme.dark : currentTheme.light) : undefined
+    const resolved = variant?.seeds || variant?.palette ? resolveThemeVariant(variant, isDark) : {}
+    return resolveTerminalTheme(resolved, isDark)
   }
 
   const terminalColors = createMemo(getTerminalColors)
@@ -680,6 +666,7 @@ export const Terminal = (props: TerminalProps) => {
         cleanups,
         handlePointerDown,
         handleLinkClick,
+        onSelectionCopied: () => showToast({ variant: "success", description: language.t("terminal.copied") }),
       })
 
       if (local.autoFocus !== false) focusTerminal()
@@ -945,7 +932,7 @@ export const Terminal = (props: TerminalProps) => {
         ...local.classList,
         "select-text": true,
         "size-full font-mono relative overflow-hidden": true,
-        "px-6 py-3": !local.noPadding,
+        "px-3 py-2": !local.noPadding,
         [local.class ?? ""]: !!local.class,
       }}
       {...others}

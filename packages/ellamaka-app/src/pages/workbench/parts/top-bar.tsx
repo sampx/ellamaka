@@ -14,6 +14,7 @@ import { useNotification } from "@/context/notification"
 import { pathKey } from "@/utils/path-key"
 import { SpaceIcon } from "./session-tree-space"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { createFlyoutController } from "./sidebar-flyout"
 
 function PinIcon(props: { class?: string }) {
   return (
@@ -152,10 +153,17 @@ export function WorkbenchTitlebar() {
   const [tabMenu, setTabMenu] = createSignal<TabContextMenu>()
   let spaceMenuRef: HTMLDivElement | undefined
 
+  // 悬停展开空间列表：移出后延迟收起，点击按钮仍可固定切换
+  const spaceMenuFlyout = createFlyoutController({
+    pinned: () => false,
+    onChange: () => setShowSpaceMenu(spaceMenuFlyout.isOpen()),
+  })
+  onCleanup(() => spaceMenuFlyout.destroy())
+
   onMount(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (spaceMenuRef && !spaceMenuRef.contains(e.target as Node)) {
-        setShowSpaceMenu(false)
+        spaceMenuFlyout.close()
       }
       setTabMenu(undefined)
     }
@@ -263,15 +271,24 @@ export function WorkbenchTitlebar() {
 
         {/* Right Nav: Space Selector & Split Panel Button */}
         <div class="flex items-center gap-1.5 shrink-0 z-20">
-          {/* 选择空间 下拉选择框 */}
-          <div class="relative" ref={(el) => { spaceMenuRef = el }}>
+          {/* 选择空间 下拉选择框：悬停展开，移出延迟收起 */}
+          <div
+            class="relative"
+            ref={(el) => { spaceMenuRef = el }}
+            onMouseEnter={() => spaceMenuFlyout.onTriggerEnter()}
+            onMouseLeave={() => spaceMenuFlyout.onTriggerLeave()}
+          >
             <ButtonV2
               variant="ghost"
               size="small"
               class="h-7 px-2.5 text-11-medium text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                setShowSpaceMenu(!showSpaceMenu())
+                if (showSpaceMenu()) {
+                  spaceMenuFlyout.close()
+                } else {
+                  spaceMenuFlyout.onTriggerEnter()
+                }
               }}
             >
               <SpaceIcon class="size-3.5" />
@@ -280,8 +297,12 @@ export function WorkbenchTitlebar() {
             </ButtonV2>
 
             <Show when={showSpaceMenu()}>
-              <div class="absolute right-0 top-8 z-50 min-w-48 max-h-64 overflow-y-auto rounded-md border border-v2-border-border-base bg-v2-background-bg-base p-1 shadow-lg">
-                <div class="px-2 py-1 text-11-medium text-v2-text-text-muted uppercase tracking-wider">
+              <div
+                class="absolute right-0 top-full mt-1 z-50 min-w-48 max-h-64 overflow-y-auto rounded-lg border border-v2-border-border-base bg-v2-background-bg-base p-1 shadow-[var(--v2-elevation-floating)]"
+                onMouseEnter={() => spaceMenuFlyout.onFlyoutEnter()}
+                onMouseLeave={() => spaceMenuFlyout.onFlyoutLeave()}
+              >
+                <div class="px-2 py-1 text-11-medium text-v2-text-text-muted">
                   {t("workbench.topbar.selectSpace")}
                 </div>
                 <For each={spaceStore.spaces()}>
@@ -300,7 +321,7 @@ export function WorkbenchTitlebar() {
                         }}
                         onClick={() => {
                           wb.openTab(sp)
-                          setShowSpaceMenu(false)
+                          spaceMenuFlyout.close()
                         }}
                       >
                         <div class="flex items-center gap-2 truncate">

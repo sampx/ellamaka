@@ -650,6 +650,7 @@ export const dict = {
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
   "terminal.close": "Close terminal",
+  "terminal.copied": "Copied to clipboard",
   "terminal.connectionLost.title": "Connection Lost",
   "terminal.connectionLost.abnormalClose": "WebSocket closed abnormally: {{code}}",
   "terminal.connectionLost.description":
@@ -1026,7 +1027,6 @@ export const dict = {
   "workbench.sidebar.refreshing": "Refreshing session list...",
   "workbench.sidebar.refreshed": "Session list refreshed",
   "workbench.sidebar.expand": "Expand space rail",
-  "workbench.sidebar.collapse": "Collapse space rail",
   "workbench.sidebar.refresh": "Refresh spaces",
   "workbench.sidebar.empty": "No WopalSpace registered. Use `wopal space add` to register one.",
   "workbench.workspace.empty": "Select a space from the sidebar to open a tab.",

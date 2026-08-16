@@ -2,6 +2,14 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator"
 
 GlobalRegistrator.register()
 
+// katex (pulled in transitively by @opencode-ai/ui's MarkedProvider) references
+// a global `React` at module scope. Provide a minimal stub so Markdown-based
+// components can render under happy-dom without a real React runtime.
+;(globalThis as Record<string, unknown>).React = {
+  createElement: () => null,
+  Fragment: "Fragment",
+}
+
 const originalGetContext = HTMLCanvasElement.prototype.getContext
 // @ts-expect-error - we're overriding with a simplified mock
 HTMLCanvasElement.prototype.getContext = function (contextType: string, _options?: unknown) {

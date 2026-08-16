@@ -45,6 +45,9 @@ Execution chain: Vite dev server → SolidJS SPA → `@opencode-ai/sdk` → back
 | E2E tests | `bun run test:e2e` | After page, route, or user-flow changes |
 | Workbench boundary check | `bun run check:workbench-boundaries` | After any `src/pages/workbench/` change |
 | Workbench lint | `bun run lint:workbench` | Workbench code quality check |
+| CSS lint | `bun run lint:css` | After any `src/**/*.css` change; must stay at 0 errors |
+
+Unit tests must run through `bun run test:unit` (or `test:ci`), never raw `bun test`. The script adds `--conditions=browser --preload ./happydom.ts`; without the browser condition, `solid-js/web` resolves to its server build, which lacks the `use` export that `virtua/solid` imports, and component test files fail at module load.
 
 Frontend-backend dev verification: `./scripts/dev.sh help`
 
@@ -53,9 +56,20 @@ Frontend-backend dev verification: `./scripts/dev.sh help`
 - Backend communication goes through `@opencode-ai/sdk`; components must not call fetch against the backend directly.
 - Typecheck uses `tsgo -b`; never run `tsc` directly.
 - Extend upstream shared code through adapters, callbacks, or small injection points; never copy entire Session, command, Dialog, or navigation flows.
+- `packages/ui` is never modified for Workbench presentation. All adaptation happens inside `ellamaka-app` through component wrappers, extension points (`FileComponentProvider`, `ThemeProvider.registerTheme`), and scoped CSS overrides. Whether a chat block is self-built or reuses an official renderer is a pragmatic per-block decision recorded in `docs/WORKBENCH.md` §4.6.6.
 - SSE event handling: `server.connected` only restores transport and **does not trigger global refresh**; only `global.disposed` triggers full reconciliation. When changing SSE event handling, verify: UI state is preserved after reconnect, and `global.disposed` still triggers full refresh.
 - SSE events are tiered by type: high-frequency property changes (title, message stream) are handled locally by the corresponding component; structural events (`session.created` / `session.deleted` / `session.updated` with `timeArchived`) trigger SessionTree refresh. SSE events must not trigger unrelated Panel or tree-level reloads.
 - Canvas rendering must use an integral `devicePixelRatio`. Any canvas renderer that computes `canvas.width = cssSize * dpr` + `ctx.scale(dpr)` suffers from subpixel resampling when dpr is non-integral: the browser truncates the backing store to an integer while the context scale stays fractional, causing the compositor to resample the canvas texture and produce grid stripes aligned to character cells. Electron window zoom (e.g. 110%) compounds this by making `window.devicePixelRatio = nativeDpr × zoomFactor` non-integral (e.g. 2.2). The `Terminal` component already rounds `renderer.devicePixelRatio` to an integer; that fix must not be removed. Any new canvas rendering path (direct `<canvas>` usage or a new terminal renderer library) must also round the dpr before passing it to the renderer.
+
+### 4.1 Workbench Chat Styling Discipline
+
+These rules exist because chat transcript styling regressions (background disappearing, hover scrollbar jitter, theme-breaking code blocks) were caused by editing CSS against an imagined DOM instead of the rendered one. Follow them for every change under `src/index.css` that touches `src/pages/session/` chat blocks.
+
+- **Inspect the rendered DOM before editing CSS.** The chat transcript is rendered by the self-built `WorkbenchMarkdown` (`workbench-markdown-renderer.tsx`) and tool block components, not the upstream `Markdown`. Code block wrappers (`markdown-code`), copy buttons, and shiki classes are produced at runtime. Never write an override from memory or from reading `packages/ui` CSS alone — first read the live `computedStyle`/box structure in the running Workbench, then target the real selectors.
+- **Reference design tokens, never hardcode colors or spacing.** Use `var(--background-base)`, `var(--surface-*)`, `var(--border-*)`, `var(--text-*)`, etc. A hardcoded value cannot follow the theme. Verify the token's resolved value against the actual chat background — a token that equals the page background renders invisible (this is exactly how the code block lost its background).
+- **`!important` is allowed only to override upstream inline styles** (e.g. shiki's `style="background-color:..."`) or third-party card chrome, and every use must carry a comment stating the reason. Keep them counted — stylelint surfaces each as a warning.
+- **Hover-reveal scrollbars must reserve gutter space.** A scrollbar that appears on hover without `scrollbar-gutter: stable` shifts the content box and makes the block jump. Any `overflow: auto` content region that hides its scrollbar until hover must also set `scrollbar-gutter: stable` (or an equivalent layout reservation) so hover never changes layout.
+- **Self-verify before handing off.** After editing chat CSS, run `bun run lint:css` (0 errors) and `bun run typecheck`, run the affected component tests, and confirm the visual result against the running Workbench (screenshot) before asking the user to review. Do not hand over an unverified styling change.
 
 ## 5. Mandatory Workbench Boundaries
 

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/stylelintrc",
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "declaration-no-important": [true, { "severity": "warning" }],
+    "declaration-block-no-duplicate-properties": [true, { "severity": "warning" }],
+    "no-duplicate-selectors": [true, { "severity": "warning" }],
+    "block-no-empty": [true, { "severity": "warning" }],
+    "color-no-hex": null,
+    "selector-class-pattern": null,
+    "custom-property-pattern": null,
+    "no-descending-specificity": null,
+    "import-notation": null,
+    "font-family-name-quotes": null,
+    "property-no-vendor-prefix": null,
+    "value-keyword-case": null
+  }
+}

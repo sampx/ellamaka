@@ -4,9 +4,9 @@ import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
-import { File } from "@opencode-ai/ui/file"
+import { EllamakaFile } from "@/components/ellamaka-file"
 import { Font } from "@opencode-ai/ui/font"
-import { ThemeProvider } from "@opencode-ai/ui/theme/context"
+import { ThemeProvider, useTheme } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router, useLocation, useNavigate } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
@@ -35,6 +35,7 @@ import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncProvider } from "@/context/server-sync"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
+import { ELLAMAKA_THEME_ID, ellamakaTheme } from "@/theme/ellamaka-theme"
 import { LayoutProvider } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider } from "@/context/notification"
@@ -166,15 +167,25 @@ function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
   )
 }
 
+function EllamakaThemeBootstrap() {
+  const theme = useTheme()
+  onMount(() => {
+    theme.registerTheme(ellamakaTheme)
+  })
+  return null
+}
+
 export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
   return (
     <MetaProvider>
       <Font />
       <ThemeProvider
+        defaultTheme={ELLAMAKA_THEME_ID}
         onThemeApplied={(_, mode) => {
           void window.api?.setTitlebar?.({ mode })
         }}
       >
+        <EllamakaThemeBootstrap />
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
             <ErrorBoundary
@@ -186,7 +197,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
               <QueryProvider>
                 <DialogProvider>
                   <MarkedProvider>
-                    <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
+                    <FileComponentProvider component={EllamakaFile}>{props.children}</FileComponentProvider>
                   </MarkedProvider>
                 </DialogProvider>
               </QueryProvider>

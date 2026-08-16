@@ -587,6 +587,7 @@ export const dict = {
   "terminal.title": "终端",
   "terminal.title.numbered": "终端 {{number}}",
   "terminal.close": "关闭终端",
+  "terminal.copied": "已复制到剪贴板",
   "terminal.connectionLost.title": "连接已丢失",
   "terminal.connectionLost.description": "终端连接已中断。这可能发生在服务器重启时。",
 
@@ -971,7 +972,6 @@ export const dict = {
   "workbench.sidebar.refreshing": "正在刷新会话列表...",
   "workbench.sidebar.refreshed": "会话列表已刷新",
   "workbench.sidebar.expand": "展开空间栏",
-  "workbench.sidebar.collapse": "收起空间栏",
   "workbench.sidebar.refresh": "刷新空间",
   "workbench.sidebar.empty": "尚未注册 WopalSpace。请使用 `wopal space add` 注册。",
   "workbench.workspace.empty": "从侧栏选择一个空间以打开标签页。",

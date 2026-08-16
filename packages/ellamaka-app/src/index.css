@@ -19,7 +19,7 @@
 }
 
 @font-face {
-  font-family: "Inter";
+  font-family: Inter;
   src: url("/assets/Inter.ttf") format("truetype");
   font-weight: normal;
   font-style: normal;
@@ -47,13 +47,13 @@
 
 .has-scrollbar::-webkit-scrollbar-thumb,
 .session-tree-scroll::-webkit-scrollbar-thumb {
-  background: rgba(140, 140, 160, 0.35) !important;
+  background: rgb(140 140 160 / 35%) !important;
   border-radius: 4px !important;
 }
 
 .has-scrollbar::-webkit-scrollbar-thumb:hover,
 .session-tree-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(140, 140, 160, 0.65) !important;
+  background: rgb(140 140 160 / 65%) !important;
 }
 
 html, body, #root {
@@ -61,7 +61,7 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 /* 锁定设置弹窗使用标准静态字号，不受主 UI 动态 fontSize 调控干预 */
@@ -97,6 +97,10 @@ html, body, #root {
     overflow: hidden;
     pointer-events: none;
     opacity: 1;
+
+    /* Paint above tool blocks whose positioned content otherwise stacks
+       above the absolute progress bar (later positioned siblings win). */
+    z-index: 40;
     transition: opacity 220ms ease-out;
   }
 
@@ -199,6 +203,7 @@ html, body, #root {
     from {
       opacity: 0;
     }
+
     to {
       opacity: 1;
     }
@@ -207,17 +212,1285 @@ html, body, #root {
 
 /* 自适应主题反相与透明遮罩，对接项目的 data-theme 主题机制 */
 .ellamaka-logo-invert {
-  -webkit-mask-image: url("/ellamaka-text-logo.png?v=2");
   mask-image: url("/ellamaka-text-logo.png?v=2");
-  -webkit-mask-size: contain;
+  mask-image: url("/ellamaka-text-logo.png?v=2");
   mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
+  mask-size: contain;
   mask-repeat: no-repeat;
-  -webkit-mask-position: center;
+  mask-repeat: no-repeat;
+  mask-position: center;
   mask-position: center;
   filter: invert(0);
 }
 
 html[data-color-scheme="light"] .ellamaka-logo-invert {
   filter: invert(1);
+}
+
+/* ===== Workbench Chat transcript ===== */
+
+/* 14px/13px native font hierarchy per docs/WORKBENCH.md §4.6.4 */
+
+[data-component="chat-scroller"] {
+  min-width: 0;
+}
+
+[data-component="workbench-chat"] {
+  --workbench-chat-readable-width: 98ch;
+  --workbench-chat-gutter: 20px;
+}
+
+[data-component="workbench-chat"] [data-component="session-prompt-dock"] > div {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--workbench-chat-readable-width);
+  padding-inline: var(--workbench-chat-gutter);
+}
+
+[data-component="chat-content"] {
+  min-width: 0;
+  min-height: 100%;
+  padding-block: 12px 24px;
+  box-sizing: border-box;
+}
+
+[data-component="chat-resume-scroll"] {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  transform: translateX(-50%);
+}
+
+[data-action="chat-resume-scroll"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 6px;
+  color: var(--icon-base);
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 80%, transparent);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(0.75px);
+  cursor: pointer;
+}
+
+[data-action="chat-resume-scroll"]:hover {
+  border-color: var(--border-weak-base);
+  color: var(--icon-hover);
+}
+
+[data-component="chat-turn-frame"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: var(--workbench-chat-readable-width);
+  margin-inline: auto;
+  padding: 0 var(--workbench-chat-gutter) 6px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+[data-component="chat-user-message"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-size-base);
+  line-height: 1.7;
+  color: var(--text-strong);
+}
+
+[data-slot="chat-user-text"] {
+  max-width: min(82%, 64ch);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--v2-background-bg-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-slot="chat-user-actions"] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 20px;
+  height: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+[data-component="chat-user-message"]:hover [data-slot="chat-user-actions"],
+[data-component="chat-user-message"]:focus-within [data-slot="chat-user-actions"],
+[data-component="chat-user-message"]:has([data-action="chat-user-fork"][aria-expanded="true"]) [data-slot="chat-user-actions"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+[data-slot="chat-user-actions"] > button,
+[data-component="chat-user-fork"] > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--icon-weak-base);
+  background: transparent;
+  cursor: pointer;
+}
+
+[data-slot="chat-user-actions"] > button:hover,
+[data-component="chat-user-fork"] > button:hover {
+  color: var(--icon-base);
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-user-actions"] button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+[data-component="chat-user-fork"] {
+  position: relative;
+  display: inline-flex;
+}
+
+[data-slot="chat-user-fork-menu"] {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-width: 176px;
+  padding: 4px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 7px;
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+}
+
+[data-slot="chat-user-fork-menu"] button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-base);
+  background: transparent;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+[data-slot="chat-user-fork-menu"] button:hover {
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-user-attachments"],
+[data-slot="chat-user-agents"],
+[data-slot="chat-user-subtasks"] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: min(82%, 64ch);
+}
+
+[data-slot="chat-user-attachment"],
+[data-slot="chat-user-agent"],
+[data-slot="chat-user-subtask"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+[data-component="chat-agent-response"] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Transcript parts are rendered directly inside the assistant row. Keep the
+   actual DOM flow on the same rhythm as the conceptual agent response. */
+[data-row-type="assistant"] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
+[data-component="chat-narrative"] {
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--text-strong);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Assistant narrative metadata footer. Rendered under the turn's final text
+   part once the reply completes: a tinted agent dot + agent name, the model
+   display name, and the turn duration. All values follow theme tokens so the
+   footer stays legible in both color schemes; tabular numerals keep the
+   duration from jittering during re-renders. */
+[data-slot="chat-narrative-meta"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-weaker);
+  font-size: var(--font-size-small);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+[data-slot="chat-narrative-meta-sep"] {
+  color: var(--border-base);
+}
+
+[data-slot="chat-narrative-meta-agent"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-weak);
+  font-weight: 500;
+}
+
+[data-slot="chat-narrative-meta-dot"] {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--chat-agent-color, var(--icon-base));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-strong) 8%, transparent);
+}
+
+[data-slot="chat-narrative-meta-model"] {
+  font-family: var(--font-family-mono);
+  color: var(--text-weak);
+}
+
+[data-slot="chat-narrative-meta-duration"] {
+  color: var(--text-weaker);
+}
+
+/* Workbench chat code blocks: match the tool block surfaces and the chat
+   composer radius so the block follows the theme instead of the hardcoded
+   shiki "OpenCode" background. shiki inlines the theme background on the
+   <pre>, so the surface token is forced with !important.
+
+   Scrollbar: the track always reserves its space whenever the block overflows
+   (both axes), and only the thumb tint changes on hover. This keeps the block
+   box size constant — a classic Chromium scrollbar that flips from display:none
+   to a real track would otherwise occupy layout space and make the block jump.
+   The height is capped so a long snippet never floods the transcript. Scoped to
+   the Workbench markdown slot so the official Session page keeps shared styles. */
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] {
+  border-radius: 12px;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre,
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] .shiki {
+  background: var(--background-base) !important;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 12px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  max-height: 480px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+/* Shiki dual-theme switch: codeToHtml emits github-light colors as the inline
+   default and the dark palette as --shiki-dark variables. The base text color
+   must follow the active color scheme, or light-mode blocks render light text
+   on the light surface. The background stays on our --background-base token. */
+html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-component="markdown-code"] .shiki-themes,
+html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-component="markdown-code"] .shiki-themes span {
+  color: var(--shiki-dark) !important;
+}
+
+/* Copy affordance: keep the button surface readable in both schemes. The
+   secondary variant inherits a dark translucent fill that swallows the dark
+   icon in light mode (the "black dot"), so pin the fill and glyph to theme
+   tokens with enough contrast on the code surface. The wrapper must not clip
+   it (no overflow:hidden); the button is positioned relative to the wrapper's
+   padding box so its hover shadow and tooltip render inside the rounded area. */
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] [data-slot="markdown-copy-button"] {
+  top: 12px;
+  right: 12px;
+  border-radius: 8px;
+  box-shadow: none;
+  border: 1px solid var(--border-weak-base);
+  background: var(--surface-raised-stronger-non-alpha) !important;
+  color: var(--icon-base) !important;
+  backdrop-filter: blur(6px);
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] [data-slot="markdown-copy-button"]:hover {
+  box-shadow: none;
+}
+
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre:hover {
+  scrollbar-color: var(--border-weak-base) transparent;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre:hover::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base);
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--border-base);
+}
+
+[data-component="chat-reasoning"] {
+  width: 100%;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+[data-slot="chat-reasoning-trigger"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% + 12px);
+  min-height: 30px;
+  margin-inline: -6px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-weak);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 6px;
+  outline: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+[data-slot="chat-reasoning-trigger"]:hover {
+  color: var(--text-strong);
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-reasoning-trigger"]:focus-visible {
+  color: var(--text-strong);
+  background: var(--surface-raised-base-hover);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+}
+
+[data-slot="chat-reasoning-content"] {
+  margin-top: 8px;
+  padding: 10px 12px 12px;
+  border-radius: 6px;
+  background: var(--surface-weak);
+  overflow: visible;
+  font-size: var(--font-size-small);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Only the live preview is height-limited. A completed thought that the user
+   explicitly expands must never clip its last line against the next part. */
+[data-component="chat-reasoning"][data-streaming] [data-slot="chat-reasoning-content"] {
+  max-height: 120px;
+  overflow: auto;
+}
+
+[data-component="chat-context-tool"],
+[data-component="chat-shell"],
+[data-component="chat-file-change"],
+[data-component="chat-subagent"],
+[data-component="chat-generic-tool"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Subagent identity tint: the header icon follows the agent color set on the
+   trigger wrapper. Upstream icon.css pins its own color on the icon element,
+   so inheritance must be restored here (scoped to subagent blocks only). */
+[data-component="chat-subagent"] [data-component="icon"] {
+  color: inherit;
+}
+
+[data-slot="chat-tool-header"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 0;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-weak);
+}
+
+[data-slot="chat-tool-trigger"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-weak);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+[data-slot="chat-tool-trigger"]:hover {
+  color: var(--text-strong);
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-tool-trigger"]:focus-visible {
+  color: var(--text-strong);
+  background: var(--surface-raised-base-hover);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+}
+
+[data-slot="chat-tool-trigger"] > [data-component="icon"] {
+  flex: 0 0 auto;
+}
+
+[data-slot="chat-tool-trailing"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* Non-expandable info bar for read tools - same look as the header, no interaction */
+[data-slot="chat-context-info-bar"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 6px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: var(--text-weak);
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+[data-slot="chat-context-info-bar"] > [data-component="icon"] {
+  flex: 0 0 auto;
+}
+
+[data-slot="chat-tool-title"] {
+  flex: 0 0 auto;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  color: inherit;
+}
+
+[data-slot="chat-tool-subtitle"] {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-slot="chat-tool-title"] + [data-slot="chat-tool-subtitle"]::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-weak);
+}
+
+[data-slot="chat-tool-status"] {
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-slot="chat-tool-status"][data-status="completed"] {
+  display: none;
+}
+
+[data-slot="chat-tool-status"][data-status="error"] {
+  color: var(--text-error-base);
+}
+
+[data-slot="chat-tool-chevron"] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--icon-weaker);
+  transition: transform 160ms ease, color 150ms ease;
+  transform: rotate(-90deg);
+}
+
+[data-slot="chat-tool-trigger"][aria-expanded="true"] [data-slot="chat-tool-chevron"] {
+  transform: rotate(0deg);
+}
+
+[data-slot="chat-tool-trigger"]:hover [data-slot="chat-tool-chevron"] {
+  color: var(--icon-base);
+}
+
+[data-component="chat-context-tool"] [data-slot="collapsible-content"],
+[data-component="chat-shell"] [data-slot="collapsible-content"],
+[data-component="chat-file-change"] [data-slot="collapsible-content"],
+[data-component="chat-subagent"] [data-slot="collapsible-content"],
+[data-component="chat-generic-tool"] [data-slot="collapsible-content"] {
+  margin-top: 8px;
+  border-radius: 6px;
+  background: var(--surface-weak);
+  overflow: hidden;
+}
+
+/* When FileChangeBlock embeds OpenCodeMessagePart inside its Collapsible.Content,
+   hide the redundant upstream trigger/header and per-file accordion header */
+[data-component="chat-file-change-wrapper"] [data-slot="basic-tool-trigger"],
+[data-component="chat-file-change-wrapper"] [data-slot="collapsible-trigger"],
+[data-component="chat-file-change-wrapper"] [data-component="edit-trigger"],
+[data-component="chat-file-change-wrapper"] [data-component="write-trigger"],
+[data-component="chat-file-change-wrapper"] [data-component="sticky-accordion-header"],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-header"],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-trigger"] {
+  display: none !important;
+}
+
+/* Remove ALL background/border from the outer collapsible-content (the gray bar) */
+[data-component="chat-file-change"] > [data-component="collapsible"] > [data-slot="collapsible-content"] {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Remove ALL upstream card chrome from the embedded accordion */
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+/* Remove the extra border-top on edit-content/write-content */
+[data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
+  border-top: none !important;
+}
+
+/* Strip ALL upstream card chrome from the embedded accordion: no gray background,
+   no border, no border-radius — the content renders bare under our unified header */
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"],
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+/* Remove the extra border-top on edit-content/write-content */
+[data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
+  border-top: none !important;
+}
+
+/* Strip the upstream accordion card chrome: no gray background, border, or
+   rounded corners around file-change content. The content renders bare under
+   our unified header, matching shell/context/generic blocks. */
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"] {
+  overflow: visible !important;
+}
+
+/* Ensure the upstream inner collapsible and content are visible when open */
+[data-component="chat-file-change-wrapper"] [data-component="collapsible"].tool-collapsible {
+  gap: 0 !important;
+}
+
+[data-component="chat-file-change-wrapper"] [data-slot="collapsible-content"] {
+  display: block !important;
+}
+
+/* Remove dark background from sticky accordion headers in file-change tools */
+[data-component="chat-file-change-wrapper"]
+  :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
+  [data-component="sticky-accordion-header"],
+[data-component="chat-file-change-wrapper"] [data-scope="apply-patch"] [data-slot="accordion-trigger"] {
+  background: transparent !important;
+}
+
+/* Move horizontal scrolling to the outer container so the scrollbar is always
+   visible at the bottom of the visible area, not at the end of a long file.
+   NOTE: scrollbar-width must be thin (not none) for horizontal scroll to work. */
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ) {
+  overflow: auto !important;
+  max-height: 400px !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--border-weak-base) transparent;
+}
+
+/* The File component inside must not clip - let content expand to natural width */
+[data-component="chat-file-change-wrapper"] [data-component="file"] {
+  overflow: visible !important;
+  min-width: max-content;
+}
+
+/* Show scrollbars on hover for the outer container */
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-weak-base) transparent;
+}
+
+/* Webkit scrollbar for outer container */
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base);
+  border-radius: 4px;
+}
+
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar-thumb:hover {
+  background: var(--border-base);
+}
+
+/* Unified scrollbar policy for all tool block content: scrollbars stay hidden
+   until the content region is hovered, then a slim track appears. Keeps every
+   expanded block visually consistent and the transcript calm by default. */
+[data-slot="chat-shell-command"],
+[data-slot="chat-shell-output"],
+[data-slot="chat-shell-error"],
+[data-slot="chat-context-output"],
+[data-slot="chat-generic-output"],
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-slot="chat-shell-command"]:hover,
+[data-slot="chat-shell-output"]:hover,
+[data-slot="chat-shell-error"]:hover,
+[data-slot="chat-context-output"]:hover,
+[data-slot="chat-generic-output"]:hover,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-weak-base) transparent;
+}
+
+[data-slot="chat-shell-command"]::-webkit-scrollbar,
+[data-slot="chat-shell-output"]::-webkit-scrollbar,
+[data-slot="chat-shell-error"]::-webkit-scrollbar,
+[data-slot="chat-context-output"]::-webkit-scrollbar,
+[data-slot="chat-generic-output"]::-webkit-scrollbar,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar {
+  display: none;
+}
+
+[data-slot="chat-shell-command"]:hover::-webkit-scrollbar,
+[data-slot="chat-shell-output"]:hover::-webkit-scrollbar,
+[data-slot="chat-shell-error"]:hover::-webkit-scrollbar,
+[data-slot="chat-context-output"]:hover::-webkit-scrollbar,
+[data-slot="chat-generic-output"]:hover::-webkit-scrollbar,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+[data-slot="chat-shell-command"]:hover::-webkit-scrollbar-track,
+[data-slot="chat-shell-output"]:hover::-webkit-scrollbar-track,
+[data-slot="chat-shell-error"]:hover::-webkit-scrollbar-track,
+[data-slot="chat-context-output"]:hover::-webkit-scrollbar-track,
+[data-slot="chat-generic-output"]:hover::-webkit-scrollbar-track,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-slot="chat-shell-command"]:hover::-webkit-scrollbar-thumb,
+[data-slot="chat-shell-output"]:hover::-webkit-scrollbar-thumb,
+[data-slot="chat-shell-error"]:hover::-webkit-scrollbar-thumb,
+[data-slot="chat-context-output"]:hover::-webkit-scrollbar-thumb,
+[data-slot="chat-generic-output"]:hover::-webkit-scrollbar-thumb,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base);
+  border-radius: 4px;
+}
+
+[data-slot="chat-shell-command"]:hover::-webkit-scrollbar-thumb:hover,
+[data-slot="chat-shell-output"]:hover::-webkit-scrollbar-thumb:hover,
+[data-slot="chat-shell-error"]:hover::-webkit-scrollbar-thumb:hover,
+[data-slot="chat-context-output"]:hover::-webkit-scrollbar-thumb:hover,
+[data-slot="chat-generic-output"]:hover::-webkit-scrollbar-thumb:hover,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover::-webkit-scrollbar-thumb:hover {
+  background: var(--border-base);
+}
+
+/* Hide the redundant file accordion header when the block has a single file;
+   the tool trigger is the single block header. Multi-file patches keep their
+   per-file accordion headers. */
+[data-component="chat-file-change-wrapper"]
+  [data-component="accordion"]:has(> [data-slot="accordion-item"]:only-child)
+  [data-component="sticky-accordion-header"] {
+  display: none !important;
+}
+
+/* Remove sticky floating and normalize the expanded trigger height */
+[data-component="chat-file-change-wrapper"]
+  :is([data-component="edit-tool"], [data-component="write-tool"], [data-component="apply-patch-tool"])
+  [data-slot="collapsible-trigger"][aria-expanded="true"] {
+  position: static !important;
+  height: auto !important;
+  padding: 4px 6px !important;
+}
+
+/* Per-file accordion headers of multi-file patches stay in normal flow */
+[data-component="chat-file-change-wrapper"] [data-component="sticky-accordion-header"] {
+  position: static !important;
+}
+
+/* Override the upstream toast surface to match Ellamaka theme surfaces */
+[data-component="toast-region"] [data-component="toast"] {
+  background: var(--background-weak);
+  color: var(--text-base);
+}
+
+[data-component="toast-region"] [data-component="toast"] [data-slot="toast-icon"] [data-component="icon"] {
+  color: var(--text-strong);
+}
+
+[data-component="toast-region"] [data-component="toast"] [data-slot="toast-title"] {
+  color: var(--text-strong);
+}
+
+[data-component="toast-region"] [data-component="toast"] [data-slot="toast-description"] {
+  color: var(--text-base);
+}
+
+[data-component="toast-region"] [data-component="toast"] [data-slot="toast-action"] {
+  color: var(--text-weak);
+}
+
+[data-component="toast-region"] [data-component="toast"] [data-slot="toast-action"]:first-child {
+  color: var(--text-strong);
+}
+
+[data-slot="chat-shell-command"],
+[data-slot="chat-shell-output"],
+[data-slot="chat-context-output"],
+[data-slot="chat-generic-output"] {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  color: var(--text-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 8px 12px 10px;
+  border: 0;
+}
+
+[data-slot="chat-shell-command-region"] {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 45%, transparent);
+}
+
+[data-slot="chat-shell-command"] {
+  color: var(--text-strong);
+  font-weight: 500;
+  padding-right: 42px;
+}
+
+[data-slot="chat-shell-output-region"],
+[data-slot="chat-shell-error-region"] {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-slot="chat-shell-output"] {
+  color: var(--text-weak);
+  border-top: 1px solid var(--border-weaker-base);
+  background: transparent;
+}
+
+[data-action="chat-shell-copy"] {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--icon-weak);
+  background: color-mix(in srgb, var(--surface-weak) 88%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+[data-slot="chat-shell-command-region"]:hover [data-action="chat-shell-copy"],
+[data-action="chat-shell-copy"]:focus-visible {
+  opacity: 1;
+}
+
+[data-action="chat-shell-copy"]:hover {
+  color: var(--icon-base);
+  background: var(--surface-base-hover);
+}
+
+[data-slot="chat-shell-command"],
+[data-slot="chat-shell-output"],
+[data-slot="chat-shell-error"],
+[data-slot="chat-context-output"],
+[data-slot="chat-generic-output"] {
+  max-height: 240px;
+  overflow: auto;
+}
+
+[data-slot="chat-shell-error"] {
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-weaker-base);
+  color: var(--text-error-base);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-component="chat-live-activity-slot"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--workbench-chat-readable-width);
+  min-height: 10px;
+  margin-inline: auto;
+  padding-inline: var(--workbench-chat-gutter);
+}
+
+[data-component="chat-live-activity"] {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 6px;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-slot="chat-live-activity-label"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-slot="chat-live-activity-elapsed"] {
+  color: var(--text-weaker);
+}
+
+[data-slot="chat-file-additions"],
+[data-slot="chat-file-deletions"],
+[data-slot="chat-subagent-session"] {
+  display: inline-flex;
+  padding: 8px 12px;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+[data-slot="chat-file-additions"] {
+  color: var(--text-diff-add-base);
+}
+
+[data-slot="chat-file-deletions"] {
+  padding-left: 0;
+  color: var(--text-diff-delete-base);
+}
+
+[data-slot="chat-file-diff-patch"] {
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-weaker-base);
+  color: var(--text-base);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-component="chat-change-summary"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+[data-slot="chat-change-additions"] {
+  color: var(--text-diff-add-base);
+}
+
+[data-slot="chat-change-deletions"] {
+  color: var(--text-diff-delete-base);
+}
+
+[data-component="chat-outcome"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-small);
+  color: var(--text-error-base);
+}
+
+[data-component="chat-live-tail"] {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ===== PromptNavigator ===== */
+
+[data-component="chat-timeline"] {
+  position: relative;
+}
+
+/* The navigator is static so it does not create a containing block. The rail
+   and popover are both absolutely positioned relative to the timeline
+   container, so the popover width is computed against the full timeline width
+   (not the 20px rail). */
+[data-component="chat-prompt-navigator"] {
+  position: static;
+  flex: 0 0 auto;
+  width: 0;
+  min-width: 0;
+}
+
+[data-component="chat-prompt-rail"] {
+  --chat-prompt-rail-width: 16px;
+
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px;
+  width: var(--chat-prompt-rail-width);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 0;
+  overflow: hidden;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-component="chat-prompt-rail"]:hover,
+[data-component="chat-prompt-rail"]:focus-within,
+[data-component="chat-prompt-rail"][data-open="true"] {
+  opacity: 1;
+}
+
+[data-slot="chat-prompt-tick"] {
+  position: relative;
+  flex: 0 0 12px;
+  width: var(--chat-prompt-rail-width);
+  height: 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+}
+
+[data-slot="chat-prompt-tick"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: var(--chat-prompt-rail-width);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--icon-base);
+  opacity: 0.7;
+  transform: scale(0.5625, 0.75);
+  transform-origin: left center;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease, background-color 200ms ease;
+}
+
+[data-slot="chat-prompt-tick"][data-active="true"]::after {
+  opacity: 1;
+  transform: scale(0.8125, 0.75);
+  background: var(--icon-strong-base);
+}
+
+[data-slot="chat-prompt-tick"]:hover::after,
+[data-slot="chat-prompt-tick"]:focus-visible::after {
+  opacity: 1;
+  transform: none;
+  background: var(--icon-strong-base);
+}
+
+/* The popover's containing block is the timeline container (not the 20px
+   rail), so it overlays the message content without reflowing the layout. */
+[data-component="chat-prompt-popover"] {
+  position: absolute;
+  left: 32px;
+  top: 12px;
+  width: calc(100% - 44px);
+  max-width: 360px;
+  max-height: 70vh;
+  overflow: auto;
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 84%, transparent);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 7%, transparent), 0 12px 32px -8px rgb(0 0 0 / 40%);
+  backdrop-filter: blur(20px) saturate(1.4);
+  z-index: 20;
+  padding: 6px;
+  display: none;
+}
+
+[data-component="chat-prompt-popover"][data-open="true"] {
+  display: block;
+}
+
+[data-slot="chat-prompt-header"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-strong);
+  padding: 4px 4px 8px;
+}
+
+[data-slot="chat-prompt-nav-buttons"] {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-slot="chat-prompt-prev"],
+[data-slot="chat-prompt-next"],
+[data-slot="chat-prompt-close"] {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-weak);
+  padding: 2px;
+}
+
+[data-slot="chat-prompt-loading"] {
+  font-size: 13px;
+  color: var(--text-weak);
+  padding: 4px;
+}
+
+[data-slot="chat-prompt-list"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-slot="chat-prompt-item"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+[data-slot="chat-prompt-item"][data-focused="true"],
+[data-slot="chat-prompt-item"]:hover {
+  background: var(--surface-raised-base);
+}
+
+[data-slot="chat-prompt-user"] {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+[data-slot="chat-prompt-assistant"] {
+  font-size: 13px;
+  color: var(--text-weak);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+[data-component="chat-prompt-preview"] {
+  position: absolute;
+  left: 32px;
+  top: max(12px, min(var(--preview-top, 12px), calc(100% - 140px)));
+  width: calc(100% - 44px);
+  max-width: 300px;
+  max-height: 120px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 84%, transparent);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 7%, transparent), 0 12px 32px -8px rgb(0 0 0 / 40%);
+  backdrop-filter: blur(20px) saturate(1.4);
+  z-index: 20;
+  padding: 8px 10px;
+  display: none;
+  pointer-events: none;
+}
+
+[data-component="chat-prompt-preview"][data-open="true"] {
+  display: block;
+}
+
+[data-slot="chat-prompt-preview-text"] {
+  font-size: 14px;
+  line-height: 150%;
+  color: var(--text-strong);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

@@ -35,4 +35,15 @@ describe("panelChatRoute", () => {
     expect(panel).not.toContain("panel?.contains(active)")
     expect(panel).not.toContain("panel.contains(active)")
   })
+
+  test("keeps transcript, live status and composer on one readable lane", async () => {
+    const source = await Bun.file(new URL("./panel-chat.tsx", import.meta.url)).text()
+    const css = await Bun.file(new URL("../../../index.css", import.meta.url)).text()
+
+    expect(source).toContain('data-component="workbench-chat"')
+    expect(css).toContain("--workbench-chat-readable-width: 98ch")
+    expect(css).toContain('[data-component="workbench-chat"] [data-component="session-prompt-dock"] > div')
+    expect(css).toContain('[data-component="chat-live-activity-slot"]')
+    expect(css).toContain("max-width: var(--workbench-chat-readable-width)")
+  })
 })

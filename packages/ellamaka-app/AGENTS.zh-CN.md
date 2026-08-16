@@ -46,6 +46,8 @@ description: 基于 SolidJS、Vite 和 Tailwind CSS 构建的 ellamaka Web UI �
 | Workbench 边界检查 | `bun run check:workbench-boundaries` | 任何 `src/pages/workbench/` 变更后 |
 | Workbench lint | `bun run lint:workbench` | Workbench 代码质量检查 |
 
+单元测试必须通过 `bun run test:unit`（或 `test:ci`）运行，禁止裸跑 `bun test`。该脚本附加 `--conditions=browser --preload ./happydom.ts`；缺少 browser condition 时，`solid-js/web` 会被解析到 server 构建，而 server 构建缺少 `virtua/solid` 所 import 的 `use` 导出，组件测试文件会在模块加载阶段全部失败。
+
 前后端开发验证: `./scripts/dev.sh help`
 
 ## 4. 实现规则
