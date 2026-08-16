@@ -32,7 +32,8 @@ import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option, ManagedRuntime } from "effect"
+import type { GrepBridgeContract, ToolExecutionResult } from "@wopal/ellamaka-cordis"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -63,6 +64,64 @@ export function webSearchEnabled(providerID: ProviderID, flags = { exa: false, p
 type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 
+/**
+ * Wrap the builtin grep tool so its dispatches route through the cordis
+ * `ctx.tools` pipeline when the grep-bridge service is present.
+ *
+ * The native grep def is built normally (decode + truncate still apply), then
+ * its execute is re-routed: the native body (already closed over its real tool
+ * context, so permission/identity flow unchanged) is handed to the bridge,
+ * which registers it on `ctx.tools`, executes through the `tools/post-execute`
+ * waterfall, and maps caller cancellation to a fiber interrupt. The waterfall
+ * decision is materialized back into the native `ExecuteResult` shape.
+ */
+function wrapGrepThroughBridge(
+  info: Tool.Info,
+  bridge: GrepBridgeContract,
+): Effect.Effect<Tool.Def> {
+  return Effect.gen(function* () {
+    const native = yield* Tool.init(info)
+    const directory = yield* InstanceState.directory
+    return {
+      ...native,
+      execute: (args, toolCtx) =>
+        Effect.gen(function* () {
+          // Capture the caller's runtime: it carries the native grep deps
+          // (Ripgrep, AppFileSystem, InstanceRef, …) at dispatch time. The
+          // bridge runs the native work through it (not the hub runtime).
+          // `Effect.runtime()` is unavailable in effect 4.0.0-beta.66, so
+          // rebuild a runtime from the captured context (same as layer.ts).
+          const callerContext = yield* Effect.context()
+          const callerRuntime = ManagedRuntime.make(Layer.succeedContext(callerContext))
+          const result = yield* Effect.promise(() =>
+            bridge.run({
+              args,
+              sessionID: toolCtx.sessionID,
+              cwd: directory,
+              signal: toolCtx.abort,
+              runtime: callerRuntime,
+              // The native body's own truncation is applied upstream; hand the
+              // already-truncated output text into the waterfall.
+              execute: (a) => Effect.map(native.execute(a, toolCtx), (r) => r.output),
+            }),
+          )
+          if (result.isError) {
+            throw new Error(result.error.message)
+          }
+          const text =
+            typeof result.content[0] === "object" && result.content[0] !== null
+              ? String((result.content[0] as { text?: string }).text ?? "")
+              : ""
+          return {
+            title: String((args as { pattern?: string } | undefined)?.pattern ?? "grep"),
+            metadata: {},
+            output: text,
+          } as Tool.ExecuteResult
+        }).pipe(Effect.orDie),
+    }
+  })
+}
+
 type State = {
   custom: Tool.Def[]
   builtin: Tool.Def[]
@@ -78,6 +137,25 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
+
+/**
+ * Optional grep-bridge injection point.
+ *
+ * When the cordis-driven bridge layer (`@wopal/ellamaka-cordis`) is assembled,
+ * its service structurally satisfies this contract. The registry yields this
+ * service optionally and, when present, wraps the builtin grep definition's
+ * execute so grep dispatches route through the cordis `ctx.tools` pipeline
+ * (register → execute → `tools/post-execute` waterfall). When absent, the
+ * builtin grep behavior is unchanged (zero regression).
+ *
+ * The tag is a stable string so opencode and cordis never import each other's
+ * types (red line 1 / D-03): opencode defines the tag, cordis's
+ * `createGrepBridgeLayer` provides for it.
+ */
+export class GrepBridgeService extends Context.Service<
+  GrepBridgeService,
+  GrepBridgeContract
+>()("@wopal/ellamaka-cordis/grep-bridge") {}
 
 export const layer: Layer.Layer<
   Service,
@@ -222,12 +300,17 @@ export const layer: Layer.Layer<
         yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
+        // Optional grep-bridge injection point: when the cordis bridge layer is
+        // assembled, wrap the builtin grep def's execute so grep dispatches
+        // route through the cordis ctx.tools pipeline. Absent → zero regression.
+        const grepBridge = Option.getOrUndefined(yield* Effect.serviceOption(GrepBridgeService))
+
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
           read: Tool.init(read),
           glob: Tool.init(globtool),
-          grep: Tool.init(greptool),
+          grep: grepBridge ? wrapGrepThroughBridge(greptool, grepBridge) : Tool.init(greptool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),

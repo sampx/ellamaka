@@ -1,5 +1,7 @@
-import { Effect, Fiber, Cause, Exit, Option, type ManagedRuntime } from "effect"
-import type { ToolDefinition, ToolExecution } from "./types.js"
+import { Context, Effect, Fiber, Cause, Exit, Layer, Option, type ManagedRuntime } from "effect"
+import type { ToolDefinition, ToolExecution, ToolExecutionResult } from "./types.js"
+import { Tools } from "./registry.js"
+import { CordisHubService } from "../layer.js"
 
 /**
  * Wrap a native Effect-backed execution body as a `ToolDefinition` so it can be
@@ -65,6 +67,100 @@ export function createGrepBridge(
     },
   }
 }
+
+/**
+ * Shape of the Effect-side grep-bridge contract, structurally compatible with
+ * opencode's `GrepBridgeService`. The tag is injected at assembly time to avoid
+ * a circular workspace dependency (opencode → cordis → opencode).
+ */
+export interface GrepBridgeContract {
+  /**
+   * Route a native grep dispatch through the cordis `ctx.tools` pipeline:
+   * register, execute, and apply the `tools/post-execute` waterfall. The
+   * caller supplies a native grep execution body already closed over its real
+   * tool context (so permission/identity flow through unchanged); the bridge
+   * maps caller cancellation to a fiber interrupt and materializes the result.
+   */
+  readonly run: (input: {
+    readonly args: unknown
+    readonly sessionID: string
+    readonly cwd: string
+    readonly signal: AbortSignal
+    /**
+     * The caller's Effect runtime — carries the native grep dependencies
+     * (Ripgrep, AppFileSystem, InstanceRef, …). The bridge runs the native work
+     * through this runtime (not the hub runtime) so permission, identity, and
+     * instance context flow through unchanged (DESIGN §5.6.1).
+     */
+    readonly runtime: ManagedRuntime.ManagedRuntime<never, never>
+    readonly execute: (args: unknown) => Effect.Effect<unknown>
+  }) => Promise<ToolExecutionResult>
+}
+
+/** Identity of the default grep-bridge tag opencode injects for. */
+export const GrepBridgeTag = "@wopal/ellamaka-cordis/grep-bridge" as const
+
+/** Build a per-call execution context for a grep dispatch. */
+function buildExec(input: {
+  readonly args: unknown
+  readonly sessionID: string
+  readonly cwd: string
+  readonly signal: AbortSignal
+}): ToolExecution {
+  return {
+    callId: "",
+    rootCallId: "",
+    name: "grep",
+    arguments: input.args,
+    agent: {
+      session: { header: { id: input.sessionID, cwd: input.cwd } },
+    },
+    signal: input.signal,
+  }
+}
+
+/**
+ * Build a cordis-driven grep-bridge layer for a given opencode tag.
+ *
+ * The layer mounts the `Tools` service on the hub and exposes a `run` that
+ * routes a native grep dispatch through `ctx.tools`. Each call re-registers a
+ * grep definition wrapping the caller's native body with {@link createGrepBridge},
+ * so caller cancellation (`exec.signal`) interrupts the forked fiber per
+ * DESIGN §5.6.1, and results flow through the `tools/post-execute` waterfall.
+ */
+export const createGrepBridgeLayer = <I, S extends GrepBridgeContract>(
+  tag: Context.Key<I, S>,
+): Layer.Layer<I, never, CordisHubService> =>
+  Layer.effect(
+    tag,
+    Effect.gen(function* () {
+      const hub = yield* CordisHubService
+      const runtime = hub.runtime
+      if (!runtime) {
+        return {
+          run: () => Promise.reject(new Error("hub runtime unavailable")),
+        } as unknown as S
+      }
+      // Idempotent: mount the Tools service once per hub context.
+      if (!hub.ctx.get("tools")) {
+        yield* Effect.promise(() => hub.mount(Tools, runtime))
+      }
+      const run: GrepBridgeContract["run"] = (input) => {
+        // Re-register a def whose execute wraps the caller's native body,
+        // running it through the caller's runtime (which carries the native
+        // grep dependencies). The bridge only adds fiber/abort handling and
+        // the session facade slice.
+        hub.ctx.tools.register({
+          name: "grep",
+          description: "Search for patterns in files and return matching lines",
+          parameters: {},
+          execute: (args, exec) => createGrepBridge(input.execute, input.runtime).execute(args, exec),
+        })
+        return hub.ctx.tools.execute("grep", input.args, buildExec(input))
+      }
+      return { run } as unknown as S
+    }),
+  )
 
 /** Build the error thrown when the native execution is interrupted. */
 function abortedError(): Error {
