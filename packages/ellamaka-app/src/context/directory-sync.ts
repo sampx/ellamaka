@@ -13,6 +13,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
 import { useServerSDK } from "./server-sdk"
+import { cmpMessage, keyOf } from "./global-sync/utils"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -40,10 +41,10 @@ const isNotFound = (error: unknown) =>
   error.cause !== null &&
   (error.cause as { status?: unknown }).status === 404
 
-function merge<T extends { id: string }>(a: readonly T[], b: readonly T[]) {
+function merge<T extends { id: string; time?: { created: number } }>(a: readonly T[], b: readonly T[]) {
   const map = new Map(a.map((item) => [item.id, item] as const))
   for (const item of b) map.set(item.id, item)
-  return [...map.values()].sort((x, y) => cmp(x.id, y.id))
+  return [...map.values()].sort(cmpMessage)
 }
 
 type OptimisticStore = {
@@ -101,9 +102,15 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   const confirmed: string[] = []
 
   for (const item of items) {
-    const result = Binary.search(session, item.message.id, (message) => message.id)
-    const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
+    // The same message (same id) may already exist with a different
+    // `time.created` (optimistic local time vs. confirmed server time), so
+    // locate by id to avoid duplicating it; only insert when truly absent.
+    const existing = session.findIndex((m) => m.id === item.message.id)
+    const found = existing >= 0
+    if (!found) {
+      const result = Binary.search(session, keyOf(item.message), keyOf)
+      session.splice(result.index, 0, item.message)
+    }
 
     const current = part.get(item.message.id)
     if (found && hasParts(current, item.parts)) {
@@ -126,8 +133,12 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
 export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.message.id, (m) => m.id)
-    messages.splice(result.index, 0, input.message)
+    // Locate by id so an optimistic/confirmed pair never duplicates; insert by
+    // the time-ordered composite key only when the message is truly absent.
+    if (messages.findIndex((m) => m.id === input.message.id) < 0) {
+      const result = Binary.search(messages, keyOf(input.message), keyOf)
+      messages.splice(result.index, 0, input.message)
+    }
   } else {
     draft.message[input.sessionID] = [input.message]
   }
@@ -137,8 +148,9 @@ export function applyOptimisticAdd(draft: OptimisticStore, input: OptimisticAddI
 export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticRemoveInput) {
   const messages = draft.message[input.sessionID]
   if (messages) {
-    const result = Binary.search(messages, input.messageID, (m) => m.id)
-    if (result.found) messages.splice(result.index, 1)
+    // message.removed only carries the id (no time), so locate linearly.
+    const index = messages.findIndex((m) => m.id === input.messageID)
+    if (index >= 0) messages.splice(index, 1)
   }
   delete draft.part[input.messageID]
 }
@@ -146,7 +158,8 @@ export function applyOptimisticRemove(draft: OptimisticStore, input: OptimisticR
 function setOptimisticAdd(setStore: (...args: unknown[]) => void, input: OptimisticAddInput) {
   setStore("message", input.sessionID, (messages: Message[] | undefined) => {
     if (!messages) return [input.message]
-    const result = Binary.search(messages, input.message.id, (m) => m.id)
+    if (messages.findIndex((m) => m.id === input.message.id) >= 0) return messages
+    const result = Binary.search(messages, keyOf(input.message), keyOf)
     const next = [...messages]
     next.splice(result.index, 0, input.message)
     return next
@@ -157,10 +170,11 @@ function setOptimisticAdd(setStore: (...args: unknown[]) => void, input: Optimis
 function setOptimisticRemove(setStore: (...args: unknown[]) => void, input: OptimisticRemoveInput) {
   setStore("message", input.sessionID, (messages: Message[] | undefined) => {
     if (!messages) return messages
-    const result = Binary.search(messages, input.messageID, (m) => m.id)
-    if (!result.found) return messages
+    // message.removed only carries the id (no time), so locate linearly.
+    const index = messages.findIndex((m) => m.id === input.messageID)
+    if (index < 0) return messages
     const next = [...messages]
-    next.splice(result.index, 1)
+    next.splice(index, 1)
     return next
   })
   setStore("part", (part: Record<string, Part[] | undefined>) => {
@@ -299,7 +313,7 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
       input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
     )
     const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
-    const session = items.map((x) => clean(x.info)).sort((a, b) => cmp(a.id, b.id))
+    const session = items.map((x) => clean(x.info)).sort(cmpMessage)
     const part = items.map((message) => ({ id: message.info.id, part: sortParts(message.parts) }))
     const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
     return {

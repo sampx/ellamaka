@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2"
-import { mergeMessages } from "@/cli/cmd/tui/context/sync-merge"
+import { Binary } from "@opencode-ai/core/util/binary"
+import { mergeMessages, keyOf } from "@/cli/cmd/tui/context/sync-merge"
 
 /**
  * Build a minimal user message literal. Only the fields relevant to the
@@ -47,6 +48,17 @@ function assistantMsg(id: string, created: number, completed?: number): Message 
 function expectOrdered(messages: Message[]) {
   for (let i = 1; i < messages.length; i++) {
     expect(messages[i]!.id > messages[i - 1]!.id).toBe(true)
+  }
+}
+
+/** Assert the array is strictly ascending by (time.created, id). */
+function expectTimeOrdered(messages: Message[]) {
+  for (let i = 1; i < messages.length; i++) {
+    const prev = messages[i - 1]!
+    const curr = messages[i]!
+    const prevKey = `${prev.time.created}:${prev.id}`
+    const currKey = `${curr.time.created}:${curr.id}`
+    expect(currKey > prevKey).toBe(true)
   }
 }
 
@@ -120,6 +132,21 @@ describe("mergeMessages", () => {
       expectOrdered(mergeMessages(existing, incoming))
     }
   })
+
+  // Regression for #208. A post-wrap message id (`msg_00...`) is lexically
+  // *smaller* than pre-wrap ids (`msg_fa...`) even though it is chronologically
+  // newer. The merge must order by time.created (id tie-break) so the new
+  // message lands at the array end, and `status()`'s `.at(-1)` reads the newest.
+  test("cross-wrap: post-wrap message with lexically-smaller id merges to the array end", () => {
+    const preWrap = userMsg("msg_fa2c3af72001", 1784448447887)
+    const postWrap = userMsg("msg_002ceb729001", 1786753496981)
+
+    const merged = mergeMessages([preWrap], [postWrap])
+
+    expect(merged.map((m) => m.id)).toEqual(["msg_fa2c3af72001", "msg_002ceb729001"])
+    expect(merged.at(-1)?.id).toBe("msg_002ceb729001")
+    expectTimeOrdered(merged)
+  })
 })
 
 describe("lifecycle merge", () => {
@@ -169,5 +196,69 @@ describe("lifecycle merge", () => {
     const merged = mergeMessages(existing, incoming)
 
     expect(merged[0]).toBe(incoming[0])
+  })
+})
+
+// B-01: realtime event handlers in sync.tsx must locate messages in the
+// time-ordered array by the (time.created, id) composite key, not by id alone.
+// Across a wrap-around a post-wrap id (`msg_00...`) is lexically smaller than
+// pre-wrap ids (`msg_fa...`) even though it is newer, so an id-based binary
+// search fails and the message would be re-inserted at the array head.
+describe("sync.tsx event-path composite-key lookup", () => {
+  const preWrap = userMsg("msg_fa2c3af72001", 1784448447887)
+  const postWrap = userMsg("msg_002ceb729001", 1786753496981)
+
+  test("message.updated finds an existing post-wrap message by composite key", () => {
+    const messages = [preWrap, postWrap]
+    const incoming = userMsg("msg_002ceb729001", 1786753496981)
+
+    const result = Binary.search(messages, keyOf(incoming), keyOf)
+
+    expect(result.found).toBe(true)
+    expect(result.index).toBe(1)
+  })
+
+  test("message.updated inserts a new post-wrap message at its time position (not the head)", () => {
+    const messages = [preWrap]
+    const incoming = postWrap
+
+    const result = Binary.search(messages, keyOf(incoming), keyOf)
+    const merged = Binary.insert(messages.slice(), incoming, keyOf)
+
+    expect(result.found).toBe(false)
+    expect(merged.map((m) => m.id)).toEqual(["msg_fa2c3af72001", "msg_002ceb729001"])
+    expectTimeOrdered(merged)
+  })
+
+  test("message.updated upsert does not duplicate the post-wrap message on streaming updates", () => {
+    // Streaming emits repeated message.updated for the same assistant; each
+    // must locate the existing row (not insert a fresh copy at the head).
+    const streamed = userMsg("msg_002ceb729001", 1786753496981)
+    let messages = [preWrap, streamed]
+
+    for (let i = 0; i < 5; i++) {
+      const result = Binary.search(messages, keyOf(streamed), keyOf)
+      if (result.found) {
+        messages = messages.slice()
+        messages[result.index] = streamed
+      } else {
+        messages = Binary.insert(messages, streamed, keyOf)
+      }
+    }
+
+    expect(messages.map((m) => m.id)).toEqual(["msg_fa2c3af72001", "msg_002ceb729001"])
+    expectTimeOrdered(messages)
+  })
+
+  test("message.removed finds and removes a post-wrap message by id", () => {
+    const messages = [preWrap, postWrap]
+
+    // message.removed only carries the id (no time), so sync.tsx locates it
+    // linearly over the time-ordered array.
+    const index = messages.findIndex((m) => m.id === postWrap.id)
+    const merged = messages.slice()
+    if (index >= 0) merged.splice(index, 1)
+
+    expect(merged.map((m) => m.id)).toEqual(["msg_fa2c3af72001"])
   })
 })

@@ -1653,4 +1653,46 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
   })
+
+  // Regression for #208. MessageID wraps at 2^36 ms (~2.18y); the 26th wrap
+  // happened 2026-08-14. A post-wrap id (`msg_00...`) is lexically *smaller*
+  // than a pre-wrap id (`msg_fa...`) even though it is newer. latest() must
+  // order by `time.created` (with id as tie-break), not raw id comparison.
+  test("cross-wrap latest() picks the post-wrap user message even though its id is lexically smaller", () => {
+    const PRE_WRAP_USER = MessageID.make("msg_fa2c3af72001")
+    const PRE_WRAP_ASSISTANT = MessageID.make("msg_fa2c3af72002")
+    const POST_WRAP_USER = MessageID.make("msg_002ceb729001")
+
+    const preWrapUser: MessageV2.WithParts = {
+      info: {
+        ...userInfo(PRE_WRAP_USER),
+        time: { created: 1784448447887 },
+      },
+      parts: [{ ...basePart(PRE_WRAP_USER, "p1"), type: "text", text: "old user" }] as MessageV2.Part[],
+    }
+
+    const preWrapAssistant: MessageV2.WithParts = {
+      info: {
+        ...assistantInfo(PRE_WRAP_ASSISTANT, PRE_WRAP_USER),
+        time: { created: 1784448448000 },
+        finish: "stop",
+        tokens: { input: 10, output: 10, reasoning: 0, cache: { read: 0, write: 0 }, total: 20 },
+      } as MessageV2.Assistant,
+      parts: [],
+    }
+
+    const postWrapUser: MessageV2.WithParts = {
+      info: {
+        ...userInfo(POST_WRAP_USER),
+        time: { created: 1786753496981 },
+      },
+      parts: [{ ...basePart(POST_WRAP_USER, "p1"), type: "text", text: "new user after wrap" }] as MessageV2.Part[],
+    }
+
+    const state = MessageV2.latest([preWrapUser, preWrapAssistant, postWrapUser])
+
+    expect(state.user?.id).toBe(POST_WRAP_USER)
+    // pre-wrap assistant is still the latest finished assistant
+    expect(state.finished?.id).toBe(PRE_WRAP_ASSISTANT)
+  })
 })

@@ -74,7 +74,11 @@ export const layer = Layer.effect(
       if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
       yield* snap.revert(patches)
       if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
-      const range = all.filter((msg) => msg.info.id >= rev.messageID)
+      // `all` is time-ordered (time_created asc). The revert point is a
+      // message within that list; slice by position instead of comparing id
+      // lexically so the range survives a message-id wrap-around.
+      const start = all.findIndex((msg) => msg.info.id === rev.messageID)
+      const range = start >= 0 ? all.slice(start) : []
       const diffs = yield* summary.computeDiff({ messages: range })
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
@@ -105,20 +109,14 @@ export const layer = Layer.effect(
       const sessionID = session.id
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const messageID = session.revert.messageID
-      const remove = [] as MessageV2.WithParts[]
-      let target: MessageV2.WithParts | undefined
-      for (const msg of msgs) {
-        if (msg.info.id < messageID) continue
-        if (msg.info.id > messageID) {
-          remove.push(msg)
-          continue
-        }
-        if (session.revert.partID) {
-          target = msg
-          continue
-        }
-        remove.push(msg)
-      }
+      // `msgs` is time-ordered (time_created asc). Locate the revert point by
+      // id and remove it and everything after it by position; id lexicographic
+      // comparison would mis-handle messages across a wrap-around.
+      const idx = msgs.findIndex((msg) => msg.info.id === messageID)
+      const target: MessageV2.WithParts | undefined = idx >= 0 ? msgs[idx] : undefined
+      // In the partID case the target message is retained (only its trailing
+      // parts are sliced off below); otherwise it is removed with the rest.
+      const remove = idx >= 0 ? msgs.slice(idx + (session.revert.partID ? 1 : 0)) : []
       for (const msg of remove) {
         yield* sync.run(MessageV2.Event.Removed, {
           sessionID,

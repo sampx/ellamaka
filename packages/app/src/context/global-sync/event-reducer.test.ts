@@ -357,6 +357,108 @@ describe("applyDirectoryEvent", () => {
     expect(store.part.msg_2).toBeUndefined()
   })
 
+  // B-01: message.updated/removed must locate messages in the time-ordered
+  // array by the (time.created, id) composite key. A post-wrap id (`msg_00...`)
+  // is lexically smaller than pre-wrap ids (`msg_fa...`) even though it is
+  // newer, so id-based binary search would re-insert it at the array head and
+  // duplicate it, and message.removed would fail to find it.
+  test("message.updated upserts a post-wrap message at the array end across wrap-around", () => {
+    const sessionID = "ses_1"
+    const preWrap = userMessage("msg_fa2c3af72001", sessionID)
+    preWrap.time = { created: 1784448447887 }
+    const postWrap = userMessage("msg_002ceb729001", sessionID)
+    postWrap.time = { created: 1786753496981 }
+    const [store, setStore] = createStore(baseState({ message: { [sessionID]: [preWrap] } }))
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: postWrap } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_fa2c3af72001", "msg_002ceb729001"])
+  })
+
+  test("repeated message.updated for a post-wrap message does not duplicate it", () => {
+    const sessionID = "ses_1"
+    const preWrap = userMessage("msg_fa2c3af72001", sessionID)
+    preWrap.time = { created: 1784448447887 }
+    const postWrap = userMessage("msg_002ceb729001", sessionID)
+    postWrap.time = { created: 1786753496981 }
+    const [store, setStore] = createStore(baseState({ message: { [sessionID]: [preWrap, postWrap] } }))
+
+    for (let i = 0; i < 3; i++) {
+      applyDirectoryEvent({
+        event: { type: "message.updated", properties: { info: postWrap } },
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+        loadLsp() {},
+      })
+    }
+
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_fa2c3af72001", "msg_002ceb729001"])
+  })
+
+  test("message.updated reconciles an existing message whose time.created changed (optimistic vs confirmed)", () => {
+    // Regression: an optimistic user message is inserted with a local
+    // `Date.now()` timestamp. The confirmed `message.updated` event carries the
+    // server's `time.created`, which differs by tens of ms. Locating the message
+    // by the (time.created, id) composite key then fails to find the optimistic
+    // copy and inserts a duplicate. The same message (same id) must be matched
+    // by id and reconciled in place, regardless of the timestamp drift.
+    const sessionID = "ses_1"
+    const optimistic = userMessage("msg_002ceb729001", sessionID)
+    optimistic.time = { created: 1786753496981 } // local Date.now() at send time
+    const confirmed = userMessage("msg_002ceb729001", sessionID)
+    confirmed.time = { created: 1786753496940 } // server time.created (41ms earlier)
+    const [store, setStore] = createStore(baseState({ message: { [sessionID]: [optimistic] } }))
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: confirmed } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    const messages = store.message[sessionID] ?? []
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.id).toBe("msg_002ceb729001")
+    expect(messages[0]?.time.created).toBe(1786753496940)
+  })
+
+  test("message.removed removes a post-wrap message located by id", () => {
+    const sessionID = "ses_1"
+    const preWrap = userMessage("msg_fa2c3af72001", sessionID)
+    preWrap.time = { created: 1784448447887 }
+    const postWrap = userMessage("msg_002ceb729001", sessionID)
+    postWrap.time = { created: 1786753496981 }
+    const [store, setStore] = createStore(
+      baseState({
+        message: { [sessionID]: [preWrap, postWrap] },
+        part: { msg_002ceb729001: [textPart("prt_1", sessionID, "msg_002ceb729001")] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "message.removed", properties: { sessionID, messageID: "msg_002ceb729001" } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_fa2c3af72001"])
+    expect(store.part.msg_002ceb729001).toBeUndefined()
+  })
+
   test("upserts and prunes message parts", () => {
     const sessionID = "ses_1"
     const messageID = "msg_1"

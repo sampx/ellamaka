@@ -1,4 +1,4 @@
-import { and, desc, eq } from "@/storage/db"
+import { and, eq } from "@/storage/db"
 import type { Database } from "@/storage/db"
 import { SessionMessage } from "@opencode-ai/core/session-message"
 import { SessionMessageUpdater } from "@opencode-ai/core/session-message-updater"
@@ -8,6 +8,7 @@ import { SyncEvent } from "@/sync"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionMessageTable, SessionTable } from "./session.sql"
 import type { SessionID } from "./schema"
+import { MessageV2 } from "./message-v2"
 import { Schema } from "effect"
 
 const decodeMessage = Schema.decodeUnknownSync(SessionMessage.Message)
@@ -27,36 +28,41 @@ function encodeMessageData(value: unknown): SessionMessageData {
 }
 
 function sqlite(db: Database.TxOrDb, sessionID: SessionID): SessionMessageUpdater.Adapter<void> {
+  const rows = (type: SessionMessage.Type) =>
+    db
+      .select()
+      .from(SessionMessageTable)
+      .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, type)))
+      .all()
+      .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
+
   return {
     getCurrentAssistant() {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "assistant")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Assistant => message.type === "assistant" && !message.time.completed)
+      // MessageID is monotonic only within a 2^36 ms window; once it wraps the
+      // lexical id order diverges from time order. `time.created` lives in the
+      // data JSON column and cannot be SQL-ordered, so pick the most recent
+      // matching message in memory via isAfter (time first, id tie-break).
+      let current: SessionMessage.Assistant | undefined
+      for (const message of rows("assistant")) {
+        if (message.type === "assistant" && message.time.completed) continue
+        if (message.type === "assistant" && MessageV2.isAfter(message, current)) current = message
+      }
+      return current
     },
     getCurrentCompaction() {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "compaction")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Compaction => message.type === "compaction")
+      let current: SessionMessage.Compaction | undefined
+      for (const message of rows("compaction")) {
+        if (message.type === "compaction" && MessageV2.isAfter(message, current)) current = message
+      }
+      return current
     },
     getCurrentShell(callID) {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "shell")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Shell => message.type === "shell" && message.callID === callID)
+      let current: SessionMessage.Shell | undefined
+      for (const message of rows("shell")) {
+        if (message.type !== "shell" || message.callID !== callID) continue
+        if (MessageV2.isAfter(message, current)) current = message
+      }
+      return current
     },
     updateAssistant(assistant) {
       const { id, type, ...data } = assistant

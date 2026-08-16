@@ -23,7 +23,7 @@ import { useProject } from "@tui/context/project"
 import { useEvent } from "@tui/context/event"
 import { useSDK } from "@tui/context/sdk"
 import { Binary } from "@opencode-ai/core/util/binary"
-import { mergeMessages } from "./sync-merge"
+import { mergeMessages, keyOf } from "./sync-merge"
 import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
@@ -257,7 +257,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             setStore("message", event.properties.info.sessionID, [event.properties.info])
             break
           }
-          const result = Binary.search(messages, event.properties.info.id, (m) => m.id)
+          // The array is time-ordered; id is not monotonic across a message-id
+          // wrap-around, so locate by the (time.created, id) composite key.
+          const result = Binary.search(messages, keyOf(event.properties.info), keyOf)
           if (result.found) {
             setStore("message", event.properties.info.sessionID, result.index, reconcile(event.properties.info))
             break
@@ -292,13 +294,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         }
         case "message.removed": {
           const messages = store.message[event.properties.sessionID]
-          const result = Binary.search(messages, event.properties.messageID, (m) => m.id)
-          if (result.found) {
+          // The removed event only carries the message id (no time), and the
+          // array is time-ordered, so locate by id linearly.
+          const index = messages.findIndex((m) => m.id === event.properties.messageID)
+          if (index >= 0) {
             setStore(
               "message",
               event.properties.sessionID,
               produce((draft) => {
-                draft.splice(result.index, 1)
+                draft.splice(index, 1)
               }),
             )
           }

@@ -713,9 +713,13 @@ export const layer: Layer.Layer<
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()
+      // `msgs` is time-ordered (time_created asc). Clone messages up to (but
+      // excluding) the fork point located by id; id lexicographic comparison
+      // would mis-handle messages across a message-id wrap-around.
+      const cutoff = input.messageID ? msgs.findIndex((msg) => msg.info.id === input.messageID) : -1
+      const limit = input.messageID ? (cutoff >= 0 ? cutoff : msgs.length) : msgs.length
 
-      for (const msg of msgs) {
-        if (input.messageID && msg.info.id >= input.messageID) break
+      for (const msg of msgs.slice(0, limit)) {
         const newID = MessageID.ascending()
         idMap.set(msg.info.id, newID)
 

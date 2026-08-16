@@ -3,23 +3,37 @@ import { Binary } from "@opencode-ai/core/util/binary"
 import * as Log from "@opencode-ai/core/util/log"
 
 /**
+ * Build the ordering key for a message. MessageID is monotonic only within a
+ * 2^36 ms window; once it wraps the lexical id order diverges from time order,
+ * so sorting by id alone reorders messages across a wrap-around. The composite
+ * key `${time.created 的定长十六进制}:${id}` orders by the required absolute
+ * `time.created` first (fixed-width hex keeps string ordering equal to numeric
+ * ordering) and uses `id` only as a tie-breaker.
+ */
+function keyOf(message: Message): string {
+  const created = typeof message.time?.created === "number" ? message.time.created : 0
+  return `${created.toString(16).padStart(14, "0")}:${message.id}`
+}
+/** Exported for reuse by the sync.tsx realtime event handlers. */
+export { keyOf }
+
+/**
  * Merge an API snapshot (`incoming`) into the current store array (`existing`)
- * while preserving the id-lexicographic sort contract required by
+ * while preserving the time-ordered sort contract required by
  * `Binary.search`/`Binary.insert`.
  *
- * The API response is ordered by `(time_created, id)`, which is a different key
- * than pure id order. Trusting the API's return order would break the binary
- * search invariant, so every incoming message is upserted by id:
+ * The API response is ordered by `(time_created, id)`. Every incoming message
+ * is upserted by its composite key:
  * - found in `existing` → replaced with the incoming (API) version
- * - not found → inserted at the correct id-ordered position
+ * - not found → inserted at the correct time-ordered position
  * - messages in `existing` that are absent from `incoming` are kept (they were
  *   added by realtime events after the API snapshot was taken)
  *
- * Before returning, the array is validated to be strictly id-ascending. A
+ * Before returning, the array is validated to be strictly time-ascending. A
  * violation is recorded through the Log module (never console.warn, which
  * pollutes TUI rendering) as a runtime observer for the ordering contract.
  *
- * On an id conflict the two sources (realtime event vs API snapshot) cannot be
+ * On a key conflict the two sources (realtime event vs API snapshot) cannot be
  * told apart by version or timestamp, so the assistant lifecycle is used as a
  * monotonic guard: `time.completed` is a one-way state (undefined → number,
  * never written back). If the existing (event-side) message is a completed
@@ -32,7 +46,7 @@ import * as Log from "@opencode-ai/core/util/log"
 export function mergeMessages(existing: Message[], incoming: Message[]): Message[] {
   const result = existing.slice()
   for (const message of incoming) {
-    const match = Binary.search(result, message.id, (m) => m.id)
+    const match = Binary.search(result, keyOf(message), keyOf)
     if (match.found) {
       const current = result[match.index]!
       if (keepExisting(current, message)) {
@@ -40,7 +54,7 @@ export function mergeMessages(existing: Message[], incoming: Message[]): Message
       }
       result[match.index] = message
     } else {
-      Binary.insert(result, message, (m) => m.id)
+      Binary.insert(result, message, keyOf)
     }
   }
   assertOrdered(result)
@@ -62,11 +76,11 @@ function keepExisting(existing: Message, incoming: Message): boolean {
 
 function assertOrdered(messages: Message[]) {
   for (let i = 1; i < messages.length; i++) {
-    if (messages[i]!.id <= messages[i - 1]!.id) {
-      Log.Default.warn("tui message array lost id ordering", {
+    if (keyOf(messages[i]!) <= keyOf(messages[i - 1]!)) {
+      Log.Default.warn("tui message array lost time ordering", {
         index: i,
-        prev: messages[i - 1]!.id,
-        current: messages[i]!.id,
+        prev: keyOf(messages[i - 1]!),
+        current: keyOf(messages[i]!),
       })
       break
     }

@@ -21,7 +21,7 @@ import { isMedia } from "@/util/media"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { Effect, Schema, Types } from "effect"
+import { DateTime, Effect, Schema, Types } from "effect"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { MessageError } from "./message-error"
@@ -1068,10 +1068,26 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
   return filterCompacted(stream(sessionID))
 })
 
+// Compare two message infos by recency. MessageID is monotonic only within a
+// 2^36 ms window (48-bit `ts << 12 | counter`); once it wraps the lexical id
+// order diverges from time order. `time.created` is a required absolute ms
+// timestamp with no wrap-around, so compare it first and use `id` only as a
+// tie-breaker when the timestamps are identical. The `time.created` field is
+// `number` for MessageV2.Info but `DateTime` for the core SessionMessage
+// types, so normalize both to epoch millis before comparing.
+type ComparableInfo = { id: string; time: { created: number | DateTime.DateTime } }
+export function isAfter(info: ComparableInfo, other?: ComparableInfo): boolean {
+  if (!other) return true
+  const a = typeof info.time.created === "number" ? info.time.created : DateTime.toEpochMillis(info.time.created)
+  const b = typeof other.time.created === "number" ? other.time.created : DateTime.toEpochMillis(other.time.created)
+  if (a !== b) return a > b
+  return info.id > other.id
+}
+
 // filterCompacted reorders messages for model consumption
 // ([compaction-user, summary, ...retained tail..., continue-user]), so array
-// position is not chronological. Derive each binding by max id (MessageID
-// is monotonic via MessageID.ascending) so a pre-compaction overflowing tail
+// position is not chronological. Derive each binding by recency (via isAfter,
+// time-ordered with id tie-break) so a pre-compaction overflowing tail
 // assistant doesn't get mistaken for the most recent turn. tasks are
 // compaction/subtask parts attached to user messages newer than the latest
 // finished assistant — i.e. unprocessed work.
@@ -1081,12 +1097,12 @@ export function latest(msgs: WithParts[]) {
   let finished: Assistant | undefined
   for (const msg of msgs) {
     const info = msg.info
-    if (info.role === "user" && (!user || info.id > user.id)) user = info
-    if (info.role === "assistant" && (!assistant || info.id > assistant.id)) assistant = info
-    if (info.role === "assistant" && info.finish && (!finished || info.id > finished.id)) finished = info
+    if (info.role === "user" && isAfter(info, user)) user = info
+    if (info.role === "assistant" && isAfter(info, assistant)) assistant = info
+    if (info.role === "assistant" && info.finish && isAfter(info, finished)) finished = info
   }
   const tasks = msgs.flatMap((m) =>
-    finished && m.info.id <= finished.id
+    finished && !isAfter(m.info, finished)
       ? []
       : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
   )

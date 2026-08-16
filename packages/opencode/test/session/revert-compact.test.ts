@@ -636,4 +636,80 @@ describe("revert + compact workflow", () => {
       { git: true },
     ),
   )
+
+  // Regression for #208. A post-wrap message id (`msg_00...`) is lexically
+  // *smaller* than pre-wrap ids (`msg_fa...`) even though it is chronologically
+  // newer. cleanup() must locate the revert point by id (positional slice),
+  // not by lexical id comparison, so the pre-wrap messages are retained and
+  // only the chronologically-after messages are removed.
+  it.live(
+    "cleanup handles a revert point whose id is lexically smaller across wrap-around",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const session = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+
+          const info = yield* session.create({})
+          const sid = info.id
+
+          // Pre-wrap historical turn.
+          const u1 = yield* session.updateMessage({
+            id: MessageID.make("msg_fa2c3af72001"),
+            role: "user",
+            sessionID: sid,
+            agent: "default",
+            model: { providerID: ProviderID.make("openai"), modelID: ModelID.make("gpt-4") },
+            time: { created: 1784448447887 },
+          })
+          yield* text(sid, u1.id, "old question")
+          const a1: MessageV2.Assistant = {
+            id: MessageID.make("msg_fa2c3af72002"),
+            role: "assistant",
+            sessionID: sid,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens,
+            modelID: ModelID.make("gpt-4"),
+            providerID: ProviderID.make("openai"),
+            parentID: u1.id,
+            time: { created: 1784448447900 },
+            finish: "end_turn",
+          }
+          yield* session.updateMessage(a1)
+          yield* text(sid, a1.id, "old reply")
+
+          // Post-wrap new user message (chronologically after the pre-wrap turn).
+          const u2 = yield* session.updateMessage({
+            id: MessageID.make("msg_002ceb729001"),
+            role: "user",
+            sessionID: sid,
+            agent: "default",
+            model: { providerID: ProviderID.make("openai"), modelID: ModelID.make("gpt-4") },
+            time: { created: 1786753496981 },
+          })
+          yield* text(sid, u2.id, "continue the work")
+
+          yield* session.setRevert({
+            sessionID: sid,
+            revert: { messageID: u2.id },
+            summary: { additions: 0, deletions: 0, files: 0 },
+          })
+
+          const state = yield* session.get(sid)
+          yield* revert.cleanup(state)
+
+          const msgs = yield* session.messages({ sessionID: sid })
+          const ids = msgs.map((m) => m.info.id)
+          // u2 is the revert point (partID unset) so it is removed; pre-wrap
+          // messages are retained because they are chronologically before it.
+          expect(ids).toContain(u1.id)
+          expect(ids).toContain(a1.id)
+          expect(ids).not.toContain(u2.id)
+        }),
+      { git: true },
+    ),
+  )
 })

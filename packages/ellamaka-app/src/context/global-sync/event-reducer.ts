@@ -15,6 +15,7 @@ import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
+import { keyOf } from "./utils"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -193,11 +194,17 @@ export function applyDirectoryEvent(input: {
         input.setStore("message", info.sessionID, [info])
         break
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (result.found) {
-        input.setStore("message", info.sessionID, result.index, reconcile(info))
+      // The array is time-ordered, but the same message (same id) may already
+      // be present with a different `time.created` (e.g. an optimistic copy
+      // stamped with local `Date.now()` vs. the confirmed server's
+      // `time.created`). Locate by id first so an optimistic/confirmed pair
+      // reconciles in place instead of duplicating; only insert when absent.
+      const existing = messages.findIndex((m) => m.id === info.id)
+      if (existing >= 0) {
+        input.setStore("message", info.sessionID, existing, reconcile(info))
         break
       }
+      const result = Binary.search(messages, keyOf(info), keyOf)
       input.setStore(
         "message",
         info.sessionID,
@@ -213,8 +220,9 @@ export function applyDirectoryEvent(input: {
         produce((draft) => {
           const messages = draft.message[props.sessionID]
           if (messages) {
-            const result = Binary.search(messages, props.messageID, (m) => m.id)
-            if (result.found) messages.splice(result.index, 1)
+            // message.removed only carries the id (no time), so locate linearly.
+            const index = messages.findIndex((m) => m.id === props.messageID)
+            if (index >= 0) messages.splice(index, 1)
           }
           const parts = draft.part[props.messageID]
           if (parts) {

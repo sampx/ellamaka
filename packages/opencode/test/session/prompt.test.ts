@@ -457,6 +457,96 @@ noLLMServer.instance(
   { config: cfg },
 )
 
+// Regression for #208. MessageID wraps at 2^36 ms; the 26th wrap happened
+// 2026-08-14. A post-wrap new user message id (`msg_00...`) is lexically
+// *smaller* than the pre-wrap assistant id (`msg_fa...`), so the old
+// `lastUser.id < lastAssistant.id` loop-exit check would treat the pre-wrap
+// assistant as the reply to the new user and exit silently. isAfter orders by
+// `time.created` (id tie-break), so the loop must continue past the exit
+// check instead of returning the pre-wrap assistant.
+noLLMServer.instance(
+  "loop continues across message-id wrap-around for a historical session",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      // Pre-wrap historical turn (created before the 26th wrap on 2026-08-14).
+      const preWrapUserID = MessageID.make("msg_fa2c3af72001")
+      const preWrapTime = 1784448447887
+      yield* sessions.updateMessage({
+        id: preWrapUserID,
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: preWrapTime },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: preWrapUserID,
+        sessionID: chat.id,
+        type: "text",
+        text: "old question",
+      })
+
+      const preWrapAssistant: MessageV2.Assistant = {
+        id: MessageID.make("msg_fa2c3af72002"),
+        role: "assistant",
+        parentID: preWrapUserID,
+        sessionID: chat.id,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: preWrapTime + 1 },
+        finish: "stop",
+      }
+      yield* sessions.updateMessage(preWrapAssistant)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: preWrapAssistant.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "old reply",
+      })
+
+      // Post-wrap new user message, chronologically after the pre-wrap turn.
+      const postWrapUserID = MessageID.make("msg_002ceb729001")
+      yield* sessions.updateMessage({
+        id: postWrapUserID,
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: 1786753496981 },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: postWrapUserID,
+        sessionID: chat.id,
+        type: "text",
+        text: "continue the work",
+      })
+
+      // The loop must NOT silently exit with the pre-wrap assistant. It should
+      // continue and attempt to reach the LLM (which, in this no-LLM-server
+      // harness, fails downstream rather than returning the old assistant).
+      const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value.info.id).not.toBe(preWrapAssistant.id)
+      }
+    }),
+  { config: cfg },
+)
+
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

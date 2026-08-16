@@ -284,4 +284,68 @@ describe("Session", () => {
     }),
     { timeout: 30000 },
   )
+
+  // W-02 regression for #208. A post-wrap message id (`msg_00...`) is lexically
+  // smaller than pre-wrap ids (`msg_fa...`) even though it is newer. fork() must
+  // locate the fork point by id over the time-ordered list (not by lexical id
+  // comparison) so it clones only the messages before the fork point.
+  it.instance("fork across message-id wrap-around clones only messages before the fork point", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+
+      const parent = yield* Effect.acquireRelease(
+        session.create({ title: "fork-wrap-test" }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+
+      // Pre-wrap message (created before the 26th wrap on 2026-08-14).
+      const preID = MessageID.make("msg_fa2c3af72001")
+      yield* session.updateMessage({
+        id: preID,
+        sessionID: parent.id,
+        role: "user",
+        time: { created: 1784448447887 },
+        agent: "user",
+        model: { providerID: "test", modelID: "test" },
+        tools: {},
+        mode: "",
+      } as unknown as MessageV2.Info)
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: preID,
+        sessionID: parent.id,
+        type: "step-finish",
+        reason: "stop",
+        cost: 0,
+        tokens: { total: 100, input: 50, output: 50, reasoning: 0, cache: { read: 0, write: 0 } },
+      })
+
+      // Post-wrap fork point (chronologically after the pre-wrap message).
+      const forkID = MessageID.make("msg_002ceb729001")
+      yield* session.updateMessage({
+        id: forkID,
+        sessionID: parent.id,
+        role: "user",
+        time: { created: 1786753496981 },
+        agent: "user",
+        model: { providerID: "test", modelID: "test" },
+        tools: {},
+        mode: "",
+      } as unknown as MessageV2.Info)
+
+      const forked = yield* Effect.acquireRelease(
+        session.fork({ sessionID: parent.id, messageID: forkID }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+
+      const forkedMsgs = yield* session.messages({ sessionID: forked.id })
+      // fork() regenerates ids, so verify by count + content. Only the
+      // pre-wrap message (with its part) is before the fork point and should
+      // be cloned; the post-wrap fork point message must be excluded.
+      expect(forkedMsgs).toHaveLength(1)
+      expect(forkedMsgs[0]!.parts).toHaveLength(1)
+      expect(forkedMsgs[0]!.parts[0]!.type).toBe("step-finish")
+    }),
+    { timeout: 30000 },
+  )
 })
