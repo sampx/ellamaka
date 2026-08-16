@@ -1,5 +1,16 @@
 import type { Effect, ManagedRuntime } from "effect"
 import type { Context } from "@deepseek-ai/cordis"
+import type { AgentLoop } from "./agent-loop.js"
+
+declare module "@deepseek-ai/cordis" {
+  interface Context {
+    agentLoop: AgentLoop
+  }
+  interface Events {
+    /** Emitted once an agent turn completes successfully. */
+    "agent/turn-completed"(payload: { sessionID: string }): void
+  }
+}
 
 /**
  * Cordis plugin configuration passed to {@link CordisHub.mount}.
