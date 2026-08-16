@@ -1,4 +1,5 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer } from "effect"
+import * as Scope from "effect/Scope"
 import { CordisHub } from "./hub.js"
 import { CordisHubService } from "./layer.js"
 import { AgentLoop } from "./agent-loop.js"
@@ -36,14 +37,28 @@ const hubWithAgentLoop = Effect.gen(function* () {
  * Build the cordis-driven `TurnDriver` layer for a given opencode tag.
  *
  * The returned layer overrides the default direct-run driver so each agent
- * turn is routed through the hub's `ctx.agentLoop`. The work Effect is handed
- * to `ctx.agentLoop.run` as a promise (bridged back via `Effect.promise`),
- * which forks it into a scope and interrupts it on abort (DESIGN §5.6.1).
+ * turn is routed through the hub's `ctx.agentLoop`, which forks the work into
+ * its own scope and interrupts it on abort (DESIGN §5.6.1).
  *
- * Interrupt mapping: `Effect.interruptible` keeps the promise-await path
- * interruptible so an external `Fiber.interrupt` on the outer turn fiber
- * cancels the bridge; `Effect.promise` rejects with an `Interrupt` cause which
- * is propagated as a failure.
+ * Interrupt mapping: the driver runs the work by handing it to
+ * `ctx.agentLoop.run` with an `AbortController` signal and awaiting a
+ * `Deferred` that the agentLoop promise settles. When the outer turn fiber is
+ * interrupted (`Effect.onInterrupt`), the controller is aborted — which the
+ * agent-loop uses to interrupt the held work fiber and run its finalizers
+ * (DESIGN §5.6.1 rule 5) — and the driver waits uninterruptibly for the
+ * agentLoop promise to settle, so the work fiber's finalizers (and any
+ * `forkScoped` background cascade) complete before the interrupt resolves.
+ *
+ * Two R3 fixes over the original bridge:
+ * 1. The caller's Scope tag is stripped (`Context.omit(Scope.Scope)`) before
+ *    providing the caller context to the work. Re-providing the caller scope
+ *    re-binds `addFinalizer`/`forkScoped` inside the work to the caller's
+ *    scope, so interrupting the work fiber would not run its finalizers until
+ *    the caller scope closed at teardown (a leak).
+ * 2. On interrupt the driver aborts the controller and waits uninterruptibly
+ *    for the agentLoop promise to settle, instead of `Effect.promise`/callback
+ *    rejecting immediately and abandoning the cordis-side work fiber
+ *    mid-finalization.
  */
 export const createTurnDriverLayer = <I, S extends TurnDriverContract>(
   tag: Context.Key<I, S>,
@@ -53,14 +68,43 @@ export const createTurnDriverLayer = <I, S extends TurnDriverContract>(
     Effect.gen(function* () {
       const hub = yield* hubWithAgentLoop
       const run = (input: { readonly sessionID: string; readonly work: Effect.Effect<unknown, unknown> }) =>
-        Effect.interruptible(
-          Effect.promise(() =>
-            hub.ctx.agentLoop.run({
-              sessionID: input.sessionID,
-              work: input.work,
-            } as AgentLoopRunInput),
-          ),
-        )
+        Effect.gen(function* () {
+          // Capture the caller's full Effect context and provide it to the work
+          // before crossing into the cordis ManagedRuntime. The hub runtime is
+          // built from a restricted context (DESIGN §5.6.1), so without this the
+          // work loses the Effect services it depends on (Bus, InstanceState,
+          // SessionStatus, …) and fails with "Service not found" (R2 ALS).
+          //
+          // The caller's Scope tag must be stripped: the work is forked into the
+          // agentLoop's own scope (`Effect.forkIn(scope)`), and re-providing the
+          // caller scope would re-bind `addFinalizer`/`forkScoped` inside the work
+          // to the caller's scope. Interrupting the work fiber then would not run
+          // its finalizers until the caller scope closes at teardown (R3 leak).
+          const caller = yield* Effect.context()
+          const callerWithoutScope = Context.omit(Scope.Scope)(caller)
+          const settled = yield* Deferred.make<unknown, unknown>()
+          const controller = new AbortController()
+
+          const promise = hub.ctx.agentLoop.run({
+            sessionID: input.sessionID,
+            work: input.work.pipe(Effect.provide(callerWithoutScope)),
+            signal: controller.signal,
+          } as AgentLoopRunInput)
+          promise.then(
+            (value) => Effect.runSync(Deferred.succeed(settled, value)),
+            (error) => Effect.runSync(Deferred.fail(settled, error)),
+          )
+
+          return yield* Effect.onInterrupt(
+            Deferred.await(settled).pipe(
+              Effect.mapError(() => undefined as never),
+            ),
+            () =>
+              Effect.sync(() => controller.abort()).pipe(
+                Effect.flatMap(() => Effect.uninterruptible(Deferred.await(settled).pipe(Effect.ignore))),
+              ),
+          )
+        })
       return { run } as unknown as S
     }),
   )
