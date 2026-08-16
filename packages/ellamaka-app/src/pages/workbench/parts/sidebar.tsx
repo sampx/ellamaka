@@ -1,6 +1,6 @@
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { Portal } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSpaceStore } from "../space-store"
@@ -13,6 +13,7 @@ import { SessionTree } from "./session-tree"
 import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
+import { createFlyoutController, flyoutVisibilityClass } from "./sidebar-flyout"
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500
@@ -150,6 +151,18 @@ export function SpaceRail() {
     return filtered.length > 0 ? filtered : [allSpaces[0]]
   })
 
+  const [flyoutOpen, setFlyoutOpen] = createSignal(false)
+  const flyout = createFlyoutController({
+    pinned: () => expanded(),
+    onChange: () => setFlyoutOpen(flyout.isOpen()),
+  })
+  onCleanup(() => flyout.destroy())
+
+  function handleFlyoutSessionClick(sessionId: string) {
+    flyout.close()
+    handleSessionClick(sessionId)
+  }
+
   return (
     <>
       <aside
@@ -160,23 +173,29 @@ export function SpaceRail() {
         {/* 固定 44px 竖向 Activity Bar */}
         <div class="w-11 shrink-0 flex flex-col items-center py-2.5 border-r border-v2-border-border-base bg-v2-background-bg-deep h-full z-10">
           <div class="flex flex-col gap-2.5 items-center">
-            {/* 会话 Icon */}
-            <IconButtonV2
-              variant={activeNav() === "sessions" ? "neutral" : "ghost-muted"}
-              size="normal"
-              class={`size-8 p-0 flex items-center justify-center ${activeNav() === "sessions" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
-              icon={<ChatIcon class="size-4" />}
-              aria-label="Sessions"
-              title="Sessions"
-              onClick={() => {
-                if (activeNav() === "sessions") {
-                  wb.setDisplay("showSpaceRail", !expanded())
-                } else {
-                  setActiveNav("sessions")
-                  wb.setDisplay("showSpaceRail", true)
-                }
-              }}
-            />
+            {/* 会话 Icon：折叠时悬停以浮层临时展开会话树，点击固定展开/收起 */}
+            <div
+              onMouseEnter={() => flyout.onTriggerEnter()}
+              onMouseLeave={() => flyout.onTriggerLeave()}
+            >
+              <IconButtonV2
+                variant={activeNav() === "sessions" ? "neutral" : "ghost-muted"}
+                size="normal"
+                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "sessions" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
+                icon={<ChatIcon class="size-4" />}
+                aria-label="Sessions"
+                title="Sessions"
+                onClick={() => {
+                  flyout.close()
+                  if (activeNav() === "sessions") {
+                    wb.setDisplay("showSpaceRail", !expanded())
+                  } else {
+                    setActiveNav("sessions")
+                    wb.setDisplay("showSpaceRail", true)
+                  }
+                }}
+              />
+            </div>
           </div>
 
           <div class="mt-auto flex flex-col items-center">
@@ -186,7 +205,7 @@ export function SpaceRail() {
 
         {/* 侧栏面板内容 (DOM 常驻，通过 CSS 显隐保持状态与 Scroll 位置) */}
         <div class={`flex-1 min-w-0 flex flex-col h-full bg-v2-background-bg-deep ${expanded() ? "" : "hidden"}`}>
-          <header class="flex h-8 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base">
+          <header class="flex h-7 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base bg-v2-background-bg-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong truncate">
                 {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : t("workbench.sidebar.maintenance")}
@@ -216,14 +235,6 @@ export function SpaceRail() {
                 onClick={handleRefresh}
               />
             </div>
-
-            <IconButtonV2
-              variant="ghost-muted"
-              size="small"
-              icon={<IconV2 name="sidebar-right" />}
-              aria-label={t("workbench.sidebar.collapse")}
-              onClick={() => wb.setDisplay("showSpaceRail", false)}
-            />
           </header>
 
             <div class={`flex-1 min-h-0 flex flex-col min-w-0 py-1 ${activeNav() === "sessions" ? "" : "hidden"}`}>
@@ -262,6 +273,34 @@ export function SpaceRail() {
           title={t("workbench.sidebar.resizeHandle")}
         />
       </Show>
+
+      {/* 折叠态悬停浮层：DOM 常驻，通过 CSS 显隐保持会话树状态与 Scroll 位置 */}
+      <Portal>
+        <div
+          data-component="space-rail-flyout"
+          class={`fixed top-2 bottom-2 z-40 flex flex-col min-h-0 rounded-lg border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] overflow-hidden transition-opacity duration-150 ${flyoutVisibilityClass(flyoutOpen())}`}
+          style={{ left: `${COLLAPSED_WIDTH}px`, width: `${widthStore.width}px` }}
+          onMouseEnter={() => flyout.onFlyoutEnter()}
+          onMouseLeave={() => flyout.onFlyoutLeave()}
+        >
+          <header class="flex h-7 shrink-0 items-center px-3 border-b border-v2-border-border-base">
+            <span class="text-11-medium text-v2-text-text-strong truncate">{t("workbench.sidebar.spaces")}</span>
+          </header>
+          <div class="flex-1 min-h-0 flex flex-col min-w-0 py-1 overflow-y-auto">
+            <Show
+              when={store.spaces() !== undefined}
+              fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
+            >
+              <SessionTree
+                spaces={activeSpaces()}
+                activeSpacePath={wb.activeTabPath}
+                onSpaceClick={handleSpaceClick}
+                onSessionClick={handleFlyoutSessionClick}
+              />
+            </Show>
+          </div>
+        </div>
+      </Portal>
     </>
   )
 }
