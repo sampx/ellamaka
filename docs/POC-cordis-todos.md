@@ -42,7 +42,7 @@
 - [x] 1.6 grep 工具桥接：包装注册进 ctx.tools（单工具验证，其余工具仍走原生管道）
 - [x] 1.7 spill 三件套挂载（spill + spill-local + spill-policy，代码直挂 `ctx.plugin`，不走 settings 声明），真实对话验证超长输出转储 + 预览句柄 + 干净卸载
 - [x] 1.8 回归收口：opencode 既有测试按基线对照零新增失败 + `bun run typecheck` + 手动对话回归（流式/SQLite/Snapshot 零异常，随用户验证场景执行）
-- [ ] 1.9 日志桥接：cordis 内建 `ctx.logger` → ellamaka `Log` 体系（`cordis-mount.ts` 注册 Exporter，hub.ts 改用 `ctx.logger`），用户验证 TUI 退出时日志文件可见 hub created/disposed 记录
+- [x] 1.9 日志桥接：cordis 内建 `ctx.logger` → ellamaka `Log` 体系（`cordis-mount.ts` 注册 Exporter，hub.ts 改用 `ctx.logger`），用户验证 TUI 退出时日志文件可见 hub created/disposed 记录
 
 > **Plan 1 已知设计问题（记录，非本 Plan 缺陷）**：native grep 上游截断（`grep.ts` 匹配数 >100 只格式化前 100 行）与 dsh spill 的「全量转储」语义不匹配——匹配数爆炸场景下 spill 文件存的是截断后结果，模型无法从 spill 精确读回剩余匹配，只能重新 grep。spill 的「全量读回」价值仅在「匹配少但行超长」场景成立。修复方向归 Step C 单管道收敛（截断策略统一进 ctx.tools，spill 见全量），详见 DESIGN §5.7 已知问题。
 
