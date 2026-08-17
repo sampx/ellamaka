@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { Context as CordisContext, Service } from "@deepseek-ai/cordis"
 import { CordisHub } from "../src/hub"
-import { cordisHubInstance, cordisHubLayer } from "../src/layer"
+import { cordisHubLayer, cordisHubLayerWith, CordisHubService } from "../src/layer"
 
 // --- Test fixtures: cordis services/plugins shared across cases ---
 
@@ -107,58 +107,182 @@ describe("CordisHub dispose", () => {
   })
 })
 
-// --- 5. Effect Layer integration ---
+// --- 5. Effect Layer integration (per-instance registry, DESIGN D-06) ---
 
-describe("cordisHubLayer (Effect integration)", () => {
-  test("captures a ManagedRuntime mount point usable by bridge services", async () => {
-    const program = Effect.gen(function* () {
-      const hub = yield* cordisHubInstance
-      expect(hub.runtime).not.toBeNull()
-      const runtime = hub.runtime!
-      const value = yield* Effect.promise(() => runtime.runPromise(Effect.succeed(7)))
-      expect(value).toBe(7)
-      yield* Effect.promise(() => hub.dispose())
-      return true
-    })
+/** Resolve the hub for a directory inside a self-contained scope. */
+function hubFor(directory: string) {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* CordisHubService
+      return yield* registry.forDirectory(directory)
+    }),
+  )
+}
+
+describe("cordisHubLayer (per-instance registry)", () => {
+  test("same directory resolves the same hub; different directories get different hubs", async () => {
     const rt = ManagedRuntime.make(cordisHubLayer)
-    expect(await rt.runPromise(program)).toBe(true)
+    const first = await rt.runPromise(hubFor("/inst/a"))
+    const firstAgain = await rt.runPromise(hubFor("/inst/a"))
+    const second = await rt.runPromise(hubFor("/inst/b"))
+    expect(firstAgain).toBe(first)
+    expect(second).not.toBe(first)
     await rt.dispose()
   })
 
-  test("provides a per-scope CordisHub whose mounted service is reachable", async () => {
-    const program = Effect.gen(function* () {
-      const hub = yield* cordisHubInstance
-      yield* Effect.promise(() => hub.mount(GreetService, "via-layer"))
-      const msg = hub.ctx.greet.greet()
-      yield* Effect.promise(() => hub.dispose())
-      return msg
-    })
+  test("each per-directory hub carries a working ManagedRuntime mount point", async () => {
     const rt = ManagedRuntime.make(cordisHubLayer)
-    const msg = await rt.runPromise(program)
+    const value = await rt.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          const hub = yield* registry.forDirectory("/inst/a")
+          expect(hub.runtime).not.toBeNull()
+          return yield* Effect.promise(() => hub.runtime!.runPromise(Effect.succeed(7)))
+        }),
+      ),
+    )
+    expect(value).toBe(7)
+    await rt.dispose()
+  })
+
+  test("a mounted service is reachable on the per-directory hub's context", async () => {
+    const rt = ManagedRuntime.make(cordisHubLayer)
+    const msg = await rt.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          const hub = yield* registry.forDirectory("/inst/a")
+          yield* Effect.promise(() => hub.mount(GreetService, "via-layer"))
+          return hub.ctx.greet.greet()
+        }),
+      ),
+    )
     expect(msg).toBe("via-layer")
     await rt.dispose()
   })
 
-  test("finalizer disposes the hub when the runtime is disposed", async () => {
-    let hub: CordisHub | undefined
-    let disposed = false
-    const program = Effect.gen(function* () {
-      hub = yield* cordisHubInstance
-      const origDispose = hub.ctx.fiber.dispose.bind(hub.ctx.fiber)
-      ;(hub.ctx.fiber as unknown as { dispose: typeof origDispose }).dispose = async () => {
-        disposed = true
-        return origDispose()
-      }
-      return hub
-    })
+  test("invalidate disposes the old hub and the next lookup builds a fresh one", async () => {
     const rt = ManagedRuntime.make(cordisHubLayer)
-    const got = await rt.runPromise(program)
-    expect(got).toBeDefined()
+    const hub1 = await rt.runPromise(hubFor("/inst/a"))
+    expect(hub1).toBeDefined()
+
+    let disposed = false
+    const origDispose = hub1.ctx.fiber.dispose.bind(hub1.ctx.fiber)
+    ;(hub1.ctx.fiber as unknown as { dispose: typeof origDispose }).dispose = async () => {
+      disposed = true
+      return origDispose()
+    }
+
+    await rt.runPromise(
+      Effect.gen(function* () {
+        const registry = yield* CordisHubService
+        yield* registry.invalidate("/inst/a")
+      }),
+    )
+    await poll(() => disposed)
+
+    const hub2 = await rt.runPromise(hubFor("/inst/a"))
+    expect(hub2).not.toBe(hub1)
+    await rt.dispose()
+  })
+
+  test("disposing the runtime (layer scope close) disposes every cached hub", async () => {
+    const rt = ManagedRuntime.make(cordisHubLayer)
+    let disposed = false
+    const hub = await rt.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          const h = yield* registry.forDirectory("/inst/c")
+          const origDispose = h.ctx.fiber.dispose.bind(h.ctx.fiber)
+          ;(h.ctx.fiber as unknown as { dispose: typeof origDispose }).dispose = async () => {
+            disposed = true
+            return origDispose()
+          }
+          return h
+        }),
+      ),
+    )
     expect(hub).toBeDefined()
-    // Layer build scope lives on the runtime; disposing the runtime runs the
-    // layer's finalizer, which disposes the hub.
     expect(disposed).toBe(false)
     await rt.dispose()
+    await poll(() => disposed)
     expect(disposed).toBe(true)
   })
+})
+
+async function poll(predicate: () => boolean, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((r) => setTimeout(r, 20))
+  }
+  throw new Error("timed out waiting for predicate")
+}
+
+// --- 6. Hub-create hook (code-mount point for per-instance plugins) ---
+
+describe("cordisHubLayerWith onHubCreate", () => {
+  test("runs once per directory on first resolution; mounted services are reachable", async () => {
+    const created: string[] = []
+    const layer = cordisHubLayerWith({
+      onHubCreate: async (hub, directory) => {
+        created.push(directory)
+        await hub.mount(GreetService, `greet-${directory}`)
+      },
+    })
+    const rt = ManagedRuntime.make(layer)
+
+    const msg = await rt.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          const hub = yield* registry.forDirectory("/inst/x")
+          // The hook's mounted service is live on the hub before dispatch.
+          return hub.ctx.greet.greet()
+        }),
+      ),
+    )
+    expect(msg).toBe("greet-/inst/x")
+
+    // Second resolution of the same directory does not re-run the hook.
+    await hubFor2(rt, "/inst/x")
+    // A different directory runs it again, with its own hub.
+    await hubFor2(rt, "/inst/y")
+    expect(created).toEqual(["/inst/x", "/inst/y"])
+
+    await rt.dispose()
+  })
+
+  test("a failing hook fails the resolution loudly (no silent hub)", async () => {
+    const layer = cordisHubLayerWith({
+      onHubCreate: async () => {
+        throw new Error("plugin mount exploded")
+      },
+    })
+    const rt = ManagedRuntime.make(layer)
+    await expect(
+      rt.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const registry = yield* CordisHubService
+            return yield* registry.forDirectory("/inst/z")
+          }),
+        ),
+      ),
+    ).rejects.toThrow("plugin mount exploded")
+    await rt.dispose()
+  })
+
+  function hubFor2(rt: ManagedRuntime.ManagedRuntime<CordisHubService, never>, directory: string) {
+    return rt.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          return yield* registry.forDirectory(directory)
+        }),
+      ),
+    )
+  }
 })

@@ -143,8 +143,9 @@ describe("grep-bridge: real grep through ctx.tools full chain", () => {
         Bun.write(path.join(test.directory, "file.txt"), "alpha\nneedle\nomega"),
       )
 
-      // Observe the post-execute waterfall on the hub's ctx.tools.
-      const hub = yield* CordisHubService
+      // Observe the post-execute waterfall on the instance hub's ctx.tools.
+      const registry = yield* CordisHubService
+      const hub = yield* registry.forDirectory(test.directory).pipe(Effect.scoped)
       let seenInWaterfall: ToolExecutionResult | undefined
       hub.ctx.on("tools/post-execute", async (_exec, result, next) => {
         seenInWaterfall = result
@@ -152,8 +153,8 @@ describe("grep-bridge: real grep through ctx.tools full chain", () => {
         return { kind: "accept" }
       })
 
-      const registry = yield* ToolRegistry.Service
-      const def = yield* grepDef(registry)
+      const registrySvc = yield* ToolRegistry.Service
+      const def = yield* grepDef(registrySvc)
       const result = yield* def.execute({ pattern: "needle", path: test.directory }, toolCtx())
 
       // The native grep output reached the model unchanged.
@@ -171,7 +172,8 @@ describe("grep-bridge: real grep through ctx.tools full chain", () => {
       const test = yield* TestInstance
       yield* Effect.promise(() => Bun.write(path.join(test.directory, "file.txt"), "needle\n"))
 
-      const hub = yield* CordisHubService
+      const registry = yield* CordisHubService
+      const hub = yield* registry.forDirectory(test.directory).pipe(Effect.scoped)
       let seenExec: ToolExecution | undefined
       hub.ctx.on("tools/post-execute", async (exec, _result, next) => {
         seenExec = exec
@@ -179,8 +181,8 @@ describe("grep-bridge: real grep through ctx.tools full chain", () => {
         return { kind: "accept" }
       })
 
-      const registry = yield* ToolRegistry.Service
-      const def = yield* grepDef(registry)
+      const registrySvc = yield* ToolRegistry.Service
+      const def = yield* grepDef(registrySvc)
       yield* def.execute({ pattern: "needle", path: test.directory }, toolCtx())
 
       expect(seenExec).toBeDefined()
@@ -193,7 +195,9 @@ describe("grep-bridge: real grep through ctx.tools full chain", () => {
 describe("grep-bridge: abort interrupts the native fiber and still enters the waterfall", () => {
   bridgedIt.instance("aborting exec.signal maps to a fiber interrupt reaching post-execute", () =>
     Effect.gen(function* () {
-      const hub = yield* CordisHubService
+      const test = yield* TestInstance
+      const registry = yield* CordisHubService
+      const hub = yield* registry.forDirectory(test.directory).pipe(Effect.scoped)
       // Mount Tools on the hub and register a never-completing grep body so
       // abort is observable through the full ctx.tools pipeline.
       if (!hub.ctx.get("tools")) {

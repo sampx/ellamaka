@@ -8,7 +8,9 @@ const TurnDriverTag = Context.Reference<{ run: (input: unknown) => Effect.Effect
 })
 
 const built = Layer.mergeAll(
-  createTurnDriverLayer(TurnDriverTag).pipe(Layer.provide(cordisHubLayer)),
+  createTurnDriverLayer(TurnDriverTag, { directory: Effect.succeed("/test/instance-a") }).pipe(
+    Layer.provide(cordisHubLayer),
+  ),
   cordisHubLayer,
 )
 
@@ -53,6 +55,25 @@ describe("TurnDriver cordis bridge (R3: cancel determinism)", () => {
     // Child-before-parent on the same scope.
     expect(order.indexOf("child-release")).toBeLessThan(order.indexOf("parent-release"))
 
+    await rt.dispose()
+  })
+})
+
+describe("TurnDriver cordis bridge (W-01: error preservation)", () => {
+  test("a failed work surfaces its original error, not an erased undefined", async () => {
+    const rt = ManagedRuntime.make(built)
+    const failure = async () => {
+      await rt.runPromise(
+        Effect.gen(function* () {
+          const driver = yield* TurnDriverTag
+          return yield* driver.run({
+            sessionID: "s-err",
+            work: Effect.fail(new Error("provider exploded")),
+          })
+        }),
+      )
+    }
+    await expect(failure()).rejects.toThrow("provider exploded")
     await rt.dispose()
   })
 })

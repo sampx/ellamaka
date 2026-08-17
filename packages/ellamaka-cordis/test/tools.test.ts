@@ -78,6 +78,34 @@ describe("tools.execute materialization", () => {
   })
 })
 
+// --- 2b. Inline-def execution (no shared-registry mutation) ---
+
+describe("tools.executeInline", () => {
+  test("executes an unregistered inline def through the full waterfall", async () => {
+    const { hub, tools } = await mountTools()
+    expect(tools.get("inline-echo")).toBeUndefined()
+    const result = await tools.executeInline(echoDef, { hi: 2 }, exec("inline-echo"))
+    expect(result.isError).toBe(false)
+    expect((result.content[0] as ContentBlock & { text?: string }).text).toContain("hi")
+    // The inline def never mutated the shared registry.
+    expect(tools.get("echo")).toBeUndefined()
+    await hub.dispose()
+  })
+
+  test("an already-aborted signal materializes an ABORTED error result", async () => {
+    const { hub, tools } = await mountTools()
+    const controller = new AbortController()
+    controller.abort()
+    const result = await tools.executeInline(echoDef, undefined, {
+      ...exec("inline-echo"),
+      signal: controller.signal,
+    })
+    expect(result.isError).toBe(true)
+    expect(result.error.message).toMatch(/aborted/)
+    await hub.dispose()
+  })
+})
+
 // --- 3. post-execute waterfall ---
 
 describe("tools post-execute waterfall", () => {

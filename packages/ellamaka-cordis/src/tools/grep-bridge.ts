@@ -56,6 +56,9 @@ export function createGrepBridge(
             if (Exit.isSuccess(exit)) {
               resolve(exit.value)
             } else {
+              if (Cause.hasInterruptsOnly(exit.cause)) {
+                // Cancellation is expected (user abort), not an error worth a warn.
+              }
               reject(exitToError(exit))
             }          },
           (error: unknown) => {
@@ -122,11 +125,14 @@ function buildExec(input: {
 /**
  * Build a cordis-driven grep-bridge layer for a given opencode tag.
  *
- * The layer mounts the `Tools` service on the hub and exposes a `run` that
- * routes a native grep dispatch through `ctx.tools`. Each call re-registers a
- * grep definition wrapping the caller's native body with {@link createGrepBridge},
- * so caller cancellation (`exec.signal`) interrupts the forked fiber per
- * DESIGN §5.6.1, and results flow through the `tools/post-execute` waterfall.
+ * The layer exposes a `run` that routes a native grep dispatch through the
+ * per-instance hub's `ctx.tools` pipeline (DESIGN D-06: `input.cwd` is the
+ * instance directory, so each instance dispatches on its own hub). Each call
+ * executes an INLINE definition wrapping the caller's native body with
+ * {@link createGrepBridge} — the shared registry is never mutated per call,
+ * so concurrent dispatches cannot interleave each other's closures. Caller
+ * cancellation (`exec.signal`) interrupts the forked fiber per DESIGN
+ * §5.6.1, and results flow through the `tools/post-execute` waterfall.
  */
 export const createGrepBridgeLayer = <I, S extends GrepBridgeContract>(
   tag: Context.Key<I, S>,
@@ -134,29 +140,35 @@ export const createGrepBridgeLayer = <I, S extends GrepBridgeContract>(
   Layer.effect(
     tag,
     Effect.gen(function* () {
-      const hub = yield* CordisHubService
-      const runtime = hub.runtime
-      if (!runtime) {
-        return {
-          run: () => Promise.reject(new Error("hub runtime unavailable")),
-        } as unknown as S
-      }
-      // Idempotent: mount the Tools service once per hub context.
-      if (!hub.ctx.get("tools")) {
-        yield* Effect.promise(() => hub.mount(Tools, runtime))
-      }
-      const run: GrepBridgeContract["run"] = (input) => {
-        // Re-register a def whose execute wraps the caller's native body,
+      const registry = yield* CordisHubService
+      const run: GrepBridgeContract["run"] = async (input) => {
+        // Per-dispatch hub resolution (D-06): cwd is the instance directory.
+        // The scoped acquire releases immediately; the cached hub persists in
+        // the registry until that instance is invalidated.
+        const hub = await Effect.runPromise(
+          registry.forDirectory(input.cwd).pipe(Effect.scoped),
+        )
+        const runtime = hub.runtime
+        if (!runtime) {
+          hub.ctx.logger("grep-bridge").error("hub runtime unavailable")
+          throw new Error("hub runtime unavailable")
+        }
+        // Idempotent: mount the Tools service once per hub context.
+        if (!hub.ctx.get("tools")) {
+          hub.ctx.logger("grep-bridge").info("mounting tools service")
+          await hub.mount(Tools, runtime)
+        }
+        // Inline per-call def: the execute wraps the caller's native body,
         // running it through the caller's runtime (which carries the native
         // grep dependencies). The bridge only adds fiber/abort handling and
         // the session facade slice.
-        hub.ctx.tools.register({
+        const def: ToolDefinition = {
           name: "grep",
           description: "Search for patterns in files and return matching lines",
           parameters: {},
           execute: (args, exec) => createGrepBridge(input.execute, input.runtime).execute(args, exec),
-        })
-        return hub.ctx.tools.execute("grep", input.args, buildExec(input))
+        }
+        return hub.ctx.tools.executeInline(def, input.args, buildExec(input))
       }
       return { run } as unknown as S
     }),

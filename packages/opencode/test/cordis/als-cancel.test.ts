@@ -59,7 +59,9 @@ const it = testEffect(
     run,
     status,
     BackgroundJob.layer,
-    createTurnDriverLayer(TurnDriver.Service).pipe(Layer.provide(cordisHubLayer)),
+    createTurnDriverLayer(TurnDriver.Service, {
+      directory: Effect.succeed("/test/als-cancel"),
+    }).pipe(Layer.provide(cordisHubLayer)),
   ),
 )
 

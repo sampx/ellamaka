@@ -69,6 +69,21 @@ export class Tools extends Service {
       }
     }
 
+    return this.executeInline(definition, args, exec)
+  }
+
+  /**
+   * Execute an inline definition without touching the shared registry.
+   *
+   * Per-call dispatches (e.g. the grep bridge, whose execute body closes over
+   * caller state) use this so concurrent calls never interleave closures by
+   * re-registering a shared definition.
+   */
+  async executeInline(
+    definition: ToolDefinition,
+    args: unknown,
+    exec: ToolExecution,
+  ): Promise<ToolExecutionResult> {
     // Already-aborted before dispatch: materialize an aborted error result.
     if (exec.signal.aborted) {
       return this.runPostExecute(exec, {

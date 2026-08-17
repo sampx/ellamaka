@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber } from "effect"
+import { Effect, Exit, Fiber, Cause } from "effect"
 import { Context as CordisContext, Service } from "@deepseek-ai/cordis"
 import type { HubRuntime } from "./types.js"
 
@@ -41,6 +41,7 @@ export class AgentLoop extends Service {
     const runtime = this.runtime
     const ctx = this.ctx
     if (!runtime) {
+      ctx.logger("agent-loop").error("no ManagedRuntime mounted on the hub")
       return Promise.reject(new Error("agentLoop: no ManagedRuntime mounted on the hub"))
     }
     const sessionID = input.sessionID
@@ -69,6 +70,7 @@ export class AgentLoop extends Service {
               ctx.emit("agent/turn-completed", { sessionID })
               return exit.value
             }
+            ctx.logger("agent-loop").warn("turn failed sessionID=%s cause=%s", sessionID, Cause.pretty(exit.cause))
             return yield* Effect.failCause(exit.cause)
           } finally {
             signal?.removeEventListener("abort", abort)

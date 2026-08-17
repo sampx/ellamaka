@@ -18,12 +18,17 @@ describe("TurnDriver default direct-run", () => {
 })
 
 describe("TurnDriver cordis layer", () => {
-  test("routes work through ctx.agentLoop when the cordis layer is provided", async () => {
-    const built = Layer.mergeAll(
-      createTurnDriverLayer(TurnDriver.Service).pipe(Layer.provide(cordisHubLayer)),
+  const directory = "/test/instance"
+  const built = () =>
+    Layer.mergeAll(
+      createTurnDriverLayer(TurnDriver.Service, { directory: Effect.succeed(directory) }).pipe(
+        Layer.provide(cordisHubLayer),
+      ),
       cordisHubLayer,
     )
-    const rt = ManagedRuntime.make(built)
+
+  test("routes work through ctx.agentLoop when the cordis layer is provided", async () => {
+    const rt = ManagedRuntime.make(built())
     const out = await rt.runPromise(
       Effect.gen(function* () {
         const driver = yield* TurnDriver.Service
@@ -35,15 +40,12 @@ describe("TurnDriver cordis layer", () => {
   })
 
   test("emits agent/turn-completed with the sessionID on successful completion", async () => {
-    const built = Layer.mergeAll(
-      createTurnDriverLayer(TurnDriver.Service).pipe(Layer.provide(cordisHubLayer)),
-      cordisHubLayer,
-    )
-    const rt = ManagedRuntime.make(built)
+    const rt = ManagedRuntime.make(built())
     const events: string[] = []
     const out = await rt.runPromise(
       Effect.gen(function* () {
-        const hub = yield* CordisHubService
+        const registry = yield* CordisHubService
+        const hub = yield* registry.forDirectory(directory).pipe(Effect.scoped)
         hub.ctx.on("agent/turn-completed", (p: { sessionID: string }) => events.push(p.sessionID))
         const driver = yield* TurnDriver.Service
         return yield* driver.run({ sessionID: "s3", work: Effect.succeed("done") })

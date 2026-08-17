@@ -18,27 +18,54 @@ export interface TurnDriverContract {
 }
 
 /**
- * Ensure the hub has the `AgentLoop` service mounted, returning the hub.
- *
- * The `cordisHubLayer` provisions the bare container; bridge services that
- * drive turns mount `AgentLoop` on first use. Idempotent: if the service is
- * already available on the context, it is not mounted twice.
+ * Dependencies injected by the host assembly at layer build time.
  */
-const hubWithAgentLoop = Effect.gen(function* () {
-  const hub = yield* CordisHubService
-  const runtime = hub.runtime
-  if (runtime && !hub.ctx.get("agentLoop")) {
-    yield* Effect.promise(() => hub.mount(AgentLoop, runtime))
+export interface TurnDriverDeps {
+  /**
+   * Resolve the instance directory for a dispatch. Executed per dispatch in
+   * the caller's context (where request-scoped services like opencode's
+   * `InstanceRef` are visible), so each instance's turns route to their own
+   * per-directory hub (DESIGN D-06 per-instance lifecycle).
+   */
+  readonly directory: Effect.Effect<string>
+}
+
+/**
+ * In-flight `AgentLoop` mounts per hub, so concurrent first dispatches into
+ * the same hub cannot double-mount the service (cordis duplicate-service
+ * error). A failed mount is retried on the next dispatch.
+ */
+const agentLoopMounts = new WeakMap<CordisHub, Promise<void>>()
+
+function ensureAgentLoop(hub: CordisHub): Promise<void> {
+  if (hub.ctx.get("agentLoop")) return Promise.resolve()
+  let pending = agentLoopMounts.get(hub)
+  if (pending === undefined) {
+    if (!hub.runtime) {
+      hub.ctx.logger("turn-driver").error("hub runtime unavailable during agentLoop mount")
+      return Promise.reject(new Error("cordis hub runtime unavailable"))
+    }
+    hub.ctx.logger("turn-driver").info("mounting agentLoop")
+    // `ctx.plugin` returns a fiber-like thenable (`then`, no `catch`);
+    // normalize it into a real promise before chaining error recovery.
+    pending = Promise.resolve(hub.mount(AgentLoop, hub.runtime)).catch((error: unknown) => {
+      hub.ctx.logger("turn-driver").error("agentLoop mount failed err=%s", String(error))
+      agentLoopMounts.delete(hub)
+      throw error
+    })
+    agentLoopMounts.set(hub, pending)
   }
-  return hub
-})
+  return pending
+}
 
 /**
  * Build the cordis-driven `TurnDriver` layer for a given opencode tag.
  *
  * The returned layer overrides the default direct-run driver so each agent
- * turn is routed through the hub's `ctx.agentLoop`, which forks the work into
- * its own scope and interrupts it on abort (DESIGN §5.6.1).
+ * turn is routed through the instance hub's `ctx.agentLoop`, which forks the
+ * work into its own scope and interrupts it on abort (DESIGN §5.6.1). The hub
+ * is resolved per dispatch via `deps.directory` (DESIGN D-06): instances get
+ * isolated cordis containers and disposing an instance disposes its hub.
  *
  * Interrupt mapping: the driver runs the work by handing it to
  * `ctx.agentLoop.run` with an `AbortController` signal and awaiting a
@@ -62,13 +89,21 @@ const hubWithAgentLoop = Effect.gen(function* () {
  */
 export const createTurnDriverLayer = <I, S extends TurnDriverContract>(
   tag: Context.Key<I, S>,
+  deps: TurnDriverDeps,
 ): Layer.Layer<I, never, CordisHubService> =>
   Layer.effect(
     tag,
     Effect.gen(function* () {
-      const hub = yield* hubWithAgentLoop
+      const registry = yield* CordisHubService
       const run = (input: { readonly sessionID: string; readonly work: Effect.Effect<unknown, unknown> }) =>
         Effect.gen(function* () {
+          // Per-dispatch hub resolution (D-06): the directory effect runs in
+          // the caller's context; the scoped acquire releases immediately and
+          // the cached hub persists in the registry until invalidated.
+          const directory = yield* deps.directory
+          const hub = yield* registry.forDirectory(directory).pipe(Effect.scoped)
+          yield* Effect.promise(() => ensureAgentLoop(hub))
+
           // Capture the caller's full Effect context and provide it to the work
           // before crossing into the cordis ManagedRuntime. The hub runtime is
           // built from a restricted context (DESIGN §5.6.1), so without this the
@@ -97,7 +132,9 @@ export const createTurnDriverLayer = <I, S extends TurnDriverContract>(
 
           return yield* Effect.onInterrupt(
             Deferred.await(settled).pipe(
-              Effect.mapError(() => undefined as never),
+              // Preserve the work's real error (W-01): a failed turn surfaces
+              // its original error, never an erased `undefined`.
+              Effect.mapError((error) => error as never),
             ),
             () =>
               Effect.sync(() => controller.abort()).pipe(

@@ -39,7 +39,10 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
 import { TurnDriver } from "@/session/turn-driver"
-import { cordisHubLayer, createTurnDriverLayer } from "@wopal/ellamaka-cordis"
+import { CordisHubService, createTurnDriverLayer } from "@wopal/ellamaka-cordis"
+import { CordisMount } from "@/server/cordis-mount"
+import { InstanceState } from "@/effect/instance-state"
+import { registerDisposer } from "@/effect/instance-registry"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -237,7 +240,26 @@ export function createRoutes(
       Session.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
-      createTurnDriverLayer(TurnDriver.Service).pipe(Layer.provide(cordisHubLayer)),
+      // Per-instance cordis hubs with the code-mounted plugin set (spill trio;
+      // DESIGN D-04/D-06): turns resolve their hub by the dispatch-time
+      // instance directory; instance dispose invalidates its hub entry.
+      createTurnDriverLayer(TurnDriver.Service, { directory: InstanceState.directory }).pipe(
+        Layer.provide(CordisMount.cordisPluginAssembly.hubs),
+      ),
+      // Route the builtin grep through the instance hub's ctx.tools pipeline
+      // so mounted policies (spill) apply to it (POC 1.6/1.7 end-to-end).
+      CordisMount.cordisPluginAssembly.grepBridge,
+      // Wire instance disposal to hub invalidation (disposeInstance(dir) ->
+      // registry.invalidate(dir) -> ctx.fiber.dispose()).
+      Layer.effectDiscard(
+        Effect.gen(function* () {
+          const registry = yield* CordisHubService
+          const off = registerDisposer((directory) =>
+            Effect.runPromise(registry.invalidate(directory)),
+          )
+          yield* Effect.addFinalizer(() => Effect.sync(off))
+        }),
+      ).pipe(Layer.provide(CordisMount.cordisPluginAssembly.hubs)),
       SessionRevert.defaultLayer,
       SessionShare.defaultLayer,
       SessionRunState.defaultLayer,

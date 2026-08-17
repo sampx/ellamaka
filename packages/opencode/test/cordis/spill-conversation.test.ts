@@ -33,6 +33,9 @@ import { Tool } from "@/tool/tool"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { cordisHubLayer, createGrepBridgeLayer, CordisHubService, mountSpillPlugins } from "@wopal/ellamaka-cordis"
 import type { CordisHub } from "@wopal/ellamaka-cordis"
+import { CordisMount } from "@/server/cordis-mount"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { SessionID, MessageID } from "@/session/schema"
 
 const node = CrossSpawnSpawner.defaultLayer
@@ -75,6 +78,23 @@ const bridgedRegistryLayer = Layer.mergeAll(
 )
 
 const bridgedIt = testEffect(Layer.mergeAll(bridgedRegistryLayer, node, Agent.defaultLayer))
+
+// Production-assembly shape: per-instance hubs come from the production
+// assembly FACTORY (onHubCreate code-mounts the spill trio, no manual
+// mounting) and the grep bridge routes through those hubs. Only the spill
+// root is redirected to a temp dir so tests never write into the real data
+// dir - same code path as production, only parameters differ.
+const prodSpillRoot = mkdtempSync(path.join(tmpdir(), "cordis-prod-spill-"))
+const prodAssembly = CordisMount.createCordisPluginAssembly({ spillRoot: prodSpillRoot })
+const prodShapeIt = testEffect(
+  Layer.mergeAll(
+    registryLayer(),
+    prodAssembly.hubs,
+    prodAssembly.grepBridge,
+    node,
+    Agent.defaultLayer,
+  ),
+)
 
 /** Minimal tool context used to drive a registry grep def directly. */
 function toolCtx(abort = new AbortController().signal): Tool.Context {
@@ -136,7 +156,8 @@ describe("spill-conversation: real grep oversized output is spilled", () => {
     Effect.gen(function* () {
       const test = yield* TestInstance
       const full = yield* Effect.promise(() => writeBigFile(test.directory))
-      const hub = yield* CordisHubService
+      const hubRegistry = yield* CordisHubService
+      const hub = yield* hubRegistry.forDirectory(test.directory).pipe(Effect.scoped)
       const mounted = yield* Effect.promise(() =>
         mountSpill(hub, path.join(test.directory, ".spill")),
       )
@@ -173,7 +194,8 @@ describe("spill-conversation: real grep oversized output is spilled", () => {
     Effect.gen(function* () {
       const test = yield* TestInstance
       yield* Effect.promise(() => writeBigFile(test.directory))
-      const hub = yield* CordisHubService
+      const hubRegistry = yield* CordisHubService
+      const hub = yield* hubRegistry.forDirectory(test.directory).pipe(Effect.scoped)
       const mounted = yield* Effect.promise(() =>
         mountSpill(hub, path.join(test.directory, ".spill")),
       )
@@ -195,5 +217,46 @@ describe("spill-conversation: real grep oversized output is spilled", () => {
       expect(restored.output).toContain("showing 100 of 500")
       expect(restored.output).not.toContain("Full formatted result stored at:")
     }),
+  )
+})
+
+describe("spill-conversation: production assembly (code-mounted, end-to-end)", () => {
+  prodShapeIt.instance(
+    "grep dispatches spill automatically via the production plugin assembly",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        // Long lines so the native-truncated output (~100 lines shown) still
+        // exceeds the production 20KB inline cap.
+        const srcDir = path.join(test.directory, "src")
+        yield* Effect.promise(() => Bun.write(path.join(srcDir, ".keep"), ""))
+        const lines = Array.from(
+          { length: 500 },
+          (_, i) => `prod-${i} ${"b".repeat(300)}`,
+        )
+        const content = lines.join("\n") + "\n"
+        yield* Effect.promise(() => Bun.write(path.join(srcDir, "big.txt"), content))
+
+        // No manual mounting anywhere: the registry def routes through the
+        // production hub assembly (grep bridge + code-mounted spill trio).
+        const registry = yield* ToolRegistry.Service
+        const def = yield* grepDef(registry)
+        const result = yield* def.execute({ pattern: "prod-", path: srcDir }, toolCtx())
+
+        const text = result.output
+        expect(text).toContain("Full formatted result stored at:")
+        expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(CordisMount.SPILL_MAX_INLINE_BYTES)
+
+        // The dump lands under the assembly's spill root and holds the full
+        // formatted output (larger than the bounded model-facing preview).
+        const spillPath = spillPathFrom(text)
+        expect(spillPath).toBeDefined()
+        expect(spillPath!.startsWith(prodSpillRoot)).toBe(true)
+        const dump = readFileSync(spillPath!, "utf8")
+        expect(dump).toContain("showing 100 of 500")
+        expect(Buffer.byteLength(dump, "utf8")).toBeGreaterThan(
+          Buffer.byteLength(text, "utf8"),
+        )
+      }),
   )
 })

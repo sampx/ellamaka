@@ -49,7 +49,10 @@ export async function mountSpillPlugins(
   ctx: Context,
   options: MountSpillOptions,
 ): Promise<MountedSpillPlugins> {
+  const logger = ctx.logger("spill-mount")
+  logger.info("mounting spill plugins root=%s maxInlineBytes=%d", options.root, options.maxInlineBytes)
   const store = await ctx.plugin(LocalSpillStore, { root: options.root })
   const policy = await ctx.plugin(SpillPolicy, { maxInlineBytes: options.maxInlineBytes })
+  logger.info("spill plugins mounted")
   return { store, policy }
 }

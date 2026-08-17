@@ -71,7 +71,7 @@ type ReadDef = Tool.InferDef<typeof ReadTool>
  * The native grep def is built normally (decode + truncate still apply), then
  * its execute is re-routed: the native body (already closed over its real tool
  * context, so permission/identity flow unchanged) is handed to the bridge,
- * which registers it on `ctx.tools`, executes through the `tools/post-execute`
+ * which executes it through `ctx.tools` and the `tools/post-execute`
  * waterfall, and maps caller cancellation to a fiber interrupt. The waterfall
  * decision is materialized back into the native `ExecuteResult` shape.
  */
@@ -81,11 +81,15 @@ function wrapGrepThroughBridge(
 ): Effect.Effect<Tool.Def> {
   return Effect.gen(function* () {
     const native = yield* Tool.init(info)
-    const directory = yield* InstanceState.directory
     return {
       ...native,
       execute: (args, toolCtx) =>
         Effect.gen(function* () {
+          // Per-dispatch directory resolution: the def may be built while the
+          // instance context is not visible, but the dispatch always runs
+          // inside the instance's request context, where `InstanceState.directory`
+          // resolves correctly (and keeps multi-instance hubs keyed per cwd).
+          const directory = yield* InstanceState.directory
           // Capture the caller's runtime: it carries the native grep deps
           // (Ripgrep, AppFileSystem, InstanceRef, …) at dispatch time. The
           // bridge runs the native work through it (not the hub runtime).
