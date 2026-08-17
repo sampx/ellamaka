@@ -49,7 +49,7 @@ import { Ripgrep } from "../../src/file/ripgrep"
 import { Format } from "../../src/format"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, writeGlobalTestConfig, removeGlobalTestConfig } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
@@ -304,18 +304,18 @@ const ensureDir = Effect.fn("test.ensureDir")(function* (dir: string) {
   yield* fs.ensureDir(dir)
 })
 
-const writeConfig = Effect.fn("test.writeConfig")(function* (dir: string, config: Partial<Config.Info>) {
-  yield* writeText(
-    path.join(dir, "opencode.json"),
-    JSON.stringify({ $schema: "https://opencode.ai/config.json", ...config }),
-  )
+const writeConfig = Effect.fn("test.writeConfig")(function* (config: Partial<Config.Info>) {
+  yield* Effect.promise(() => writeGlobalTestConfig(config))
 })
 
 const useServerConfig = Effect.fn("test.useServerConfig")(function* (config: (url: string) => Partial<Config.Info>) {
   const { directory: dir } = yield* TestInstance
   const llm = yield* TestLLMServer
-  yield* writeConfig(dir, config(llm.url))
-  return { dir, llm }
+  yield* writeConfig(config(llm.url))
+  return yield* Effect.acquireRelease(
+    Effect.succeed({ dir, llm }),
+    () => Effect.promise(() => removeGlobalTestConfig()),
+  )
 })
 
 // Wait for a session's runner to enter a busy state. SessionStatus is flipped to
@@ -464,10 +464,11 @@ noLLMServer.instance(
 // assistant as the reply to the new user and exit silently. isAfter orders by
 // `time.created` (id tie-break), so the loop must continue past the exit
 // check instead of returning the pre-wrap assistant.
-noLLMServer.instance(
+it.instance(
   "loop continues across message-id wrap-around for a historical session",
   () =>
     Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
       const prompt = yield* SessionPrompt.Service
       const sessions = yield* Session.Service
       const chat = yield* sessions.create({
@@ -537,14 +538,17 @@ noLLMServer.instance(
       })
 
       // The loop must NOT silently exit with the pre-wrap assistant. It should
-      // continue and attempt to reach the LLM (which, in this no-LLM-server
-      // harness, fails downstream rather than returning the old assistant).
+      // continue and attempt to reach the LLM. Queue a non-retryable 401 so the
+      // attempt fails fast (a retryable connection error would retry forever).
+      yield* llm.error(401, { error: { message: "unauthorized" } })
       const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+      // The loop must have reached the local mock server (not silently exited
+      // with the pre-wrap assistant, and not failed before any LLM request).
+      expect(yield* llm.hits).toHaveLength(1)
       if (Exit.isSuccess(exit)) {
         expect(exit.value.info.id).not.toBe(preWrapAssistant.id)
       }
     }),
-  { config: cfg },
 )
 
 it.instance("loop exits without an LLM request for interrupted orphan tool calls", () =>
@@ -1760,7 +1764,7 @@ unix(
 
       yield* llm.tool("bash", {
         command:
-          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; sleep 30',
+          'i=0; while [ "$i" -lt 4000 ]; do printf "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx %05d\\n" "$i"; i=$((i + 1)); done; printf truncation-ready; sleep 30',
         description: "Print many lines",
         timeout: 30_000,
         workdir: path.resolve(dir),
@@ -1768,7 +1772,15 @@ unix(
 
       const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
       yield* llm.wait(1)
-      yield* Effect.sleep(150)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const assistant = msgs.findLast((item) => item.info.role === "assistant")
+          const tool = assistant ? toolPart(assistant.parts) : undefined
+          if (tool?.state.status === "running" && tool.state.metadata?.output.includes("truncation-ready")) return true
+        }),
+        "timed out waiting for truncated shell output",
+      )
       yield* prompt.cancel(chat.id)
 
       const exit = yield* Fiber.await(run)

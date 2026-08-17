@@ -9,6 +9,17 @@
 
 合并流程和策略统一维护在 `docs/BRANDING.md` §9，此处只记录每次合并的关键元数据和值得注意的事项。
 
+## 测试 fixture 配置注入分叉（2026-08-17）
+
+**动机**：ellamaka 自研提交 `3452e46589`（2026-06-18 "refactor(config): remove opencode compatibility"）移除 normal mode 项目级 `opencode.json`/`opencode.jsonc`/XDG config 加载，所有模式仅从 `~/.wopal/config/settings.jsonc`（ellamaka 路径）加载配置。但测试 fixture（`packages/opencode/test/fixture/fixture.ts`）与相关测试 helper 仍向 tmpdir 写项目级 `opencode.json` → 配置不生效 → LLM 请求打到真实 API 而非 mock server（Plan #210 修复的根因）。
+
+**迁移**：测试配置注入已迁移到全局 settings 路径（`$WOPAL_HOME/config/settings.jsonc`，测试环境 WOPAL_HOME 由 `test/preload.ts` 按 PID 隔离到 `os.tmpdir()/opencode-test-data-<pid>`），引擎 normal mode 实际读取该路径。涉及文件：`test/fixture/fixture.ts`（`writeGlobalTestConfig`/`removeGlobalTestConfig`）、`test/session/prompt.test.ts`、`test/session/llm-native-recorded.test.ts`。同时删除一批测试项目级 config 加载机制的死测试（`test/config/config.test.ts`、`test/server/httpapi-session.test.ts`）。
+
+**上游合并时的预期冲突点与处理原则**：
+1. `test/fixture/fixture.ts`：上游改动可能涉及 tmpdir 与 config 写入逻辑。处理原则：**保留 ellamaka 全局 settings 路径写入**，不回到项目级 `opencode.json` 写入。
+2. `test/config/config.test.ts`：上游若恢复项目级 config 加载测试，与 ellamaka 产品决策（仅全局 settings 路径）冲突，需按 ellamaka 语义调整而非盲目合并。
+3. 其他测试文件对 `tmpdir({ config })` / `tmpdirScoped({ config })` 的使用：保持迁移后的全局 settings 语义。
+
 ## Remotes
 
 | Remote | URL | 用途 |

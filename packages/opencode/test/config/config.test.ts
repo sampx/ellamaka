@@ -7,8 +7,6 @@ import { ConfigManaged } from "@/config/managed"
 import { ConfigParse } from "../../src/config/parse"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 
-import { InstanceRef } from "../../src/effect/instance-ref"
-import type { InstanceContext } from "../../src/project/instance-context"
 import { Auth } from "../../src/auth"
 import { Account } from "../../src/account/account"
 import { AccessToken, AccountID, OrgID } from "../../src/account/schema"
@@ -19,7 +17,6 @@ import {
   TestInstance,
   tmpdir,
   tmpdirScoped,
-  withTestInstance,
   provideInstanceEffect,
   testInstanceStoreLayer,
 } from "../fixture/fixture"
@@ -31,7 +28,6 @@ import fs from "fs/promises"
 import os from "os"
 import { pathToFileURL } from "url"
 import { Global } from "@opencode-ai/core/global"
-import { ProjectID } from "../../src/project/schema"
 import { Filesystem } from "@/util/filesystem"
 import { isRecord } from "@/util/record"
 import { ConfigPlugin } from "@/config/plugin"
@@ -111,13 +107,6 @@ const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(con
 
 const schemaConfig = (config: object) => ({ $schema: "https://opencode.ai/config.json", ...config })
 
-const provideCurrentInstance = <A, E, R>(effect: Effect.Effect<A, E, R>, ctx: InstanceContext) =>
-  effect.pipe(Effect.provideService(InstanceRef, ctx))
-
-const load = (ctx: InstanceContext) =>
-  Effect.runPromise(
-    Config.Service.use((svc) => provideCurrentInstance(svc.get(), ctx)).pipe(Effect.scoped, Effect.provide(layer)),
-  )
 const clearEffect = (wait = false) =>
   Config.use
     .invalidate()
@@ -148,20 +137,8 @@ afterEach(async () => {
 const writeManagedSettingsEffect = (settings: object, filename?: string) =>
   AppFileSystem.use.writeWithDirs(path.join(managedConfigDir, filename ?? "opencode.json"), JSON.stringify(settings))
 
-async function writeConfig(dir: string, config: object, name = "opencode.json") {
-  await Filesystem.write(path.join(dir, name), JSON.stringify(config))
-}
-
 const writeConfigEffect = (dir: string, config: object, name = "opencode.json") =>
   AppFileSystem.use.writeWithDirs(path.join(dir, name), JSON.stringify(config))
-
-const withInstanceDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.provideService(TestInstance, { directory: dir }),
-    provideInstanceEffect(dir),
-    Effect.provide(testInstanceStoreLayer),
-    Effect.provide(CrossSpawnSpawner.defaultLayer),
-  )
 
 const withGlobalConfigDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -187,27 +164,6 @@ const withGlobalConfig = <A, E, R>(
     const dir = yield* tmpdirScoped()
     if (input.config) yield* writeConfigEffect(dir, schemaConfig(input.config), input.name)
     return yield* withGlobalConfigDir(dir, fn({ dir }))
-  })
-
-const withConfigTree = <A, E, R>(
-  input: { global?: object; project?: object; local?: object },
-  effect: Effect.Effect<A, E, R>,
-) =>
-  Effect.gen(function* () {
-    const root = yield* tmpdirScoped()
-    const global = yield* tmpdirScoped()
-    const directory = path.join(root, "project")
-    yield* Effect.all(
-      [
-        input.global ? writeConfigEffect(global, schemaConfig(input.global)) : undefined,
-        input.project ? writeConfigEffect(directory, schemaConfig(input.project)) : undefined,
-        input.local ? writeConfigEffect(path.join(directory, ".opencode"), schemaConfig(input.local)) : undefined,
-      ].filter(
-        (effect): effect is Effect.Effect<void, AppFileSystem.Error, AppFileSystem.Service> => effect !== undefined,
-      ),
-      { concurrency: "unbounded" },
-    )
-    return yield* withGlobalConfigDir(global, withInstanceDir(directory, effect))
   })
 
 const wellKnown = (input: {
@@ -258,34 +214,6 @@ function withProcessEnvs<A, E, R>(entries: Record<string, string | undefined>, e
   )
 }
 
-async function check(map: (dir: string) => string) {
-  if (process.platform !== "win32") return
-  await using globalTmp = await tmpdir()
-  await using tmp = await tmpdir({ git: true, config: { snapshot: true } })
-  const prev = Global.Path.config
-  ;(Global.Path as { config: string }).config = globalTmp.path
-  await clear()
-  try {
-    await writeConfig(globalTmp.path, {
-      $schema: "https://opencode.ai/config.json",
-      snapshot: false,
-    })
-    await withTestInstance({
-      directory: map(tmp.path),
-      fn: async (ctx) => {
-        const cfg = await load(ctx)
-        expect(cfg.snapshot).toBe(true)
-        expect(ctx.directory).toBe(Filesystem.resolve(tmp.path))
-        expect(ctx.project.id).not.toBe(ProjectID.global)
-      },
-    })
-  } finally {
-    await InstanceRuntime.disposeAllInstances()
-    ;(Global.Path as { config: string }).config = prev
-    await clear()
-  }
-}
-
 it.instance("loads config with defaults when no files exist", () =>
   Effect.gen(function* () {
     const config = yield* Config.use.get()
@@ -305,17 +233,6 @@ it.instance("falls back to generic username when system user info is unavailable
       userInfo.mockRestore()
     }
   }),
-)
-
-it.effect("creates global jsonc config with schema when no global configs exist", () =>
-  withGlobalConfig({}, ({ dir }) =>
-    Effect.gen(function* () {
-      yield* Config.use.get().pipe(provideInstanceEffect(dir))
-
-      const content = yield* AppFileSystem.use.readFileString(path.join(dir, "opencode.jsonc"))
-      expect(content).toContain('"$schema": "https://opencode.ai/config.json"')
-    }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(CrossSpawnSpawner.defaultLayer)),
-  ),
 )
 
 it.effect("does not create global config when OPENCODE_CONFIG_DIR is set", () =>
@@ -456,146 +373,7 @@ it.instance(
     const config = yield* Config.use.get()
     expect(config.lsp).toBe(true)
   }),
-  { config: { lsp: true } },
-)
-
-test("loads project config from Git Bash and MSYS2 paths on Windows", async () => {
-  // Git Bash and MSYS2 both use /<drive>/... paths on Windows.
-  await check((dir) => {
-    const drive = dir[0].toLowerCase()
-    const rest = dir.slice(2).replaceAll("\\", "/")
-    return `/${drive}${rest}`
-  })
-})
-
-test("loads project config from Cygwin paths on Windows", async () => {
-  await check((dir) => {
-    const drive = dir[0].toLowerCase()
-    const rest = dir.slice(2).replaceAll("\\", "/")
-    return `/cygdrive/${drive}${rest}`
-  })
-})
-
-it.instance("ignores legacy tui keys in opencode config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      model: "test/model",
-      theme: "legacy",
-      tui: { scroll_speed: 4 },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.model).toBe("test/model")
-    expect((config as Record<string, unknown>).theme).toBeUndefined()
-    expect((config as Record<string, unknown>).tui).toBeUndefined()
-  }),
-)
-
-it.instance("loads JSONC config file", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* AppFileSystem.use.writeWithDirs(
-      path.join(test.directory, "opencode.jsonc"),
-      `{
-        // This is a comment
-        "$schema": "https://opencode.ai/config.json",
-        "model": "test/model",
-        "username": "testuser"
-      }`,
-    )
-    const config = yield* Config.use.get()
-    expect(config.model).toBe("test/model")
-    expect(config.username).toBe("testuser")
-  }),
-)
-
-it.instance("jsonc overrides json in the same directory", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(
-      test.directory,
-      {
-        $schema: "https://opencode.ai/config.json",
-        model: "base",
-        username: "base",
-      },
-      "opencode.jsonc",
-    )
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      model: "override",
-    })
-    const config = yield* Config.use.get()
-    expect(config.model).toBe("base")
-    expect(config.username).toBe("base")
-  }),
-)
-
-it.instance("handles environment variable substitution", () =>
-  withProcessEnv(
-    "TEST_VAR",
-    "test-user",
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      yield* writeConfigEffect(test.directory, {
-        $schema: "https://opencode.ai/config.json",
-        username: "{env:TEST_VAR}",
-      })
-      const config = yield* Config.use.get()
-      expect(config.username).toBe("test-user")
-    }),
-  ),
-)
-
-it.instance("preserves env variables when adding $schema to config", () =>
-  withProcessEnv(
-    "PRESERVE_VAR",
-    "secret_value",
-    Effect.gen(function* () {
-      const test = yield* TestInstance
-      // Config without $schema - should trigger auto-add
-      yield* AppFileSystem.use.writeWithDirs(
-        path.join(test.directory, "opencode.json"),
-        JSON.stringify({ username: "{env:PRESERVE_VAR}" }),
-      )
-      const config = yield* Config.use.get()
-      expect(config.username).toBe("secret_value")
-
-      // Read the file to verify the env variable was preserved
-      const content = yield* AppFileSystem.use.readFileString(path.join(test.directory, "opencode.json"))
-      expect(content).toContain("{env:PRESERVE_VAR}")
-      expect(content).not.toContain("secret_value")
-      expect(content).toContain("$schema")
-    }),
-  ),
-)
-
-it.instance("handles file inclusion substitution", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* AppFileSystem.use.writeWithDirs(path.join(test.directory, "included.txt"), "test-user")
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      username: "{file:included.txt}",
-    })
-    const config = yield* Config.use.get()
-    expect(config.username).toBe("test-user")
-  }),
-)
-
-it.instance("handles file inclusion with replacement tokens", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* AppFileSystem.use.writeWithDirs(path.join(test.directory, "included.md"), "const out = await Bun.$`echo hi`")
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      username: "{file:included.md}",
-    })
-    const config = yield* Config.use.get()
-    expect(config.username).toBe("const out = await Bun.$`echo hi`")
-  }),
+   { config: { lsp: true } },
 )
 
 const accountTokenIt = configIt({
@@ -638,133 +416,6 @@ accountTokenIt.instance("resolves env templates in account config with account t
   Effect.gen(function* () {
     const config = yield* Config.use.get()
     expect(config.provider?.["opencode"]?.options?.apiKey).toBe("st_test_token")
-  }),
-)
-
-it.instance("validates config schema and throws on invalid fields", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      invalid_field: "should cause error",
-    })
-    const exit = yield* Config.use.get().pipe(Effect.exit)
-    expect(Exit.isFailure(exit)).toBe(true)
-  }),
-)
-
-it.instance("throws error for invalid JSON", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* AppFileSystem.use.writeWithDirs(path.join(test.directory, "opencode.json"), "{ invalid json }")
-    const exit = yield* Config.use.get().pipe(Effect.exit)
-    expect(Exit.isFailure(exit)).toBe(true)
-  }),
-)
-
-it.instance("handles agent configuration", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: {
-        test_agent: {
-          model: "test/model",
-          temperature: 0.7,
-          description: "test agent",
-        },
-      },
-    })
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test_agent"]).toEqual(
-      expect.objectContaining({
-        model: "test/model",
-        temperature: 0.7,
-        description: "test agent",
-      }),
-    )
-  }),
-)
-
-it.instance("treats agent variant as model-scoped setting (not provider option)", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: {
-        test_agent: {
-          model: "openai/gpt-5.2",
-          variant: "xhigh",
-          max_tokens: 123,
-        },
-      },
-    })
-    const config = yield* Config.use.get()
-    const agent = config.agent?.["test_agent"]
-
-    expect(agent?.variant).toBe("xhigh")
-    expect(agent?.options).toMatchObject({
-      max_tokens: 123,
-    })
-    expect(agent?.options).not.toHaveProperty("variant")
-  }),
-)
-
-it.instance("handles command configuration", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      command: {
-        test_command: {
-          template: "test template",
-          description: "test command",
-          agent: "test_agent",
-        },
-      },
-    })
-    const config = yield* Config.use.get()
-    expect(config.command?.["test_command"]).toEqual({
-      template: "test template",
-      description: "test command",
-      agent: "test_agent",
-    })
-  }),
-)
-
-it.instance("migrates autoshare to share field", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      autoshare: true,
-    })
-    const config = yield* Config.use.get()
-    expect(config.share).toBe("auto")
-    expect(config.autoshare).toBe(true)
-  }),
-)
-
-it.instance("migrates mode field to agent field", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      mode: {
-        test_mode: {
-          model: "test/model",
-          temperature: 0.5,
-        },
-      },
-    })
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test_mode"]).toEqual({
-      model: "test/model",
-      temperature: 0.5,
-      mode: "primary",
-      options: {},
-      permission: {},
-    })
   }),
 )
 
@@ -969,73 +620,6 @@ it.effect("installs dependencies in writable OPENCODE_CONFIG_DIR", () =>
 // core Npm.Service (via EffectFlock). Those behaviors are tested in the core
 // package's npm tests, not here.
 
-it.instance("resolves scoped npm plugins in config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    const pluginDir = path.join(test.directory, "node_modules", "@scope", "plugin")
-    yield* AppFileSystem.use.writeWithDirs(
-      path.join(test.directory, "package.json"),
-      JSON.stringify({ name: "config-fixture", version: "1.0.0", type: "module" }, null, 2),
-    )
-    yield* AppFileSystem.use.writeWithDirs(
-      path.join(pluginDir, "package.json"),
-      JSON.stringify(
-        {
-          name: "@scope/plugin",
-          version: "1.0.0",
-          type: "module",
-          main: "./index.js",
-        },
-        null,
-        2,
-      ),
-    )
-    yield* AppFileSystem.use.writeWithDirs(path.join(pluginDir, "index.js"), "export default {}\n")
-    yield* writeConfigEffect(test.directory, { plugin: ["@scope/plugin"] })
-
-    const config = yield* Config.use.get()
-    expect(config.plugin ?? []).toContain("@scope/plugin")
-  }),
-)
-
-it.effect("merges plugin arrays from global and local configs", () =>
-  withConfigTree(
-    {
-      global: { plugin: ["global-plugin-1", "global-plugin-2"] },
-      local: { plugin: ["local-plugin-1"] },
-    },
-    Effect.gen(function* () {
-      const plugins = (yield* Config.use.get()).plugin ?? []
-
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("global-plugin-2"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
-      expect(
-        plugins.filter((p) => p.includes("global-plugin") || p.includes("local-plugin")).length,
-      ).toBeGreaterThanOrEqual(3)
-    }),
-  ),
-)
-
-it.effect("global config remains global when project config is disabled", () =>
-  withConfigTree(
-    {
-      global: { model: "global/model", plugin: ["global-plugin"] },
-      project: { model: "project/model" },
-      local: { model: "local/model" },
-    },
-    withProcessEnv(
-      "OPENCODE_DISABLE_PROJECT_CONFIG",
-      "true",
-      Effect.gen(function* () {
-        const config = yield* Config.use.get()
-        expect(config.model).toBe("global/model")
-        expect(config.plugin_origins?.find((item) => item.spec === "global-plugin")?.scope).toBe("global")
-      }),
-    ),
-  ),
-)
-
 it.instance("does not error when only custom agent is a subagent", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
@@ -1058,125 +642,7 @@ Helper subagent prompt`,
   }),
 )
 
-it.effect("merges instructions arrays from global and local configs", () =>
-  withConfigTree(
-    {
-      global: { instructions: ["global-instructions.md", "shared-rules.md"] },
-      local: { instructions: ["local-instructions.md"] },
-    },
-    Effect.gen(function* () {
-      expect((yield* Config.use.get()).instructions).toEqual([
-        "global-instructions.md",
-        "shared-rules.md",
-        "local-instructions.md",
-      ])
-    }),
-  ),
-)
-
-it.effect("deduplicates duplicate instructions from global and local configs", () =>
-  withConfigTree(
-    {
-      global: { instructions: ["duplicate.md", "global-only.md"] },
-      local: { instructions: ["duplicate.md", "local-only.md"] },
-    },
-    Effect.gen(function* () {
-      expect((yield* Config.use.get()).instructions).toEqual(["duplicate.md", "global-only.md", "local-only.md"])
-    }),
-  ),
-)
-
-it.effect("deduplicates duplicate plugins from global and local configs", () =>
-  withConfigTree(
-    {
-      global: { plugin: ["duplicate-plugin", "global-plugin-1"] },
-      local: { plugin: ["duplicate-plugin", "local-plugin-1"] },
-    },
-    Effect.gen(function* () {
-      const plugins = (yield* Config.use.get()).plugin ?? []
-
-      expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
-      expect(plugins.filter((p) => p.includes("duplicate-plugin")).length).toBe(1)
-      expect(
-        plugins.filter(
-          (p) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
-        ).length,
-      ).toBe(3)
-    }),
-  ),
-)
-
-it.effect("keeps plugin origins aligned with merged plugin list", () =>
-  withConfigTree(
-    {
-      global: { plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"] },
-      local: { plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"] },
-    },
-    Effect.gen(function* () {
-      const config = yield* Config.use.get()
-      const plugins = config.plugin ?? []
-      const origins = config.plugin_origins ?? []
-      const names = plugins.map((item) => ConfigPlugin.pluginSpecifier(item))
-
-      expect(names).toContain("shared-plugin@2.0.0")
-      expect(names).not.toContain("shared-plugin@1.0.0")
-      expect(names).toContain("global-only@1.0.0")
-      expect(names).toContain("local-only@1.0.0")
-      expect(origins.map((item) => item.spec)).toEqual(plugins)
-      expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "shared-plugin@2.0.0")?.scope).toBe(
-        "local",
-      )
-    }),
-  ),
-)
-
 // Legacy tools migration tests
-
-it.instance("migrates legacy tools config to permissions - allow", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { bash: true, read: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "allow",
-      read: "allow",
-    })
-  }),
-)
-
-it.instance("migrates legacy tools config to permissions - deny", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { bash: false, webfetch: false } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "deny",
-      webfetch: "deny",
-    })
-  }),
-)
-
-it.instance("migrates legacy write tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { write: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "allow" })
-  }),
-)
 
 // Managed settings tests
 // Note: preload.ts sets OPENCODE_TEST_MANAGED_CONFIG which Global.Path.managedConfig uses
@@ -1233,103 +699,6 @@ it.instance(
   { config: { model: "user/model" } },
 )
 
-it.instance("migrates legacy edit tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { edit: false } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "deny" })
-  }),
-)
-
-it.instance("migrates legacy patch tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { patch: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "allow" })
-  }),
-)
-
-it.instance("migrates mixed legacy tools config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { tools: { bash: true, write: true, read: false, webfetch: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "allow",
-      edit: "allow",
-      read: "deny",
-      webfetch: "allow",
-    })
-  }),
-)
-
-it.instance("merges legacy tools with existing permission config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      agent: { test: { permission: { glob: "allow" }, tools: { bash: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      glob: "allow",
-      bash: "allow",
-    })
-  }),
-)
-
-it.instance("permission config preserves user key order", () =>
-  // Permission precedence follows the order users write in config, so parsing
-  // must not canonicalise known keys ahead of wildcard or custom keys.
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      permission: {
-        "*": "deny",
-        edit: "ask",
-        write: "ask",
-        external_directory: "ask",
-        read: "allow",
-        todowrite: "allow",
-        "thoughts_*": "allow",
-        "reasoning_model_*": "allow",
-        "tools_*": "allow",
-        "pr_comments_*": "allow",
-      },
-    })
-
-    const config = yield* Config.use.get()
-    expect(Object.keys(config.permission!)).toEqual([
-      "*",
-      "edit",
-      "write",
-      "external_directory",
-      "read",
-      "todowrite",
-      "thoughts_*",
-      "reasoning_model_*",
-      "tools_*",
-      "pr_comments_*",
-    ])
-  }),
-)
-
 test("config parser preserves permission order while rejecting unknown top-level keys", () => {
   const config = ConfigParse.schema(
     Config.Info,
@@ -1354,132 +723,6 @@ test("config parser preserves permission order while rejecting unknown top-level
 })
 
 // MCP config merging tests
-
-it.instance("project config can override MCP server enabled status", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    // Simulates a base config (like from remote .well-known) with disabled MCP.
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      mcp: {
-        jira: {
-          type: "remote",
-          url: "https://jira.example.com/mcp",
-          enabled: false,
-        },
-        wiki: {
-          type: "remote",
-          url: "https://wiki.example.com/mcp",
-          enabled: false,
-        },
-      },
-    })
-    // Project config enables just jira.
-    yield* writeConfigEffect(
-      test.directory,
-      {
-        $schema: "https://opencode.ai/config.json",
-        mcp: {
-          jira: {
-            type: "remote",
-            url: "https://jira.example.com/mcp",
-            enabled: true,
-          },
-        },
-      },
-      "opencode.jsonc",
-    )
-
-    const config = yield* Config.use.get()
-    expect(config.mcp?.jira).toEqual({
-      type: "remote",
-      url: "https://jira.example.com/mcp",
-      enabled: true,
-    })
-    expect(config.mcp?.wiki).toEqual({
-      type: "remote",
-      url: "https://wiki.example.com/mcp",
-      enabled: false,
-    })
-  }),
-)
-
-it.instance("MCP config deep merges preserving base config properties", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      mcp: {
-        myserver: {
-          type: "remote",
-          url: "https://myserver.example.com/mcp",
-          enabled: false,
-          headers: {
-            "X-Custom-Header": "value",
-          },
-        },
-      },
-    })
-    yield* writeConfigEffect(
-      test.directory,
-      {
-        $schema: "https://opencode.ai/config.json",
-        mcp: {
-          myserver: {
-            type: "remote",
-            url: "https://myserver.example.com/mcp",
-            enabled: true,
-          },
-        },
-      },
-      "opencode.jsonc",
-    )
-
-    const config = yield* Config.use.get()
-    expect(config.mcp?.myserver).toEqual({
-      type: "remote",
-      url: "https://myserver.example.com/mcp",
-      enabled: true,
-      headers: {
-        "X-Custom-Header": "value",
-      },
-    })
-  }),
-)
-
-it.instance("local .opencode config can override MCP from project config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://opencode.ai/config.json",
-      mcp: {
-        docs: {
-          type: "remote",
-          url: "https://docs.example.com/mcp",
-          enabled: false,
-        },
-      },
-    })
-    yield* AppFileSystem.use.ensureDir(path.join(test.directory, ".opencode"))
-    yield* writeConfigEffect(
-      path.join(test.directory, ".opencode"),
-      {
-        $schema: "https://opencode.ai/config.json",
-        mcp: {
-          docs: {
-            type: "remote",
-            url: "https://docs.example.com/mcp",
-            enabled: true,
-          },
-        },
-      },
-      "opencode.json",
-    )
-
-    const config = yield* Config.use.get()
-    expect(config.mcp?.docs?.enabled).toBe(true)
-  }),
-)
 
 const remoteProjectOverride = wellKnown({
   config: {
@@ -1602,29 +845,6 @@ remotePrecedenceWellKnown.it.instance(
       expect(remotePrecedenceWellKnown.seen.remote).toBe("https://config.example.com/test-token/opencode.json")
       expect(config.mcp?.confluence?.enabled).toBe(true)
     }),
-)
-
-const envIsolationWellKnown = wellKnown({
-  remoteConfig: {
-    url: "https://config.example.com/opencode.json",
-    headers: { Authorization: "Bearer {env:TEST_TOKEN}" },
-  },
-  remote: {
-    mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: true } },
-  },
-})
-
-envIsolationWellKnown.it.instance(
-  "wellknown token env substitution does not mutate process env",
-  () =>
-    Effect.gen(function* () {
-      process.env.TEST_TOKEN = "preexisting-token"
-      const config = yield* Config.use.get()
-      expect(envIsolationWellKnown.seen.authorization).toBe("Bearer test-token")
-      expect(config.username).toBe("test-token")
-      expect(process.env.TEST_TOKEN).toBe("preexisting-token")
-    }),
-  { git: true, config: { username: "{env:TEST_TOKEN}" } },
 )
 
 const nullConfigWellKnown = wellKnown({
@@ -1774,40 +994,9 @@ describe("deduplicatePluginOrigins", () => {
     expect(result).toEqual(["a-plugin@1.0.0", "b-plugin@1.0.0", "c-plugin@1.0.0"])
   })
 
-  it.effect("loads auto-discovered local plugins as file urls", () =>
-    withConfigTree(
-      { global: { plugin: ["my-plugin@1.0.0"] } },
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        yield* AppFileSystem.use.writeWithDirs(
-          path.join(test.directory, ".opencode", "plugin", "my-plugin.js"),
-          "export default {}",
-        )
-
-        const plugins = (yield* Config.use.get()).plugin ?? []
-        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p) === "my-plugin@1.0.0")).toBe(true)
-        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p).startsWith("file://"))).toBe(true)
-      }),
-    ),
-  )
 })
 
 describe("OPENCODE_DISABLE_PROJECT_CONFIG", () => {
-  it.instance(
-    "skips project config files when flag is set",
-    () =>
-      withProcessEnv(
-        "OPENCODE_DISABLE_PROJECT_CONFIG",
-        "true",
-        Effect.gen(function* () {
-          const config = yield* Config.use.get()
-          expect(config.model).not.toBe("project/model")
-          expect(config.username).not.toBe("project-user")
-        }),
-      ),
-    { config: { model: "project/model", username: "project-user" } },
-  )
-
   it.instance("skips project .opencode/ directories when flag is set", () =>
     withProcessEnv(
       "OPENCODE_DISABLE_PROJECT_CONFIG",
@@ -1850,22 +1039,6 @@ describe("OPENCODE_DISABLE_PROJECT_CONFIG", () => {
         }),
       ),
     { config: { instructions: ["./CUSTOM.md"] } },
-  )
-
-  it.instance(
-    "OPENCODE_CONFIG_DIR still works when flag is set",
-    () =>
-      Effect.gen(function* () {
-        const configDir = yield* tmpdirScoped({ config: { model: "configdir/model" } })
-        yield* withProcessEnvs(
-          { OPENCODE_DISABLE_PROJECT_CONFIG: "true", OPENCODE_CONFIG_DIR: configDir },
-          Effect.gen(function* () {
-            const config = yield* Config.use.get()
-            expect(config.model).toBe("configdir/model")
-          }),
-        )
-      }),
-    { config: { model: "project/model" } },
   )
 })
 

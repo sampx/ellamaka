@@ -1,5 +1,6 @@
 import { $ } from "bun"
 import * as Observability from "@opencode-ai/core/effect/observability"
+import { Global } from "@opencode-ai/core/global"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -75,6 +76,24 @@ async function stop(dir: string) {
   await $`git fsmonitor--daemon stop`.cwd(dir).quiet().nothrow()
 }
 
+// Global test config path. Global.Path.config is fixed at module load time
+// (packages/core/src/global.ts) and points into the per-PID isolated WOPAL_HOME
+// redirected by test/preload.ts, so writes here never touch production config.
+const globalSettingsFile = path.join(Global.Path.config, "settings.jsonc")
+
+// Write a bare config (no ellamaka wrapper) to the global settings path that the
+// engine actually loads. Idempotent cleanup deletes the file when the fixture scope ends.
+export function writeGlobalTestConfig(config: Partial<Config.Info>) {
+  return fs.writeFile(
+    globalSettingsFile,
+    JSON.stringify({ $schema: "https://opencode.ai/config.json", ...config }),
+  )
+}
+
+export function removeGlobalTestConfig() {
+  return fs.rm(globalSettingsFile, { force: true }).catch(() => undefined)
+}
+
 type TmpDirOptions<T> = {
   git?: boolean
   config?: Partial<Config.Info>
@@ -92,23 +111,26 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
     await $`git config user.name "Test"`.cwd(dirpath).quiet()
     await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
   }
+  let wroteConfig = false
   if (options?.config) {
-    await Bun.write(
-      path.join(dirpath, "opencode.json"),
-      JSON.stringify({
-        $schema: "https://opencode.ai/config.json",
-        ...options.config,
-      }),
-    )
+    await writeGlobalTestConfig(options.config)
+    wroteConfig = true
   }
   const realpath = sanitizePath(await fs.realpath(dirpath))
-  const extra = await options?.init?.(realpath)
+  let extra: T | undefined
+  try {
+    extra = await options?.init?.(realpath)
+  } catch (err) {
+    if (wroteConfig) await removeGlobalTestConfig()
+    throw err
+  }
   const result = {
     [Symbol.asyncDispose]: async () => {
       try {
         await options?.dispose?.(realpath)
       } finally {
         if (options?.git) await stop(realpath).catch(() => undefined)
+        if (wroteConfig) await removeGlobalTestConfig()
         await clean(realpath).catch(() => undefined)
       }
     },
@@ -129,9 +151,11 @@ export function tmpdirScoped(options?: {
     yield* Effect.promise(() => fs.mkdir(dirpath, { recursive: true }))
     const dir = sanitizePath(yield* Effect.promise(() => fs.realpath(dirpath)))
 
+    let wroteConfig = false
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         if (options?.git) await stop(dir).catch(() => undefined)
+        if (wroteConfig) await removeGlobalTestConfig()
         await clean(dir).catch(() => undefined)
       }),
     )
@@ -150,12 +174,8 @@ export function tmpdirScoped(options?: {
 
     if (options?.config) {
       const resolved = typeof options.config === "function" ? options.config() : options.config
-      yield* Effect.promise(() =>
-        fs.writeFile(
-          path.join(dir, "opencode.json"),
-          JSON.stringify({ $schema: "https://opencode.ai/config.json", ...resolved }),
-        ),
-      )
+      yield* Effect.promise(() => writeGlobalTestConfig(resolved))
+      wroteConfig = true
     }
 
     return dir

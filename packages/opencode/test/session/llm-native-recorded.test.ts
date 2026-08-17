@@ -23,7 +23,7 @@ import type { Agent } from "../../src/agent/agent"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, SessionID } from "../../src/session/schema"
-import { TestInstance } from "../fixture/fixture"
+import { writeGlobalTestConfig, removeGlobalTestConfig } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "../fixtures/recordings")
@@ -312,13 +312,8 @@ function recordedNativeLLMLayer(scenario: RecordedScenario) {
   )
 }
 
-const writeConfig = (directory: string, scenario: RecordedScenario, model: ModelsDev.Provider["models"][string]) =>
-  Effect.promise(() =>
-    Bun.write(
-      path.join(directory, "opencode.json"),
-      JSON.stringify({ $schema: "https://opencode.ai/config.json", ...scenario.config(model) }),
-    ),
-  )
+const writeConfig = (scenario: RecordedScenario, model: ModelsDev.Provider["models"][string]) =>
+  Effect.promise(() => writeGlobalTestConfig(scenario.config(model)))
 
 const collect = (input: LLM.StreamInput) =>
   Effect.gen(function* () {
@@ -367,9 +362,12 @@ const toolRoundtrip = (
 
 const driveToolLoop = (scenario: RecordedScenario) =>
   Effect.gen(function* () {
-    const test = yield* TestInstance
     const model = yield* Effect.promise(() => loadFixture(scenario.providerID, scenario.modelID))
-    yield* writeConfig(test.directory, scenario, model)
+    yield* writeConfig(scenario, model)
+    yield* Effect.acquireRelease(
+      Effect.void,
+      () => Effect.promise(() => removeGlobalTestConfig()),
+    )
 
     const stableID = scenario.stableID ?? scenario.providerID
     const sessionID = SessionID.make(`session-recorded-${stableID}-loop`)
