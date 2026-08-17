@@ -127,10 +127,20 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 
 ### Cordis Development Constraints
 
-- **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) never enter the mainline dependency tree — see CORDIS DESIGN §9 red lines
+- **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) must never be imported, runtime-loaded, or mounted as plugins by mainline code — type-only presence via required peers (e.g. SessionId) is allowed and gated by the runtime probe test (`forbidden-load.test.ts`) — see CORDIS DESIGN §9 red lines
 - **Bridge form**: all Effect↔async bridges follow CORDIS DESIGN §5.6.1 (`Effect.forkIn(scope)(work)` with the work Fiber held; interrupt via `runtime.runFork(Fiber.interrupt(fiber))`; never drive long-running work via `runPromise`)
 - **Contract discipline**: contracts are self-owned inside `@wopal/ellamaka-cordis` (shapes borrowed from dsh; never import dsh contract packages or track rc releases); external plugins mount only after passing contract conformance smoke tests (CORDIS DESIGN §10)
 - **Test gate**: cordis integration tests live in `packages/opencode/test/cordis/`; bridge package changes keep existing opencode tests green
+
+### Logging Rules
+
+- **Plugin logging**: cordis plugins log exclusively via built-in `ctx.logger` (auto-named by plugin); no `console.log`, no manual Logger creation; the container-level Exporter bridges to the ellamaka `Log` system at the assembly layer (CORDIS DESIGN §5.10), so plugins never care where logs go
+- **Must log**: lifecycle state changes (init/created/disposed/mount/unmount), errors and exceptions (including degraded paths), key decisions (selection/fallback/skip)
+- **Must not log**: per-item operations inside loops (per-file/per-entry), routine operations on the success path (every load/every search), information derivable from context
+- **Aggregate**: when a loop needs observability, log one summary outside the loop (`log.info("reverted", { count })`), never per-item inside the loop body
+- **Structured**: carry context in the `extra` field (`log.info("reverting", { file, hash })`), never concatenate into the message; use fixed verb phrases for the message so it is searchable
+- **Never swallow errors silently**: a `catch` must log (error or warn); no empty catch
+- **Level**: default `INFO`; `debug` is diagnostic-only and not emitted in production
 
 ## 5. Testing & Verification
 

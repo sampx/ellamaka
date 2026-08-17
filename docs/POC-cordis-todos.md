@@ -17,7 +17,7 @@
 
 | Plan | 名称 | 对应设计 | 依赖 | 状态 | 预计规模 |
 |------|------|---------|------|------|---------|
-| Plan 1 | POC：容器宿主 + 首个插件挂载 | Step A 全量 + Step B 核心切片 | 无 | 🔶 | 1.5–2 周 |
+| Plan 1 | POC：容器宿主 + 首个插件挂载 | Step A 全量 + Step B 核心切片 | 无 | ✅ | 1.5–2 周 |
 | Plan 2 | 契约下沉补全 | Step B 剩余 | Plan 1 | ⬜ | 1–1.5 周 |
 | Plan 3 | 工具选型与 dsh 工具采用 | Step C 前段（C0/C1/C2 采用侧） | Plan 2 | ⬜ | 1–1.5 周 |
 | Plan 4 | 单管道收敛与权限剥离 | Step C 后段（C2 包装侧/C3） | Plan 3 | ⬜ | 2–3 周 |
@@ -42,6 +42,9 @@
 - [x] 1.6 grep 工具桥接：包装注册进 ctx.tools（单工具验证，其余工具仍走原生管道）
 - [x] 1.7 spill 三件套挂载（spill + spill-local + spill-policy，代码直挂 `ctx.plugin`，不走 settings 声明），真实对话验证超长输出转储 + 预览句柄 + 干净卸载
 - [x] 1.8 回归收口：opencode 既有测试按基线对照零新增失败 + `bun run typecheck` + 手动对话回归（流式/SQLite/Snapshot 零异常，随用户验证场景执行）
+- [ ] 1.9 日志桥接：cordis 内建 `ctx.logger` → ellamaka `Log` 体系（`cordis-mount.ts` 注册 Exporter，hub.ts 改用 `ctx.logger`），用户验证 TUI 退出时日志文件可见 hub created/disposed 记录
+
+> **Plan 1 已知设计问题（记录，非本 Plan 缺陷）**：native grep 上游截断（`grep.ts` 匹配数 >100 只格式化前 100 行）与 dsh spill 的「全量转储」语义不匹配——匹配数爆炸场景下 spill 文件存的是截断后结果，模型无法从 spill 精确读回剩余匹配，只能重新 grep。spill 的「全量读回」价值仅在「匹配少但行超长」场景成立。修复方向归 Step C 单管道收敛（截断策略统一进 ctx.tools，spill 见全量），详见 DESIGN §5.7 已知问题。
 
 ## Plan 2 — 契约下沉补全
 
@@ -52,7 +55,7 @@
 - [ ] 2.2 ctx.systemPrompt 桥接：section 注册 + 工具 schema 汇聚回调，注入现有 SystemPrompt 组装路径
 - [ ] 2.3 ctx.subprocess / ctx.fs 缝隙桥：包装 ChildProcessSpawner / AppFileSystem，进程树终止与环境净化语义验证
 - [ ] 2.4 root/instance 两级 context 派生：与 InstanceState ScopedCache 生命周期对齐，实例关闭仅释放实例插件
-- [ ] 2.5 ConfigBridge 首版：plugin 字段声明解析 + 自动识别路由 + global/space 两级装配 + schemastery 校验 + `--dump-cordis-config`
+- [ ] 2.5 ConfigBridge 首版：plugin 字段声明解析 + 自动识别路由 + global/space 两级装配 + schemastery 校验 + `--dump-cordis-config` + cordis 插件日志级别经配置文件声明覆盖（DESIGN §5.10）
 - [ ] 2.6 ctx.wopal 缝隙 + CLI provider：包装现有 cli-adapter，Workbench 内部路径切换（对外 API 零变更），SpaceRegistry 回归全绿
 - [ ] 2.7 契约符合性测试进 CI：已挂载插件清单（spill 三件套）滚动回归
 
@@ -131,3 +134,4 @@
 | 2026-08-16 | — | 文档创建；Plan 1–7 规划定稿，待启动 Plan 1 |
 | 2026-08-16 | — | Plan 8（审计事件流/薄账本）规划新增：session 语义模型分析定稿（研究报告 §13），中间路线纳入设计与实施计划 |
 | 2026-08-17 | Plan 1 | Plan 1 实施完成：Task 1–9 全部落地（包骨架/agent-loop/改道/R2R3 复验/ctx.tools/grep 桥/spill 挂载），1.1–1.8 勾选；全量测试按基线对照零新增失败（271 基线失败记录在案：模型 catalog 漂移/品牌快照/git reference 环境/测试间竞态）；桥接形态修正（§5.6.1 `Effect.forkIn(scope)(work)` + Scope 剥离）；待用户验证 spill 真实对话 |
+| 2026-08-17 | Plan 1 | 用户验证通过：真实对话触发超长 grep（5000 匹配/23KB）→ spill 转储 `$WOPAL_HOME/ellamaka/data/spill/session-<hash>/`，模型收预览+句柄，权限 0700；Plan 1 标记 ✅。记录已知问题：native grep 截断与 spill 全量语义不匹配（见 Plan 1 备注）。干净卸载场景待用户验证 |

@@ -191,6 +191,8 @@ graph LR
 
 原生工具迁移：每个 ellamaka 原生工具包装为一个 ToolDefinition 注册（execute 转调现有实现），permission 检查从原生管道移入 guard 段。收敛完成前新旧管道并存（R7 过渡态），收敛后 ctx.tools 为唯一管道，loop 经它调用一切工具。
 
+**已知问题（Plan 1 实证，2026-08-17）**：native grep 上游截断（`grep.ts` 匹配数 >100 只格式化前 100 行）与 dsh spill 的「全量转储」语义不匹配。匹配数爆炸场景下，spill 文件存的是 native 截断后的结果，模型无法从 spill 精确读回剩余匹配，只能重新 grep——spill 的「全量读回」价值仅在「匹配少但行超长」场景成立。修复方向：Step C 单管道收敛时，将工具截断策略统一进 ctx.tools 管道（spill 见全量，截断决策与转储决策同层），而非让原生工具在管道外先行截断。
+
 ### 5.2 ctx.systemPrompt — 提示词分段组装
 
 所有权：system prompt 的分段注册与排序归本服务所有。插件以 `section({ name, order, text })` 注册段落（人设置顶、工具指南 100-199 段位、动态信息置底），以 `tools(scope)` 注册工具 schema 汇聚回调。桥接实现将段落合成注入 ellamaka SystemPrompt 组装路径（挂点：`experimental.chat.system.transform` 同层）。
@@ -320,6 +322,74 @@ wopal-plugin(Cordis 插件)   Workbench API(对外不变)   桌面端/未来 TUI
 
 **落点**：Step B 缝隙与 CLI provider 落地；Step C/D wopal-plugin 改造为标准 Cordis 插件、wopal_task_* 经缝隙转正。
 
+### 5.10 日志桥接 — cordis 插件日志独立文件
+
+**问题**：cordis 容器加载大量 dsh 插件（spill 三件套、grep 桥、未来的 llm/subprocess/fs 桥等），这些插件内部用 cordis `ctx.logger` 输出日志。ellamaka 主日志已严重洪水，dsh 插件日志混入会进一步恶化可读性。需要将 cordis 插件日志分离到独立文件。
+
+**机制发现**：cordis 4.0.1 自带完整日志子系统（`LoggerService`，Context 四大内建服务之一），具备三项关键能力：
+1. **自动命名**：插件的 `ctx.logger` 调用自动以 fiber 名称（插件声明的 `static name`）作为 logger name——dsh 50+ 个插件全部依赖此机制，零手动 Logger 创建。
+2. **Exporter 广播**：`ctx.logger.exporter(sink)` 注册一个导出器，即可收到容器内所有插件的日志（全局广播），且跟随 fiber 生命周期自动清理。
+3. **per-name 级别控制**：Exporter 的 `levels` 字段按 logger name（即插件名）设级别阈值。这是**插件级**级别控制——同一插件内部不同模块不能不同级别（name 是插件名，不是模块名）。
+
+详细源码分析见研究报告 §14。
+
+**双轨日志设计**：
+
+```
+dsh 插件（spill/grep-bridge/...）        自研插件（wopal-plugin 等）
+─────────────────────────────           ─────────────────────────
+ctx.logger.warn(...)                     rulesLogger.warn(...)
+     │                                        │
+     ▼                                        ▼
+  Exporter（装配层注册）                    自己的 logger.ts
+     │                                        │
+     ▼                                        ▼
+  cordis-plugins.log                      wopal-plugin.log
+  （与主 log 同目录）                      （WOPAL_PLUGIN_LOG_*）
+```
+
+- **dsh 插件**：必须用 `ctx.logger`（不能改其源码），日志经 Exporter 收集。
+- **自研插件**：推荐用 `ctx.logger`（与 dsh 一致）；如需独立日志文件/级别/模块过滤，保留自管理 logger（wopal-plugin 的 `logger.ts` 是范例：独立文件、trace~fatal 六级、模块白名单、敏感字段脱敏）。自管理 logger 是模块级单例、独立于 cordis fiber、用 `appendFileSync` 写文件，转 cordis 插件后零改动继续工作。
+
+**Exporter 设计**：在 `cordis-mount.ts` 装配层为每个 CordisHub 注册一个 Exporter，自管理写入独立文件 `cordis-plugins.log`，不进 ellamaka 主日志。
+
+```
+cordis ctx.logger（per-plugin 自动命名）
+        │
+        ▼
+   Exporter（装配层，onHubCreate 注册）
+        │
+        ├─ 日志路径：从 ellamaka 主程序接收（path.dirname(Log.file()) + 'cordis-plugins.log'）
+        ├─ 日志级别：从 ellamaka 主程序接收（Log.currentLevel()）
+        └─ 文件写入：appendFileSync，自管理（不经 ellamaka Log 体系）
+        │
+        ▼
+   cordis-plugins.log（与主 log 同目录）
+   ├─ dev 空间模式 → <space>/.wopal-space/logs/cordis-plugins.log
+   ├─ dev 非空间   → $WOPAL_DEBUG_LOG_DIR/cordis-plugins.log
+   └─ 生产模式     → $WOPAL_HOME/logs/cordis-plugins.log
+```
+
+**日志路径与级别来源**：Exporter 不自己读环境变量、不自己决定路径。从 ellamaka 主程序接收传入——路径取 `path.dirname(Log.file())`（ellamaka 已决定的日志目录）拼 `cordis-plugins.log`，级别取 `Log.currentLevel()`（ellamaka 当前进程级阈值，由 `--log-level` CLI 参数经 `Log.init({level})` 设置）。后续 Plan 2 的 ConfigBridge 落地后，级别可经配置文件覆盖（plugin 字段声明）。
+
+**日志格式**：Exporter 复用 cordis 的 `Logger.format(exporter, message)` 格式化，行格式：
+
+```
+2026-08-17 14:25:30 [WARN] [spill-policy] keeping raw content (below threshold)
+```
+
+`[spill-policy]` 是 cordis message 自带的插件名（自动命名）。与 wopal-plugin logger.ts 的格式风格对齐（timestamp + level + module + message）。
+
+**Exporter 级别过滤**：Exporter 的 `levels` 字段设为 `{ default: LoggerLevel.DEBUG }`（放行所有级别到 Exporter），最终级别过滤由 Exporter 自己按 `Log.currentLevel()` 裁决——同 wopal-plugin logger.ts 的 `shouldLog` 模式。cordis 侧放行、Exporter 裁决，双层避免 cordis 默认 INFO 提前挡掉 debug。
+
+**CordisHub 自身日志**：hub.ts 的 `console.log` 改为 `this.ctx.logger.info('created')` / `this.ctx.logger.info('disposing')`，cordis Logger 自动以 hub 的 fiber 名称为前缀。Exporter 注册在 hub 创建之后、第一个插件挂载之前，确保 hub 自身和所有后续插件的日志都能输出。
+
+**Exporter 生命周期**：通过 `ctx.logger.exporter()` 注册的 Exporter 用 `ctx.effect()` 绑定 fiber 生命周期，hub dispose 时自动移除——零手动清理。
+
+**ellamaka Log 改动**：`core/src/util/log.ts` 需新增 `currentLevel()` 导出（返回模块私有 `level` 变量），供装配层获取当前进程级日志阈值。改动仅一行。
+
+**后续演进**：Plan 2 的 ConfigBridge（§5.8）落地后，cordis 插件日志级别可经配置文件声明（plugin 字段），覆盖主程序传入的默认级别。Plan 2 之前，级别跟随 ellamaka 主程序 `--log-level`。
+
 ## 6. 迁移路径
 
 五个 Step，每个独立有价值、可停、可回滚（删除桥接包即恢复直连）。Step 顺序即依赖顺序。Step F 为远期方向，排期在 Step D 完成后另定。
@@ -429,7 +499,7 @@ opencode 打磨成熟的能力封装为 dsh 契约的标准 Cordis 插件，在 
 ## 9. 红线（所有权边界）
 
 1. **cordis import 边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）。生态输出插件（§7.2）是唯一例外，且其依赖的 dsh 契约包不进入 ellamaka 主线依赖树。
-2. **dsh 深耦合包禁入**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包不进入主线依赖树。这些能力的插件化走自研路径。
+2. **dsh 深耦合包禁入（运行时语义）**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，禁止被主线代码 import、禁止在运行时加载、禁止作为插件挂载；这些能力的插件化走自研路径。required peer 进入 node_modules/bun.lock 仅供类型解析（如 spill 栈对 SessionId 的 `import type`，编译期擦除）不构成违反，以运行时加载探针为零为验收（测试门禁：`packages/ellamaka-cordis/test/forbidden-load.test.ts`）。
 3. **session 所有权**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。Step F 插件化以数据契约逐字节等价为验收。
 4. **对外契约冻结**：SSE 事件、HttpApi、SDK 在 Step A–E 中零变更（表现层对本设计无感知）。
 5. **桥的加法原则**：全部桥接为新增文件/包装层；对 loop 与存储的改写以"实现内转向"为限（桥在下层），保持删除桥即回滚的能力。
