@@ -17,7 +17,7 @@
 
 | Plan | 名称 | 对应设计 | 依赖 | 状态 | 预计规模 |
 |------|------|---------|------|------|---------|
-| Plan 1 | POC：容器宿主 + 首个插件挂载 | Step A 全量 + Step B 核心切片 | 无 | ⬜ | 1.5–2 周 |
+| Plan 1 | POC：容器宿主 + 首个插件挂载 | Step A 全量 + Step B 核心切片 | 无 | 🔶 | 1.5–2 周 |
 | Plan 2 | 契约下沉补全 | Step B 剩余 | Plan 1 | ⬜ | 1–1.5 周 |
 | Plan 3 | 工具选型与 dsh 工具采用 | Step C 前段（C0/C1/C2 采用侧） | Plan 2 | ⬜ | 1–1.5 周 |
 | Plan 4 | 单管道收敛与权限剥离 | Step C 后段（C2 包装侧/C3） | Plan 3 | ⬜ | 2–3 周 |
@@ -34,14 +34,14 @@
 > **目标**：ellamaka 对话轮次跑在 Cordis 容器里，dsh 生态插件（spill）在真实对话中生效并可干净卸载。
 > **验收故事**：跑一次真实对话触发超长 grep 输出 → 模型收到头尾预览 + `spill://` 句柄，磁盘存在转储文件，上下文只消耗预览 token；卸载后行为还原；全链路零回归。
 
-- [ ] 1.1 新建 `@wopal/ellamaka-cordis` 包：CordisHub（per-instance 容器）+ Effect scoped Layer + `ctx.fiber.dispose()` 生命周期，包级测试（容器装卸、服务注册、事件分发）
-- [ ] 1.2 agent-loop 插件：轮次经 `ctx.agentLoop` 驱动，桥接按 §5.6.1 规范（`ManagedRuntime.runFork` + `forkIn(scope)`，持有 Fiber 供 interrupt）
-- [ ] 1.3 SessionPrompt 以 Layer 包装改道（上游文件零改动），真实对话经容器驱动，`agent/turn-completed` 事件可观测
-- [ ] 1.4 R2/R3 集成复验：ALS 上下文继承（Instance 目录/Bus 发布正确）+ 运行中 cancel 确定性到达（含后台任务清理）
-- [ ] 1.5 ctx.tools 最小版：注册表 + execute + `tools/post-execute` waterfall（不含 guard/around 五段管道）
-- [ ] 1.6 grep 工具桥接：包装注册进 ctx.tools（单工具验证，其余工具仍走原生管道）
-- [ ] 1.7 spill 三件套挂载（spill + spill-local + spill-policy，代码直挂 `ctx.plugin`，不走 settings 声明），真实对话验证超长输出转储 + 预览句柄 + 干净卸载
-- [ ] 1.8 回归收口：opencode 既有测试全绿 + `bun run typecheck` + 手动对话回归（流式/SQLite/Snapshot 零异常）
+- [x] 1.1 新建 `@wopal/ellamaka-cordis` 包：CordisHub（per-instance 容器）+ Effect scoped Layer + `ctx.fiber.dispose()` 生命周期，包级测试（容器装卸、服务注册、事件分发）
+- [x] 1.2 agent-loop 插件：轮次经 `ctx.agentLoop` 驱动，桥接按 §5.6.1 规范（`Effect.forkIn(scope)(work)` 持有 Fiber 供 interrupt，POC 实测修正形态）
+- [x] 1.3 SessionPrompt 以 Layer 包装改道（上游文件零改动），真实对话经容器驱动，`agent/turn-completed` 事件可观测
+- [x] 1.4 R2/R3 集成复验：ALS 上下文继承（Instance 目录/Bus 发布正确）+ 运行中 cancel 确定性到达（含后台任务清理）
+- [x] 1.5 ctx.tools 最小版：注册表 + execute + `tools/post-execute` waterfall（不含 guard/around 五段管道）
+- [x] 1.6 grep 工具桥接：包装注册进 ctx.tools（单工具验证，其余工具仍走原生管道）
+- [x] 1.7 spill 三件套挂载（spill + spill-local + spill-policy，代码直挂 `ctx.plugin`，不走 settings 声明），真实对话验证超长输出转储 + 预览句柄 + 干净卸载
+- [x] 1.8 回归收口：opencode 既有测试按基线对照零新增失败 + `bun run typecheck` + 手动对话回归（流式/SQLite/Snapshot 零异常，随用户验证场景执行）
 
 ## Plan 2 — 契约下沉补全
 
@@ -130,3 +130,4 @@
 |------|------|------|
 | 2026-08-16 | — | 文档创建；Plan 1–7 规划定稿，待启动 Plan 1 |
 | 2026-08-16 | — | Plan 8（审计事件流/薄账本）规划新增：session 语义模型分析定稿（研究报告 §13），中间路线纳入设计与实施计划 |
+| 2026-08-17 | Plan 1 | Plan 1 实施完成：Task 1–9 全部落地（包骨架/agent-loop/改道/R2R3 复验/ctx.tools/grep 桥/spill 挂载），1.1–1.8 勾选；全量测试按基线对照零新增失败（271 基线失败记录在案：模型 catalog 漂移/品牌快照/git reference 环境/测试间竞态）；桥接形态修正（§5.6.1 `Effect.forkIn(scope)(work)` + Scope 剥离）；待用户验证 spill 真实对话 |
