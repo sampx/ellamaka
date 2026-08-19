@@ -54,6 +54,7 @@ import { setNavigate } from "@/utils/notification-click"
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 const WorkbenchPage = lazy(() => import("@/pages/workbench"))
+const DshPage = lazy(() => import("@/pages/dsh"))
 
 const SessionRoute = Object.assign(
   () => (
@@ -351,6 +352,7 @@ export function AppInterface(props: {
                   >
                     <Route path="/" component={HomeRoute} />
                     <Route path="/workbench" component={WorkbenchPage} />
+                    <Route path="/dsh" component={DshPage} />
                     <Route path="/:dir" component={DirectoryLayout}>
                       <Route path="/" component={() => <Navigate href="session" />} />
                       <Route path="/session/:id?" component={SessionRoute} />
