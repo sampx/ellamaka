@@ -19,7 +19,7 @@ test("example", async () => {
 ### Options
 
 - `git?: boolean` - Initialize a git repo with a root commit
-- `config?: Partial<Config.Info>` - Write an `opencode.json` config file
+- `config?: Partial<Config.Info>` - Write the config to the global settings path (`$WOPAL_HOME/config/settings.jsonc`, isolated per-PID by `test/preload.ts`). The engine loads this path in normal mode; project-level `opencode.json` is not loaded. The file is removed when the fixture scope ends, and only by the fixture that wrote it.
 - `init?: (dir: string) => Promise<T>` - Custom setup function, returns value accessible as `tmp.extra`
 - `dispose?: (dir: string) => Promise<T>` - Custom cleanup function
 
