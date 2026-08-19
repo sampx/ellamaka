@@ -75,4 +75,7 @@ export const Flag = {
   get WOPAL_SPACE() {
     return truthy("WOPAL_SPACE")
   },
+  get ELLAMAKA_DSH() {
+    return truthy("ELLAMAKA_DSH")
+  },
 }

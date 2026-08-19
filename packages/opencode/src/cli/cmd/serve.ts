@@ -3,6 +3,7 @@ import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { CordisHub, mountDshWeb } from "@wopal/ellamaka-cordis"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 export const ServeCommand = effectCmd({
@@ -20,6 +21,20 @@ export const ServeCommand = effectCmd({
     const server = yield* Effect.promise(() => Server.listen(opts))
     console.log(`${BINARY_NAME} server listening on http://${server.hostname}:${server.port}`)
 
-    yield* Effect.never
+    // Optional dsh web engine (single-process dual-port, PoC §7.11).
+    // Enabled via ELLAMAKA_DSH=1; mounts the dsh web profile onto a
+    // process-level cordis hub — one process, one container. When disabled,
+    // nothing dsh-related is mounted and ellamaka runs untouched.
+    if (Flag.ELLAMAKA_DSH) {
+      const hub = new CordisHub(null)
+      // Fixed loopback port so the Workbench /dsh iframe can address it without
+      // a runtime port-discovery round trip (dev 4098; Desktop uses a random
+      // port via its own sidecar wiring in a later phase).
+      const dsh = yield* Effect.promise(() => mountDshWeb(hub.ctx, { port: 4098 }))
+      console.log(`dsh web engine listening on ${dsh.url}`)
+      yield* Effect.never.pipe(Effect.ensuring(Effect.promise(() => hub.dispose())))
+    } else {
+      yield* Effect.never
+    }
   }),
 })
