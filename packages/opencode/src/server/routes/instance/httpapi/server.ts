@@ -240,9 +240,13 @@ export function createRoutes(
       Session.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
-      // Per-instance cordis hubs with the code-mounted plugin set (spill trio;
-      // DESIGN D-04/D-06): turns resolve their hub by the dispatch-time
-      // instance directory; instance dispose invalidates its hub entry.
+      // Turn driver (cordis): consumed per dispatch via Effect.serviceOption
+      // inside SessionPrompt.loop — handlers execute with this assembly's
+      // context, so the sibling below is the driver for every turn routed
+      // through this server; environments without a driver (CLI, tests) fall
+      // back to direct execution. Sibling placement is safe because the
+      // driver is no longer captured at SessionPrompt build time, so the
+      // shared memoMap cannot pin a stale driver (DESIGN D-04/D-06, POC 1.2).
       createTurnDriverLayer(TurnDriver.Service, { directory: InstanceState.directory }).pipe(
         Layer.provide(CordisMount.cordisPluginAssembly.hubs),
       ),

@@ -131,7 +131,6 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
-    const driver = yield* TurnDriver.Service
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1526,11 +1525,17 @@ export const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(
-        input.sessionID,
-        lastAssistant(input.sessionID),
-        driver.run({ sessionID: input.sessionID, work: runLoop(input.sessionID) }),
-      )
+      // Resolve the turn driver per dispatch from the surrounding environment:
+      // environments that mount one (server routes provide the cordis driver)
+      // route the turn through the container; everyone else runs the loop
+      // directly. Dispatch-time resolution keeps this layer free of a
+      // TurnDriver requirement, so the shared memoMap build is
+      // driver-independent and cannot pin a stale driver.
+      const driver = yield* Effect.serviceOption(TurnDriver.Service)
+      const work = Option.isSome(driver)
+        ? driver.value.run({ sessionID: input.sessionID, work: runLoop(input.sessionID) })
+        : runLoop(input.sessionID)
+      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
@@ -1666,7 +1671,7 @@ export const layer = Layer.effect(
       resolvePromptParts,
     })
   }),
-).pipe(Layer.provide(TurnDriver.defaultLayer))
+)
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
