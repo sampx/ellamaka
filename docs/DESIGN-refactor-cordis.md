@@ -195,9 +195,13 @@ graph LR
 
 ### 5.2 ctx.systemPrompt — 提示词分段组装
 
+> **终审标注（2026-08-19）**：无消费方，暂不桥接。ellamaka 已有 `experimental.chat.system.transform` 原生钩子承载 system prompt 注入需求（零开发可用）。待真实消费方出现再评估。
+
 所有权：system prompt 的分段注册与排序归本服务所有。插件以 `section({ name, order, text })` 注册段落（人设置顶、工具指南 100-199 段位、动态信息置底），以 `tools(scope)` 注册工具 schema 汇聚回调。桥接实现将段落合成注入 ellamaka SystemPrompt 组装路径（挂点：`experimental.chat.system.transform` 同层）。
 
 ### 5.3 ctx.llm — 模型适配契约
+
+> **终审标注（2026-08-19）**：无消费方，暂不桥接。原设计"loop 插件化后经本契约消费模型"的前提（loop 进容器）已被 Step A"桥在下层"路线取代，该用途消失；dsh 生态当前无梯队 1 的 llm 插件。待真实消费方出现再评估。
 
 所有权：adapter 注册与流式调用分发归本服务所有。
 
@@ -359,18 +363,17 @@ cordis ctx.logger（per-plugin 自动命名）
         ▼
    Exporter（装配层，onHubCreate 注册）
         │
-        ├─ 日志路径：从 ellamaka 主程序接收（path.dirname(Log.file()) + 'cordis-plugins.log'）
+        ├─ 日志路径：按实例目录决定（resolveWopalSpaceRoot(directory)）
         ├─ 日志级别：从 ellamaka 主程序接收（Log.currentLevel()）
         └─ 文件写入：appendFileSync，自管理（不经 ellamaka Log 体系）
         │
         ▼
-   cordis-plugins.log（与主 log 同目录）
-   ├─ dev 空间模式 → <space>/.wopal-space/logs/cordis-plugins.log
-   ├─ dev 非空间   → $WOPAL_DEBUG_LOG_DIR/cordis-plugins.log
-   └─ 生产模式     → $WOPAL_HOME/logs/cordis-plugins.log
+   cordis-plugins.log（空间/非空间各一个文件）
+   ├─ wopalspace 实例 → <space>/.wopal-space/logs/cordis-plugins.log
+   └─ 非空间实例     → $WOPAL_HOME/logs/cordis-plugins.log
 ```
 
-**日志路径与级别来源**：Exporter 不自己读环境变量、不自己决定路径。从 ellamaka 主程序接收传入——路径取 `path.dirname(Log.file())`（ellamaka 已决定的日志目录）拼 `cordis-plugins.log`，级别取 `Log.currentLevel()`（ellamaka 当前进程级阈值，由 `--log-level` CLI 参数经 `Log.init({level})` 设置）。后续 Plan 2 的 ConfigBridge 落地后，级别可经配置文件覆盖（plugin 字段声明）。
+**日志路径与级别来源**：Exporter 不自己读环境变量。路径按实例目录决定——`onHubCreate(hub, directory)` 时用 `resolveWopalSpaceRoot(directory)` 判断：空间内实例写空间规范日志目录（`<space>/.wopal-space/logs/`），非空间实例写 `Global.Path.log`（`$WOPAL_HOME/logs/`）。路径决策不依赖进程级 `Log.file()` 状态（`--print-logs` 模式下主 log 不存在、`Log.file()` 为空串，曾导致日志落到进程 cwd）。级别取 `Log.currentLevel()`（ellamaka 当前进程级阈值，由 `--log-level` CLI 参数经 `Log.init({level})` 设置）。后续 Plan 2 的 ConfigBridge 落地后，级别可经配置文件覆盖（plugin 字段声明）。
 
 **日志格式**：Exporter 复用 cordis 的 `Logger.format(exporter, message)` 格式化，行格式：
 
@@ -392,9 +395,11 @@ cordis ctx.logger（per-plugin 自动命名）
 
 ## 6. 迁移路径
 
+> **⚠️ 本节 Plan 批次叙事已被 §12 路线终审（2026-08-19）修正**：Step B 剩余契约桥、Step C 五段管道叙事撤销，Step D 载体改为 Effect 能力包。当前有效实施序列见 `DESIGN-capabilities.md` 与 `PLAN-TODOS.md`。本节保留为设计推演历史。
+
 五个 Step，每个独立有价值、可停、可回滚（删除桥接包即恢复直连）。Step 顺序即依赖顺序。Step F 为远期方向，排期在 Step D 完成后另定。
 
-**实施拆分**：Step 与实施批次（Plan）的映射见 `POC-cordis-todos.md`——Step A 全量与 Step B 核心切片（ctx.tools 最小版 + spill 挂载）合并为首个 POC 批次；Step B 剩余为第二批次；Step C 按 C0–C3 拆为两个批次；研究报告 §11 的 A 类机制复刻（不依赖 Cordis 化）为可并行批次。
+**实施拆分**：Step 与实施批次（Plan）的映射见 `PLAN-TODOS.md`（终审后承载全部能力路线）——Step A 全量与 Step B 核心切片（ctx.tools 最小版 + spill 挂载）合并为首个 POC 批次；Step B 剩余为第二批次；Step C 按 C0–C3 拆为两个批次；研究报告 §11 的 A 类机制复刻（不依赖 Cordis 化）为可并行批次。
 
 ```mermaid
 graph LR
@@ -454,7 +459,7 @@ graph LR
 
 **时序价值**：独立于 Cordis 主线，任何时点可启动。对拍价值最大化的启动点是 Step C/D 重构**之前**录制行为基线——单管道收敛与权限剥离（Plan 3/4）由此获得机器可验证的回归证据，而不只是人工对话回归。
 
-**成本与控制**：约 1–2 周写入路径改造；存储增长以保留策略控制（按会话/时间裁剪、可开关）。规划见 `POC-cordis-todos.md` Plan 8。
+**成本与控制**：约 1–2 周写入路径改造；存储增长以保留策略控制（按会话/时间裁剪、可开关）。规划见 `PLAN-TODOS.md` 远期项。
 
 ## 7. 生态互操作（双向）
 
@@ -465,6 +470,8 @@ graph LR
 按 Q2（契约自持锁死）+ Q3（符合性验证挂载）运作，落地策略见 §10。dsh 深耦合梯队（agent-loop/session/session-query/compaction/subagent/schedule）永久排除在输入之外（红线 §9.2）。
 
 ### 7.2 输出方向 — 反哺 dsh 插件生态
+
+> **终审标注（2026-08-19）**：降级为机会性方向，从路线图撤销。dsh 插件生态围绕其自家 loop/session 语义生长（消费方要替换的是"更聪明的循环策略"，非"更重的运行时"），替换动机不成立。将来出现真实需求再单独评估。详见 §12。
 
 opencode 打磨成熟的能力封装为 dsh 契约的标准 Cordis 插件，在 dsh 侧发布与使用。这是把 ellamaka 的存量成熟度（多 provider 接入、models.dev 集成、工具集）转化为生态影响力的通道。
 
@@ -512,8 +519,55 @@ opencode 打磨成熟的能力封装为 dsh 契约的标准 Cordis 插件，在 
 
 ## 11. 参考
 
-- 实施计划与进度管理：`POC-cordis-todos.md`（Step → Plan 批次映射、任务清单、进度跟踪）
+- 实施计划与进度管理：`PLAN-TODOS.md`（Step → Plan 批次映射、任务清单、进度跟踪；终审后承载全部能力路线）
+- 新主线设计（能力包工艺、plugin 统一声明面、权限收敛、实施序列）：`DESIGN-capabilities.md`
 - 研究报告（dsh 全景调研、四层架构分析、审计证据链，其原方案存档含历史架构图）：`research/deepseek-harness-architecture-and-integration-research.md`
 - dsh 参考源码：`labs/ref-repos/deepseek-harness/`（vendor/cordis、packages/core/*、packages/spill/*）
 - Cordis Bun 实测记录：`.wopal-space/.tmp/cordis-smoke/`（smoke.ts）
 - 上级架构：`DESIGN.md`
+
+## 12. 路线终审（2026-08-19）
+
+> **终审性质**：本节是对 §5–§7 原设计叙事的正式修正，效力高于原文。触发条件：Plan 1 实证完成 + 三轮架构评审（消费方驱动分析、能力依赖分层验尸、插入方式对比）。新主线设计见 `DESIGN-capabilities.md`。
+
+### 12.1 实证结论
+
+**C1 — cordis 价值半径 = 工具层**。"插件改变系统行为"要求宿主在决策点查询容器。ellamaka 的 loop/session 决策点（step 控制、compaction 触发、消息组装、模型选择、follow-up）全部直接 yield 原生 Effect 服务，不经容器。插件可触达的决策点只有工具执行管道。Plan 1 的 spill 生效本质是"恰好那个决策点被桥接"。
+
+**C2 — dsh 深耦合能力不可桥接挂载**。session-query / schedule / subagent / system prompt 注入等能力依赖 dsh 自家 loop/session 语义的引擎层（事件日志语料重放、agent.send 唤醒通道、子会话模型），契约桥只能翻译接口层形状，翻译不了引擎层语义。这些能力的获取路径是原生复刻（研究报告 §11 复刻路线：机制设计可剥离，包与数据模型不可复用）。其中 system prompt 注入 ellamaka 已有原生钩子（`experimental.chat.system.transform`）承载，零开发可用。
+
+**C3 — loop/session 保持 Effect 原生**。Step A 的"桥在下层"路线已是既定事实（非未来选项）：loop 永住 Effect 侧，session 所有权锁死 ellamaka（红线 3）。§7.2 输出方向（反哺 dsh 生态）据此降级为机会性方向——dsh 插件生态围绕自家 loop/session 语义生长，替换动机不成立。
+
+**C4 — Plan 1 验证的真正工艺是"独立包 + 最小注入点"**，cordis 只是当时选择的协议载体。该工艺可平移到纯 Effect 形态（optional service + Layer 工厂 + 配置装配），免桥接税，且对 fork 跟踪更友好（upstream 冲突面最小化）。spill 在 Plan 1 中的实际价值被原生 grep 截断稀释（截断与全量转储语义冲突，POC 备注在案），"工具能力 cordis 化"的通用价值据此判定为不成立——工具能力复制逻辑的成本远低于维护桥。
+
+### 12.2 三层战略
+
+| 层 | 内容 | 载体 |
+|----|------|------|
+| **主线** | 能力包工艺、plugin 统一声明面（配置化）、权限收敛、§11 复刻波次 | Effect 原生，见 `DESIGN-capabilities.md` |
+| **边缘** | dsh 工具插件按需挂载（如 fs-search 替换原生 grep/glob） | cordis 通道即用：所需缝隙桥 + 采用侧注册，权限仍走原生 Permission |
+| **远期** | subagent 多后端、审计事件流等 | 需求驱动，按需立项 |
+
+### 12.3 原叙事清算
+
+| 原叙事 | 处置 | 理由 |
+|--------|------|------|
+| Step B 剩余：ctx.llm / ctx.systemPrompt 桥 | 撤销 | 无消费方（C1/C2），§5.2/§5.3 已标注 |
+| Step B 剩余：root/instance 两级 context 派生 | 撤销 | ConfigBridge 容器叙事消失，两级配置由 settings.json mergeDeep 天然承载 |
+| Step B 剩余：ConfigBridge | 转性 | 配置装配诉求真实，改为 Effect 原生 plugin 统一声明面（`DESIGN-capabilities.md` §3） |
+| Step B 剩余：ctx.wopal 缝隙 + CLI provider | 转性 | wopal_task_* 正规化诉求真实，改走原生路径，不再绑定 cordis 契约 |
+| Step C：五段管道 + guard/approval 替代 Permission | 撤销 | 权限模型语义与 dsh approval 本就同构（三态 + ask 审批流），替代等于换壳；正确目标是收敛而非重建（`DESIGN-capabilities.md` §4） |
+| Step D：模块拆解为 cordis 插件 | 转性 | 复刻波次保留，载体改为 Effect 能力包 |
+| Plan 7 生态输出 | 撤销 | C3 |
+| Plan 8 审计事件流 | 保留 | 可选独立项，与 Cordis 无关 |
+
+### 12.4 cordis 资产处置
+
+- **spill 三件套**：继续运行（已在生产路径）；原生 tool-result-pruner 落地后评估替代下线
+- **grep 桥**：随 cordis 装配下线评估回归原生管道——顺带消解 grep 截断 vs spill 全量的语义冲突（管道上不再有 spill）；若边缘线采用 fs-search 替换 grep/glob，则由 fs-search 承接该槽位
+- **`@wopal/ellamaka-cordis` 包**：保留，标注"已验证工艺样本，非主线依赖"；红线 1（cordis import 边界）继续有效
+- **扩展/复活条件**（三者任一）：真实的运行时动态装配需求出现；值得挂载的 dsh policy/工具插件出现（边缘线即用，无需"复活"）；多运行时隔离需求（沙箱/云执行）
+
+### 12.5 边缘线使用方式
+
+挂载一个 dsh 工具插件的最小路径：①按其依赖补缝隙桥（如 fs-search 需 ctx.subprocess 的进程树终止语义）→ ②采用侧注册（dsh 工具实现注册回原生 ToolRegistry 对应槽位，替换原生实现）→ ③锁版本挂载 + 契约符合性冒烟（§10）。权限检查仍走原生 Permission，不进容器。当前桥接基础设施（CordisHub per-instance 注册表、Exporter 日志、桥接形态规范 §5.6.1）即为该通道的全部所需，无需再投入两级派生 / ConfigBridge 容器叙事下的基础设施。

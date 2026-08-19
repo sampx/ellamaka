@@ -8,7 +8,9 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ## 1. Canonical References
 
 - DESIGN: `docs/DESIGN.md`
-- CORDIS DESIGN: `docs/DESIGN-refactor-cordis.md`
+- CORDIS DESIGN: `docs/DESIGN-refactor-cordis.md` (route audit §12 governs its current scope: edge-channel usage of dsh tool plugins)
+- CAPABILITIES DESIGN: `docs/DESIGN-capabilities.md` (post-audit mainline: capability-package craft, plugin declaration surface, permission consolidation)
+- PLAN TODOS: `docs/PLAN-TODOS.md`
 - API CONTRACT: `docs/API-CONTRACT.md`
 - BRANDING: `docs/BRANDING.md`
 - WORKBENCH: `docs/WORKBENCH.md`
