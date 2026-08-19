@@ -1,19 +1,38 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync, existsSync, mkdtempSync } from "fs"
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { TurnDriver } from "@/session/turn-driver"
 import * as Log from "@opencode-ai/core/util/log"
+import { Global } from "@opencode-ai/core/global"
 import {
   createTurnDriverLayer,
   cordisHubLayer,
   CordisHubService,
   createCordisLogExporter,
 } from "@wopal/ellamaka-cordis"
-import { createCordisPluginAssembly } from "@/server/cordis-mount"
+import { createCordisPluginAssembly, cordisPluginsLogFile } from "@/server/cordis-mount"
 
 describe("cordis log exporter", () => {
+  test("cordisPluginsLogFile resolves to the space logs dir for a wopal-space directory", () => {
+    const spaceRoot = mkdtempSync(path.join(tmpdir(), "cordis-space-"))
+    mkdirSync(path.join(spaceRoot, ".wopal"), { recursive: true })
+    writeFileSync(path.join(spaceRoot, ".wopal", ".git"), "gitdir: ./.git\n")
+    const instanceDir = path.join(spaceRoot, "projects", "demo")
+    mkdirSync(instanceDir, { recursive: true })
+
+    const logFile = cordisPluginsLogFile(instanceDir)
+    expect(logFile).toBe(path.join(spaceRoot, ".wopal-space", "logs", "cordis-plugins.log"))
+  })
+
+  test("cordisPluginsLogFile resolves to WOPAL_HOME logs for a non-space directory", () => {
+    const plainDir = mkdtempSync(path.join(tmpdir(), "cordis-plain-"))
+
+    const logFile = cordisPluginsLogFile(plainDir)
+    expect(logFile).toBe(path.join(Global.Path.log, "cordis-plugins.log"))
+  })
+
   test("createCordisLogExporter writes to the target file and respects level", () => {
     const tmpDir = mkdtempSync(path.join(tmpdir(), "cordis-log-"))
     const logFile = path.join(tmpDir, "cordis-plugins.log")

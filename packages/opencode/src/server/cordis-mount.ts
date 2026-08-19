@@ -4,6 +4,7 @@ import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { Layer } from "effect"
 import { GrepBridgeService } from "@/tool/registry"
+import { resolveWopalSpaceRoot } from "@/config/wopal-space-settings"
 import {
   cordisHubLayerWith,
   createCordisLogExporter,
@@ -67,11 +68,18 @@ export interface CordisPluginAssemblyOptions {
 }
 
 /**
- * Path to the cordis-plugins log file: same directory as the ellamaka main
- * log, so dev-space / production path routing is inherited automatically.
+ * Path to the cordis-plugins log file for an instance directory.
+ *
+ * Wopal-space instances log to the space's canonical logs dir
+ * (`<space>/.wopal-space/logs/`); non-space instances log to the global
+ * `$WOPAL_HOME/logs/`. One file per mode — the decision is made from the
+ * instance directory, never from process-level `Log.file()` state (which is
+ * empty under `--print-logs`).
  */
-export function cordisPluginsLogFile(): string {
-  return path.join(path.dirname(Log.file()), "cordis-plugins.log")
+export function cordisPluginsLogFile(directory: string): string {
+  const spaceRoot = resolveWopalSpaceRoot(directory)
+  const dir = spaceRoot ? path.join(spaceRoot, ".wopal-space", "logs") : Global.Path.log
+  return path.join(dir, "cordis-plugins.log")
 }
 
 /**
@@ -82,9 +90,10 @@ export function cordisPluginsLogFile(): string {
  */
 export async function mountInstancePlugins(
   hub: CordisHub,
+  directory: string,
   options: CordisPluginAssemblyOptions = {},
 ): Promise<void> {
-  const logFile = options.logFile ?? cordisPluginsLogFile()
+  const logFile = options.logFile ?? cordisPluginsLogFile(directory)
   const minLevel = options.logLevel ?? Log.currentLevel()
   const exporter = createCordisLogExporter({
     logFile,
@@ -125,7 +134,7 @@ export async function mountInstancePlugins(
  */
 export function createCordisPluginAssembly(options: CordisPluginAssemblyOptions = {}) {
   const hubs = cordisHubLayerWith({
-    onHubCreate: (hub) => mountInstancePlugins(hub, options),
+    onHubCreate: (hub, directory) => mountInstancePlugins(hub, directory, options),
   })
   const grepBridge = createGrepBridgeLayer(GrepBridgeService).pipe(Layer.provide(hubs))
   return { hubs, grepBridge }
