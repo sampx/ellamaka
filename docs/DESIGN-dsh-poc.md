@@ -7,7 +7,7 @@
 
 ## 1. Role
 
-本文档是 ellamaka 与 dsh（DeepSeek Harness）双引擎融合实验的架构真相源。它定义实验的设计哲学、双引擎现实、桥/吸收双轨策略、技术事实基线、红线边界与实验步骤。
+本文档是 ellamaka 与 dsh（DeepSeek Harness）双引擎融合实验的架构真相源。它定义实验的设计哲学、双引擎现实、桥/吸收双轨策略、技术事实基线、当前约定与实验步骤。
 
 本文档是 ellamaka 与 dsh 双引擎融合实验的**单一真相源**。技术事实基线见 §6。
 
@@ -201,13 +201,15 @@ cordis 插件日志经 `ctx.logger`（自动命名）→ Exporter（装配层注
 
 dsh 是"账本"（只记流水，余额随时可算），ellamaka 是"余额表"（只存现状，流水不保留）。核心差异导致深耦合包不可桥接（§6.1）。dsh 的"model-visible is logged"承诺带来**确定性回放**能力——loop 从玄学调试变工程测试，这是 dsh 敢高频重构 loop 内核的底气。
 
-## 7. 红线（所有权边界）
+## 7. 当前约定（双人确认制，无红线）
 
-1. **cordis import 边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）。
-2. **dsh 深耦合包禁入（运行时语义）**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，禁止被主线代码 import、禁止在运行时加载、禁止作为插件挂载；这些能力的插件化走自研路径。required peer 进入 node_modules/bun.lock 仅供类型解析不构成违反，以运行时加载探针为零为验收（`packages/ellamaka-cordis/test/forbidden-load.test.ts`）。
-3. **session 所有权**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
-4. **对外契约冻结**：SSE 事件、HttpApi、SDK 在实验中零变更。
-5. **桥的加法原则**：全部桥接为新增文件/包装层；对 loop 与存储的改写以"实现内转向"为限，保持删除桥即回滚的能力。
+> PoC 场景**不设红线**：一切边界都可讨论、可变更。以下为当前生效的约定，任何一项的调整都需经用户与 Wopal 双方确认后生效。
+
+1. **cordis import 边界（当前约定）**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）。
+2. **dsh 深耦合包暂缓使用（当前约定）**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，暂不被主线代码 import、不在运行时加载、不作为插件挂载（深耦合原因见 §6.1；能力获取走自研复刻路径）。required peer 进入 node_modules/bun.lock 仅供类型解析。运行时加载探针（`packages/ellamaka-cordis/test/forbidden-load.test.ts`）作为当前状态的观测手段保留。
+3. **session 所有权（当前约定）**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
+4. **对外契约稳定（当前约定）**：SSE 事件、HttpApi、SDK 在实验中保持稳定。
+5. **桥的加法原则（当前约定）**：桥接优先为新增文件/包装层，保持删除桥即回滚的能力。
 
 ## 8. 实验步骤（核心到外围）
 

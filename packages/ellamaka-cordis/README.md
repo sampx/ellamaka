@@ -1,6 +1,6 @@
 # @wopal/ellamaka-cordis
 
-Ellamaka's single cordis boundary package (CORDIS DESIGN §9 red line 1):
+Ellamaka's single cordis boundary package (CORDIS DESIGN §7 current convention 1):
 every `@deepseek-ai/cordis` import in this repository converges here.
 
 ## Per-instance hubs (D-06)
@@ -23,4 +23,4 @@ verified version and the gate that proves it.
 
 - The six deeply-coupled dsh packages (agent-loop/session/session-query/
   compaction/subagent/schedule) must never be runtime-loaded. This is gated
-  by `test/forbidden-load.test.ts` (red line §7, runtime semantics).
+  by `test/forbidden-load.test.ts` (§7 current convention, runtime semantics).

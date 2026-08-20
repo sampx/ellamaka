@@ -128,7 +128,7 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 
 ### Cordis Development Constraints
 
-- **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) must never be imported, runtime-loaded, or mounted as plugins by mainline code — type-only presence via required peers (e.g. SessionId) is allowed and gated by the runtime probe test (`forbidden-load.test.ts`) — see DSH POC DESIGN §7 red lines
+- **Dependency boundary**: `@deepseek-ai/cordis` appears only inside `@wopal/ellamaka-cordis` (locked at 4.0.1); deeply-coupled dsh packages (agent-loop/session/session-query/compaction/subagent/schedule) stay out of mainline runtime for now (see DSH POC DESIGN §7 current conventions — no red lines in PoC, changes need user+Wopal joint confirmation); the runtime probe test (`forbidden-load.test.ts`) remains as an observation tool
 - **Bridge form**: all Effect↔async bridges follow DSH POC DESIGN §6.2 (`Effect.forkIn(scope)(work)` with the work Fiber held; interrupt via `runtime.runFork(Fiber.interrupt(fiber))`; never drive long-running work via `runPromise`)
 - **Contract discipline**: contracts are self-owned inside `@wopal/ellamaka-cordis` (shapes borrowed from dsh; never import dsh contract packages or track rc releases); external plugins mount only after passing contract conformance smoke tests (DSH POC DESIGN §4.1)
 - **Test gate**: cordis integration tests live in `packages/opencode/test/cordis/`; bridge package changes keep existing opencode tests green

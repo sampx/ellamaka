@@ -5,7 +5,7 @@
  * The shapes are borrowed from `@deepseek-ai/dsh-tools` (ToolDefinition /
  * ToolExecution / ToolExecutionResult / PostToolDecision) but are declared here
  * so the cordis boundary never imports dsh contract packages (CORDIS DESIGN
- * §9 red line, D-03). spill-policy mounts against these self-owned shapes, so
+ * §7 current convention, D-03). spill-policy mounts against these self-owned shapes, so
  * structural compatibility is a compile-time requirement.
  *
  * This Plan implements only the registry, execute, and `tools/post-execute`
