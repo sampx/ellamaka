@@ -5,8 +5,6 @@ export { AgentLoop } from "./agent-loop.js"
 export type { AgentLoopRunInput } from "./agent-loop.js"
 export { createTurnDriverLayer } from "./turn-driver-layer.js"
 export type { TurnDriverContract, TurnDriverDeps } from "./turn-driver-layer.js"
-export { createGrepBridge, createGrepBridgeLayer, GrepBridgeTag } from "./tools/grep-bridge.js"
-export type { GrepBridgeContract } from "./tools/grep-bridge.js"
 export { Tools } from "./tools/registry.js"
 export type {
   AgentFacade,
@@ -25,7 +23,5 @@ export type {
   HubRuntime,
   HubContext,
 } from "./types.js"
-export { mountSpillPlugins } from "./spill/mount.js"
-export type { MountSpillOptions, MountedSpillPlugins } from "./spill/mount.js"
 export { createCordisLogExporter } from "./log-bridge.js"
 export type { CordisLogExporterDeps, EllamakaLogLevel } from "./log-bridge.js"

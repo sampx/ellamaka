@@ -1,20 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { Module } from "node:module"
 import { CordisHub } from "../src/hub"
 import { Tools } from "../src/tools/registry"
-import { mountSpillPlugins } from "../src/spill/mount"
 
 /**
  * Red line §9.2 runtime gate (CORDIS DESIGN §9).
  *
  * The six deeply-coupled dsh packages (agent-loop/session/session-query/
- * compaction/subagent/schedule) must never be loaded at runtime. Type-only
- * presence via required peers (e.g. spill's `import type { SessionId }`) is
- * allowed — the gate verifies the stronger, real invariant: zero runtime
- * module resolutions while mounting and exercising the spill trio.
+ * compaction/subagent/schedule) must never be loaded at runtime. The gate
+ * verifies the stronger, real invariant: zero runtime module resolutions
+ * while loading the bridge public API and exercising the tools pipeline.
  */
 const FORBIDDEN = [
   "dsh-agent-loop",
@@ -26,7 +21,7 @@ const FORBIDDEN = [
 ] as const
 
 describe("red line §9.2 runtime gate", () => {
-  test("loading and mounting the spill trio resolves zero forbidden packages", async () => {
+  test("loading the bridge public API and exercising tools resolves zero forbidden packages", async () => {
     const resolved: string[] = []
     const mod = Module as unknown as {
       _resolveFilename: (request: string, ...rest: unknown[]) => string
@@ -38,18 +33,15 @@ describe("red line §9.2 runtime gate", () => {
     }
 
     try {
-      await import("@deepseek-ai/dsh-spill")
-      await import("@deepseek-ai/dsh-spill-local")
-      await import("@deepseek-ai/dsh-spill-policy")
+      // The public surface the opencode mainline loads from this package.
+      await import("../src/index")
 
-      const root = mkdtempSync(join(tmpdir(), "cordis-probe-"))
       const hub = new CordisHub(null)
       await hub.mount(Tools)
-      await mountSpillPlugins(hub.ctx, { root, maxInlineBytes: 1024 })
-      // Dispatch an oversized text result so the policy's spill path runs.
+      // Dispatch a plain-text result so the tools pipeline runs.
       hub.ctx.tools.register({
         name: "big",
-        description: "emits oversized text",
+        description: "emits plain text",
         parameters: {},
         execute: async () => "x".repeat(4096),
       })
@@ -61,7 +53,7 @@ describe("red line §9.2 runtime gate", () => {
           rootCallId: "c1",
           name: "big",
           arguments: undefined,
-          agent: { session: { header: { id: "probe", cwd: root } } },
+          agent: { session: { header: { id: "probe", cwd: "/probe" } } },
           signal: new AbortController().signal,
         },
       )

@@ -67,7 +67,6 @@ describe("cordis log exporter", () => {
     const cordisLogFile = path.join(tmpDir, "cordis-plugins.log")
 
     const assembly = createCordisPluginAssembly({
-      spillRoot: path.join(tmpDir, "spill"),
       logFile: cordisLogFile,
       logLevel: "DEBUG",
     })

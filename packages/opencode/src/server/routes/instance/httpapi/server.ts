@@ -250,9 +250,6 @@ export function createRoutes(
       createTurnDriverLayer(TurnDriver.Service, { directory: InstanceState.directory }).pipe(
         Layer.provide(CordisMount.cordisPluginAssembly.hubs),
       ),
-      // Route the builtin grep through the instance hub's ctx.tools pipeline
-      // so mounted policies (spill) apply to it (POC 1.6/1.7 end-to-end).
-      CordisMount.cordisPluginAssembly.grepBridge,
       // Wire instance disposal to hub invalidation (disposeInstance(dir) ->
       // registry.invalidate(dir) -> ctx.fiber.dispose()).
       Layer.effectDiscard(
