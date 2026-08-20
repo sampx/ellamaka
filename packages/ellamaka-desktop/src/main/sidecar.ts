@@ -168,11 +168,12 @@ async function mountDshIfPresent(): Promise<number | undefined> {
   const requireFromClosure = createRequire(join(dshHome, "package.json"))
   const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
   const { bootDshWeb } = await import(pathToFileURL(dshWebEntry).href)
+  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const host = await bootDshWeb({
     home: dshHome,
     port: 0,
     installAnchor: anchor,
-    logFile: join(dshHome, "dsh-plugins.log"),
+    logFile: join(wopalHome, "logs", "dsh-plugins.log"),
   })
   dshHost = { dispose: () => host.dispose() }
   return host.port

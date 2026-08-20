@@ -48,6 +48,9 @@ export const ServeCommand = effectCmd({
         }),
       )
       console.log(`dsh web engine listening on ${dsh.url}`)
+      // Probe the dsh-plugins log Exporter so the bridge is observable even
+      // when the dsh engine boots silently (no plugin logs yet).
+      hub.ctx.logger("dsh-web").info("dsh engine mounted")
       yield* Effect.never.pipe(Effect.ensuring(Effect.promise(() => hub.dispose())))
     } else {
       yield* Effect.never
