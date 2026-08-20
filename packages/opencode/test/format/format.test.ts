@@ -6,6 +6,7 @@ import { testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Format } from "../../src/format"
 import * as Formatter from "../../src/format/formatter"
+import { Config } from "@/config/config"
 
 const it = testEffect(Layer.mergeAll(Format.defaultLayer, CrossSpawnSpawner.defaultLayer, NodeFileSystem.layer))
 
@@ -149,6 +150,10 @@ describe("Format", () => {
       const a = yield* provideTmpdirInstance(() => Format.use.status(), {
         config: { formatter: false },
       })
+      // The global config is a single shared settings.jsonc file, and the
+      // Config layer caches it forever (cachedInvalidateWithTTL(infinity)).
+      // Invalidate the cache so the second directory picks up its own config.
+      yield* Config.use.invalidate().pipe(Effect.scoped, Effect.provide(Config.defaultLayer))
       const b = yield* provideTmpdirInstance(() => Format.use.status(), {
         config: {
           formatter: true,

@@ -1730,9 +1730,6 @@ it.instance(
 it.effect("opencode loader keeps paid models when config apiKey is present", () =>
   Effect.gen(function* () {
     const noneDir = yield* tmpdirScoped()
-    const keyedDir = yield* tmpdirScoped({
-      config: { provider: { opencode: { options: { apiKey: "test-key" } } } },
-    })
 
     const listIn = (directory: string) =>
       Provider.use
@@ -1740,7 +1737,18 @@ it.effect("opencode loader keeps paid models when config apiKey is present", () 
         .pipe(provideInstanceEffect(directory))
         .pipe(Effect.provide(InstanceLayer.layer), Effect.provide(CrossSpawnSpawner.defaultLayer))
 
+    // The global config is a single shared settings.jsonc file, and the
+    // Config layer caches it forever (cachedInvalidateWithTTL(infinity)).
+    // Read noneDir BEFORE keyedDir writes its apiKey config so noneDir sees
+    // the empty global config, then invalidate the cache so keyedDir picks
+    // up the new config.
     const none = paid(yield* listIn(noneDir))
+
+    const keyedDir = yield* tmpdirScoped({
+      config: { provider: { opencode: { options: { apiKey: "test-key" } } } },
+    })
+    // Invalidate the shared global config cache so keyedDir's config is read.
+    yield* Config.use.invalidate().pipe(Effect.scoped, Effect.provide(Config.defaultLayer))
     const keyedCount = paid(yield* listIn(keyedDir))
 
     expect(none).toBe(0)

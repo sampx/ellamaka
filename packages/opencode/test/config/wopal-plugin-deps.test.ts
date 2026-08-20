@@ -5,7 +5,7 @@ import os from "os"
 import { localPluginInstallDeps } from "@/config/wopal-space"
 
 describe("localPluginInstallDeps", () => {
-  test("collects local plugin dependencies as file: entries", async () => {
+  test("collects local plugin transitive dependencies", async () => {
     const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-deps-test-"))
     try {
       // Simulate the real $WOPAL_HOME/plugins layout:
@@ -23,15 +23,21 @@ describe("localPluginInstallDeps", () => {
       await fs.symlink(entrySrc, symlink)
       await fs.writeFile(
         path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "foo-plugin", version: "0.1.0", main: "dist/index.js" }),
+        JSON.stringify({
+          name: "foo-plugin",
+          version: "0.1.0",
+          main: "dist/index.js",
+          dependencies: { lodash: "^4.17.21" },
+        }),
       )
 
       const deps = await localPluginInstallDeps(tmpBase)
 
+      // collectPluginDeps returns the plugin's transitive dependencies,
+      // not the plugin itself.
       expect(deps).toHaveLength(1)
-      expect(deps[0].name).toBe("foo-plugin")
-      // Use realpath to normalize macOS /var ↔ /private/var symlink prefix
-      expect(await fs.realpath(deps[0].version!.slice("file:".length))).toBe(await fs.realpath(pkgDir))
+      expect(deps[0].name).toBe("lodash")
+      expect(deps[0].version).toBe("^4.17.21")
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true })
     }
@@ -47,7 +53,7 @@ describe("localPluginInstallDeps", () => {
     }
   })
 
-  test("deduplicates plugins sharing the same package directory", async () => {
+  test("deduplicates dependencies shared across plugins", async () => {
     const tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-deps-test-"))
     try {
       const pluginsDir = path.join(tmpBase, "plugins")
@@ -64,14 +70,21 @@ describe("localPluginInstallDeps", () => {
       await fs.symlink(entry2, path.join(pluginsDir, "bar-extra.ts"))
       await fs.writeFile(
         path.join(pkgDir, "package.json"),
-        JSON.stringify({ name: "bar-plugin", version: "0.2.0" }),
+        JSON.stringify({
+          name: "bar-plugin",
+          version: "0.2.0",
+          dependencies: { lodash: "^4.17.21", "left-pad": "^1.3.0" },
+        }),
       )
 
       const deps = await localPluginInstallDeps(tmpBase)
 
-      // Only one entry because both specs resolve to the same package dir
-      expect(deps).toHaveLength(1)
-      expect(deps[0].name).toBe("bar-plugin")
+      // collectPluginDeps dedupes by dependency name in a resolved Map.
+      // Both plugins resolve to the same package dir, so its dependencies
+      // are collected once and returned as transitive deps.
+      expect(deps).toHaveLength(2)
+      expect(deps.map((d) => d.name)).toEqual(["left-pad", "lodash"])
+      expect(deps.map((d) => d.version)).toEqual(["^1.3.0", "^4.17.21"])
     } finally {
       await fs.rm(tmpBase, { recursive: true, force: true })
     }

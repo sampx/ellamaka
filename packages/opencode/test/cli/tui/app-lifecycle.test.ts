@@ -98,7 +98,10 @@ test("exit preserves reason formatting and exit messages", async () => {
     await app.handle.done
 
     expect(stderr.join("")).toContain("boom")
-    expect(stdout.join("")).toBe("goodbye\n")
+    // The engine writes terminal restore sequences (e.g. \x1b[?1003l\x1b[?1006l\x1b[?1049l)
+    // to stdout on exit. Strip them so the assertion reflects only the exit message.
+    const cleanStdout = stdout.join("").replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, "")
+    expect(cleanStdout).toBe("goodbye\n")
   } finally {
     stdoutWrite.mockRestore()
     stderrWrite.mockRestore()

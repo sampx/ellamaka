@@ -1220,7 +1220,11 @@ describe("tool.shell truncation", () => {
         expect(filepath).toBeTruthy()
 
         const saved = yield* (yield* AppFileSystem.Service).readFileString(filepath!)
-        const lines = saved.trim().split(/\r?\n/)
+        // Strip terminal integration sequences (e.g. VS Code OSC 633) that the
+        // shell may inject into stdout when running under a terminal, so the
+        // saved output reflects only the command's own output.
+        const clean = saved.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+        const lines = clean.trim().split(/\r?\n/)
         expect(lines.length).toBe(lineCount)
         expect(lines[0]).toBe("1")
         expect(lines[lineCount - 1]).toBe(String(lineCount))

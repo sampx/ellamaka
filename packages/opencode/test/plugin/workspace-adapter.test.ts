@@ -5,7 +5,6 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import path from "path"
-import { pathToFileURL } from "url"
 import { Auth } from "../../src/auth"
 import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
@@ -65,7 +64,7 @@ describe("plugin.workspace", () => {
     provideTmpdirInstance((dir) =>
       Effect.gen(function* () {
         const type = `plug-${Math.random().toString(36).slice(2)}`
-        const file = path.join(dir, "plugin.ts")
+        const file = path.join(dir, ".opencode", "plugin", "plugin.ts")
         const mark = path.join(dir, "created.json")
         const space = path.join(dir, "space")
         yield* Effect.promise(() =>
@@ -91,20 +90,6 @@ describe("plugin.workspace", () => {
               "}",
               "",
             ].join("\n"),
-          ),
-        )
-
-        yield* Effect.promise(() =>
-          Bun.write(
-            path.join(dir, "opencode.json"),
-            JSON.stringify(
-              {
-                $schema: "https://opencode.ai/config.json",
-                plugin: [pathToFileURL(file).href],
-              },
-              null,
-              2,
-            ),
           ),
         )
 

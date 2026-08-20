@@ -7,17 +7,22 @@ import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
 import { Installation } from "../../src/installation"
 import { ServerAuth } from "../../src/server/auth"
+import { CliContract } from "../../src/wopal/cli-contract"
+import { SpaceRegistry } from "../../src/wopal/space-registry"
+import { SessionProjection } from "../../src/workbench/session-projection"
 import { RootHttpApi } from "../../src/server/routes/instance/httpapi/api"
 import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
 import { controlHandlers } from "../../src/server/routes/instance/httpapi/handlers/control"
 import { globalHandlers } from "../../src/server/routes/instance/httpapi/handlers/global"
+import { wopalSpaceHandlers } from "../../src/server/routes/instance/httpapi/handlers/wopal-space"
+import { workbenchHandlers } from "../../src/server/routes/instance/httpapi/handlers/workbench"
 import { authorizationLayer } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { schemaErrorLayer } from "../../src/server/routes/instance/httpapi/middleware/schema-error"
 import { testEffect } from "../lib/effect"
 
 const apiLayer = HttpRouter.serve(
   HttpApiBuilder.layer(RootHttpApi).pipe(
-    Layer.provide([controlHandlers, globalHandlers]),
+    Layer.provide([controlHandlers, globalHandlers, wopalSpaceHandlers, workbenchHandlers]),
     Layer.provide([authorizationLayer, schemaErrorLayer]),
   ),
   { disableListenLog: true, disableLogger: true },
@@ -33,6 +38,9 @@ const apiLayer = HttpRouter.serve(
     }),
   ),
   Layer.provide(ServerAuth.Config.layer({ password: Option.none(), username: "opencode" })),
+  Layer.provide(CliContract.defaultLayer),
+  Layer.provide(SpaceRegistry.defaultLayer),
+  Layer.provide(SessionProjection.defaultLayer),
   // Raw HttpApi routes expose an opaque handler context at the web boundary.
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion
   Layer.provide(Layer.succeedContext(Context.empty() as Context.Context<unknown>)),

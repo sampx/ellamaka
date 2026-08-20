@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { beforeAll, describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Layer } from "effect"
@@ -11,9 +11,19 @@ import * as Log from "@opencode-ai/core/util/log"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { provideTmpdirInstance } from "../fixture/fixture"
+import { resetDatabase } from "../fixture/db"
 import { testEffect } from "../lib/effect"
 
 void Log.init({ print: false })
+
+// The test DB is a single in-memory SQLite shared across all test files in the
+// same `bun test` process (OPENCODE_DB=:memory:). MessageTable's primary key is
+// the message id, and the projector's onConflictDoUpdate keeps the existing
+// row's session_id on a fixed-id collision. This file and session.test.ts both
+// write the same fixed wrap-around ids (msg_fa2c3af72001 / msg_002ceb729001),
+// so without a fresh DB the rows land in the wrong session and fork() clones
+// nothing. Reset the shared DB before this file's tests run.
+beforeAll(() => resetDatabase())
 
 const env = Layer.mergeAll(
   Session.defaultLayer,

@@ -255,6 +255,9 @@ describe("Truncate", () => {
 
         yield* writeFileStringScoped(old, "old content")
         yield* writeFileStringScoped(recent, "recent content")
+        // cleanup judges age by file mtime, so backdate the old file's mtime
+        // to simulate a file written 10 days ago.
+        yield* fs.utimes(old, new Date(Date.now() - 10 * DAY_MS), new Date(Date.now() - 10 * DAY_MS))
         yield* svc.cleanup()
 
         expect(yield* fs.exists(old)).toBe(false)

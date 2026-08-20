@@ -15,7 +15,7 @@ import fs from "fs/promises"
 const it = testEffect(Layer.mergeAll(Config.defaultLayer, AppFileSystem.defaultLayer))
 const winIt = process.platform === "win32" ? it.instance : it.instance.skip
 
-const globalConfigFiles = ["opencode.json", "opencode.jsonc", "tui.json", "tui.jsonc"].map((file) =>
+const globalConfigFiles = ["settings.jsonc", "opencode.json", "opencode.jsonc", "tui.json", "tui.jsonc"].map((file) =>
   path.join(Global.Path.config, file),
 )
 
@@ -78,20 +78,11 @@ it.instance("keeps server and tui plugin merge semantics aligned", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
-      const local = path.join(test.directory, ".opencode")
-      yield* fs.makeDirectory(local, { recursive: true })
 
-      yield* fs.writeJson(path.join(Global.Path.config, "opencode.json"), {
-        plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), {
-        plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(local, "opencode.json"), {
-        plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"],
-      })
-      yield* fs.writeJson(path.join(local, "tui.json"), {
-        plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"],
+      const plugins = [["shared-plugin@2.0.0", { source: "global" }], "global-only@1.0.0"]
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), {
+        plugin: plugins,
+        tui: { plugin: plugins },
       })
 
       const server = yield* Config.use.get()
@@ -101,7 +92,7 @@ it.instance("keeps server and tui plugin merge semantics aligned", () =>
 
       expect(serverPlugins).toEqual(tuiPlugins)
       expect(serverPlugins).toContain("shared-plugin@2.0.0")
-      expect(serverPlugins).not.toContain("shared-plugin@1.0.0")
+      expect(serverPlugins).toContain("global-only@1.0.0")
 
       const serverOrigins = server.plugin_origins ?? []
       const tuiOrigins = tui.plugin_origins ?? []
@@ -117,15 +108,11 @@ it.instance("loads tui config with the same precedence order as server config pa
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), { theme: "global" })
-      yield* fs.writeJson(path.join(test.directory, "tui.json"), { theme: "project" })
-      yield* fs.writeWithDirs(
-        path.join(test.directory, ".opencode", "tui.json"),
-        JSON.stringify({ theme: "local", diff_style: "stacked" }, null, 2),
-      )
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), { tui: { theme: "global" } })
+      yield* fs.writeJson(path.join(test.directory, "tui.json"), { theme: "project", diff_style: "stacked" })
 
       const config = yield* getTuiConfig(test.directory)
-      expect(config.theme).toBe("local")
+      expect(config.theme).toBe("project")
       expect(config.diff_style).toBe("stacked")
     }),
   ),
@@ -430,7 +417,9 @@ it.instance("merges keybind overrides across precedence layers", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), { keybinds: { app_exit: "ctrl+q" } })
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), {
+        tui: { keybinds: { app_exit: "ctrl+q" } },
+      })
       yield* fs.writeJson(path.join(test.directory, "tui.json"), { keybinds: { theme_list: "ctrl+k" } })
 
       const config = yield* getTuiConfig(test.directory)
@@ -711,13 +700,13 @@ it.instance("applies file substitutions when first identical token is in a comme
   ),
 )
 
-it.instance("loads .opencode/tui.json", () =>
+it.instance("loads project tui.json", () =>
   withCleanState(
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
       yield* fs.writeWithDirs(
-        path.join(test.directory, ".opencode", "tui.json"),
+        path.join(test.directory, "tui.json"),
         JSON.stringify({ diff_style: "stacked" }, null, 2),
       )
 
@@ -790,7 +779,9 @@ it.instance("tracks global and local plugin metadata in merged tui config", () =
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), { plugin: ["global-plugin@1.0.0"] })
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), {
+        tui: { plugin: ["global-plugin@1.0.0"] },
+      })
       yield* fs.writeJson(path.join(test.directory, "tui.json"), { plugin: ["local-plugin@2.0.0"] })
 
       const config = yield* getTuiConfig(test.directory)
@@ -799,7 +790,7 @@ it.instance("tracks global and local plugin metadata in merged tui config", () =
         {
           spec: "global-plugin@1.0.0",
           scope: "global",
-          source: path.join(Global.Path.config, "tui.json"),
+          source: path.join(Global.Path.config, "settings.jsonc"),
         },
         {
           spec: "local-plugin@2.0.0",
@@ -816,10 +807,12 @@ it.instance("merges plugin_enabled flags across config layers", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
-      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), {
-        plugin_enabled: {
-          "internal:sidebar-context": false,
-          "demo.plugin": true,
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), {
+        tui: {
+          plugin_enabled: {
+            "internal:sidebar-context": false,
+            "demo.plugin": true,
+          },
         },
       })
       yield* fs.writeJson(path.join(test.directory, "tui.json"), {
@@ -845,7 +838,7 @@ it.instance("silently skips malformed tui.json - load failures degrade to {}", (
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
       yield* fs.writeFileString(path.join(test.directory, "tui.json"), '{ "theme": "broken",')
-      yield* fs.writeWithDirs(path.join(test.directory, ".opencode", "tui.json"), JSON.stringify({ theme: "fallback" }))
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), { tui: { theme: "fallback" } })
 
       const config = yield* getTuiConfig(test.directory)
       expect(config.theme).toBe("fallback")
@@ -859,7 +852,7 @@ it.instance("silently skips non-ENOENT read failures (e.g. tui.json is a directo
       const fs = yield* AppFileSystem.Service
       const test = yield* TestInstance
       yield* fs.makeDirectory(path.join(test.directory, "tui.json"), { recursive: true })
-      yield* fs.writeWithDirs(path.join(test.directory, ".opencode", "tui.json"), JSON.stringify({ theme: "fallback" }))
+      yield* fs.writeJson(path.join(Global.Path.config, "settings.jsonc"), { tui: { theme: "fallback" } })
 
       const config = yield* getTuiConfig(test.directory)
       expect(config.theme).toBe("fallback")

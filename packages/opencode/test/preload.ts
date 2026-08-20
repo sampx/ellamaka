@@ -30,6 +30,10 @@ afterAll(async () => {
 })
 
 process.env["WOPAL_HOME"] = dir
+// Isolate wopal-plugin logs to the test temp dir. When a test loads the real
+// wopal-plugin, its wopalSpaceRoot resolves to the real space root and would
+// otherwise write into <space>/.wopal-space/logs/wopal-plugin.log.
+process.env["WOPAL_PLUGIN_LOG_FILE"] = path.join(dir, "wopal-plugin.log")
 process.env["OPENCODE_MODELS_PATH"] = path.join(import.meta.dir, "tool", "fixtures", "models-api.json")
 process.env["OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"] = "true"
 process.env["OPENCODE_EXPERIMENTAL_WORKSPACES"] = "true"

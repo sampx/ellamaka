@@ -346,7 +346,7 @@ describe("HttpApi SDK", () => {
       expect(health.data).toMatchObject({
         healthy: true,
         cli: {
-          requiredVersion: "0.3.4",
+          requiredVersion: "0.3.16",
         },
       })
       expect(yield* firstEvent((signal) => sdk.global.event({ signal }))).toMatchObject({
