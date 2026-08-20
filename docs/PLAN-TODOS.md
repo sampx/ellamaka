@@ -21,7 +21,7 @@
 
 | Plan | 名称 | 核心度 | 依赖 | 状态 | 预计规模 |
 |------|------|--------|------|------|---------|
-| Plan 1 | 双引擎容器宿主 + 日志桥接（dsh 引擎进程内完整运行、动态装载、容器日志） | 核心 | 无 | 🔶 夯实中 | 接线完成，日志桥接补齐 |
+| Plan 1 | 双引擎容器宿主 + 日志桥接（dsh 引擎进程内完整运行、动态装载、容器日志） | 核心 | 无 | ✅ 完成 | 接线 + 日志桥接 + spill/grep 废弃 |
 | Plan 2 | 工具利用：fs-search 替换 grep/glob（桥首个实证） | 核心 | 无 | ⬜ | 3–5 天 |
 | Plan 3 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | 无 | ⬜ | 按需 |
 | Plan 4 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | 无 | ⬜ | 按需 |
@@ -30,7 +30,7 @@
 
 ---
 
-## Plan 1 — 双引擎容器宿主 + 日志桥接 🔶
+## Plan 1 — 双引擎容器宿主 + 日志桥接 ✅
 
 > **目标**：dsh 引擎在 ellamaka 进程内完整运行，动态装载保留，容器日志可排查。本 Plan 并入双核心 PoC 接线 + 容器日志桥接，废弃 spill/grep 桥（无实际价值，后续工具利用直接复用 fs-search）。
 > **验收故事**：dev 模式 `ELLAMAKA_DSH=1` 时 dsh 引擎挂载于 4098；desktop 模式 sidecar 加载闭包、随机端口通知 renderer。dsh 引擎 50+ 插件日志进独立 `dsh-plugins.log`，排查可读。控制台无 dsh 侧错误。
@@ -56,10 +56,10 @@
 
 ### 废弃 spill/grep 桥
 
-- [ ] 1.14 移除 `mountSpillPlugins` 挂载（`cordis-mount.ts` 不再挂 spill 三件套）
-- [ ] 1.15 移除 grep 桥（`createGrepBridgeLayer`/`GrepBridgeService` 退役，grep 回原生管道）
-- [ ] 1.16 清理 spill/grep 相关测试与代码（`spill/`、`tools/grep-bridge.ts`、`tools/registry.ts` 的 GrepBridgeService）
-- [ ] 1.17 回归收口：opencode 全量测试基线对照零新增失败 + 三包 typecheck
+- [x] 1.14 移除 `mountSpillPlugins` 挂载（`cordis-mount.ts` 不再挂 spill 三件套）
+- [x] 1.15 移除 grep 桥（`createGrepBridgeLayer`/`GrepBridgeService` 退役，grep 回原生管道）
+- [x] 1.16 清理 spill/grep 相关测试与代码（`spill/`、`tools/grep-bridge.ts`、`tools/registry.ts` 的 GrepBridgeService）
+- [x] 1.17 回归收口：opencode 全量测试基线对照零新增失败 + 三包 typecheck
 
 > **废弃理由（2026-08-20 用户定案）**：spill/grep 桥无实际价值。native grep 上游截断与 spill「全量转储」语义不匹配（匹配数爆炸场景 spill 存的是截断后结果，模型无法精确读回），spill 价值仅在「匹配少但行超长」场景成立。后续工具利用直接复用 fs-search（Plan 2），不再维护 spill/grep 桥。
 
@@ -131,3 +131,4 @@
 | 2026-08-20 | — | 确立 dsh 双引擎融合实验方向：新设计 `DESIGN-dsh-poc.md`（边实践边设计、桥/吸收双轨、微内核留白）。本文档按实验步骤重写（核心到外围）。PoC 定位为长期实验，不合并 main |
 | 2026-08-20 | Plan 1 | Plan 1 接线完成：dsh 引擎进程内完整运行、动态装载保留、desktop sidecar 接线（提交 7a983fc397） |
 | 2026-08-20 | Plan 1 | **Plan 1 重新规划**：并入双核心 PoC + 容器日志桥接，废弃 spill/grep 桥（无实际价值，后续用 fs-search）。日志桥接补齐（dsh-plugins.log 独立文件，提交待定） |
+| 2026-08-20 | Plan 1 | **Plan 1 完成**：spill/grep 桥废弃（提交 8d79bfd45e），cordis 9 pass + ellamaka-cordis 30 pass 全绿，零残留引用。Plan 1 全部 1.1–1.17 勾选完成 |
