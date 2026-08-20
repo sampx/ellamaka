@@ -749,7 +749,7 @@ Logger 名称解析链（`vendor/cordis/src/logger.ts:251-261`）：显式 `ctx.
 
 ## 15. dsh Web 前端插件架构剖析（2026-08-20，源码级）
 
-> 来自 `deepseek-harness` 源码，回答 dsh Web 前端接入时的插件架构问题：后端逻辑插件与前端 bundle 插件的关系与层次、是否必须在同一 Cordis 容器、dsh 如何动态配置与加载、desktop 固化前端是否丧失动态能力。本节源自 `dsh-web-dual-engine-poc.md`（已迁移至此）。
+> 来自 `deepseek-harness` 源码，回答 dsh Web 前端接入时的插件架构问题：后端逻辑插件与前端 bundle 插件的关系与层次、是否必须在同一 Cordis 容器、dsh 如何动态配置与加载、desktop 固化前端是否丧失动态能力。本节源自原 `dsh-web-dual-engine-poc.md`（已迁移至此，原 PoC 文档已删除）。
 
 ### 15.1 核心结论：一切皆插件，前端是后端的浏览器半身
 

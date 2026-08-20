@@ -3,7 +3,7 @@
 > **状态**: Active（实验性设计，随实践演进）
 > **创建时间**: 2026-08-20
 > **上级架构**: `DESIGN.md`
-> **研究依据**: `research/deepseek-harness-architecture-and-integration-research.md`、`research/dsh-web-dual-engine-poc.md`
+> **研究依据**: `research/deepseek-harness-architecture-and-integration-research.md`
 
 ## 1. Role
 
@@ -52,7 +52,69 @@ ellamaka serve / sidecar (单进程)
 - **`$DSH_HOME` 缺省** `$WOPAL_HOME/ellamaka/data/dsh`，闭包缺失不挂载（kill switch）。
 - **dshPort 贯穿** server.ts → sidecar-supervisor.ts → preload/types.ts → renderer → platform.getDshPort()。
 
-### 3.3 iframe 是界面问题，不是架构结论
+### 3.3 为什么双端口（而非单 server 合并路由）
+
+早期方案想"单 server 单端口"，即把 dsh 的 `/api`、`/plugins` 路由合并进 ellamaka 的 HttpApi server。**放弃原因**（决策记录）：
+
+- **`/api` 路径冲突**：dsh 前端和 ellamaka 都有 `/api`，同 origin 下冲突。
+- **改 bundle 不可行（用户否决）**：`/api` 硬编码在**后端生成的运行时插件 bundle** 里（`dsh-client-connection`、`dsh-host-apiproxy` 等），不在静态前端里。改 bundle = fork dsh，会让社区插件（自带 `/api` 硬编码的 client bundle）无法直接使用，**破坏生态兼容**。
+- **单 server 注入需要替换 webserver 实现**：dsh 插件的 route handler 是 node 原生 `(req, res)` 签名，WebSocket 需原始 node socket，与 Effect HttpApi 桥接复杂，且 `ctx.provide` 的 webServer 覆盖在 cordis 语义下有冲突风险。
+- **双端口零侵入**：dsh 源码、社区插件、ellamaka HTTP 路由层全部零改动，天然规避上述全部问题。
+
+### 3.4 被否定的早期路线（决策参考）
+
+| 路线 | 探索 | 否决原因 |
+| :--- | :--- | :--- |
+| 前端薄壳 + vite 代理 3080 | 独立 dsh 前端构建单元，vite `/api`/`/plugins` 代理到 dsh 独立进程 | 目标要求单进程集成；thin-shell 方案被 iframe 取代，已删除 |
+| 每实例 CordisHub 装载 | 每实例目录一个 hub 只挂 spill | 装不下 dsh 引擎 |
+| 单 server 注入 dsh webserver | 禁用 webserver 行 + prepare 注入兼容实现 + node:http 分发器 | `/api` 冲突 + 改 bundle 破坏生态，见 §3.3 |
+| `/api` namespace 化 | 改 vendored 前端 `/api` → `/dsh/api` | 证伪：静态 bundle 不含 `/api`，硬编码在运行时插件 bundle 里，改 bundle 破坏社区插件 |
+
+### 3.5 装配机制
+
+```ts
+// mountDshWeb(ctx, { home, port, installAnchor? })
+//   └── 在宿主 ctx 上重放 dsh boot(): baseUrl → dshHomePath → Loader
+//       → launch env + cmdline --port → mountRootInclude → 激活审计
+//   └── installAnchor: 显式指向闭包里的 @deepseek-ai/dsh/package.json（打包模式 require.resolve 无法解析到用户目录）
+
+// bootDshWeb(opts) —— 自建容器，standalone 用
+//   └── 自建 Context + mountDshWeb；dispose 连 ctx.fiber 一起拆
+```
+
+- `bootDshWeb` 是 desktop sidecar 的加载入口（自建容器，Node strip-types 可直接 import）。
+- `mountDshWeb` 用于在宿主 ctx 上重放（多用于复用宿主容器装配的场景）。
+- **desktop sidecar 必须用 `bootDshWeb`**：`mountDshWeb`+CordisHub 会经过 `@wopal/ellamaka-cordis` index 导入链，其内部 `.js` 扩展名导入 Node `--experimental-strip-types` 无法解析；`bootDshWeb` 自包含，直接加载。
+
+### 3.6 关键路径与事实
+
+- **dsh profile**：`~/.dsh/profiles/web/`（bundles: dsh-base + dsh-web-app）
+- **dsh webserver**：`packages/host/webserver`，原生支持 `port: number`（0 为随机），`host: '127.0.0.1'`，不设 X-Frame-Options/CSP
+- **dsh boot 序列**：`boot()` = `new Context()` + baseUrl + `provide('dshHomePath')` + `ctx.plugin(Loader)` + prepare + `mountRootInclude` + loader await + `assertEntriesActivated`；除 `new Context()` 外全部由 `@deepseek-ai/dsh-app-boot` 单独导出
+- **Loader 插件**：`@deepseek-ai/cordis-plugin-loader`，`ctx.registry.plugin(Loader)` 挂载；`loader.remove(entryId)` 干净卸载
+- **dshHomePath**：`@deepseek-ai/dsh-home-paths` 的 `dshHomePath`
+- **dsh 装配位置**：`packages/ellamaka-cordis/src/dsh-web.ts`
+- **ellamaka data 根**：`~/.wopal/ellamaka/data`（`Global.Path.data`）
+
+### 3.7 相关文件
+
+| 文件 | 作用 |
+| :--- | :--- |
+| `packages/ellamaka-app/src/pages/workbench/index.tsx` | 全屏 DSH iframe 视图，覆盖 SpaceRail + Workspace |
+| `packages/ellamaka-app/src/pages/workbench/parts/top-bar.tsx` | 顶栏 DSH 按钮（toggle dshVisible） |
+| `packages/ellamaka-app/src/pages/workbench/view-store.tsx` | `dshVisible` + `setDshVisible` |
+| `packages/ellamaka-app/src/context/platform.tsx` | `getDshPort()`（desktop 侧读取） |
+| `packages/ellamaka-cordis/src/dsh-web.ts` | dsh 引擎装配（mountDshWeb/bootDshWeb） |
+| `packages/ellamaka-cordis/src/index.ts` | 拆出 dsh-web 顶层导出（子路径） |
+| `packages/opencode/src/cli/cmd/serve.ts` | `ELLAMAKA_DSH=1` 挂载 dsh，固定端口 4098；动态 import |
+| `packages/ellamaka-desktop/src/main/sidecar.ts` | bootDshWeb + dshPort（ready 携带） |
+| `packages/ellamaka-desktop/src/main/server.ts` | spawn → 传递 dshPort |
+| `packages/ellamaka-desktop/src/main/sidecar-supervisor.ts` | connection.dshPort 字段 |
+| `packages/ellamaka-desktop/src/preload/types.ts` | ServerReadyData/SidecarRuntimeState.dshPort |
+| `packages/ellamaka-desktop/src/renderer/index.tsx` | `getDshPort()` 平台实现 |
+| `bunfig.toml` | dsh 包加入 minimumReleaseAgeExcludes |
+
+### 3.8 iframe 是界面问题，不是架构结论
 
 iframe 只是 PoC 让 dsh 界面先跑起来的手段。它阻挡的是"界面合并"，不是"容器能力复用"。真正的能力复用活在容器层，与 iframe 无关。
 
@@ -102,7 +164,7 @@ ellamaka 的演进方向明确：**容器化、动态化，尽量直接利用 ds
 
 session-query / schedule / subagent / system prompt 注入等能力依赖 dsh 自家 loop/session 语义的引擎层（事件日志语料重放、agent.send 唤醒通道、子会话模型）。契约桥只能翻译接口层形状，翻译不了引擎层语义。这些能力的获取路径是**原生复刻**（机制设计可剥离，包与数据模型不可复用）。
 
-### 6.2 桥接 API 规范（§5.6.1，实测固化）
+### 6.2 桥接 API 规范（实测固化）
 
 全部从 async 侧（Cordis 服务）调回 Effect 世界的桥接遵守以下形态：
 
@@ -112,11 +174,11 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 4. **ALS 上下文**：effect 体内发起的桥接调用沿传播链天然继承 Instance ALS，无需 `Instance.bind`。纯 async 侧发起的轮次须捕获-恢复 ALS。
 5. **取消语义**：interrupt 后 finalizer 按子先父后顺序确定性执行，`forkIn(scope)` 的并发子任务级联清理。Cordis 入口只启动不拥有中断权。
 
-### 6.3 工具管道设计（§5.1 ctx.tools）
+### 6.3 工具管道设计（ctx.tools）
 
 工具执行管道五段：`pre`（参数观察）→ `guard`（审批/拒绝决策）→ `around`（执行替换/包装，spill/timeout 挂载点）→ `post`（结果塑形）→ `result`（终态物化）。全部以 Cordis waterfall 事件暴露，插件可短路（guard 拒绝）或替换（around）。
 
-### 6.4 日志桥接（§5.10，已实现）
+### 6.4 日志桥接（已实现）
 
 cordis 插件日志经 `ctx.logger`（自动命名）→ Exporter（装配层注册）→ 独立文件 `cordis-plugins.log`，不进 ellamaka 主日志。路径按实例目录决定（空间内写 `<space>/.wopal-space/logs/`，非空间写 `$WOPAL_HOME/logs/`）。
 
@@ -165,6 +227,5 @@ dsh 是"账本"（只记流水，余额随时可算），ellamaka 是"余额表"
 
 - 实施计划与进度管理：`PLAN-TODOS.md`
 - 研究报告（dsh 全景调研、四层架构分析、审计证据链）：`research/deepseek-harness-architecture-and-integration-research.md`
-- PoC 记录（终局方案、实施现状、关键决策）：`research/dsh-web-dual-engine-poc.md`
 - 上级架构：`DESIGN.md`
 - dsh 参考源码：`labs/ref-repos/deepseek-harness/`
