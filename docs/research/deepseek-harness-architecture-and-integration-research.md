@@ -1,7 +1,7 @@
 # DeepSeek Harness (dsh) 架构深度解构与 Ellamaka 融合演进研究报告
 
 > **文档定位**：本报告对 DeepSeek AI 开源的智能体框架 **DeepSeek Harness (`dsh`)** 及其底层 **Cordis 插件容器** 进行了系统性的全景解构。对比 Ellamaka 的 **Effect TS** 架构体系，涵盖设计哲学、微内核插件机制、Skills/MCP、Subagent/命令/权限、API 范式、底层性能差异、Bun 运行时兼容性实测，并直面两套系统在数据模型与交互契约上的 4 大核心冲突。
-> **方案状态**：本报告原方案部分（§6–§10：换心手术 + 4 大网桥 + dsh 插件生态挂载）已被后续深度审计修正并取代，正式设计见 **`../DESIGN-dsh-poc.md`**，修正摘要见 §6。§1–§5 的调研解构与对比分析、§11 的深耦合包机制复刻研究、§12 的工具集选型初步评估、§13 的 session 语义模型分析仍为有效参考。
+> **研究结论**：本报告只承载研究结论（解构、审计、复刻、选型、语义分析），设计决策见 `../DESIGN-dsh-poc.md`。
 
 ---
 
@@ -163,372 +163,18 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
 
 ---
 
-## 6. 方案演进说明（原方案已被取代）
+## 6. 审计修正的关键发现
 
-> 原文档本节至 §10 提出的融合方案（Cordis 换心手术、4 大通用适配网桥、dsh 插件生态挂载、三阶段路线）已被后续深度审计修正并取代。**正式设计真相源：`../DESIGN-dsh-poc.md`**。原文以折叠形式存档，仅作历史参考。
+> 早期融合方案（换心手术 + 4 大网桥 + dsh 插件生态挂载）经深度审计后修正。以下为审计修正的研究结论，设计决策见 `../DESIGN-dsh-poc.md`。
 
-**审计修正的关键发现**：
+1. **早期 POC 代码存在 API 虚构**：`SessionProcessor.processTurn(sessionID)` 不存在（真实 API 为 `SessionProcessor.Service.create()` 返回 `Handle`，经 `handle.process(streamInput)` 驱动）；`ctx.dispose()` 在 Cordis v4 中应为 `ctx.fiber.dispose()`。
+2. **dsh 插件的挂载成本被低估**：dsh 工具插件 inject 的 `tools`/`systemPrompt`/`subprocess` 是 dsh 核心服务，深层依赖 `dsh-session` 事件日志。464 包审计将插件按 session 依赖分为三梯队：约 40 个零依赖（接触面仅 `session.header` 只读；2026-08-17 勘误：此处的「零依赖」指运行时零依赖——spill 栈经 required peer 引入 dsh-session 仅供 `SessionId` 类型解析，`import type` 编译期擦除，运行时不加载，已由 `packages/ellamaka-cordis/test/forbidden-load.test.ts` 加载探针实证）、仅 tool-todo 需 `append()` 单方法、session-query/subagent/schedule/compaction/agent-loop 为深耦合梯队——而深耦合梯队的全部能力 ellamaka 已自持。
+3. **Bun 兼容性"实测"当时无证据**：后续已由真实冒烟测试补验证，结论成立（Cordis 4.0.1 在 Bun 1.3 下服务注册/inject/事件/销毁全链路可用，init 1.79ms）。
 
-1. **原 §8.3 POC 代码存在 API 虚构**：`SessionProcessor.processTurn(sessionID)` 不存在（真实 API 为 `SessionProcessor.Service.create()` 返回 `Handle`，经 `handle.process(streamInput)` 驱动）；`ctx.dispose()` 在 Cordis v4 中应为 `ctx.fiber.dispose()`。
-2. **原方案低估了 dsh 插件的挂载成本**：dsh 工具插件 inject 的 `tools`/`systemPrompt`/`subprocess` 是 dsh 核心服务，深层依赖 `dsh-session` 事件日志。464 包审计将插件按 session 依赖分为三梯队：约 40 个零依赖（接触面仅 `session.header` 只读；2026-08-17 勘误：此处的「零依赖」指运行时零依赖——spill 栈经 required peer 引入 dsh-session 仅供 `SessionId` 类型解析，`import type` 编译期擦除，运行时不加载，已由 `packages/ellamaka-cordis/test/forbidden-load.test.ts` 加载探针实证）、仅 tool-todo 需 `append()` 单方法、session-query/subagent/schedule/compaction/agent-loop 为深耦合梯队——而深耦合梯队的全部能力 ellamaka 已自持。
-3. **§3.2 的 Bun 兼容性"实测"当时无证据**：后续已由真实冒烟测试补验证，结论成立（Cordis 4.0.1 在 Bun 1.3 下服务注册/inject/事件/销毁全链路可用，init 1.79ms）。
-
-**新方案核心**（详见 `../DESIGN-dsh-poc.md`）：
-
-- 目标修正为 **ellamaka 自身以 Cordis 为组合层运行时**：loop 渐进插件化（非换用 dsh loop），session 持久化/事件/API 零变更；
-- 服务契约自持锁死（Q2），dsh 梯队 1 插件经契约符合性验证后滚动挂载（Q3）；
-- **ctx.tools 单管道收敛 + opencode 权限剥离为同一核心工程**（Q1，姿势 B）；
-- 迁移路径为 Step A–E：宿主化 → 契约下沉 → 单管道收敛/权限剥离 → 模块拆解 → 可选清理，每步独立有价值、可停、可回滚。
-
-<details>
-<summary>原方案存档（§6–§10，已被取代，仅作历史参考）</summary>
-
-## 6. 演进路线规划：三阶段稳健推进
-
-```mermaid
-graph LR
-    Step1["【第 1 阶段: 极简换心】\n• 引入 @wopal/ellamaka-cordis\n• 启动 Cordis 容器接管调度\n• 内部 100% 沿用老逻辑 (0 改动)\n• 严禁提前加载 dsh 重名工具"]
-    Step2["【第 2 阶段: 契约网桥与生态接入】\n• 落地 4 大通用适配网桥\n• 解决 glob/grep 工具去重\n• 挂载 Wopal 外挂与 dsh 插件"]
-    Step3["【第 3 阶段: 深度演进与机制吸收】\n• KV-Cache Prompt Section 化\n• 吸收 Spill / FS 门禁 / Guard"]
-    
-    Step1 --> Step2 --> Step3
-```
-
----
-
-## 7. 融合适配体系全景架构与目标构想（终极设计蓝图）
-
-为了在享受 Cordis 微内核插件化红利的同时，100% 保护现有的前端资产与多 Instance 隔离机制，我们构建了以下四层全景架构体系：
-
-### 7.1 四层全景架构图
-
-```mermaid
-graph TD
-    %% 第一层：表现层
-    subgraph Layer1 ["1. 表现层 (Surfaces) —— 100% 保持原样，0 行改动"]
-        Workbench["SolidJS Workbench"]
-        Desktop["Electron Desktop"]
-        TUI["Ellamaka TUI"]
-    end
-
-    %% 第二层：服务与全局共享数据层
-    subgraph Layer2 ["2. 服务与全局数据层 (Core Services & DB) —— 保持原样"]
-        HttpApi["Serve API (Effect HttpApi / OpenAPI 路由)"]
-        SharedDB["全局单例 SQLite (Global.Path.data/ellamaka.db)"]
-        Snapshots["Snapshot.Service (物理快照与回滚)"]
-    end
-
-    %% 第三层：独立技术基础设施包 @wopal/ellamaka-cordis
-    subgraph Layer3 ["3. 融合中枢 (@wopal/ellamaka-cordis) —— 纯技术基础设施底座"]
-        CordisHost["CordisHub 容器宿主 (Bun JSC 引擎)"]
-        LoopPlugin["EllamakaAgentLoopPlugin (核心心脏驱动)"]
-        
-        B1["ConfigBridge (解析 settings.json 自动装配)"]
-        B2["NativeToolBridge (汇聚 read/write 到 ctx.tools)"]
-        B3["AgentRegistryAdapter (编译 .md 动态做 Scope/toolFilter 裁剪)"]
-        B4["EventRelayBridge (中继 SessionEvent -> Bus SSE)"]
-
-        CordisHost --- LoopPlugin
-        CordisHost --- B1
-        CordisHost --- B2
-        CordisHost --- B3
-        CordisHost --- B4
-    end
-
-    %% 第四层：纯外挂插件层
-    subgraph Layer4 ["4. 纯外挂插件层 (Pluggable Universe) —— 零侵入即插即用"]
-        subgraph WopalSoul ["Wopal 业务本体论外挂 (.wopal/plugins/...)"]
-            w_rules["wopal-rules (空间规则注入)"]
-            w_mem["wopal-memory (LanceDB 长期记忆)"]
-        end
-
-        subgraph DshEcosystem ["dsh 官方与社区标准插件群 (node_modules/...)"]
-            d_search["dsh-tool-fs-search (ripgrep)"]
-            d_mcp["dsh-mcp-client (MCP 客户端)"]
-            d_sub["dsh-subagent (多智能体调度与控制)"]
-            d_sched["dsh-schedule (定时任务/Cron)"]
-            d_spill["dsh-spill (超长输出分流防爆)"]
-            d_guard["dsh-guard (Loop 卫生反思守卫)"]
-        end
-    end
-
-    %% 表现层与服务层标准通信
-    Workbench -->|OpenAPI SDK 交互| HttpApi
-    Desktop -->|OpenAPI SDK 交互| HttpApi
-    TUI -->|OpenAPI SDK 交互| HttpApi
-
-    %% 服务层与底座融合交互
-    HttpApi -->|Effect Layer 注入调用| LoopPlugin
-    LoopPlugin -->|读写会话与消息| SharedDB
-    B4 -->|广播标准 SSE 事件| Workbench
-    B4 -->|广播标准 SSE 事件| TUI
-
-    %% 适配网桥装配外挂插件
-    B1 -->|动态扫描加载| WopalSoul
-    B1 -->|动态扫描加载| DshEcosystem
-```
-
----
-
-### 7.2 多 Instance 架构与 Cordis 原型链派生（Root Context $\rightarrow$ Instance Context）
-
-Ellamaka 的核心特征是单进程 `Serve` 托管多个项目目录（`InstanceState`）。我们利用 Cordis 原生的 **“父子原型链上下文派生（`rootCtx.extend()`）”** 完美实现隔离与继承：
-
-```mermaid
-graph TD
-    subgraph GlobalRoot ["1. 用户全局根容器 (Root Context) —— 全局单例"]
-        RootCtx["Root Context (Serve 启动时创建)"]
-        GlobalDB["持有全局共享 SQLite 连接 (ellamaka.db)"]
-        GlobalLLM["持有全局 LLM Provider (ctx.llm)"]
-        GlobalTools["全局内置工具 (read/write/bash 汇聚到 ctx.tools)"]
-        GlobalAgents["全局基础 Agents (~/.agents/)"]
-        RootCtx --- GlobalDB
-        RootCtx --- GlobalLLM
-        RootCtx --- GlobalTools
-        RootCtx --- GlobalAgents
-    end
-
-    subgraph InstanceA ["2. Project-A 实例子容器 (Instance A Context)"]
-        CtxA["const instanceCtxA = rootCtx.extend({ directory: '/project-a' })"]
-        PluginsA["A 专属插件 (如 GitHub MCP 客户端子进程)"]
-        AgentsA["A 专属 Agents (覆盖全局同名 fae.md)"]
-        ConfigA["A 专属合并后的 settings.json 覆盖"]
-        CtxA --- PluginsA
-        CtxA --- AgentsA
-        CtxA --- ConfigA
-    end
-
-    subgraph InstanceB ["2. Project-B 实例子容器 (Instance B Context)"]
-        CtxB["const instanceCtxB = rootCtx.extend({ directory: '/project-b' })"]
-        PluginsB["B 专属插件 (如 E2B 云沙箱)"]
-        AgentsB["B 专属 Agents (project-b 专属 reviewer.md)"]
-        CtxB --- PluginsB
-        CtxB --- AgentsB
-    end
-
-    RootCtx -->|原型链继承与隔离派生| CtxA
-    RootCtx -->|原型链继承与隔离派生| CtxB
-```
-
-* **配置与能力合并**：`instanceCtxA` 在解析配置时，将全局配置与项目 `.wopal/config/settings.json` 做 `mergeDeep` 深度合并；同名 Agent（如 `.wopal/agents/fae.md`）自动在子 Context 中**遮蔽（Shadow）**全局定义。
-* **全局能力回溯**：`instanceCtxA` 在执行时，未被覆盖的工具与 LLM 连接自动沿着原型链回溯到 `Root Context`。
-* **资源精确释放**：当 `/project-a` 关闭时，调用 `await instanceCtxA.dispose()`，**仅释放该项目特有的 MCP 进程与定时器，全局 SQLite 与 LLM 连接毫发无损！**
-
----
-
-### 7.3 四大通用适配网桥设计细节
-
-```mermaid
-graph TD
-    subgraph TheBridgesDetail ["CordisHub 下辖的 4 大通用适配网桥"]
-        B1["1. ConfigBridge (读取 settings.json 自动装配外挂插件)"]
-        B2["2. NativeToolBridge (汇聚 read/write/bash 到统一 ctx.tools)"]
-        B3["3. AgentRegistryAdapter (编译 .md 统一契约，动态做 Scope 裁剪)"]
-        B4["4. EventRelayBridge (将 SessionEvent 映射为 Bus SSE 广播前端)"]
-    end
-```
-
-#### 1. `ConfigBridge`（单一配置源装配器）
-* **单一真源**：以 `.wopal/config/settings.json` 为唯一配置入口；
-* **工作逻辑**：遍历 `plugins` 字段，调用 `ctx.plugin(name, config)`，插件内部自带的 `@deepseek-ai/schemastery` 自动完成参数校验与默认值填补。
-
-#### 2. `NativeToolBridge`（统一工具注册中枢）
-* **命名规范**：原生内置工具（`read`, `write`, `edit`, `bash`）、Wopal 工具（`wopal_*`）、dsh 工具（`glob`, `grep`）、MCP 工具（`mcp__<server>__<tool>`）；
-* **唯一注册表**：将所有来源的工具统一包装并注册进 `ctx.tools`，建立全系统单一权威注册表。
-
-#### 3. `AgentRegistryAdapter`（契约中心化智能体管理）
-* **统一契约模型（`AgentManifest`）**：
-  ```typescript
-  export interface AgentManifest {
-    id: string
-    name: string
-    description: string
-    model?: string
-    prompt: string
-    permission?: 'read-only' | 'workspace-write' | 'danger-full-access'
-    tools?: { allow?: string[]; deny?: string[] }
-    skills?: string[]
-  }
-  ```
-* **动态隔离（Scope Activation）**：在 Agent 会话创建瞬间，为其创建独立 Cordis `Scope`，自动执行 `systemPrompt.section` 置顶人设，并调用 `tools.restrict(manifest.tools)` 进行物理级工具黑白名单裁剪。
-
-#### 4. `EventRelayBridge`（双向事件中继网桥）
-* **事件映射表**：
-  
-  | Cordis / dsh 事件 | 转换动作 | 映射到 Ellamaka 的 SSE 事件 | 前端消费行为 |
-  | :--- | :--- | :--- | :--- |
-  | **`assistant/chunk`** | 提取 text / reasoning | `message.part.delta` | SolidJS 前端逐字追加渲染（流式打字）。 |
-  | **`tool/call`** | 提取 tool_name, call_id, args | `tool.call.started` | 前端展开 `ToolCard` 显示“正在执行...”。 |
-  | **`tool/result`** | 提取 output, is_error | `tool.call.completed` | 前端更新 `ToolCard` 显示结果/Diff。 |
-  | **`user/question`** | 提取 question, options | `question.asked` | 前端弹出 `QuestionPrompt` 交互选择框。 |
-
----
-
-## 8. 第一阶段落地工程：极简“换心手术”架构设计与 POC 验证
-
-第一步手术遵循 **“最小切口、零回归风险、绝不提前扩大范围”** 的严格工程原则。
-
-### 8.1 第一步的严格边界定义（什么做，什么坚决不做）
-
-* ✅ **第一步要做的事**：
-  1. 在 `projects/ellamaka/packages/ellamaka-cordis/` 创建独立的专用基础设施包（包名 `@wopal/ellamaka-cordis`）；
-  2. 实现 `CordisHub`，在 Bun 运行时中拉起 `new Context()` 容器作为生命周期宿主；
-  3. 实现 `EllamakaAgentLoopPlugin`，将 `processor.ts` 的执行入口包装为 Cordis 插件调度；
-  4. 在 `Serve` 中通过 Effect Layer 注入该 Hub，跑通现有的多轮对话。
-* 🛑 **第一步坚决不做的事（杜绝空想与冲突）**：
-  1. **不碰 SQLite 数据库**：数据库继续通过现有的 Effect `Storage.Service` 访问全局共享库 `ellamaka.db`，**绝对不在 Cordis 中包装 SQLite**；
-  2. **不碰 LLM 适配器**：模型通信继续走现有的 Effect `Provider.Service`，**绝对不在 Cordis 中包装 LLM**；
-  3. **不碰原生工具管道**：原生工具继续走现有流程，**绝对不把原生工具迁移进 Cordis**；
-  4. **严禁加载 dsh 的基础工具插件**：因为 dsh 的 `dsh-tool-fs-search` 中包含同名的 `glob` 和 `grep`，第一步若加载必产生命名冲突。
-
----
-
-### 8.2 独立包 `@wopal/ellamaka-cordis` 极简源码结构
-
-```text
-packages/ellamaka-cordis/  (包名: @wopal/ellamaka-cordis)
-├── package.json
-├── tsconfig.json
-├── README.md
-└── src/
-    ├── index.ts                     # 统一导出 CordisHub, CordisHubLive
-    ├── hub.ts                       # ⭐ CordisHub: 管理 Cordis 根容器与生命周期
-    ├── layer.ts                     # Effect Layer: CordisHubLive (供 Serve 一行加载)
-    └── core/
-        ├── ellamaka-loop.plugin.ts  # 把现有的成熟 processor.ts 包装为 Cordis 插件
-        └── types.ts                 # declare module '@deepseek-ai/cordis' 类型扩展
-```
-
----
-
-### 8.3 第一步代码实现透视（极简纯粹，不到 100 行真实代码）
-
-> **⚠️ 勘误（2026-08-16）**：本节代码**从未通过编译验证，含两处虚构 API，不可直接使用**：
-> 1. `SessionProcessor.processTurn(sessionID)` 不存在——真实 API 为 `SessionProcessor.Service.create(input)` 返回 `Handle`，经 `handle.process(streamInput)` 驱动（见 `packages/opencode/src/session/processor.ts`）；
-> 2. `ctx.dispose()` 在 Cordis v4 中不存在——真实销毁 API 为 `ctx.fiber.dispose()`（见 `vendor/cordis/src/fiber.ts`，已经 Bun 实测验证）。
-> 正式设计见 `../DESIGN-dsh-poc.md`。
-
-#### 1. 核心换心驱动（`src/core/ellamaka-loop.plugin.ts`）
-```typescript
-import { Context, Service } from "@deepseek-ai/cordis"
-import { Runtime } from "effect"
-
-export interface AgentLoopService {
-  processTurn(sessionID: string): Promise<void>
-}
-
-declare module "@deepseek-ai/cordis" {
-  interface Context {
-    agentLoop: AgentLoopService
-  }
-}
-
-export class EllamakaAgentLoopPlugin extends Service {
-  static name = "agentLoop"
-
-  constructor(ctx: Context, private effectRuntime: Runtime.Runtime<any>) {
-    super(ctx, "agentLoop")
-  }
-
-  // 纯粹的调度外壳：直接桥接调用现有的成熟 processor，内部零改动！
-  async processTurn(sessionID: string): Promise<void> {
-    const { SessionProcessor } = await import("@opencode-ai/opencode/session/processor")
-    await Runtime.runPromise(this.effectRuntime)(SessionProcessor.processTurn(sessionID))
-  }
-}
-```
-
-#### 2. 核心中枢宿主（`src/hub.ts`）
-```typescript
-import { Context as CordisContext } from "@deepseek-ai/cordis"
-import { EllamakaAgentLoopPlugin } from "./core/ellamaka-loop.plugin"
-
-export class CordisHub {
-  readonly ctx: CordisContext
-
-  constructor(options: { effectRuntime: any }) {
-    // 1. 在 Bun 主进程内初始化 Cordis 根容器
-    this.ctx = new CordisContext()
-
-    // 2. 仅挂载换心驱动，接管调度
-    this.ctx.plugin(EllamakaAgentLoopPlugin, options.effectRuntime)
-  }
-
-  async dispose() {
-    await this.ctx.dispose()
-  }
-}
-```
-
-#### 3. Effect Layer 注入（`src/layer.ts`）
-```typescript
-import { Layer, Effect } from "effect"
-import { CordisHub } from "./hub"
-
-export const CordisHubLive = Layer.scoped(
-  CordisHub,
-  Effect.gen(function* () {
-    const runtime = yield* Effect.runtime()
-    const hub = new CordisHub({ effectRuntime: runtime })
-    
-    // 由 Effect 严格把控容器生命周期
-    yield* Effect.addFinalizer(() => Effect.promise(() => hub.dispose()))
-    return hub
-  })
-)
-```
-
----
-
-### 8.4 第一阶段 POC 验收标准
-
-| 验收项目 | 验证动作 | 成功标准（Pass 准则） |
-| :--- | :--- | :--- |
-| **容器初始化** | 在 Bun 运行时下启动 `CordisHubLive`。 | Bun 进程成功拉起 Cordis 容器，日志无报错，耗时 `<5ms`。 |
-| **调度闭环** | 通过 Workbench 或 TUI 发起一次多轮对话任务。 | 对话正常进行，流式打字正常，Drizzle SQLite 正常写入，Snapshot 快照正常生成，**全链路 100% 零回归**！ |
-| **容器安全销毁** | 终止服务进程。 | Cordis 容器触发 `dispose()` 顺利注销，无悬挂句柄或内存泄漏。 |
-
----
-
-## 9. 第二阶段落地：网桥适配与插件生态挂载
-
-在第一阶段 POC 验证成功、证明“换心不改血脉”成立后，我们在第二阶段推进网桥治理与插件接入：
-
-1. **`NativeToolBridge` 与工具去重**：
-   - 梳理原生工具与 dsh 工具命名空间，对同名的 `glob`/`grep` 确立优先级；
-   - 将确认无冲突的工具统一切入 `ctx.tools`。
-2. **`ConfigBridge`**：
-   - 解析 `settings.json` 的 `plugins` 声明，支持按需挂载 dsh 官方插件与 Wopal 外挂插件。
-3. **`AgentRegistryAdapter`**：
-   - 解析 `.wopal/agents/*.md`，利用 Cordis 的 `Scope` 实现动态 `toolFilter` 裁剪。
-4. **`EventRelayBridge`**：
-   - 将 Cordis 的 `SessionEvent` 映射为现有的 Bus SSE 事件推给前端。
-
----
-
-## 10. 后续精细化演进：Agent Loop 内部改造架构思路
-
-在底座与插件体系全部打通后，后续可对 Agent Loop 内部进行精细化优化，吸收 dsh 的工业级优秀机制：
-
-* **KV-Cache 前缀保护**：将提示词集中拼装重构为标准的 **Prompt Section 段落系统**（静态基底设定置顶、动态时间戳/提醒置底），吃满模型厂商的 KV Cache 缓存折扣；
-* **`dsh-spill`**：超长工具输出（>20KB）自动分流转储到本地 Spill Store，仅向模型返回摘要与 `spill://` 句柄，防爆上下文；
-* **`fs-observation-policy`**：先读后写强制观察门禁，未被 `read` 过的文件禁止调用 `write`/`edit`，根治模型盲写幻觉；
-* **`dsh-guard`**：死循环检测与 Prompt 动态反思自愈守卫；
-* **`Code Mode`**：支持模型编写 TypeScript 脚本在 Worker 沙箱内原子并发调用多工具。
-
----
-
-### 💡 总结
-
-通过 **第一步严格聚焦极简“换心手术”**，我们在零风险、零回归的前提下完成了 Bun 运行时中 Cordis 容器的底座验证；在第二阶段通过 **4 大通用网桥与多 Instance 映射** 实现了完整的插件化生态融合；并在第三阶段稳步吸收 dsh 的进阶机制。整套方案层次分明、张弛有度、具备极高的工业级工程落地价值！
-
-</details>
-
----
 
 ## 11. 深耦合包机制复刻研究（2026-08-16 补充）
 
-> **研究定位**：正式设计（`../DESIGN-dsh-poc.md`）将 dsh 的 agent-loop/session/session-query/compaction/subagent/schedule 六个包划为深耦合禁区（红线 §7）——它们 rt-import `dsh-session` 且能力与 ellamaka 自持体系重叠。但禁区针对的是**包与数据模型**，不是**机制设计**。本章对六包逐一审计其可剥离的机制闪光点（全部经源码实证），并给出复刻路径分析。复刻的落地排期归正式设计文档管辖，本章只做研究判定。
+> **研究定位**：dsh 的 agent-loop/session/session-query/compaction/subagent/schedule 六个包 rt-import `dsh-session` 且能力与 ellamaka 自持体系重叠。本章对六包逐一审计其可剥离的机制闪光点（全部经源码实证），并给出复刻路径分析。本章只做研究判定。
 
 ### 11.1 闪光点清单（源码实证）
 
@@ -546,7 +192,7 @@ export const CordisHubLive = Layer.scoped(
 复刻的对象是机制设计，不是包。每个闪光点剥离 session 耦合后归入三种形态之一：
 
 - **A 类 — 算法吸收**：机制本质是纯逻辑，session 只是输入输出载体。将算法提为纯函数/策略，嵌入 ellamaka 现有 Effect 服务实现。不依赖 Cordis 化，可先行。
-- **B 类 — 能力插件**：新能力天然是插件形态（工具、后台服务）。自研实现 + 按 `@wopal/ellamaka-cordis` 自持契约封装，底层接 ellamaka Storage/Bus。依赖 Step B/C 契约就绪。
+- **B 类 — 能力插件**：新能力天然是插件形态（工具、后台服务）。自研实现 + 按 `@wopal/ellamaka-cordis` 自持契约封装，底层接 ellamaka Storage/Bus。
 - **C 类 — 现状增强**：ellamaka 已有对应能力，仅缺 dsh 的某个精妙语义。将语义 diff 移植进现有实现，不新增形态。
 
 session 接触面到 ellamaka 对应物的翻译表（全部复刻共用）：
@@ -557,7 +203,7 @@ session 接触面到 ellamaka 对应物的翻译表（全部复刻共用）：
 | `session.append(event)` | EventV2 发布 + SQLite 写入 |
 | `agent.send(userMessage)` / wake | `SessionPrompt.prompt()` 触发 |
 | `tokenMeter` 计价 | LLM Usage（processor 已有） |
-| Cordis scope 隔离 | instance context（Step B 后） |
+| Cordis scope 隔离 | instance context |
 
 ### 11.3 逐项复刻判定
 
@@ -566,16 +212,16 @@ session 接触面到 ellamaka 对应物的翻译表（全部复刻共用）：
 | tool-result-pruner | **A** | 裁剪算法（阈值/head/middle/tail/marker）提为纯函数；嵌入 compaction 流程：LLM 总结前先确定性裁剪旧工具结果；裁剪记录对应物写入 EventV2 | 无（可先于 Cordis 化启动） | 小 |
 | Inbox 两级队列 | **C** | 语义移植进 SessionRunState：busy 时消息入 `next-step`/`next-turn` 持久化队列；step/turn 边界注入 | 无（可独立启动） | 中 |
 | EventV2 前向容错 | **A** | 消费侧加未知事件类型策略（skip-with-log 或 `ignorable` 信封等价物） | 无 | 小 |
-| session-query 4 工具 | **B** | 4 个 ToolDefinition；底层 SQL 查询 ellamaka Storage（messages/parts 表）+ 分词索引；血缘沿 toolCall 关联链 | Step B/C | 中 |
-| schedule 会话定时器 | **B** | 3 工具 + Effect `repeat`/`schedule` 定时 + SQLite 持久化；唤醒 = 到点自动向目标 session 发消息触发 loop；durability preflight 复刻（进程重启重建） | Step B | 中 |
-| subagent 多后端 | **B** | 自持 subagent 缝隙契约（spawn/status/send/interrupt/settle）；首个 provider 包装现有 task 内部后端；外部 CLI 引擎后端（与 dsh 的 claude-code/codex 后端等价、自研实现）后续扩展 | Step C（工具管道） | 大 |
+| session-query 4 工具 | **B** | 4 个 ToolDefinition；底层 SQL 查询 ellamaka Storage（messages/parts 表）+ 分词索引；血缘沿 toolCall 关联链 | 中 |
+| schedule 会话定时器 | **B** | 3 工具 + Effect `repeat`/`schedule` 定时 + SQLite 持久化；唤醒 = 到点自动向目标 session 发消息触发 loop；durability preflight 复刻（进程重启重建） | 中 |
+| subagent 多后端 | **B** | 自持 subagent 缝隙契约（spawn/status/send/interrupt/settle）；首个 provider 包装现有 task 内部后端；外部 CLI 引擎后端（与 dsh 的 claude-code/codex 后端等价、自研实现）后续扩展 | 大 |
 
 ### 11.4 优先级与战略洞察
 
 按价值 × 成本 × 时机排序：
 
-1. **立即可做**（纯 Effect 改造，先于 Cordis 化）：tool-result-pruner → Inbox 两级队列 → EventV2 前向容错
-2. **Step B/C 后**（能力插件）：session-query 4 工具 → schedule 会话定时器 → subagent 多后端
+1. **立即可做**（纯 Effect 改造）：tool-result-pruner → Inbox 两级队列 → EventV2 前向容错
+2. **能力插件**：session-query 4 工具 → schedule 会话定时器 → subagent 多后端
 
 **后发优势洞察**：session-query 的复刻中 ellamaka 反而占优——dsh 的血缘/检索建立在事件日志重放之上（corpus 需要 clone 整段 event log），ellamaka 的 SQLite 结构化存储做检索与血缘是降维打击。深耦合包用自己的数据模型实现这些能力付出了耦合代价；ellamaka 用自己的数据模型复刻同类能力，实现会比原版更简洁。这印证了"复刻机制、不复刻包"路线的正确性。
 
@@ -583,7 +229,7 @@ session 接触面到 ellamaka 对应物的翻译表（全部复刻共用）：
 
 ## 12. 工具集选型初步评估（2026-08-16 补充，深评暂缓）
 
-> **评估动机**：正式设计 Step C 原表述为"全部原生工具包装注册"，未经选型思考。本节完成槽位级初评，深评（逐工具六维评分）暂缓，有需要时继续。本节结论作为 Step C 选型决议（C0）的输入。
+> **评估动机**：对 ellamaka 原生工具与 dsh 工具做槽位级初评，深评（逐工具六维评分）暂缓，有需要时继续。
 
 ### 12.1 关键事实基础（含勘误）
 
@@ -606,18 +252,18 @@ session 接触面到 ellamaka 对应物的翻译表（全部复刻共用）：
 
 - **倾向直接采用 dsh**：`fs-search`（替换原生 glob/grep，顺带消灭运行时下载问题）、`fs-observation-policy`（先读后写门禁，纯增量）。
 - **倾向保留自研（包装迁移）**：`edit`（成熟度）；`read/write` 初判保留（图片/截断细节待深评确认 dsh 覆盖度）。
-- **待深评**：`bash`（保留 shell 主体吸收 run_in_background/jobs 语义，或整体换 dsh tool-bash 换取 sandbox）；`wopal_task_*` 契约化重造（解构式实现应在 Step C 一并正规化为契约插件）。
+- **待深评**：`bash`（保留 shell 主体吸收 run_in_background/jobs 语义，或整体换 dsh tool-bash 换取 sandbox）；`wopal_task_*` 契约化重造（解构式实现应正规化为契约插件）。
 - **增量采用候选**（空白槽位）：ask-user、jobs、goal、schedule、session-query、terminal。
 
 ### 12.4 采用 dsh 工具的三项真实成本
 
-1. **schema 体系兼容**：dsh 工具参数定义用 `@deepseek-ai/schemastery`；自持契约的 ctx.tools 需决定 schema 体系（直接采用 schemastery 兼容，或建转换层）——§5.1 契约设计的关键决策点。
-2. **缝隙桥先行**：fs-search 依赖 `ctx.subprocess` 的进程树终止/环境净化语义，缝隙桥（Step B）质量决定 dsh 工具运行质量。
-3. **版本锁定**：dsh 工具插件为 rc 包，按 Q2/Q3 锁版本挂载，升级过符合性测试。
+1. **schema 体系兼容**：dsh 工具参数定义用 `@deepseek-ai/schemastery`；自持契约的 ctx.tools 需决定 schema 体系（直接采用 schemastery 兼容，或建转换层）。
+2. **缝隙桥先行**：fs-search 依赖 `ctx.subprocess` 的进程树终止/环境净化语义，缝隙桥质量决定 dsh 工具运行质量。
+3. **版本锁定**：dsh 工具插件为 rc 包，锁版本挂载，升级过符合性测试。
 
-### 12.5 对 Step C 的修正建议
+### 12.5 选型驱动四段
 
-Step C 由"全量包装"改为**选型驱动**四段（建议，设计文档待确认后同步）：
+工具选型按四段执行：
 
 ```
 C0 工具选型决议 —— 本节初评为输入，逐槽位决议：包装保留 / 采用 dsh / 废弃 / 新增
@@ -630,7 +276,7 @@ C3 permission → guard 段 + opencode Permission 退役（不变）
 
 ## 13. session 语义模型深度分析与中间路线（2026-08-16 补充）
 
-> **研究定位**：回答"为何不能通过封装契约对接依赖 dsh session 机制的插件"——含语义契约剖析、四承诺价值分析、Event Sourcing vs CRUD 权衡、loop 替换路线的成本收益、会计类比与薄账本中间路线。中间路线已纳入正式设计（`../DESIGN-dsh-poc.md` §6.7）。
+> **研究定位**：回答"为何不能通过封装契约对接依赖 dsh session 机制的插件"——含语义契约剖析、四承诺价值分析、Event Sourcing vs CRUD 权衡、loop 替换路线的成本收益、会计类比与薄账本中间路线。
 
 ### 13.1 接口契约 vs 语义契约：桥接断点的真正位置
 
@@ -688,7 +334,7 @@ ellamaka 的 Part 模型：可变快照（tool part 状态从 pending 到 comple
 
 | 路线 | 成本 | 独占收益 | 风险 |
 |------|------|---------|------|
-| 复刻路线（主线） | 分摊 Plan 1-5，可停 | 无独占，保留 80% 场景简单性 | 低 |
+| 复刻路线 | 分摊 Plan 1-5，可停 | 无独占，保留 80% 场景简单性 | 低 |
 | + 薄账本（中间路线） | +1-2 周 | 对拍回归、决策审计 | 低-中 |
 | 换 dsh loop（推倒路线） | 数月，地狱级 | 全套账本红利 + 崩溃续跑 | 极高，不可逆 |
 
