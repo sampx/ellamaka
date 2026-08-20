@@ -63,6 +63,14 @@ export interface DshHostOptions {
   /** The loopback port for the dsh webserver; `0` asks the OS for a free one. */
   port: number
   /**
+   * Explicit path to the `@deepseek-ai/dsh` package.json acting as the
+   * installation anchor. When omitted, `require.resolve` locates it from
+   * this host package's closure. Desktop packaged mode passes the
+   * materialised closure copy under `$DSH_HOME` because `require.resolve`
+   * cannot reach it from the bundled sidecar.
+   */
+  installAnchor?: string
+  /**
    * Optional prepare hook run before the plugin tree mounts. Receives the
    * host context so callers can provide extra services dsh plugins need.
    */
@@ -84,8 +92,10 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   const { home, port, prepare } = opts
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
-  // host's node_modules closure.
-  const installAnchor = require.resolve("@deepseek-ai/dsh/package.json")
+  // host's node_modules closure. Desktop packaged mode overrides it to the
+  // materialised closure copy under $DSH_HOME because require.resolve cannot
+  // reach the resource directory from the bundled sidecar.
+  const installAnchor = opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
   // Link the profiles/node_modules fallback in the (possibly temp) home so the
   // profile's plugin rows resolve against this installation's dependency
   // closure (matches how the dsh launcher boots a profile).

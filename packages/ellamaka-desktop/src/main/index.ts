@@ -250,6 +250,7 @@ const startWorkbench = (opts: StartWorkbenchOpts = {}) =>
               url: state.connection?.url ?? "",
               username: state.connection?.username ?? null,
               password: state.connection?.password ?? null,
+              dshPort: state.connection?.dshPort ?? null,
             }
           } finally {
             initEmitter.off("step", listener)

@@ -138,6 +138,23 @@ describe("SidecarSupervisor", () => {
     expect(states[states.length - 1]).toBe("ready")
   })
 
+  test("ready propagates dshPort into the connection state", async () => {
+    const supervisor = createSupervisor(mockSpawner)
+    const startPromise = supervisor.start()
+    await tick()
+
+    const { result, passHealth } = createSpawnResult()
+    result.dshPort = 43210
+    mockSpawner.resolve(result)
+    await tick()
+    passHealth()
+    await startPromise
+
+    const state = supervisor.getState()
+    expect(state.status).toBe("ready")
+    expect(state.connection!.dshPort).toBe(43210)
+  })
+
   // ── starting → lost (spawn fails) ──────────────────────────────────────
 
   test("starting → lost when spawn throws", async () => {

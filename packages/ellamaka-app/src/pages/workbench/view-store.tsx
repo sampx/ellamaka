@@ -112,6 +112,7 @@ export function initWorkbenchState() {
     const [refreshVersion, setRefreshVersion] = createSignal(0)
     const [persistentHint, setPersistentHintValue] = createSignal("")
     const [statusMessage, setStatusMessageValue] = createSignal("")
+    const [dshVisible, setDshVisible] = createSignal(false)
     let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
     let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -284,6 +285,8 @@ export function initWorkbenchState() {
       setStatusMessage,
       get persistentHint() { return persistentHint() },
       setPersistentHint,
+      get dshVisible() { return dshVisible() },
+      setDshVisible,
       get diagnostics() { return diagnosticsList() },
       pushDiagnostic,
       removeDiagnostic,

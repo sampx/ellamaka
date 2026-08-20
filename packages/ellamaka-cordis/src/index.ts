@@ -27,7 +27,5 @@ export type {
 } from "./types.js"
 export { mountSpillPlugins } from "./spill/mount.js"
 export type { MountSpillOptions, MountedSpillPlugins } from "./spill/mount.js"
-export { bootDshWeb, mountDshWeb } from "./dsh-web.js"
-export type { DshHost, DshHostOptions } from "./dsh-web.js"
 export { createCordisLogExporter } from "./log-bridge.js"
 export type { CordisLogExporterDeps, EllamakaLogLevel } from "./log-bridge.js"

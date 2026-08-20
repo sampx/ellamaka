@@ -1,4 +1,4 @@
-import { ErrorBoundary, Show, createEffect, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -9,6 +9,7 @@ import { StatusBar } from "./parts/status-bar"
 import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
@@ -33,9 +34,20 @@ function WorkbenchShell() {
   const sdk = useServerSDK()
   const runtime = useWorkbenchRuntime()
   const language = useLanguage()
+  const platform = usePlatform()
   const dialog = useDialog()
   const t: typeof language.t = (key, params) => language.t(key, params)
   let workbenchSurface: HTMLDivElement | undefined
+
+  // dsh web engine loopback URL. Desktop reads the sidecar-mounted dsh port;
+  // dev (browser) falls back to the fixed 4098. Absent dsh (closure not
+  // installed) the iframe simply won't connect.
+  const dshUrl = createSignal("http://127.0.0.1:4098/")
+  onMount(() => {
+    void Promise.resolve(platform.getDshPort?.()).then((port) => {
+      if (port) dshUrl[1](`http://127.0.0.1:${port}/`)
+    })
+  })
 
   const requestCliRepair = (cli: NonNullable<typeof runtime.cli>) => {
     void dialog.show(() => (
@@ -175,12 +187,26 @@ function WorkbenchShell() {
               {() => <WorkbenchTitlebar />}
             </WorkbenchActiveDirectoryProvider>
           </Show>
-          <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <SpaceRail />
-            <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              <Workspace />
+          <Show
+            when={!wb.dshVisible}
+            fallback={
+              <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-v2-background-bg-deep">
+                <iframe
+                  title="DSH"
+                  src={dshUrl[0]()}
+                  class="h-full w-full border-0"
+                  allow="clipboard-write; clipboard-read"
+                />
+              </div>
+            }
+          >
+            <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <SpaceRail />
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <Workspace />
+              </div>
             </div>
-          </div>
+          </Show>
           <Show when={display().showStatusbar}>
             <StatusBar />
           </Show>

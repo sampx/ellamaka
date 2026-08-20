@@ -3,7 +3,6 @@ import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { CordisHub, mountDshWeb } from "@wopal/ellamaka-cordis"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 export const ServeCommand = effectCmd({
@@ -26,6 +25,16 @@ export const ServeCommand = effectCmd({
     // process-level cordis hub — one process, one container. When disabled,
     // nothing dsh-related is mounted and ellamaka runs untouched.
     if (Flag.ELLAMAKA_DSH) {
+      // Dynamic import keeps the dsh assembly out of the desktop sidecar
+      // bundle: `serve.ts` is bundled into `dist/node/node.js`, which the
+      // desktop sidecar loads under Node. A static top-level import would pull
+      // @wopal/ellamaka-cordis (and its @deepseek-ai/dsh-* dependency closure)
+      // into that bundle, where Node cannot resolve the dsh packages — the
+      // sidecar crashed on load. Only ELLAMAKA_DSH-enabled CLI runs reach here.
+      const [{ CordisHub }, { mountDshWeb }] = yield* Effect.all([
+        Effect.promise(() => import("@wopal/ellamaka-cordis")),
+        Effect.promise(() => import("@wopal/ellamaka-cordis/dsh-web")),
+      ])
       const hub = new CordisHub(null)
       // Fixed loopback port so the Workbench /dsh iframe can address it without
       // a runtime port-discovery round trip (dev 4098; Desktop uses a random

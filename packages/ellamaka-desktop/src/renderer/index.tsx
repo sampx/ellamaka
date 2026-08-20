@@ -158,6 +158,11 @@ const createPlatform = (releaseVersion: () => string): Platform => {
       return result
     },
 
+    async getDshPort() {
+      const state = await window.api.getSidecarState()
+      return state.connection?.dshPort
+    },
+
     openLink(url: string) {
       window.api.openLink(url)
     },

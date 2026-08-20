@@ -747,11 +747,97 @@ Logger 名称解析链（`vendor/cordis/src/logger.ts:251-261`）：显式 `ctx.
 
 **结论**：dsh 插件从不手动建命名 Logger、不手动注册 Exporter，只直接 `ctx.logger.warn/error/info`，依赖 fiber 自动命名 + 容器级 Exporter 统一输出。
 
-## 15. 权威参考资料与考证证据链清单 (Canonical References & Evidence)
+## 15. dsh Web 前端插件架构剖析（2026-08-20，源码级）
+
+> 来自 `deepseek-harness` 源码，回答 dsh Web 前端接入时的插件架构问题：后端逻辑插件与前端 bundle 插件的关系与层次、是否必须在同一 Cordis 容器、dsh 如何动态配置与加载、desktop 固化前端是否丧失动态能力。本节源自 `dsh-web-dual-engine-poc.md`（已迁移至此）。
+
+### 15.1 核心结论：一切皆插件，前端是后端的浏览器半身
+
+dsh 建立在 vendored Cordis 之上，其哲学是 **everything is a plugin**（AGENTS.md 开篇）。"后端逻辑插件"与"前端 bundle 插件"不是两种东西，而是**同一个插件、两个半身（dual-face）**：
+
+| 半面 | 运行位置 | 职责 | 识别标志 |
+| :--- | :--- | :--- | :--- |
+| **node half** | 后端 Node 进程 | 注册服务、暴露 ctx 服务、host 逻辑、HTTP 路由 | 普通 cordis 插件（default export service 或 apply） |
+| **browser half** | 浏览器 | 渲染 UI、交互、经 RPC 调后端 | package.json 声明 `dsh.client.platform: "web"` + `exports["./client"]` 指向构建产物 |
+
+一份 `cordis.patch.yml`（如 `@deepseek-ai/dsh-web-app` 的 patch）同时 insert 后端行（`webServer`、`storage`、`api-gateway`）与前端 UI 行（`ui-layout`、`ui-sidebar`、`ui-conversation`…），证实两者同属一棵插件树。**每个前端 UI 背后都有 node half 在后端容器里提供它需要的 Service/RPC**。
+
+### 15.2 层次：配置面 → host 面 → agent 面 → dsh.client 面
+
+```
+cordis.yml / patch 层          ← 声明整棵插件树的【配置面】（dsl 表达式、insert/disable/override）
+   │  一列 entry（插件行）
+   │
+   ├─ host 面（进程级）        webServer, web-runtime, api-gateway, storage, directory-picker...
+   ├─ agent 面（preset/会话级） 工具、子代理、system-prompt...（web 面 disabled，由 preset 装载）
+   └─ dsh.client 面（浏览器）    ui-layout, ui-sidebar, ui-conversation, modules, connection...
+```
+
+- **配置面**：patch 层（bundle patch + profile patch + `--patch` overlay 按序 apply）声明 entry 树。
+- **host 面**：进程级服务，依赖 bind 后的值，Loader 表达式在服务存在后解析。
+- **agent 面**：web-app 的 patch 大量 `disabled: true` 这些行，让每个会话改由 agent-preset 装载（`agent-presets` 行，default: `standard`）。
+- **dsh.client 面**：浏览器 UI 包的声明面。
+
+### 15.3 是否必须同一容器？node half 必须，browser half 天然跨容器
+
+**结论：node half 必须与后端逻辑插件在同一个 Cordis 容器（进程）；browser half 在浏览器，不受容器约束。**
+
+核心证据在 `dsh-client-modules/src/index.ts` 的 `ClientModuleRegistry`：
+
+```
+构造时:
+  ctx.baseUrl 必需（解析插件包的锚点）
+  for (const entry of ctx.loader.entries())   ← 扫描【后端 Loader 的 entry 列表】
+  逐包解析 package.json，找 dsh.client 声明
+  组合 window.__DSH_BOOT__ entry graph
+  注册 /plugins/<id>/client.js 路由 + index-tap 注入 <script>window.__DSH_BOOT__=...</script>
+inject = ['webServer', 'loader']              ← 依赖后端容器与后端 Loader
+```
+
+**前端插件集是后端容器 entry 集合的函数**——client-modules 从后端 Loader 反推该加载哪些 UI。因此 node half 脱离不了后端容器；把 client-modules 放进第二个容器，它 scan 不到宿主 Loader entries，装配即断。
+
+> 这也印证 PoC「单容器重放 boot」方向的正确性：dsh 前端装载面与后端本就强耦合同一 Loader，不是靠分容器解耦。
+
+### 15.4 动态配置与加载：声明式 patch + 按需拉取 + 增量重扫 + HMR
+
+```
+cordis.patch.yml（声明式 entry 树）
+   └─ Loader 装载所有 entry（含 dsh.client dual-face 包）
+        └─ ClientModuleRegistry 扫描 entries，读各包 dsh.client 声明
+             └─ 组合 __DSH_BOOT__ graph {rev, entries[{id,url,inject,immediately}]}
+                  └─ index-tap 注入 <script>window.__DSH_BOOT__=...</script>
+                       └─ 浏览器 shell 读取 __DSH_BOOT__
+                            ├─ 模块表 = 浏览器端 cordis 插件 seam（lazy-CJS 表）
+                            └─ 按需 fetch /plugins/<id>/client.js?rev=<sha1>
+```
+
+动态能力的四个锚点：
+
+1. **声明式装载**：`cordis.patch.yml` 的 `insert:` 列表决定装载哪些 UI。加一个 UI = 加一行。
+2. **按需拉取**：browser half 走 `/plugins/<id>/client.js?rev=<sha1>`；普通 UI lazy（`immediately` 缺省），用才 fetch；rev 是内容哈希缓存失效锚点。
+3. **增量重扫**：`internal/plugin` 事件标记 dirty entry → microtask 刷新，只 diff 变更条目（无全量重扫）。
+4. **HMR**：`client-hmr` row 监听 `onRebuilt`，bundle 重哈希触发 graph 变更通知（web 面目前 `hmr` 被禁用，官方 TODO）。
+
+### 15.5 动态能力是否会因固化前端 bundle 而丧失？取决于固化哪一层
+
+区分两个概念：
+
+- **shell（apps/web）** = 薄 `main.ts` + `index.html` + 模块表内核。它**本就应该静态构建**——就是"空模块表 + 读 `__DSH_BOOT__` 的引导内核"。固化 shell **零损失**。
+- **前端插件（dsh-client-* 的 UI bundle）** = 各 dual-face 包的 `exports["./client"]` 产物。它们**必须运行时动态拉取**，因为由后端 Loader entry 集决定且带 rev 哈希可热更。
+
+| 固化目标 | 是否丧失动态能力 |
+| :--- | :--- |
+| 固化 shell 引导内核（读 `__DSH_BOOT__`） | **不丧失** — 官方 apps/web 即如此 |
+| 把 UI 插件 bundle 硬编码进 renderer | **丧失** — 插件集被钉死，rev/HMR/增删 entry 全失效 |
+| 后端 sidecar 打包时内联 client bundle 成字符串 | **丧失** — `client-modules` 用 `readFileSync(record.clientPath)` 读磁盘路径，内联后路径失效 → `/plugins/` 404 |
+
+**正确定案**：desktop 后端 sidecar 必须**保留 dsh-client-* 包在可读文件系统**（node_modules 内），运行时后端容器扫描并 serve `/plugins/`；前端 shell（renderer）用 iframe 或读 boot 图动态拉 bundle——**动态能力完整保留**。
+
+## 16. 权威参考资料与考证证据链清单 (Canonical References & Evidence)
 
 为了方便后续专家与多 Agent 评审团进行严密的代码交叉审查与事实考证，特此整理本研究所依赖的全部源码、架构规范与设计笔记索引：
 
-### 15.1 DeepSeek Harness (`dsh`) 官方源码与子系统规范
+### 16.1 DeepSeek Harness (`dsh`) 官方源码与子系统规范
 * **微内核与架构总览**：
   * [Cordis 微内核入门规范](file:///Volumes/U500G/coding/wopal-workspace/labs/ref-repos/deepseek-harness/docs/cordis-primer.zh.md)
   * [dsh 全景架构定义](file:///Volumes/U500G/coding/wopal-workspace/labs/ref-repos/deepseek-harness/docs/architecture.zh.md)
@@ -774,7 +860,7 @@ Logger 名称解析链（`vendor/cordis/src/logger.ts:251-261`）：显式 `ctx.
 
 ---
 
-### 15.2 Ellamaka / Wopal 空间核心源码真相源
+### 16.2 Ellamaka / Wopal 空间核心源码真相源
 * **存储与数据层**：
   * [全局单例 SQLite 存储定义 (db.ts)](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/packages/opencode/src/storage/db.ts)
   * [Session 与 Part 关系模型 Schema](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/packages/opencode/src/storage/schema.ts)

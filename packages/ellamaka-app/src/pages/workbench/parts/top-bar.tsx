@@ -191,9 +191,27 @@ export function WorkbenchTitlebar() {
       <div data-tauri-drag-region class="workbench-macos-window-chrome shrink-0" />
       <div data-tauri-drag-region class="workbench-titlebar-toolbar relative flex h-10 items-center justify-between px-3">
         {/* Brand Logo - Left side */}
-        <div class="flex items-center gap-2 text-v2-text-text-strong [font-weight:530] text-14-regular shrink-0 z-20">
-          <img src="/favicon-96x96.png" class="w-5 h-5 object-contain" alt="Icon" />
-          <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
+        <div class="flex items-center gap-6 text-v2-text-text-strong [font-weight:530] text-14-regular shrink-0 z-20">
+          <div class="flex items-center gap-2">
+            <img src="/favicon-96x96.png" class="w-5 h-5 object-contain" alt="Icon" />
+            <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
+          </div>
+          
+          {/* DSH Button placeholder */}
+          <div style={{ "-webkit-app-region": "no-drag" }}>
+            <button
+              class="px-2 py-1 rounded transition-colors border flex items-center gap-1 border-v2-brand-brand-base text-v2-brand-brand-base"
+              classList={{
+                "bg-v2-brand-brand-base text-white": wb.dshVisible,
+                "hover:bg-v2-surface-surface-base-hover": !wb.dshVisible,
+              }}
+              onClick={() => {
+                wb.setDshVisible(!wb.dshVisible)
+              }}
+            >
+              <span class="text-[13px] font-semibold">DSH</span>
+            </button>
+          </div>
         </div>
 
         {/* Space Tabs Bar */}

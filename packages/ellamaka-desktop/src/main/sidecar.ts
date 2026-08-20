@@ -1,7 +1,11 @@
 import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
-import { register } from "node:module"
+import { register, createRequire } from "node:module"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
+import { homedir } from "node:os"
+import { pathToFileURL } from "node:url"
 
 if (typeof register === "function") {
   const loaderCode = `
@@ -52,7 +56,7 @@ type SidecarCommand = StartCommand | StopCommand | SetLogLevelCommand
 
 type SidecarMessage =
   | { type: "sqlite"; progress: { type: "InProgress"; value: number } | { type: "Done" } }
-  | { type: "ready" }
+  | { type: "ready"; dshPort?: number }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -67,6 +71,7 @@ type Listener = {
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
+let dshHost: { dispose(): Promise<void> } | undefined
 
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
@@ -123,15 +128,55 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    parentPort.postMessage({ type: "ready" })
+    // Optional dsh web engine (single-process dual-port, PoC §7.14).
+    // The dsh closure lives at $DSH_HOME (default $WOPAL_HOME/ellamaka/data/dsh),
+    // materialised by onboarding `npm install` (scheme B). The sidecar mounts it
+    // onto a process-level cordis hub bound to a random loopback port. When the
+    // closure is absent (not yet installed), dsh is skipped and the sidecar runs
+    // normally — the same kill-switch semantics as ELLAMAKA_DSH=0.
+    const dshPort = await mountDshIfPresent()
+    parentPort.postMessage({ type: "ready", dshPort })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
   }
 }
 
+/**
+ * Mount the dsh web engine when its closure is present under $DSH_HOME.
+ *
+ * Resolves the closure home as `$DSH_HOME` (fallback `$WOPAL_HOME/ellamaka/data/dsh`).
+ * If the `@deepseek-ai/dsh` package is not materialised there yet, returns
+ * `undefined` and the sidecar continues without dsh. A successful mount returns
+ * the bound dsh port for the ready message; the host handle is retained for
+ * clean unmount on stop.
+ */
+async function mountDshIfPresent(): Promise<number | undefined> {
+  const dshHome =
+    process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "ellamaka", "data", "dsh")
+  const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
+  if (!existsSync(anchor)) {
+    // Closure not materialised yet — skip dsh without error (onboarding not done).
+    return undefined
+  }
+  // Resolve @wopal/ellamaka-cordis/dsh-web from the closure's node_modules
+  // (it is a dependency of the materialised closure). The sidecar bundle
+  // itself does not carry dsh or cordis, so we anchor resolution at the
+  // closure. bootDshWeb is self-contained (creates its own cordis context),
+  // which sidesteps the @wopal/ellamaka-cordis index import chain that Node
+  // strip-types cannot resolve.
+  const requireFromClosure = createRequire(join(dshHome, "package.json"))
+  const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
+  const { bootDshWeb } = await import(pathToFileURL(dshWebEntry).href)
+  const host = await bootDshWeb({ home: dshHome, port: 0, installAnchor: anchor })
+  dshHost = { dispose: () => host.dispose() }
+  return host.port
+}
+
 async function stop() {
   try {
+    await dshHost?.dispose()
+    dshHost = undefined
     await listener?.stop()
   } finally {
     listener = undefined
