@@ -41,7 +41,9 @@ This is ellamaka's main engine package. It carries the OpenCode inherited runtim
 |---|---|---|
 | Dev | `bun run dev` | Local package dev entry |
 | Typecheck | `bun typecheck` | After TypeScript changes; never run `tsc` directly |
-| Test | `bun test --timeout 30000` | After behavior changes |
+| Test (default subset) | `bun run test:unit` | After behavior changes (fast unit subset, ~60s) |
+| Test (heavy integration) | `bun run test:slow` | After behavior changes in server/session/cli/snapshot/project/tool/control-plane |
+| Test (full regression) | `bun run test:all` | Full regression (equivalent to `bun test --timeout 30000 --force-exit`) |
 | Build | `bun run build` | After runtime, CLI, or package build changes |
 | Database migration | `bun run db generate --name <slug>` | After schema changes |
 
@@ -85,6 +87,8 @@ All commands run from `packages/opencode`.
 
 ## 5. Testing
 
+- Test subsets are expanded by `script/run-tests.ts` on a directory-mode basis. `package.json` exposes three entries: `test:unit` (default dev subset — scans all `test/` subdirectories plus top-level `*.test.ts`, excluding the heavy dirs), `test:slow` (only the 7 heavy integration directories), and `test:all` (full regression). Use `test:unit` for daily development; when touching heavy-dir code (server/session/cli/snapshot/project/tool/control-plane), run at least `test:slow`; run `test:all` before commit/merge.
+- New test directories are auto-included in `test:unit` (scan-based). If a directory is slow integration, add its name to the `SLOW_DIRS` constant in `script/run-tests.ts` and keep this file's heavy-dir list in sync.
 - Code changes follow TDD: write a failing test first, then implement to make it pass.
 - Run tests from `packages/opencode`; never from repo root.
 - Test real implementations; avoid mocks and do not duplicate logic into tests.
