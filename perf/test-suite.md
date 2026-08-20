@@ -36,8 +36,8 @@ TEST_PROFILE_LIMIT=20 bun run profile:test
 The full suite mixes slow I/O-heavy integration tests (server/session/cli/snapshot/project/tool/control-plane, ~252s) with fast unit directories (~25-60s). By default, use the fast unit subset to avoid paying integration-test cost during iteration:
 
 ```sh
-bun run test:unit     # default dev loop: all test/<dir>/ except the 7 heavy dirs, plus top-level test/*.test.ts
-bun run test:slow     # only the heavy integration dirs (server/session/cli/snapshot/project/tool/control-plane)
+bun run test:unit     # default dev loop: all test/<dir>/ except the 7 integration dirs, plus top-level test/*.test.ts
+bun run test:integration # only the integration dirs (server/session/cli/snapshot/project/tool/control-plane)
 bun run test:all      # full regression, equivalent to `bun test --timeout 30000 --force-exit`
 ```
 

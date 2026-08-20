@@ -16,7 +16,10 @@
     "prepare": "husky",
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=opencode --no-browser",
-    "test": "echo 'do not run tests from root' && exit 1"
+    "test": "echo 'do not run tests from root' && exit 1",
+    "test:unit": "bun run script/run-tests.ts --layer unit --package all",
+    "test:integration": "bun run script/run-tests.ts --layer integration --package all",
+    "test:e2e": "bun run script/run-tests.ts --layer e2e --package all"
   },
   "workspaces": {
     "packages": [

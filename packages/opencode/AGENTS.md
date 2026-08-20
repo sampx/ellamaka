@@ -42,7 +42,8 @@ This is ellamaka's main engine package. It carries the OpenCode inherited runtim
 | Dev | `bun run dev` | Local package dev entry |
 | Typecheck | `bun typecheck` | After TypeScript changes; never run `tsc` directly |
 | Test (default subset) | `bun run test:unit` | After behavior changes (fast unit subset, ~60s) |
-| Test (heavy integration) | `bun run test:slow` | After behavior changes in server/session/cli/snapshot/project/tool/control-plane |
+| Test (heavy integration) | `bun run test:integration` | After behavior changes in server/session/cli/snapshot/project/tool/control-plane |
+| Test (e2e) | `bun run test:e2e` | After changes to real provider-chain / browser e2e tests |
 | Test (full regression) | `bun run test:all` | Full regression (equivalent to `bun test --timeout 30000 --force-exit`) |
 | Build | `bun run build` | After runtime, CLI, or package build changes |
 | Database migration | `bun run db generate --name <slug>` | After schema changes |
@@ -87,8 +88,10 @@ All commands run from `packages/opencode`.
 
 ## 5. Testing
 
-- Test subsets are expanded by `script/run-tests.ts` on a directory-mode basis. `package.json` exposes three entries: `test:unit` (default dev subset — scans all `test/` subdirectories plus top-level `*.test.ts`, excluding the heavy dirs), `test:slow` (only the 7 heavy integration directories), and `test:all` (full regression). Use `test:unit` for daily development; when touching heavy-dir code (server/session/cli/snapshot/project/tool/control-plane), run at least `test:slow`; run `test:all` before commit/merge.
-- New test directories are auto-included in `test:unit` (scan-based). If a directory is slow integration, add its name to the `SLOW_DIRS` constant in `script/run-tests.ts` and keep this file's heavy-dir list in sync.
+- Test subsets are expanded by `script/run-tests.ts` on a layer basis. `package.json` exposes four entries: `test:unit` (default dev subset — scans all `test/` subdirectories plus top-level `*.test.ts`, excluding the integration dirs and any `*-e2e.test.ts`), `test:integration` (only the 7 integration directories: server/session/cli/snapshot/project/tool/control-plane), `test:e2e` (only `*-e2e.test.ts` files, recursively), and `test:all` (full regression). Use `test:unit` for daily development; when touching integration-dir code (server/session/cli/snapshot/project/tool/control-plane), run at least `test:integration`; run `test:all` before commit/merge.
+- e2e files follow the `*-e2e.test.ts` naming convention and are isolated from `test:unit`/`test:integration` via `pathIgnorePatterns` (CLI value overrides bunfig, not merged). They run only under `test:e2e`. Do not move e2e files out of their domain directories.
+- New test directories are auto-included in `test:unit` (scan-based). If a directory is integration (real I/O), add its name to the `INTEGRATION_DIRS` constant in `script/run-tests.ts` and keep this file's integration-dir list in sync.
+- Cross-package orchestration: from repo root, `bun run test:unit|test:integration|test:e2e` runs the matching layer across all packages via `script/run-tests.ts` (root). Use `--package <name>` to target a single package (e.g. `bun run test:unit --package opencode`).
 - Code changes follow TDD: write a failing test first, then implement to make it pass.
 - Run tests from `packages/opencode`; never from repo root.
 - Test real implementations; avoid mocks and do not duplicate logic into tests.

@@ -1,11 +1,35 @@
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
 
-export type RunMode = "unit" | "slow" | "all"
+export type RunMode = "unit" | "integration" | "e2e" | "all"
 
-// Heavy directories measured as slow in ../../perf/test-suite.md; excluded from
-// the default unit subset. Kept as a source constant so the slow list is explicit.
-export const SLOW_DIRS = ["server", "session", "cli", "snapshot", "project", "tool", "control-plane"]
+// Directories that exercise real I/O (git/PTY/HTTP/subprocess) and are excluded
+// from the default unit subset. Kept as a source constant so the list is explicit.
+export const INTEGRATION_DIRS = ["server", "session", "cli", "snapshot", "project", "tool", "control-plane"]
+
+// e2e files follow the `*-e2e.test.ts` naming convention and are isolated from
+// unit/integration runs via pathIgnorePatterns; they run only under the e2e mode.
+// `**/` is required so the glob matches e2e files nested in subdirectories
+// (a bare `*` does not cross the path separator).
+export const E2E_PATTERN = "**/*-e2e.test.ts"
+
+// Recursively collects `*-e2e.test.ts` files under testRoot, returning paths
+// relative to the package root (prefixed with `test/`).
+function collectE2eFiles(testRoot: string): string[] {
+  const out: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && entry.name.endsWith("-e2e.test.ts")) {
+        out.push(`test/${full.slice(testRoot.length + 1)}`)
+      }
+    }
+  }
+  walk(testRoot)
+  return out.sort()
+}
 
 // Returns the directory arguments to pass to `bun test` for the given mode.
 // testRoot is injected so tests can exercise the scan against a temp directory.
@@ -15,20 +39,32 @@ export function planning(mode: RunMode, testRoot: string): string[] {
       const dirs = readdirSync(testRoot, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name)
-        .filter((name) => !SLOW_DIRS.includes(name))
+        .filter((name) => !INTEGRATION_DIRS.includes(name))
         .map((name) => `test/${name}`)
       const topFiles = readdirSync(testRoot, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts") && !entry.name.endsWith("-e2e.test.ts"))
         .map((entry) => `test/${entry.name}`)
       return [...dirs, ...topFiles].sort()
     }
-    case "slow":
-      return SLOW_DIRS.map((name) => `test/${name}`)
+    case "integration":
+      return INTEGRATION_DIRS.map((name) => `test/${name}`)
+    case "e2e":
+      return collectE2eFiles(testRoot)
     case "all":
       return []
     default:
       throw new Error(`Invalid test mode: ${String(mode)}`)
   }
+}
+
+// Builds the full `bun test` command for a mode. unit and integration scan whole
+// directories, so e2e files nested inside them must be excluded via
+// pathIgnorePatterns (CLI value overrides bunfig, not merged). e2e/all pass no
+// ignore pattern.
+export function buildCommand(mode: RunMode, dirs: string[], bunArgs: string[] = []): string[] {
+  const ignoreArgs =
+    mode === "unit" || mode === "integration" ? [`--path-ignore-patterns=${E2E_PATTERN}`] : []
+  return ["bun", "test", "--timeout", "30000", "--force-exit", ...ignoreArgs, ...dirs, ...bunArgs]
 }
 
 async function main() {
@@ -40,10 +76,10 @@ async function main() {
     const arg = args[index]
     if (arg === "--mode") {
       const value = args[++index]
-      if (value === "unit" || value === "slow" || value === "all") {
+      if (value === "unit" || value === "integration" || value === "e2e" || value === "all") {
         mode = value
       } else {
-        console.error(`Unknown mode: ${value}. Expected one of unit, slow, all.`)
+        console.error(`Unknown mode: ${value}. Expected one of unit, integration, e2e, all.`)
         process.exit(1)
       }
     } else if (arg === "--") {
@@ -63,7 +99,7 @@ async function main() {
     return
   }
 
-  const command = ["bun", "test", "--timeout", "30000", "--force-exit", ...dirs, ...bunArgs]
+  const command = buildCommand(mode, dirs, bunArgs)
   const proc = Bun.spawn(command, {
     cwd: import.meta.dir + "/..",
     stdout: "inherit",
