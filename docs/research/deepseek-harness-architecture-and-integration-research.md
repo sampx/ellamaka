@@ -522,3 +522,95 @@ cordis.patch.yml（声明式 entry 树）
   * [Wopal Agents 空间守则 (REGULATIONS.md)](file:///Volumes/U500G/coding/wopal-workspace/.wopal-space/REGULATIONS.md)
   * [本体论 Agent 规则定义 (.wopal/AGENTS.md)](file:///Volumes/U500G/coding/wopal-workspace/.wopal/AGENTS.md)
 
+---
+
+## 17. 容器集成机制深度研究（2026-08-20，源码级）
+
+> **研究定位**：回答"ellamaka 如何消费 cordis 容器内插件能力"的机制问题。涵盖 dsh 工具注册表 API、ellamaka 工具管道实证、三层插件实例化模型、同进程通信机制、wopal-plugin 形态核查、方案演进中被推翻的假设、待验证猜想清单。本节内容为源码实证或明确标注的待验证猜想；集成方案的形态决策与实验计划见 `../DESIGN-dsh-poc.md` 与 `../PLAN-TODOS.md`。
+
+### 17.1 dsh 工具注册表：完整的动态消费 API（源码实证）
+
+dsh `ctx.tools`（`packages/core/tools/src/index.ts`）对外提供消费容器内工具所需的全部接口：
+
+| 能力 | API | 说明 |
+|---|---|---|
+| 枚举 | `schemas(scope?)` → `ToolSchema[]` | 白名单字段投影（name/description/parameters）；`timeoutMs` 等不暴露给模型 |
+| 取定义 | `get(name, scope?)` | 按 scope 可见性解析；scoped shadow global，restricted-away 读作不存在 |
+| 执行 | `execute(name, args, exec)` | 未注册名返回 `UNKNOWN_TOOL`，不进 waterfall |
+| 变更信号 | `tools/change` emit 事件 | 注册/注销/scope 限制变化时触发；非 scope 过滤的全局通知 |
+| 注册 | `register(definition)` → disposer | 注册落在**调用者 ctx 的 scope 层**（`layers.effect(this.ctx, ...)`）；output 契约（schema/render）强校验 |
+
+`ToolExecution` 结构（`index.ts:314`）：`callId`/`name`/`arguments`/`signal` 必填；`agent?: Agent` 可选——`Agent` 绑定 dsh session 语义（`session`/`inbox`/`SessionId`），外部宿主不提供该字段时工具仍可执行（fs-search 等零依赖工具不读 agent；spill 相关能力走 "no session owner" 降级路径）。
+
+**fs-search 依赖复核**（`packages/fs/tool-fs-search/`）：运行时依赖仅 `@vscode/ripgrep` + `@deepseek-ai/schemastery`（其余为 devDependencies）；`inject = ['tools', 'systemPrompt', 'subprocess']`；`spillStore` 经 `ctx.get()` 可选读取。index.ts 160 行为薄壳，核心逻辑在 glob.ts(374)/grep.ts(365)/search-core.ts(401)。
+
+### 17.2 ellamaka 工具管道实证（消费缝隙）
+
+- **每轮组装**：`session/tools.ts` 的 `resolve()` 每轮被调用，从两个源合并：`registry.tools()`（builtin + custom）与 `mcp.tools()`；工具以 `tools[item.id] = ...` 赋入 Record——**同名后注册覆盖先注册**，custom（含 Plugin tool）天然覆盖 builtin 同名工具。
+- **Plugin tool 注册路径**（`tool/registry.ts`）：`fromPlugin(id, def)` 将 `@opencode-ai/plugin` 的 ToolDefinition 装入 custom 数组。schema 兼容路径：参数对象带 `_zod` 标记走 zod → JSON Schema；否则走 `legacyJsonSchema`（直接 JSON Schema 对象）——**dsh 的 parameters（JSON Schema）理论上走 legacy 路径直接兼容（待实测，猜想 S2）**。
+- **静态装配**：ToolRegistry 经 `InstanceState.make` per-directory 一次性构建；无运行时增删；无排序机制（顺序 = builtin 数组序 + custom 加载序，静态所以 prompt cache 稳定）。
+- **加载时序**（dev serve）：`Server.listen` → `mountDshWeb`（容器就绪）→ 首次 directory 请求触发 `InstanceState.make` → `plugin.list()` → 插件构建 tools。**插件初始化时容器已可用**。
+- **执行管道**：`session/tools.ts` 仅有 `tool.execute.before`/`after` 两个 plugin trigger 点（对照 dsh 五段 waterfall：pre/guard/around/post/result）；权限走 `ctx.ask` → `Permission.ask`（原生 Permission）；截断走 `truncate.output`。
+
+### 17.3 prompt cache 稳定性机制
+
+- **dsh 的做法**：每个 step 重新 assemble（`systemPrompt.assemble()` 在 preStep 调用），`orderTools()` 保证顺序确定——配置 `toolOrder` 显式排序 + 未列出工具按 `compareToolNames`（字典序，locale-independent，所有机器一致）插入 `TOOL_ORDER_REST` 位置（`packages/core/system-prompt/src/index.ts:164`）。
+- **结论**：动态工具集与 cache 稳定不矛盾——集合不变时排序输出确定 → cache 命中；集合真变（装卸）cache 失效是动态能力的合理代价。**每次装卸 = 一次全会话 cache 失效事件**，动态化收益与 cache 稳定存在真实张力，装卸频率必须节制。
+- **ellamaka 侧映射**：采用表白名单进程级固定 → 工具集不变 → cache 稳定；唯一风险 = 采用表内工具被容器卸载（fallback 原生实现可保工具列表长度不变）。
+
+### 17.4 三层插件实例化模型（★ 推翻"容器=进程级单例"假设）
+
+dsh 容器内插件**不是全单例**，是三层实例化模型：
+
+| 层 | 实例化 | 源码证据 |
+|---|---|---|
+| **全局层** | 进程单例（宿主 composition：web 面、host 面） | `layers.global` |
+| **standing mount 层** | per-preset 一个实例，**该 preset 全部 agent 共享** | `agent-presets/index.ts:515`：`createScope(selfCtx, {agentPreset: id})` + `mountPreset`；注释原话 "the child gets that exact instance — the same plugin objects, the same tool registrations" |
+| **agent own layer** | per-agent | `agent-loop/agent.ts:94`：`this.scope = createScope(loopCtx, this)`；agent 自己的注册落此层 |
+
+- **链接机制**：`bindScopeParent(agentKey, standing.key)` 将 agent scope 链到 preset 层；`view(scope)` 沿链合并（global → preset → own，**近层 shadow 远层**）；restriction 只作用于继承面，不作用于 own 层注册。
+- **注册落层规则**：`ctx.tools.register()` 内部 `layers.effect(this.ctx, ...)` —— 在哪个 ctx 调用就落哪层。同一插件出现在两个 preset = 两个独立实例。
+- **防碰撞守卫**（`agent-presets/src/mount.ts`）：挂载拒绝向 ROOT realm 发布服务——"such a service is process-global rather than per-session and the second session mounting the same preset collides with the first"。dsh 显式区分进程级服务与会话级插件。
+- **ScopeKey 是任意对象引用**（`packages/core/scope/src/index.ts:15`：`export type ScopeKey = object`）。
+- **对 ellamaka 的映射意义（纸面推断，未实验）**：directory → ScopeKey；per-directory scope 挂载插件与 ellamaka 原生 per-directory 插件形态**同构**——插件状态随 scope 挂载/释放，无需改单例+分片；standing mount 共享语义 = 插件集配置相同的多个 directory 共享实例的优化开关（重资源如 LanceDB 连接可挂共享层）。
+
+### 17.5 同进程通信机制（★ 推翻"容器插件需要认证体系"假设）
+
+- ellamaka 原生插件的 SDK client 用 `Server.Default().app.fetch`——**同进程直调 Hono app，无网络、无认证**（`plugin/index.ts:175`）。
+- 容器插件运行于同一进程，可用 cordis 原生 `ctx.provide()` 获取宿主注入的 runtime（先例：`dsh-web.ts` 的 `ctx.provide("dshHomePath", ...)`、`ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, ...)`）。宿主侧 `ctx.provide("ellamakaRuntime", { fetch, serverUrl, ... })` 即可让容器内插件获得 in-process SDK client——无需任何凭证机制。
+- 工具执行上下文的实例路由：adapter 包装闭包可将 ellamaka `Tool.Context` 的 directory/sessionID 塞入 exec 透传给容器插件（自持契约的 exec 字段自由定义；dsh 生态插件不读这些扩展字段）。
+
+### 17.6 wopal-plugin 形态核查（混合形态）
+
+- **插件函数体 per-directory 实例化**：`Plugin.Service` 经 `InstanceState.make`（per-directory ScopedCache），每个 directory 首次使用时执行一次 plugin() 函数——`taskManager`、`monitorEngine`、**整个 memory 系统**（MemoryStore/EmbeddingClient/LLMClient/DistillEngine）、`hookContext`、rules 发现结果均为实例级。
+- **例外**：`sessionStore` 为模块级单例（`session-store-instance.ts:8`，ESM 模块缓存保证），内部按 **sessionID**（非 directory）分片。
+- **持久层全局共享**：MemoryStore dbPath 固定 `$WOPAL_HOME/storage/memory`（`memory/store.ts:29`）——所有实例的 MemoryStore 连同一个 LanceDB 库。**现存隐患**：多实例各自 `lancedb.connect(同一路径)` 的并发语义未经验证；容器共享层单实例反而可能消除该隐患。
+- **结论**："wopal-plugin 已是进程级单例"的说法不成立（仅 sessionStore 例外）；大部分状态是 per-instance 的，若走容器 scope 挂载路线则形态同构、无需单例化改造。
+
+### 17.7 方案演进与被推翻的假设（决策参考）
+
+| 早期假设/方案 | 推翻证据 | 修正后结论 |
+|---|---|---|
+| 在 `session/tools.ts` resolve() 插入容器工具合并 | 对核心流程 hack（用户否决） | 走 Plugin tool 注册路径：adapter 以 ellamaka 插件形态注册，custom 同名覆盖 builtin |
+| wopal-plugin 须投影为完整 dsh 契约（融入 dsh 生态） | 非目标（用户澄清：求配置统一，不求生态贡献） | 容器内插件最小形态即可（inject + ctx.tools/systemPrompt + 直连通信） |
+| adapter 是运行时沟通转换层 | 职责收窄（用户澄清） | adapter 仅装配/插拔面（注册翻译 + 动态刷新）；运行时通信直连（in-process） |
+| 容器插件调 ellamaka 需要认证体系 | 同进程 in-process fetch + `ctx.provide` 先例 | 无需认证；一行 provide 注入 runtime |
+| 容器=进程级单例，wopal 插件须单例+分片改造 | 三层实例化模型（§17.4） | per-directory scope 挂载，与原生形态同构；standing 共享为优化开关 |
+| 全量注册容器工具给模型 | 破坏工具面最小化 + cache 稳定 | 采用表白名单 + Permission 双层过滤 |
+
+**adapter 的三个已识别机制**（形态待实验固化）：① exec 上下文携带 directory；② directory → ScopeKey 的 view 查询；③ `ctx.provide("ellamakaRuntime")` 注入。
+
+### 17.8 待验证猜想清单（实验输入）
+
+| # | 猜想 | 验证实验 |
+|---|---|---|
+| S1 | adapter（ellamaka 插件）可获得容器引用（机制待定：serve.ts 注入 / globalThis / 单例 accessor） | 实验二 |
+| S2 | dsh `ToolSchema.parameters`（JSON Schema）经 fromPlugin legacy 路径直接消费 | 实验二 |
+| S3 | execute 闭包桥接完整（abort 传播 / metadata / ask / directory 透传） | 实验二 |
+| S4 | 同名覆盖生效（Plugin tool 的 grep/glob 覆盖 builtin） | 实验二 |
+| S5 | Permission 规则覆盖桥接工具（deny grep → dsh grep 禁用） | 实验二 |
+| S6 | prompt cache 稳定（白名单固定 + 合并顺序确定） | 实验二 |
+| S7 | 非 agent 场景可 `createScope(directoryKey)` 挂载插件 | 实验一 |
+| S8 | scope dispose 干净清理插件状态（工具从 view 消失、fiber 释放） | 实验一 |
+| S9 | 同插件多 scope 实例隔离（状态互不干扰） | 实验一 |
+| S10 | standing mount 共享模式可按 directory 复用（同配置 directory 共享实例） | 实验一（第二阶段） |
