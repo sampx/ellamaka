@@ -8,8 +8,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 ## 1. Canonical References
 
 - DESIGN: `docs/DESIGN.md`
-- CORDIS DESIGN: `docs/DESIGN-refactor-cordis.md`（路线终审 §12 界定其现行范围：dsh 工具插件边缘通道）
-- CAPABILITIES DESIGN: `docs/DESIGN-capabilities.md`（终审后主线：能力包工艺、plugin 声明面、权限收敛）
+- DSH POC DESIGN: `docs/DESIGN-dsh-poc.md`（双引擎融合实验：桥/吸收双轨、dsh 工具插件边缘通道）
 - PLAN TODOS: `docs/PLAN-TODOS.md`
 - API CONTRACT: `docs/API-CONTRACT.md`
 - BRANDING: `docs/BRANDING.md`
@@ -129,14 +128,14 @@ Workbench 前端开发规则（状态所有权、身份作用域、依赖方向�
 
 ### Cordis 开发约束
 
-- **依赖边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）；dsh 深耦合包（agent-loop/session/session-query/compaction/subagent/schedule）禁止被主线代码 import、禁止运行时加载、禁止作为插件挂载——required peer 仅供类型解析（如 SessionId）不算违反，以运行时加载探针为零为验收（`forbidden-load.test.ts`）——见 CORDIS DESIGN §9 红线
-- **桥接形态**：Effect↔async 桥接一律遵守 CORDIS DESIGN §5.6.1（`Effect.forkIn(scope)(work)` 持有 work Fiber；中断经 `runtime.runFork(Fiber.interrupt(fiber))`；禁止 `runPromise` 驱动长任务）
-- **契约纪律**：契约在 `@wopal/ellamaka-cordis` 内自持（形状借鉴 dsh，不 import dsh 契约包、不跟随 rc 演进）；外部插件须通过契约符合性冒烟测试方可挂载（CORDIS DESIGN §10）
+- **依赖边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）；dsh 深耦合包（agent-loop/session/session-query/compaction/subagent/schedule）禁止被主线代码 import、禁止运行时加载、禁止作为插件挂载——required peer 仅供类型解析（如 SessionId）不算违反，以运行时加载探针为零为验收（`forbidden-load.test.ts`）——见 DSH POC DESIGN §7 红线
+- **桥接形态**：Effect↔async 桥接一律遵守 DSH POC DESIGN §6.2（`Effect.forkIn(scope)(work)` 持有 work Fiber；中断经 `runtime.runFork(Fiber.interrupt(fiber))`；禁止 `runPromise` 驱动长任务）
+- **契约纪律**：契约在 `@wopal/ellamaka-cordis` 内自持（形状借鉴 dsh，不 import dsh 契约包、不跟随 rc 演进）；外部插件须通过契约符合性冒烟测试方可挂载（DSH POC DESIGN §4.1）
 - **测试门禁**：cordis 集成测试放 `packages/opencode/test/cordis/`；桥接包变更保持 opencode 既有测试零回归
 
 ### 日志规范
 
-- **插件日志**：cordis 插件内一律用内建 `ctx.logger`（自动以插件名命名），禁止 `console.log`、禁止手动创建 Logger；容器级 Exporter 在装配层统一桥接到 ellamaka `Log` 体系（CORDIS DESIGN §5.10），插件不关心日志输出目标
+- **插件日志**：cordis 插件内一律用内建 `ctx.logger`（自动以插件名命名），禁止 `console.log`、禁止手动创建 Logger；容器级 Exporter 在装配层统一桥接到 ellamaka `Log` 体系（DSH POC DESIGN §6.4），插件不关心日志输出目标
 - **必须打**：生命周期状态变更（init/created/disposed/mount/unmount）、错误与异常（含降级路径）、关键决策（选型/回退/跳过）
 - **禁止打**：循环内逐项操作（逐文件/逐条）、成功路径的常规操作（每次加载/每次搜索）、可从上下文推导的信息
 - **聚合**：循环内需观测时，循环外打一次汇总（`log.info("reverted", { count })`），不在循环体内逐项打

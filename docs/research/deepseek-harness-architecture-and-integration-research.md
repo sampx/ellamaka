@@ -1,7 +1,7 @@
 # DeepSeek Harness (dsh) 架构深度解构与 Ellamaka 融合演进研究报告
 
 > **文档定位**：本报告对 DeepSeek AI 开源的智能体框架 **DeepSeek Harness (`dsh`)** 及其底层 **Cordis 插件容器** 进行了系统性的全景解构。对比 Ellamaka 的 **Effect TS** 架构体系，涵盖设计哲学、微内核插件机制、Skills/MCP、Subagent/命令/权限、API 范式、底层性能差异、Bun 运行时兼容性实测，并直面两套系统在数据模型与交互契约上的 4 大核心冲突。
-> **方案状态**：本报告原方案部分（§6–§10：换心手术 + 4 大网桥 + dsh 插件生态挂载）已被后续深度审计修正并取代，正式设计见 **`../DESIGN-refactor-cordis.md`**，修正摘要见 §6。§1–§5 的调研解构与对比分析、§11 的深耦合包机制复刻研究、§12 的工具集选型初步评估、§13 的 session 语义模型分析仍为有效参考。
+> **方案状态**：本报告原方案部分（§6–§10：换心手术 + 4 大网桥 + dsh 插件生态挂载）已被后续深度审计修正并取代，正式设计见 **`../DESIGN-dsh-poc.md`**，修正摘要见 §6。§1–§5 的调研解构与对比分析、§11 的深耦合包机制复刻研究、§12 的工具集选型初步评估、§13 的 session 语义模型分析仍为有效参考。
 
 ---
 
@@ -127,7 +127,7 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
 
 ### 3.2 Bun 运行时兼容性
 
-> **勘误（2026-08-16）**：本节表格原文标注为"实测"，但写作当时并无实测证据——dsh 仓库 CI（`.github/workflows/`）全部为 Node（node24），无任何 Bun 配置，下表实为基于依赖类型的推断性结论。后续已由真实冒烟测试补验部分内容：`@deepseek-ai/cordis@4.0.1` 在 Bun 1.3 下服务注册、inject 依赖、事件系统、`ctx.fiber.dispose()` 生命周期全链路可用（init 1.79ms）。插件级兼容性未逐包实测，实际挂载时须按契约符合性冒烟测试逐个验证（见 `../DESIGN-refactor-cordis.md` §10）。
+> **勘误（2026-08-16）**：本节表格原文标注为"实测"，但写作当时并无实测证据——dsh 仓库 CI（`.github/workflows/`）全部为 Node（node24），无任何 Bun 配置，下表实为基于依赖类型的推断性结论。后续已由真实冒烟测试补验部分内容：`@deepseek-ai/cordis@4.0.1` 在 Bun 1.3 下服务注册、inject 依赖、事件系统、`ctx.fiber.dispose()` 生命周期全链路可用（init 1.79ms）。插件级兼容性未逐包实测，实际挂载时须按契约符合性冒烟测试逐个验证（见 `../DESIGN-dsh-poc.md` §4.1）。
 
 | 插件类别 | 代表插件 | 底层依赖 | Bun 兼容性预期（推断，未逐包实测） |
 | :--- | :--- | :--- | :--- |
@@ -165,7 +165,7 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
 
 ## 6. 方案演进说明（原方案已被取代）
 
-> 原文档本节至 §10 提出的融合方案（Cordis 换心手术、4 大通用适配网桥、dsh 插件生态挂载、三阶段路线）已被后续深度审计修正并取代。**正式设计真相源：`../DESIGN-refactor-cordis.md`**。原文以折叠形式存档，仅作历史参考。
+> 原文档本节至 §10 提出的融合方案（Cordis 换心手术、4 大通用适配网桥、dsh 插件生态挂载、三阶段路线）已被后续深度审计修正并取代。**正式设计真相源：`../DESIGN-dsh-poc.md`**。原文以折叠形式存档，仅作历史参考。
 
 **审计修正的关键发现**：
 
@@ -173,7 +173,7 @@ export const inject = ['tools', 'systemPrompt', 'subprocess']
 2. **原方案低估了 dsh 插件的挂载成本**：dsh 工具插件 inject 的 `tools`/`systemPrompt`/`subprocess` 是 dsh 核心服务，深层依赖 `dsh-session` 事件日志。464 包审计将插件按 session 依赖分为三梯队：约 40 个零依赖（接触面仅 `session.header` 只读；2026-08-17 勘误：此处的「零依赖」指运行时零依赖——spill 栈经 required peer 引入 dsh-session 仅供 `SessionId` 类型解析，`import type` 编译期擦除，运行时不加载，已由 `packages/ellamaka-cordis/test/forbidden-load.test.ts` 加载探针实证）、仅 tool-todo 需 `append()` 单方法、session-query/subagent/schedule/compaction/agent-loop 为深耦合梯队——而深耦合梯队的全部能力 ellamaka 已自持。
 3. **§3.2 的 Bun 兼容性"实测"当时无证据**：后续已由真实冒烟测试补验证，结论成立（Cordis 4.0.1 在 Bun 1.3 下服务注册/inject/事件/销毁全链路可用，init 1.79ms）。
 
-**新方案核心**（详见 `../DESIGN-refactor-cordis.md`）：
+**新方案核心**（详见 `../DESIGN-dsh-poc.md`）：
 
 - 目标修正为 **ellamaka 自身以 Cordis 为组合层运行时**：loop 渐进插件化（非换用 dsh loop），session 持久化/事件/API 零变更；
 - 服务契约自持锁死（Q2），dsh 梯队 1 插件经契约符合性验证后滚动挂载（Q3）；
@@ -406,7 +406,7 @@ packages/ellamaka-cordis/  (包名: @wopal/ellamaka-cordis)
 > **⚠️ 勘误（2026-08-16）**：本节代码**从未通过编译验证，含两处虚构 API，不可直接使用**：
 > 1. `SessionProcessor.processTurn(sessionID)` 不存在——真实 API 为 `SessionProcessor.Service.create(input)` 返回 `Handle`，经 `handle.process(streamInput)` 驱动（见 `packages/opencode/src/session/processor.ts`）；
 > 2. `ctx.dispose()` 在 Cordis v4 中不存在——真实销毁 API 为 `ctx.fiber.dispose()`（见 `vendor/cordis/src/fiber.ts`，已经 Bun 实测验证）。
-> 正式设计见 `../DESIGN-refactor-cordis.md`。
+> 正式设计见 `../DESIGN-dsh-poc.md`。
 
 #### 1. 核心换心驱动（`src/core/ellamaka-loop.plugin.ts`）
 ```typescript
@@ -528,7 +528,7 @@ export const CordisHubLive = Layer.scoped(
 
 ## 11. 深耦合包机制复刻研究（2026-08-16 补充）
 
-> **研究定位**：正式设计（`../DESIGN-refactor-cordis.md`）将 dsh 的 agent-loop/session/session-query/compaction/subagent/schedule 六个包划为深耦合禁区（红线 §9.2）——它们 rt-import `dsh-session` 且能力与 ellamaka 自持体系重叠。但禁区针对的是**包与数据模型**，不是**机制设计**。本章对六包逐一审计其可剥离的机制闪光点（全部经源码实证），并给出复刻路径分析。复刻的落地排期归正式设计文档管辖，本章只做研究判定。
+> **研究定位**：正式设计（`../DESIGN-dsh-poc.md`）将 dsh 的 agent-loop/session/session-query/compaction/subagent/schedule 六个包划为深耦合禁区（红线 §7）——它们 rt-import `dsh-session` 且能力与 ellamaka 自持体系重叠。但禁区针对的是**包与数据模型**，不是**机制设计**。本章对六包逐一审计其可剥离的机制闪光点（全部经源码实证），并给出复刻路径分析。复刻的落地排期归正式设计文档管辖，本章只做研究判定。
 
 ### 11.1 闪光点清单（源码实证）
 
@@ -630,7 +630,7 @@ C3 permission → guard 段 + opencode Permission 退役（不变）
 
 ## 13. session 语义模型深度分析与中间路线（2026-08-16 补充）
 
-> **研究定位**：回答"为何不能通过封装契约对接依赖 dsh session 机制的插件"——含语义契约剖析、四承诺价值分析、Event Sourcing vs CRUD 权衡、loop 替换路线的成本收益、会计类比与薄账本中间路线。中间路线已纳入正式设计（`../DESIGN-refactor-cordis.md` §6 候选增量）。
+> **研究定位**：回答"为何不能通过封装契约对接依赖 dsh session 机制的插件"——含语义契约剖析、四承诺价值分析、Event Sourcing vs CRUD 权衡、loop 替换路线的成本收益、会计类比与薄账本中间路线。中间路线已纳入正式设计（`../DESIGN-dsh-poc.md` §6.7）。
 
 ### 13.1 接口契约 vs 语义契约：桥接断点的真正位置
 
