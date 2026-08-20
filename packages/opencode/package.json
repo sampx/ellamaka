@@ -8,6 +8,9 @@
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test --timeout 30000 --force-exit",
+    "test:unit": "bun run script/run-tests.ts --mode unit",
+    "test:slow": "bun run script/run-tests.ts --mode slow",
+    "test:all": "bun run script/run-tests.ts --mode all",
     "test:ci": "mkdir -p .artifacts/unit && bun test --timeout 30000 --force-exit --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:httpapi": "bun run script/httpapi-exercise-runner.ts",
     "bench:test": "bun run script/bench-test-suite.ts",
