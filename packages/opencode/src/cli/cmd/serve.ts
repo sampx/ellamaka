@@ -1,8 +1,10 @@
 import { Effect } from "effect"
+import { join } from "node:path"
 import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { Global } from "@opencode-ai/core/global"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 export const ServeCommand = effectCmd({
@@ -39,7 +41,12 @@ export const ServeCommand = effectCmd({
       // Fixed loopback port so the Workbench /dsh iframe can address it without
       // a runtime port-discovery round trip (dev 4098; Desktop uses a random
       // port via its own sidecar wiring in a later phase).
-      const dsh = yield* Effect.promise(() => mountDshWeb(hub.ctx, { port: 4098 }))
+      const dsh = yield* Effect.promise(() =>
+        mountDshWeb(hub.ctx, {
+          port: 4098,
+          logFile: join(Global.Path.log, "dsh-plugins.log"),
+        }),
+      )
       console.log(`dsh web engine listening on ${dsh.url}`)
       yield* Effect.never.pipe(Effect.ensuring(Effect.promise(() => hub.dispose())))
     } else {

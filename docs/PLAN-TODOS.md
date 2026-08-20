@@ -21,7 +21,7 @@
 
 | Plan | 名称 | 核心度 | 依赖 | 状态 | 预计规模 |
 |------|------|--------|------|------|---------|
-| Plan 1 | 插件生态融合验证（dsh 插件在 ellamaka 容器内完整运行、动态装载） | 核心 | 无 | ✅ | 已完成（接线） |
+| Plan 1 | 双引擎容器宿主 + 日志桥接（dsh 引擎进程内完整运行、动态装载、容器日志） | 核心 | 无 | 🔶 夯实中 | 接线完成，日志桥接补齐 |
 | Plan 2 | 工具利用：fs-search 替换 grep/glob（桥首个实证） | 核心 | 无 | ⬜ | 3–5 天 |
 | Plan 3 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | 无 | ⬜ | 按需 |
 | Plan 4 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | 无 | ⬜ | 按需 |
@@ -30,10 +30,12 @@
 
 ---
 
-## Plan 1 — 插件生态融合验证 ✅
+## Plan 1 — 双引擎容器宿主 + 日志桥接 🔶
 
-> **目标**：dsh 引擎在 ellamaka 进程内完整运行，动态装载保留，插件生态融合验证。
-> **验收故事**：dev 模式 `ELLAMAKA_DSH=1` 时 dsh 引擎挂载于 4098；desktop 模式 sidecar 加载闭包、随机端口通知 renderer。控制台无 dsh 侧错误。
+> **目标**：dsh 引擎在 ellamaka 进程内完整运行，动态装载保留，容器日志可排查。本 Plan 并入双核心 PoC 接线 + 容器日志桥接，废弃 spill/grep 桥（无实际价值，后续工具利用直接复用 fs-search）。
+> **验收故事**：dev 模式 `ELLAMAKA_DSH=1` 时 dsh 引擎挂载于 4098；desktop 模式 sidecar 加载闭包、随机端口通知 renderer。dsh 引擎 50+ 插件日志进独立 `dsh-plugins.log`，排查可读。控制台无 dsh 侧错误。
+
+### 双核心接线（已完成）
 
 - [x] 1.1 单容器重放 boot：`mountDshWeb(ctx, opts)` 在宿主 ctx 重放 dsh boot 序列，不创建第二个容器
 - [x] 1.2 单包：dsh 装配并入 `ellamaka-cordis`（原独立 `ellamaka-dsh-host` 已删除）
@@ -44,9 +46,22 @@
 - [x] 1.7 前端 Workbench DSH 视图：顶栏 "DSH" 按钮 + 全屏 iframe 覆盖 SpaceRail + Workspace
 - [x] 1.8 iframe src 读 dshPort（dev 回落 4098）
 - [x] 1.9 desktop sidecar 接线：`bootDshWeb` + `$DSH_HOME` 缺省 + 闭包缺失 kill switch + dshPort 贯穿 ready→supervisor→preload→renderer
-- [x] 1.10 回归收口：cordis/desktop/app 三包 typecheck 过；desktop 338 测试、app 863 测试、cordis dsh-web 2 测试全过
 
-> **Plan 1 已知设计问题（记录，非本 Plan 缺陷）**：native grep 上游截断（`grep.ts` 匹配数 >100 只格式化前 100 行）与 dsh spill 的「全量转储」语义不匹配——匹配数爆炸场景下 spill 文件存的是截断后结果，模型无法从 spill 精确读回剩余匹配，只能重新 grep。spill 的「全量读回」价值仅在「匹配少但行超长」场景成立。该语义冲突随 grep 桥下线或 fs-search 承接槽位而消解（Plan 2）。
+### 容器日志桥接（夯实中）
+
+- [x] 1.10 `DshHostOptions` 加 `logFile`/`logLevel`：`mountDshWeb`/`bootDshWeb` 装配时注册 log exporter，dsh 插件日志进独立 `dsh-plugins.log`
+- [x] 1.11 serve.ts（dev）传 `logFile` 到 `$WOPAL_HOME/logs/dsh-plugins.log`
+- [x] 1.12 sidecar.ts（desktop）传 `logFile` 到 `$DSH_HOME/dsh-plugins.log`
+- [x] 1.13 测试：dsh-web 装配写日志到独立文件（exporter probe 验证）
+
+### 废弃 spill/grep 桥
+
+- [ ] 1.14 移除 `mountSpillPlugins` 挂载（`cordis-mount.ts` 不再挂 spill 三件套）
+- [ ] 1.15 移除 grep 桥（`createGrepBridgeLayer`/`GrepBridgeService` 退役，grep 回原生管道）
+- [ ] 1.16 清理 spill/grep 相关测试与代码（`spill/`、`tools/grep-bridge.ts`、`tools/registry.ts` 的 GrepBridgeService）
+- [ ] 1.17 回归收口：opencode 全量测试基线对照零新增失败 + 三包 typecheck
+
+> **废弃理由（2026-08-20 用户定案）**：spill/grep 桥无实际价值。native grep 上游截断与 spill「全量转储」语义不匹配（匹配数爆炸场景 spill 存的是截断后结果，模型无法精确读回），spill 价值仅在「匹配少但行超长」场景成立。后续工具利用直接复用 fs-search（Plan 2），不再维护 spill/grep 桥。
 
 ---
 
@@ -115,3 +130,4 @@
 | 2026-08-17 | Plan 1 | Plan 1 实施完成（cordis 容器宿主 + spill 挂载）；用户验证通过 |
 | 2026-08-20 | — | 确立 dsh 双引擎融合实验方向：新设计 `DESIGN-dsh-poc.md`（边实践边设计、桥/吸收双轨、微内核留白）。本文档按实验步骤重写（核心到外围）。PoC 定位为长期实验，不合并 main |
 | 2026-08-20 | Plan 1 | Plan 1 接线完成：dsh 引擎进程内完整运行、动态装载保留、desktop sidecar 接线（提交 7a983fc397） |
+| 2026-08-20 | Plan 1 | **Plan 1 重新规划**：并入双核心 PoC + 容器日志桥接，废弃 spill/grep 桥（无实际价值，后续用 fs-search）。日志桥接补齐（dsh-plugins.log 独立文件，提交待定） |

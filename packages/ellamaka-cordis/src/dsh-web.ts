@@ -26,9 +26,10 @@ import { dshHomePath } from "@deepseek-ai/dsh-home-paths"
 import Loader from "@deepseek-ai/cordis-plugin-loader"
 import type { Context } from "@deepseek-ai/cordis"
 import { dirname, join } from "node:path"
-import { writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
+import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
 const PROFILE_NAME = "web"
@@ -75,6 +76,16 @@ export interface DshHostOptions {
    * host context so callers can provide extra services dsh plugins need.
    */
   prepare?: (ctx: Context) => Promise<void> | void
+  /**
+   * Optional path to a dedicated dsh-plugins log file. When set, a cordis
+   * log Exporter is registered on the host context so every dsh plugin's
+   * `ctx.logger` output lands in this file (independent of the ellamaka main
+   * log and of the Plan-1 cordis-plugins.log). When omitted, dsh plugin logs
+   * fall through to the default cordis console exporter.
+   */
+  logFile?: string
+  /** Minimum log level for the dsh-plugins log; defaults to DEBUG. */
+  logLevel?: EllamakaLogLevel
 }
 
 /**
@@ -89,13 +100,37 @@ export interface DshHostOptions {
  * @returns a {@link DshHost} handle.
  */
 export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
-  const { home, port, prepare } = opts
+  const { home, port, prepare, logFile, logLevel } = opts
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
   // materialised closure copy under $DSH_HOME because require.resolve cannot
   // reach the resource directory from the bundled sidecar.
   const installAnchor = opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
+
+  // Register the dsh-plugins log Exporter before any plugin mounts, so every
+  // dsh plugin's ctx.logger output lands in the dedicated file. The Exporter
+  // is auto-disposed with the host fiber (zero manual cleanup).
+  if (logFile) {
+    const exporter = createCordisLogExporter({
+      logFile,
+      minLevel: logLevel ?? "DEBUG",
+      write: (line) => {
+        try {
+          appendFileSync(logFile, line, "utf-8")
+        } catch {
+          try {
+            mkdirSync(dirname(logFile), { recursive: true })
+            appendFileSync(logFile, line, "utf-8")
+          } catch {
+            // log write failures must never break the dsh mount
+          }
+        }
+      },
+    })
+    ctx.logger.exporter(exporter)
+  }
+
   // Link the profiles/node_modules fallback in the (possibly temp) home so the
   // profile's plugin rows resolve against this installation's dependency
   // closure (matches how the dsh launcher boots a profile).

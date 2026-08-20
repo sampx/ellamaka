@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
@@ -55,6 +55,30 @@ describe("dsh web engine", () => {
       expect(root.status).toBe(200)
     } finally {
       await host.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshWeb writes dsh plugin logs to the dedicated log file", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
+    const logFile = join(home, "dsh-plugins.log")
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 0, logFile })
+
+    try {
+      // The dsh engine boots a webServer service; its startup logs should
+      // land in the dedicated file via the registered Exporter.
+      const root = await fetch(host.url)
+      expect(root.status).toBe(200)
+      // Emit a log through the host context's logger — the Exporter routes it
+      // to the dedicated file (dsh plugins log via the same ctx.logger path).
+      ctx.logger("dsh-web-test").info("exporter probe")
+      // Give the async Exporter a tick to flush.
+      await new Promise((r) => setTimeout(r, 200))
+      const content = readFileSync(logFile, "utf-8")
+      expect(content).toContain("exporter probe")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
     }
   }, 30_000)
 })
