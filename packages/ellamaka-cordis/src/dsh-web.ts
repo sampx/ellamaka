@@ -1,21 +1,29 @@
 /**
- * Mount the dsh web engine onto an existing cordis context (single container).
+ * Mount a dsh profile onto an existing cordis context (single container).
  *
  * The host replays the dsh `boot()` sequence on the caller's context instead
- * of creating a second container: the web profile (dsh-base + dsh-web-app)
- * mounts through the cordis Loader with its NATIVE webserver bound to a
- * second loopback port. The port is chosen by the caller (explicit, or `0`
- * for an OS-assigned port). dsh source is untouched and community plugins
- * keep working — the web UI and its `/api` requests resolve against their
- * own origin.
+ * of creating a second container. Two entry points share one core:
+ *
+ * - {@link mountDshWeb} loads the `web` profile (dsh-base + dsh-web-app) and
+ *   binds the dsh NATIVE webserver to a second loopback port — the surface
+ *   the Workbench iframe embeds. The port is chosen by the caller (explicit,
+ *   or `0` for an OS-assigned port).
+ * - {@link mountDshBase} loads the `base` profile (dsh-base only) with NO
+ *   webserver — the full container of core tools without a web surface, the
+ *   shape the in-process TUI needs.
+ *
+ * dsh source is untouched and community plugins keep working.
  *
  * @module @wopal/ellamaka-cordis/dsh-web
  */
 import {
   assertEntriesActivated,
   healProfilesModuleFallback,
+  initProfile,
   loadProfile,
   mountRootInclude,
+  resolveProfileDir,
+  DEFAULT_PROFILE_BUNDLES,
 } from "@deepseek-ai/dsh-app-boot"
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline"
 import {
@@ -32,7 +40,9 @@ import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
-const PROFILE_NAME = "web"
+const WEB_PROFILE_NAME = "web"
+/** The base-only profile: dsh-base, no webserver. */
+const BASE_PROFILE_NAME = "base"
 
 const require = createRequire(import.meta.url)
 
@@ -50,10 +60,10 @@ const SHIPPED_PRESET_ROOT = join(
 
 /** A handle to a mounted dsh engine. */
 export interface DshHost {
-  /** The port the dsh native webserver bound. */
-  readonly port: number
-  /** The URL of the dsh web UI. */
-  readonly url: string
+  /** The port the dsh native webserver bound; absent when no webserver mounts. */
+  readonly port?: number
+  /** The URL of the dsh web UI; absent when no webserver mounts. */
+  readonly url?: string
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -80,27 +90,38 @@ export interface DshHostOptions {
    * Optional path to a dedicated dsh-plugins log file. When set, a cordis
    * log Exporter is registered on the host context so every dsh plugin's
    * `ctx.logger` output lands in this file (independent of the ellamaka main
-   * log and of the Plan-1 cordis-plugins.log). When omitted, dsh plugin logs
-   * fall through to the default cordis console exporter.
+   * log). When omitted, dsh plugin logs fall through to the default cordis
+   * console exporter.
    */
   logFile?: string
   /** Minimum log level for the dsh-plugins log; defaults to DEBUG. */
   logLevel?: EllamakaLogLevel
 }
 
+/** Internal mount options shared by the web and base entry points. */
+type MountProfileOptions = DshHostOptions & {
+  profileName: string
+  /** Extra patch rows applied after the profile layers. */
+  extraPatches: Record<string, unknown>[]
+  /** Whether the mounted profile must provide a webserver service. */
+  requireWebServer: boolean
+}
+
 /**
- * Mount the dsh web engine onto an existing cordis context.
+ * Mount a dsh profile onto an existing cordis context.
  *
  * Replays the dsh `boot()` sequence (baseUrl, dshHomePath, Loader, prepare,
  * root include, activation audit) on the caller's context — one process, one
- * container. The dsh webserver binds a second loopback port.
+ * container. When `requireWebServer` is set, the dsh webserver must bind and
+ * its port is returned; otherwise no webserver is expected.
  *
  * @param ctx - the host cordis context (e.g. a CordisHub's ctx).
- * @param options - home, port, and optional prepare hook.
+ * @param options - profile name, home, port, extra patches, and whether a
+ *   webserver is required.
  * @returns a {@link DshHost} handle.
  */
-export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
-  const { home, port, prepare, logFile, logLevel } = opts
+async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<DshHost> {
+  const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer } = opts
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -136,20 +157,19 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   // closure (matches how the dsh launcher boots a profile).
   healProfilesModuleFallback(installAnchor, home)
 
-  // Load the web profile (dsh-base + dsh-web-app bundle layers).
-  const profile = loadProfile("ellamaka", PROFILE_NAME, installAnchor, home)
-  // Compose the effective patch list: bundle layers + profile layer.
+  // The base profile has no shipped template; initialize it with the default
+  // bundle list (dsh-base) so loadProfile finds a manifest.
+  if (profileName === BASE_PROFILE_NAME) {
+    initProfile(resolveProfileDir(profileName, home), DEFAULT_PROFILE_BUNDLES)
+  }
+
+  // Load the profile (bundle layers + user patch layer).
+  const profile = loadProfile("ellamaka", profileName, installAnchor, home)
+  // Compose the effective patch list: bundle layers + profile layer + extras.
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
     ...profile.patches,
-    // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
-    // the dsh CLI's composeProfile does — loadProfile alone does not inject
-    // it, so without this the roster is empty and sessions cannot start.
-    { id: "agent-presets", config: { default: "standard", roots: [{ path: SHIPPED_PRESET_ROOT, trust: "system" }] } },
-    // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
-    // which the bun dev runtime lacks. It is a code-execution capability, not
-    // part of the web UI chat surface, so disable it to boot under bun.
-    { id: "code-runtime", disabled: true },
+    ...extraPatches,
   ]
   const rootConfig = join(profile.dir, "cordis.yml")
   // The root config is the host-owned include: an empty entry list. The
@@ -175,6 +195,16 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   }
   await assertEntriesActivated(ctx, "ellamaka")
 
+  const dispose = async () => {
+    const loader = ctx.get("loader")
+    if (loader !== undefined) await loader.remove(includeEntry.id)
+    await loaderFiber.dispose()
+  }
+
+  if (!requireWebServer) {
+    return { dispose }
+  }
+
   const webServer = ctx.get("webServer")
   if (webServer === undefined) {
     throw new Error("ellamaka-cordis: dsh boot did not provide a webServer service")
@@ -183,12 +213,64 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   return {
     port: boundPort,
     url: `http://127.0.0.1:${boundPort}`,
-    dispose: async () => {
-      const loader = ctx.get("loader")
-      if (loader !== undefined) await loader.remove(includeEntry.id)
-      await loaderFiber.dispose()
-    },
+    dispose,
   }
+}
+
+/**
+ * Mount the dsh web engine onto an existing cordis context.
+ *
+ * Loads the `web` profile (dsh-base + dsh-web-app) and binds the dsh
+ * webserver to a second loopback port.
+ *
+ * @param ctx - the host cordis context (e.g. a CordisHub's ctx).
+ * @param options - home, port, and optional prepare hook.
+ * @returns a {@link DshHost} handle.
+ */
+export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
+  return mountProfile(ctx, {
+    ...opts,
+    profileName: WEB_PROFILE_NAME,
+    requireWebServer: true,
+    extraPatches: [
+      // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
+      // the dsh CLI's composeProfile does — loadProfile alone does not inject
+      // it, so without this the roster is empty and sessions cannot start.
+      { id: "agent-presets", config: { default: "standard", roots: [{ path: SHIPPED_PRESET_ROOT, trust: "system" }] } },
+      // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
+      // which the bun dev runtime lacks. It is a code-execution capability, not
+      // part of the web UI chat surface, so disable it to boot under bun.
+      { id: "code-runtime", disabled: true },
+    ],
+  })
+}
+
+/**
+ * Mount the dsh base engine onto an existing cordis context.
+ *
+ * Loads the `base` profile (dsh-base only) — the full container of core tools
+ * with NO webserver. This is the shape the in-process TUI needs: complete
+ * container, no 4098 / no web surface.
+ *
+ * @param ctx - the host cordis context (e.g. a CordisHub's ctx).
+ * @param options - home, port, and optional prepare hook.
+ * @returns a {@link DshHost} handle.
+ */
+export async function mountDshBase(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
+  return mountProfile(ctx, {
+    ...opts,
+    profileName: BASE_PROFILE_NAME,
+    requireWebServer: false,
+    extraPatches: [
+      // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
+      // which the bun dev runtime lacks. It is a code-execution capability, not
+      // part of the TUI chat surface, so disable it to boot under bun.
+      { id: "code-runtime", disabled: true },
+      // HMR needs --expose-internals (bun lacks it); the TUI has no hot-reload
+      // need, so disable it to boot under bun.
+      { id: "hmr", disabled: true },
+    ],
+  })
 }
 
 /**
@@ -201,6 +283,26 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshHost> {
   const { Context } = await import("@deepseek-ai/cordis")
   const ctx = new Context()
   const host = await mountDshWeb(ctx, opts)
+  return {
+    port: host.port,
+    url: host.url,
+    dispose: async () => {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    },
+  }
+}
+
+/**
+ * Boot the dsh base engine on a fresh context (standalone use, tests).
+ *
+ * Convenience wrapper around {@link mountDshBase} that owns the container:
+ * dispose tears the whole context down.
+ */
+export async function bootDshBase(opts: DshHostOptions): Promise<DshHost> {
+  const { Context } = await import("@deepseek-ai/cordis")
+  const ctx = new Context()
+  const host = await mountDshBase(ctx, opts)
   return {
     port: host.port,
     url: host.url,

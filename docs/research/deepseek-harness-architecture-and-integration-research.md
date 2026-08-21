@@ -614,3 +614,136 @@ dsh 容器内插件**不是全单例**，是三层实例化模型：
 | S8 | scope dispose 干净清理插件状态（工具从 view 消失、fiber 释放） | 实验一 |
 | S9 | 同插件多 scope 实例隔离（状态互不干扰） | 实验一 |
 | S10 | standing mount 共享模式可按 directory 复用（同配置 directory 共享实例） | 实验一（第二阶段） |
+
+### 17.9 容器插件对 session 的依赖图谱（2026-08-21，源码级审计）
+
+> **背景**：实验二（dsh-tool-adapter）验证 fs-search 投影时发现完整结果恢复（spill）依赖 `exec.agent.session`，而 adapter 桥不提供 → 走 "no session owner" 降级。为回答"方案 A（轻量假 header）还是方案 B（session 门面）"，对 base profile 实际挂载的全部 78 个插件做逐包源码审计，按 session 消费模式分类。审计脚本：`.wopal-space/.tmp/audit-session.sh`（临时，未入库）。
+
+#### 17.9.1 审计方法
+
+对 base profile（`@deepseek-ai/dsh-base/cordis.patch.yml`）挂载的每个 `@deepseek-ai/*` 插件，在 bun 安装缓存中定位其 `lib/`，用五类正则统计 session 消费面：
+
+| 类别 | 正则 | 含义 |
+|---|---|---|
+| `EXEC.AGNT` | `exec.agent` / `exec.parent` / `toolCtx.agent` | 工具执行上下文里的宿主身份（adapter 可桥接） |
+| `CTX.SESS` | `ctx.session` / `owner.session` / `.session.get(` | 访问容器 session 服务 |
+| `HEADER` | `session.header` / `.header` | 读 session header（只读标量） |
+| `EVENTS` | `ctx.on("session/` / `agent/` / `message/` | 订阅 dsh 事件流 |
+| `QUERY/LOG` | `session/query` / `persist` / `append(` / `replay` / `SessionStore` | 查询/持久化/日志重放 |
+
+#### 17.9.2 完整审计表（78 插件）
+
+| 包 | EXEC.AGNT | CTX.SESS | HEADER | EVENTS | QUERY/LOG |
+|---|---|---|---|---|---|
+| cordis-plugin-hmr | 0 | 0 | 0 | 0 | 0 |
+| cordis-plugin-timer | 0 | 0 | 0 | 0 | 0 |
+| dsh-agent | 0 | 0 | 2 | 2 | 4 |
+| dsh-agent-default-model | 0 | 0 | 0 | 0 | 0 |
+| dsh-agent-instructions | 1 | 0 | 1 | 1 | 1 |
+| dsh-agent-loop | 1 | 2 | 1 | 1 | 1 |
+| dsh-api-gateway | 0 | 0 | 0 | 0 | 0 |
+| dsh-attachment-local | 0 | 0 | 0 | 0 | 1 |
+| dsh-bash-sandbox | 0 | 0 | 0 | 0 | 0 |
+| dsh-command-compact | 0 | 0 | 0 | 0 | 1 |
+| dsh-command-feedback | 1 | 0 | 0 | 0 | 1 |
+| dsh-command-goal | 0 | 0 | 0 | 0 | 1 |
+| dsh-commands | 0 | 2 | 0 | 0 | 4 |
+| dsh-compaction-basic | 0 | 1 | 1 | 1 | 1 |
+| dsh-compaction-tool-result-pruner | 0 | 0 | 0 | 0 | 1 |
+| dsh-credentials-local | 0 | 0 | 0 | 0 | 1 |
+| dsh-fs-observation-policy | 1 | 0 | 0 | 0 | 1 |
+| dsh-fs-sandbox | 0 | 0 | 0 | 0 | 0 |
+| dsh-goal | 0 | 2 | 0 | 4 | 6 |
+| dsh-goal-round-driver | 0 | 2 | 0 | 1 | 0 |
+| dsh-jobs-local | 0 | 0 | 0 | 0 | 1 |
+| dsh-llm | 0 | 0 | 0 | 0 | 5 |
+| dsh-llm-deepseek | 0 | 0 | 0 | 0 | 1 |
+| dsh-llm-pi-ai | 0 | 0 | 0 | 0 | 1 |
+| dsh-llm-retry | 0 | 2 | 2 | 4 | 4 |
+| dsh-permission-presets | 0 | 4 | 0 | 2 | 2 |
+| dsh-plan-mode | 2 | 2 | 0 | 4 | 2 |
+| dsh-pwsh-sandbox | 0 | 0 | 0 | 0 | 0 |
+| dsh-repeat-tool-reminder | 1 | 0 | 0 | 1 | 0 |
+| dsh-sandbox-local | 0 | 0 | 0 | 0 | 0 |
+| dsh-sandbox-policy | 1 | 1 | 1 | 0 | 2 |
+| dsh-session | 0 | 4 | 3 | 4 | 8 |
+| dsh-session-checkpoint-policy | 1 | 1 | 0 | 1 | 2 |
+| dsh-session-persistence-jsonl | 0 | 1 | 1 | 0 | 2 |
+| dsh-session-projection | 0 | 2 | 0 | 2 | 2 |
+| dsh-session-query-sqlite | 0 | 1 | 1 | 0 | 1 |
+| dsh-session-telemetry-otel | 0 | 0 | 0 | 1 | 1 |
+| dsh-session-title | 0 | 2 | 2 | 2 | 2 |
+| dsh-session-title-first-prompt-llm | 0 | 1 | 0 | 0 | 0 |
+| dsh-settings-file | 0 | 0 | 0 | 0 | 1 |
+| dsh-shell-env | 1 | 0 | 1 | 0 | 1 |
+| dsh-skill | 0 | 0 | 0 | 0 | 0 |
+| dsh-skill-badge | 0 | 0 | 0 | 0 | 0 |
+| dsh-skill-filesystem | 0 | 0 | 0 | 0 | 1 |
+| dsh-spill-local | 0 | 1 | 0 | 0 | 1 |
+| dsh-spill-policy | 1 | 0 | 1 | 0 | 1 |
+| dsh-subagent | 2 | 3 | 5 | 2 | 13 |
+| dsh-subagent-fork-in-process | 0 | 0 | 0 | 0 | 1 |
+| dsh-subagent-spawn-in-process | 0 | 0 | 0 | 0 | 0 |
+| dsh-subprocess-local | 0 | 0 | 0 | 0 | 1 |
+| dsh-system-prompt | 0 | 0 | 0 | 0 | 1 |
+| dsh-token-meter | 0 | 0 | 3 | 2 | 7 |
+| dsh-tool-bash | 1 | 0 | 1 | 0 | 1 |
+| dsh-tool-call-timeout-policy | 1 | 0 | 0 | 0 | 1 |
+| dsh-tool-fs | 1 | 0 | 1 | 0 | 1 |
+| dsh-tool-fs-search | 1 | 0 | 1 | 0 | 1 |
+| dsh-tool-goal | 1 | 0 | 0 | 0 | 1 |
+| dsh-tool-jobs | 1 | 0 | 0 | 1 | 0 |
+| dsh-tool-pwsh | 1 | 0 | 1 | 0 | 1 |
+| dsh-tool-ralph | 1 | 0 | 0 | 0 | 0 |
+| dsh-tool-skill | 1 | 0 | 1 | 1 | 1 |
+| dsh-tool-str-replace-editor | 1 | 0 | 0 | 0 | 1 |
+| dsh-tool-subagent | 1 | 0 | 0 | 0 | 0 |
+| dsh-tool-subagent-control | 3 | 0 | 0 | 0 | 0 |
+| dsh-tool-subagent-report | 1 | 0 | 0 | 0 | 1 |
+| dsh-tool-todo | 2 | 2 | 0 | 0 | 4 |
+| dsh-tool-web | 0 | 0 | 0 | 0 | 1 |
+| dsh-tool-workflow | 2 | 2 | 0 | 2 | 2 |
+| dsh-tools | 3 | 2 | 0 | 2 | 5 |
+| dsh-typert-loader | 0 | 0 | 0 | 0 | 0 |
+| dsh-typert-registry | 0 | 0 | 0 | 0 | 5 |
+| dsh-user-approval | 3 | 2 | 0 | 2 | 3 |
+| dsh-user-questions | 0 | 0 | 0 | 0 | 0 |
+| dsh-web | 0 | 0 | 0 | 0 | 0 |
+| dsh-web-search-deepseek | 0 | 0 | 0 | 0 | 1 |
+| dsh-workflow-worker-thread | 0 | 0 | 0 | 0 | 1 |
+
+#### 17.9.3 三种消费模式（成本台阶，非逐插件累加）
+
+对 `exec.agent.session` 的访问只分三种模式，成本是台阶式的：
+
+**模式一：纯标量只读（`header.id` + `header.cwd`）** — 最轻
+- 代表：`dsh-tool-fs-search`（`index.js:280` 读 `session.header.id` 做 spill 目录名；`index.js:161` 读 `header.cwd` 做默认工作目录）、`dsh-tool-bash`/`dsh-tool-pwsh`（`header.cwd`）、`dsh-shell-env`（`header.id` 注入 `DSH_SESSION_ID` 环境变量）、`dsh-spill-policy`（`header.id`）、`dsh-tool-call-timeout-policy`、`dsh-tool-str-replace-editor`。
+- 满足方式：adapter 构造 `{ session: { header: { id, cwd } } }` 即可，零 dsh 引擎依赖。
+
+**模式二：session 对象方法（`requestHeader()` / `append()` / `events`）** — 需 session 门面
+- 代表：`dsh-tool-fs`（`requestHeader()?.config` 读 provider/model 路由）、`dsh-tool-todo`（`session.append("todo/write", …)` 写事件）、`dsh-fs-observation-policy`（`actor.agent.session`）、`dsh-sandbox-policy`/`dsh-tool-str-replace-editor`（`policy.resolve({ session })`）、`dsh-permission-presets`（`session.events` + `apply`）。
+- 满足方式：构造一个 dsh-session 兼容门面对象，把 `header.id/cwd` + `requestHeader()` + `append()` + `events()` 映射到 ellamaka 自己的 session 数据。**一个门面同时喂饱模式一+二**，不是逐插件适配。
+
+**模式三：引擎层深耦合（loop / 事件日志 / 查询 / 持久化）** — 需 dsh 引擎驱动
+- 代表：`dsh-session`、`dsh-agent-loop`、`dsh-session-query-sqlite`、`dsh-session-persistence-jsonl`、`dsh-compaction-*`、`dsh-subagent`、`dsh-goal`、`dsh-plan-mode`、`dsh-token-meter`、`dsh-system-prompt`、`dsh-commands`、`dsh-user-approval`。
+- 依赖 dsh 自己的 loop/session 运行时（事件日志语料重放、agent.send 唤醒通道、子会话模型），契约桥翻译不了引擎层语义（§6.1 C2）。**唯一**能启用它们的方式是让 dsh 引擎真实驱动轮次（ellamaka 退化为 shell）。
+
+#### 17.9.4 关键事实：容器自带完整引擎，但当前空转
+
+base profile **已挂载** `dsh-session`、`dsh-agent-loop`、`dsh-session-query-sqlite`、`dsh-session-persistence-jsonl`、`dsh-compaction-*`、`dsh-subagent` 等全部 78 个插件。但因为 **ellamaka 是驱动者**（自己的 prompt loop 跑轮次），dsh 引擎层只被"装载、未驱动"——没有真实 dsh 会话被创建，引擎层插件全部惰性（不产生事件、不写日志、不查询）。
+
+#### 17.9.5 对方案 A / B 的裁决依据
+
+| 方案 | 覆盖模式 | 成本 | 结论 |
+|---|---|---|---|
+| **A（轻量假 header）** | 仅模式一 | 最低（adapter 闭包 +3 行） | 只够 fs-search；tool-todo 的 `append()`、tool-fs 的 `requestHeader()` 仍缺 → "每工具加适配"成立 |
+| **B1（session 门面）** | 模式一 + 二 | 中（一个门面对象，非逐插件） | **推荐**：一条门面喂饱工具层全部，保持 ellamaka 为驱动者 |
+| **B2（引擎接管）** | 模式一 + 二 + 三 | 高（ellamaka 退化为 shell） | 唯一启用引擎层插件的方式；属 DESIGN §4.3 载体决定（推迟），且 dsh 界面已集成 workbench（双核心可选），B2 的"界面"价值已由 iframe 承接 |
+
+**裁决**：走 **B1（session 门面）**。理由：
+1. 一条门面覆盖工具层全部，解决"每工具一个适配"的总体成本担忧。
+2. 保持 ellamaka 为驱动者，不推翻 DESIGN（不改轮次控制权，不改"独立产品非包装器"）。
+3. 引擎层插件（模式三）诚实地属于 B2/载体决定，不挡住工具层落地。
+4. B1 与"多用插件"目标不冲突：最大化工具层采用（fs/bash/pwsh/fs-obs/spill/editor），引擎层明确留给载体决定。
+
+> **B2 澄清（2026-08-21 用户定案）**：B2 的"双核心"价值**已由 dsh 界面集成 workbench 承接**（双界面双核心可选）。因此 B2 不是"未来选项"，而是已存在的现实；B1 才是 ellamaka 与 dsh **共享容器内插件**的核心机制。B1 设计复杂度未知，需先研究 ellamaka vs dsh session 差异才能定稿，故先提交当前变更存档，再做 B1 研究定稿；若不可行再退回 A。

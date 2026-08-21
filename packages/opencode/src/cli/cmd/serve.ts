@@ -51,6 +51,34 @@ export const ServeCommand = effectCmd({
       // Probe the dsh-plugins log Exporter so the bridge is observable even
       // when the dsh engine boots silently (no plugin logs yet).
       hub.ctx.logger("dsh-web").info("dsh engine mounted")
+
+      // Experiment 2 (dsh-tool adapter): mount fs-search onto the container's
+      // global layer (the web profile's agent-plane presets stay empty) and
+      // expose the container so the dsh-adapter plugin can project container
+      // tools into ellamaka's ToolRegistry. The adapter file declares the
+      // adoption allow-list; globalThis is the experiment-grade hand-off.
+      yield* Effect.promise(async () => {
+        const { createRequire } = await import("node:module")
+        // Resolve the dsh closure through the ellamaka-cordis module (the only
+        // package whose dependencies include @deepseek-ai/dsh) — serve.ts's own
+        // resolution root (packages/opencode) cannot see those packages.
+        const anchorRequire = createRequire(
+          import.meta.resolve("@wopal/ellamaka-cordis/package.json"),
+        )
+        const anchorDir = anchorRequire
+          .resolve("@deepseek-ai/dsh/package.json")
+          .replace("/package.json", "")
+        const dshReq = createRequire(`${anchorDir}/package.json`)
+        const fsSearch = await import(dshReq.resolve("@deepseek-ai/dsh-tool-fs-search"))
+        const config = fsSearch.Config({ sampleOverCapGlobResults: false })
+        await Promise.resolve(hub.ctx.plugin(fsSearch as never, config as never))
+        const tools = hub.ctx.get("tools")
+        hub.ctx.logger("dsh-web").info("fs-search mounted", {
+          tools: tools ? tools.schemas().length : 0,
+        })
+        ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = hub.ctx
+      })
+
       yield* Effect.never.pipe(Effect.ensuring(Effect.promise(() => hub.dispose())))
     } else {
       yield* Effect.never
