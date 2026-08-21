@@ -10,7 +10,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./hub": "./src/hub.ts",
-    "./layer": "./src/layer.ts",
     "./types": "./src/types.ts",
     "./dsh-web": "./src/dsh-web.ts"
   },

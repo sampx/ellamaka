@@ -66,7 +66,7 @@ ellamaka serve / sidecar (单进程)
 | 路线 | 探索 | 否决原因 |
 | :--- | :--- | :--- |
 | 前端薄壳 + vite 代理 3080 | 独立 dsh 前端构建单元，vite `/api`/`/plugins` 代理到 dsh 独立进程 | 目标要求单进程集成；thin-shell 方案被 iframe 取代，已删除 |
-| 每实例 CordisHub 装载 | 每实例目录一个 hub 只挂 spill | 装不下 dsh 引擎 |
+| 每实例 CordisHub 装载 | 每实例目录一个 hub 只挂 spill | 装不下 dsh 引擎；已彻底拆除（per-instance hub 装配、turn-driver 桥、`cordis-plugins.log` 一并退役，instance 隔离由容器 per-directory scope 承接，见研究报告 §17.4） |
 | 单 server 注入 dsh webserver | 禁用 webserver 行 + prepare 注入兼容实现 + node:http 分发器 | `/api` 冲突 + 改 bundle 破坏生态，见 §3.3 |
 | `/api` namespace 化 | 改 vendored 前端 `/api` → `/dsh/api` | 证伪：静态 bundle 不含 `/api`，硬编码在运行时插件 bundle 里，改 bundle 破坏社区插件 |
 
@@ -180,7 +180,7 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 
 ### 6.4 日志桥接（已实现）
 
-cordis 插件日志经 `ctx.logger`（自动命名）→ Exporter（装配层注册）→ 独立文件 `cordis-plugins.log`，不进 ellamaka 主日志。路径按实例目录决定（空间内写 `<space>/.wopal-space/logs/`，非空间写 `$WOPAL_HOME/logs/`）。
+dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDshBase`/`mountDshWeb` 装配时注册）→ 独立文件 `dsh-plugins.log`（`$WOPAL_HOME/logs/`），不进 ellamaka 主日志。这是**唯一**的容器日志：进程级容器 → 全局日志目录，规则单一可预测。旧 Plan 1 的 per-instance hub 日志（`cordis-plugins.log`）已随旧机制一并拆除（见 §3.4）。
 
 ### 6.5 复刻方法论（研究报告 §11）
 

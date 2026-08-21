@@ -4,9 +4,8 @@ import type { HubRuntime, CordisHubOptions } from "./types.js"
 /**
  * Per-instance Cordis container.
  *
- * Each hub owns a fresh cordis `Context` and provides a mount point for the
- * Effect `ManagedRuntime` that bridge services (agent-loop, grep-bridge, …)
- * use to execute Effect work from the async cordis side (DESIGN §5.6.1).
+ * Each hub owns a fresh cordis `Context` and provides a mount point for
+ * bridging work into the Effect world when needed (DESIGN-dsh-poc §6.2).
  *
  * Lifecycle:
  * - `mount(plugin, options)` loads a cordis plugin into the hub's context.
@@ -28,10 +27,6 @@ export class CordisHub {
     // `name` is reserved for future multi-instance diagnostics; the cordis
     // context currently has no stable naming hook beyond the fiber tree.
     void options.name
-    // Lifecycle "created" log is emitted by the assembly layer after the
-    // log Exporter is registered (DESIGN §5.10), so the line reaches
-    // cordis-plugins.log. The constructor runs before the Exporter exists,
-    // so it must not log here.
   }
 
   /**
@@ -56,10 +51,6 @@ export class CordisHub {
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
-    // Log before fiber.dispose() — the Exporter is still registered on this
-    // fiber, so the line reaches cordis-plugins.log. After dispose, the
-    // Exporter is auto-removed by the fiber lifecycle.
-    this.ctx.logger("cordis-hub").info("disposing")
     await this.ctx.fiber.dispose()
   }
 }

@@ -38,11 +38,6 @@ import { Question } from "@/question"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
-import { TurnDriver } from "@/session/turn-driver"
-import { CordisHubService, createTurnDriverLayer } from "@wopal/ellamaka-cordis"
-import { CordisMount } from "@/server/cordis-mount"
-import { InstanceState } from "@/effect/instance-state"
-import { registerDisposer } from "@/effect/instance-registry"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -240,27 +235,6 @@ export function createRoutes(
       Session.defaultLayer,
       SessionCompaction.defaultLayer,
       SessionPrompt.defaultLayer,
-      // Turn driver (cordis): consumed per dispatch via Effect.serviceOption
-      // inside SessionPrompt.loop — handlers execute with this assembly's
-      // context, so the sibling below is the driver for every turn routed
-      // through this server; environments without a driver (CLI, tests) fall
-      // back to direct execution. Sibling placement is safe because the
-      // driver is no longer captured at SessionPrompt build time, so the
-      // shared memoMap cannot pin a stale driver (DESIGN D-04/D-06, POC 1.2).
-      createTurnDriverLayer(TurnDriver.Service, { directory: InstanceState.directory }).pipe(
-        Layer.provide(CordisMount.cordisPluginAssembly.hubs),
-      ),
-      // Wire instance disposal to hub invalidation (disposeInstance(dir) ->
-      // registry.invalidate(dir) -> ctx.fiber.dispose()).
-      Layer.effectDiscard(
-        Effect.gen(function* () {
-          const registry = yield* CordisHubService
-          const off = registerDisposer((directory) =>
-            Effect.runPromise(registry.invalidate(directory)),
-          )
-          yield* Effect.addFinalizer(() => Effect.sync(off))
-        }),
-      ).pipe(Layer.provide(CordisMount.cordisPluginAssembly.hubs)),
       SessionRevert.defaultLayer,
       SessionShare.defaultLayer,
       SessionRunState.defaultLayer,

@@ -55,7 +55,6 @@ import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { TurnDriver } from "@/session/turn-driver"
 
 void Log.init({ print: false })
 
@@ -441,40 +440,6 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 })
 
 // Loop semantics
-
-// The turn driver is resolved per dispatch from the surrounding environment,
-// not baked into the SessionPrompt layer: environments that carry a driver
-// (server routes mount the cordis one) route turns through it, environments
-// without one run the loop directly. A spy driver merged into the test
-// environment proves loop dispatch flows through the environment-provided
-// service (regression guard for the baked-in default that silently bypassed
-// the cordis driver in production).
-const spyCalls: string[] = []
-const spyDriverLayer = Layer.succeed(TurnDriver.Service, {
-  run: <A, E, R>(input: { readonly sessionID: string; readonly work: Effect.Effect<A, E, R> }) =>
-    Effect.suspend(() => {
-      spyCalls.push(input.sessionID)
-      return input.work
-    }),
-})
-const spyDriverIt = testEffect(Layer.mergeAll(makeHttpNoLLMServer(), spyDriverLayer))
-
-spyDriverIt.instance(
-  "loop dispatches the turn through the driver present in the dispatch environment",
-  () =>
-    Effect.gen(function* () {
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const chat = yield* sessions.create({ title: "Spy driver" })
-      yield* seed(chat.id, { finish: "stop" })
-      spyCalls.length = 0
-
-      const result = yield* prompt.loop({ sessionID: chat.id })
-      expect(result.info.role).toBe("assistant")
-      expect(spyCalls).toEqual([chat.id])
-    }),
-  { config: cfg },
-)
 
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",

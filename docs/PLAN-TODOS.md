@@ -63,6 +63,16 @@
 
 > **废弃理由（2026-08-20 用户定案）**：spill/grep 桥无实际价值。native grep 上游截断与 spill「全量转储」语义不匹配（匹配数爆炸场景 spill 存的是截断后结果，模型无法精确读回），spill 价值仅在「匹配少但行超长」场景成立。后续工具利用直接复用 fs-search（Plan 2），不再维护 spill/grep 桥。
 
+### 旧 Plan 1 残留拆除（2026-08-21）
+
+> **背景**：研究报告 §17.4 确立"一个完整容器 + per-directory scope"实例模型后，旧 Plan 1 的 per-instance hub 机制（每实例目录一个 CordisHub + turn-driver 桥 + `cordis-plugins.log`）成为被否决路线的残留（DESIGN-dsh-poc §3.4），与新方案构成替代关系。用户定案：彻底拆除，恢复到接线前状态，容器日志唯一保留 `dsh-plugins.log`。
+
+- [x] 1.18 删除旧机制源码：`agent-loop.ts`、`turn-driver-layer.ts`、`layer.ts`（hub registry）、`tools/`（自持 ctx.tools）、`cordis-mount.ts`、`session/turn-driver.ts`
+- [x] 1.19 还原接线：`prompt.ts` loop 回直接执行（接线前形态）、`httpapi/server.ts` 移除 turn-driver layer 与 registry invalidation
+- [x] 1.20 删除旧机制测试：cordis 包 `agent-loop/turn-driver-layer/tools` 测试、opencode `test/cordis/`（turn-driver/als-cancel/log-exporter）、prompt.test.ts spy-driver 用例；裁剪 `hub.test.ts` 至 hub 生命周期
+- [x] 1.21 收缩包公开面：`index.ts` 只导出 `CordisHub` + `createCordisLogExporter`；`types.ts` 去 agentLoop 声明；`package.json` 去 `./layer` 导出；还原 `core/util/log.ts` `currentLevel`
+- [x] 1.22 文档同步：README 重写、DESIGN-dsh-poc §3.4/§6.4 更新（dsh-plugins.log 为唯一容器日志）
+
 ---
 
 ## Plan 2 — 工具利用：fs-search 替换 grep/glob ⬜
@@ -132,3 +142,4 @@
 | 2026-08-20 | Plan 1 | Plan 1 接线完成：dsh 引擎进程内完整运行、动态装载保留、desktop sidecar 接线（提交 7a983fc397） |
 | 2026-08-20 | Plan 1 | **Plan 1 重新规划**：并入双核心 PoC + 容器日志桥接，废弃 spill/grep 桥（无实际价值，后续用 fs-search）。日志桥接补齐（dsh-plugins.log 独立文件，提交待定） |
 | 2026-08-20 | Plan 1 | **Plan 1 完成**：spill/grep 桥废弃（提交 8d79bfd45e），cordis 9 pass + ellamaka-cordis 30 pass 全绿，零残留引用。Plan 1 全部 1.1–1.17 勾选完成 |
+| 2026-08-21 | Plan 1 | **旧 Plan 1 残留拆除**：per-instance hub 机制（turn-driver 桥、hub registry、自持 ctx.tools、cordis-mount 装配、`cordis-plugins.log`）彻底退役，prompt loop 还原直接执行。容器日志唯一保留 `dsh-plugins.log`。§17.4 scope 模型为 instance 隔离的唯一承接方 |

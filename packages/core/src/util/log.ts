@@ -28,10 +28,6 @@ export function setLevel(next: Level) {
   level = next
 }
 
-export function currentLevel(): Level {
-  return level
-}
-
 function shouldLog(input: Level): boolean {
   return levelPriority[input] >= levelPriority[level]
 }

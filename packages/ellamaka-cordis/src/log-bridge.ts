@@ -29,7 +29,7 @@ function cordisTypeToLevel(type: Message["type"]): EllamakaLogLevel {
 }
 
 export interface CordisLogExporterDeps {
-  /** Absolute path to the cordis-plugins log file. */
+  /** Absolute path to the plugin log file. */
   readonly logFile: string
   /** Minimum log level; messages below this are dropped. */
   readonly minLevel: EllamakaLogLevel
@@ -42,7 +42,8 @@ export interface CordisLogExporterDeps {
 
 /**
  * Build a cordis `Exporter` that routes all plugin `ctx.logger` output to an
- * ellamaka-managed sink, bypassing the ellamaka main log (DESIGN §5.10).
+ * ellamaka-managed sink, bypassing the ellamaka main log (DESIGN-dsh-poc
+ * §6.4).
  *
  * The exporter:
  * - sets `levels.default = DEBUG` so cordis forwards every message here

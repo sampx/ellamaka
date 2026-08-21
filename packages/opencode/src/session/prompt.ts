@@ -47,7 +47,6 @@ import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
-import { TurnDriver } from "./turn-driver"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
@@ -1525,17 +1524,7 @@ export const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      // Resolve the turn driver per dispatch from the surrounding environment:
-      // environments that mount one (server routes provide the cordis driver)
-      // route the turn through the container; everyone else runs the loop
-      // directly. Dispatch-time resolution keeps this layer free of a
-      // TurnDriver requirement, so the shared memoMap build is
-      // driver-independent and cannot pin a stale driver.
-      const driver = yield* Effect.serviceOption(TurnDriver.Service)
-      const work = Option.isSome(driver)
-        ? driver.value.run({ sessionID: input.sessionID, work: runLoop(input.sessionID) })
-        : runLoop(input.sessionID)
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), work)
+      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
