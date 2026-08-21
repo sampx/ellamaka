@@ -1,14 +1,21 @@
 # @wopal/ellamaka-cordis
 
-Ellamaka's single cordis boundary package (CORDIS DESIGN §7 current convention 1):
-every `@deepseek-ai/cordis` import in this repository converges here.
+Ellamaka's single cordis boundary package (DESIGN-dsh-poc §7 current
+convention 1): every `@deepseek-ai/cordis` import in this repository
+converges here.
 
-## Per-instance hubs (D-06)
+## What this package provides
 
-`cordisHubLayer` provisions a `CordisHubService` — a per-directory hub
-registry. Hubs are created lazily on first dispatch into an instance
-directory, shared by all dispatches in it, and disposed when the registry
-entry is invalidated (host instance disposal) or the layer scope closes.
+- `CordisHub` — a thin lifecycle wrapper around a cordis `Context`: mount
+  plugins, dispose the container. The process-level dsh engine (serve/TUI)
+  mounts on a hub's context.
+- `dsh-web` subpath — `mountDshWeb` / `bootDshWeb` (web profile, native
+  webserver) and `mountDshBase` / `bootDshBase` (base profile, no webserver).
+  These replay the dsh boot sequence on the host context — one process, one
+  container (DESIGN-dsh-poc §3).
+- `createCordisLogExporter` — routes every dsh plugin's `ctx.logger` output
+  to a dedicated log file (`dsh-plugins.log`), independent of the ellamaka
+  main log (DESIGN-dsh-poc §6.4).
 
 ## Mountable plugin list (Q3, rolling)
 
