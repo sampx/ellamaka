@@ -72,6 +72,7 @@ type Listener = {
 const parentPort = getParentPort()
 let listener: Listener | undefined
 let dshHost: { dispose(): Promise<void> } | undefined
+let dshToolsHost: { dispose(): Promise<void> } | undefined
 
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
@@ -135,6 +136,10 @@ async function start(command: StartCommand) {
     // closure is absent (not yet installed), dsh is skipped and the sidecar runs
     // normally — the same kill-switch semantics as ELLAMAKA_DSH=0.
     const dshPort = await mountDshIfPresent()
+    // The tool container (ellamaka-tools profile) feeds the dsh-adapter so
+    // Workbench sessions can adopt container tools. It has no webserver; the
+    // container is exposed through globalThis like the CLI serve path.
+    await mountDshToolsIfPresent()
     parentPort.postMessage({ type: "ready", dshPort })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -179,8 +184,40 @@ async function mountDshIfPresent(): Promise<number | undefined> {
   return host.port
 }
 
+/**
+ * Mount the dsh tool container (ellamaka-tools profile) when the dsh closure
+ * is present, and expose it via `globalThis.__ellamakaDshContainer` so the
+ * dsh-adapter plugin can project container tools into ellamaka's ToolRegistry.
+ * The tool container has no webserver — it is a pure tool backend for
+ * Workbench sessions. Absent closure skips silently (adapter degrades to no
+ * projected tools; ellamaka builtins keep serving).
+ */
+async function mountDshToolsIfPresent(): Promise<void> {
+  const dshHome =
+    process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "ellamaka", "data", "dsh")
+  const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
+  if (!existsSync(anchor)) {
+    return undefined
+  }
+  const requireFromClosure = createRequire(join(dshHome, "package.json"))
+  const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
+  const { bootDshTools } = await import(pathToFileURL(dshWebEntry).href)
+  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+  const host = await bootDshTools({
+    home: dshHome,
+    port: 0,
+    installAnchor: anchor,
+    logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+  })
+  dshToolsHost = { dispose: () => host.dispose() }
+  ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
+}
+
 async function stop() {
   try {
+    delete (globalThis as Record<string, unknown>).__ellamakaDshContainer
+    await dshToolsHost?.dispose()
+    dshToolsHost = undefined
     await dshHost?.dispose()
     dshHost = undefined
     await listener?.stop()

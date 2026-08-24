@@ -24,6 +24,7 @@ import {
   mountRootInclude,
   resolveProfileDir,
   DEFAULT_PROFILE_BUNDLES,
+  PROFILE_PATCH_FILENAME,
 } from "@deepseek-ai/dsh-app-boot"
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline"
 import {
@@ -34,7 +35,7 @@ import { dshHomePath } from "@deepseek-ai/dsh-home-paths"
 import Loader from "@deepseek-ai/cordis-plugin-loader"
 import type { Context } from "@deepseek-ai/cordis"
 import { dirname, join } from "node:path"
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
@@ -43,6 +44,8 @@ import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 const WEB_PROFILE_NAME = "web"
 /** The base-only profile: dsh-base, no webserver. */
 const BASE_PROFILE_NAME = "base"
+/** The tool-container profile: dsh-base with agent-loop plugins disabled. */
+const TOOLS_PROFILE_NAME = "ellamaka-tools"
 
 const require = createRequire(import.meta.url)
 
@@ -57,6 +60,18 @@ const SHIPPED_PRESET_ROOT = join(
   "config",
   "agent-presets",
 )
+
+/**
+ * Default patch layer for the `ellamaka-tools` profile. Written on first
+ * mount (never afterwards — user edits win), so the disable list lives in the
+ * user-owned profile file, not in code.
+ */
+const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profile.
+# Tools are driven directly by the ellamaka adapter with a lightweight
+# per-call context (no dsh agent loops). Plugins below rely on live dsh
+# sessions and are disabled so tools execute without creating sessions.
+- { id: session-checkpoint-policy, disabled: true }
+`
 
 /** A handle to a mounted dsh engine. */
 export interface DshHost {
@@ -96,6 +111,13 @@ export interface DshHostOptions {
   logFile?: string
   /** Minimum log level for the dsh-plugins log; defaults to DEBUG. */
   logLevel?: EllamakaLogLevel
+  /**
+   * Optional extra patch rows applied after the profile layers. Used by
+   * callers to disable profile entries that only serve the dsh agent loop
+   * (e.g. session-checkpoint-policy) when the container is driven as a
+   * tool backend rather than a full dsh session host.
+   */
+  extraPatches?: Record<string, unknown>[]
 }
 
 /** Internal mount options shared by the web and base entry points. */
@@ -161,6 +183,29 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // bundle list (dsh-base) so loadProfile finds a manifest.
   if (profileName === BASE_PROFILE_NAME) {
     initProfile(resolveProfileDir(profileName, home), DEFAULT_PROFILE_BUNDLES)
+  }
+
+  // The tool-container profile seeds its default patch layer (disable the
+  // agent-loop-only plugins) on first mount. The file is user-owned: once the
+  // user edits it (anything beyond initProfile's empty template), it is never
+  // overwritten.
+  if (profileName === TOOLS_PROFILE_NAME) {
+    const dir = resolveProfileDir(profileName, home)
+    initProfile(dir, DEFAULT_PROFILE_BUNDLES)
+    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    try {
+      const current = readFileSync(patchPath, "utf-8")
+      const stripped = current
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("#"))
+        .join("\n")
+        .trim()
+      if (stripped === "[]") {
+        writeFileSync(patchPath, TOOLS_PROFILE_PATCH)
+      }
+    } catch {
+      writeFileSync(patchPath, TOOLS_PROFILE_PATCH)
+    }
   }
 
   // Load the profile (bundle layers + user patch layer).
@@ -241,6 +286,7 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
       // which the bun dev runtime lacks. It is a code-execution capability, not
       // part of the web UI chat surface, so disable it to boot under bun.
       { id: "code-runtime", disabled: true },
+      ...(opts.extraPatches ?? []),
     ],
   })
 }
@@ -269,6 +315,35 @@ export async function mountDshBase(ctx: Context, opts: DshHostOptions): Promise<
       // HMR needs --expose-internals (bun lacks it); the TUI has no hot-reload
       // need, so disable it to boot under bun.
       { id: "hmr", disabled: true },
+      ...(opts.extraPatches ?? []),
+    ],
+  })
+}
+
+/**
+ * Mount the tool-container profile onto an existing cordis context.
+ *
+ * A dedicated dsh profile for ellamaka's direct tool adoption: same
+ * {@link mountProfile} boot sequence, but the entry list comes from the
+ * `ellamaka-tools` profile (dsh-base bundles) whose user-owned patch layer
+ * disables the agent-loop-only plugins. Tools execute with a lightweight
+ * per-call context — no live dsh sessions, no checkpoint flush.
+ *
+ * @param ctx - the host cordis context.
+ * @param options - home, port, and optional prepare hook.
+ * @returns a {@link DshHost} handle.
+ */
+export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
+  return mountProfile(ctx, {
+    ...opts,
+    profileName: TOOLS_PROFILE_NAME,
+    requireWebServer: false,
+    extraPatches: [
+      // Same bun-environment constraints as the base profile (no webserver,
+      // no hot-reload on the tool surface).
+      { id: "code-runtime", disabled: true },
+      { id: "hmr", disabled: true },
+      ...(opts.extraPatches ?? []),
     ],
   })
 }
@@ -306,6 +381,35 @@ export async function bootDshBase(opts: DshHostOptions): Promise<DshHost> {
   return {
     port: host.port,
     url: host.url,
+    dispose: async () => {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    },
+  }
+}
+
+/**
+ * Boot the ellamaka-tools profile on a fresh context (standalone use,
+ * desktop sidecar).
+ *
+ * Convenience wrapper around {@link mountDshTools} that owns the container.
+ * The context itself is returned in the handle so the caller can expose it
+ * (e.g. `globalThis.__ellamakaDshContainer`) — the tool container has no
+ * webserver, its services reach the adapter through direct object access.
+ */
+export interface DshToolsHost extends DshHost {
+  /** The cordis context backing the tool container. */
+  readonly ctx: Context
+}
+
+export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> {
+  const { Context } = await import("@deepseek-ai/cordis")
+  const ctx = new Context()
+  const host = await mountDshTools(ctx, opts)
+  return {
+    port: host.port,
+    url: host.url,
+    ctx,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()

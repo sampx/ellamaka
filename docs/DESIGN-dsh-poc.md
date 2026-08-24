@@ -33,21 +33,28 @@ ellamaka 对 dsh 的了解仍处于皮毛阶段，无法准确评估复刻的成
 
 ## 3. 双引擎现实（PoC 成果）
 
-### 3.1 终局方案：单进程、双端口 + iframe 嵌入
+### 3.1 终局方案：单进程、双容器（web 容器 + 工具容器）
 
-dsh 引擎在 ellamaka 进程内 boot，用原生 webserver 绑第二个 loopback 端口；前端用 iframe 加载该端口，实现零改动、零冲突、双引擎同进程并存。
+同一个 ellamaka 进程内跑两个 cordis 容器：
+
+- **web 容器**（web profile，插件零改动）：挂载 dsh 原生 webserver 到第二个 loopback 端口，Workbench iframe 嵌入该端口，用户在其中使用完整 dsh 功能（会话、账本、checkpoint 全部照常）。
+- **工具容器**（ellamaka-tools profile）：无 webserver 的纯工具后端。serve 启动时挂载，容器经 `globalThis.__ellamakaDshContainer` 暴露，`dsh-adapter` 将其中的工具投影进 ellamaka ToolRegistry。
 
 ```
-ellamaka serve / sidecar (单进程)
-├── ellamaka 引擎 + HttpApi server  → 127.0.0.1:4097  (/api/provider, /workbench 等)
-└── dsh 引擎 (boot 装配) + 原生 webserver → 127.0.0.1:4098 (或随机端口)  (/api, /plugins, /)
+ellamaka 进程
+├── ellamaka 引擎 + HttpApi server      → 127.0.0.1:4097  (/api/provider, /workbench 等)
+│     └── ToolRegistry：内置 grep/glob + dsh-adapter 投影的容器工具
+├── dsh web 容器（web profile 完整插件） → 127.0.0.1:4098  → iframe UI
+└── dsh 工具容器（ellamaka-tools profile，无 webserver）
+      └── globalThis.__ellamakaDshContainer  →  dsh-adapter 调用工具
 ```
 
 ### 3.2 关键事实
 
 - **dsh 源码零改动、社区插件零改动、ellamaka HTTP 路由层零改动**。
-- **单容器重放 boot 序列**：`mountDshWeb` 在宿主 ctx 上重放 dsh boot，不创建第二个 Cordis 容器。
-- **desktop sidecar 用 `bootDshWeb`**（自包含，Node strip-types 可直接 import）；`mountDshWeb`+CordisHub 的 `.js` 导入 Node 无法解析。
+- **两种使用模式物理隔离**：iframe UI 需要 dsh 的 agent-loop 语义（会话账本 + checkpoint 屏障 + 完整插件集）；工具采用只需要工具本体 + 最小调用上下文。同一容器无法同时满足两种装配（checkpoint 插件会强制 flush 调用方的 live session），因此拆成两个容器，各装配各的 profile。
+- **工具容器用 `mountDshTools` / `bootDshTools`**：加载 `ellamaka-tools` profile（bundles: dsh-base），其用户补丁层禁用 agent-loop 专属插件（`session-checkpoint-policy`）。工具以轻量 per-call context 执行——传给 `tools.execute` 的 agent 只携带 `session.header.cwd`（spawn 工作目录）与 `session.header.id`（spill 归属标签），**容器内不创建任何 dsh session**。
+- **desktop sidecar 用 `bootDshWeb` / `bootDshTools`**（自包含，Node strip-types 可直接 import）；`mountDshWeb`+CordisHub 的 `.js` 导入 Node 无法解析。
 - **动态装载保留**：前端 UI bundle 保持"后端 scan → `/plugins/<id>/client.js` 从磁盘动态 serve"机制，不内联。
 - **`$DSH_HOME` 缺省** `$WOPAL_HOME/ellamaka/data/dsh`，闭包缺失不挂载（kill switch）。
 - **dshPort 贯穿** server.ts → sidecar-supervisor.ts → preload/types.ts → renderer → platform.getDshPort()。
@@ -78,17 +85,25 @@ ellamaka serve / sidecar (单进程)
 //       → launch env + cmdline --port → mountRootInclude → 激活审计
 //   └── installAnchor: 显式指向闭包里的 @deepseek-ai/dsh/package.json（打包模式 require.resolve 无法解析到用户目录）
 
+// mountDshTools(ctx, opts) —— 同上 boot 序列，profile = ellamaka-tools
+//   └── 无 webserver；首次挂载时若补丁层仍是空模板，播种禁用条目
+//       （session-checkpoint-policy disabled），用户后续编辑不会被覆盖
+
 // bootDshWeb(opts) —— 自建容器，standalone 用
 //   └── 自建 Context + mountDshWeb；dispose 连 ctx.fiber 一起拆
+
+// bootDshTools(opts) —— 自建容器，desktop sidecar 用
+//   └── 自建 Context + mountDshTools；返回 handle 带 ctx，供 globalThis 暴露
 ```
 
-- `bootDshWeb` 是 desktop sidecar 的加载入口（自建容器，Node strip-types 可直接 import）。
-- `mountDshWeb` 用于在宿主 ctx 上重放（多用于复用宿主容器装配的场景）。
-- **desktop sidecar 必须用 `bootDshWeb`**：`mountDshWeb`+CordisHub 会经过 `@wopal/ellamaka-cordis` index 导入链，其内部 `.js` 扩展名导入 Node `--experimental-strip-types` 无法解析；`bootDshWeb` 自包含，直接加载。
+- `bootDshWeb`/`bootDshTools` 是 desktop sidecar 的加载入口（自建容器，Node strip-types 可直接 import）。
+- `mountDshWeb`/`mountDshTools` 用于在宿主 ctx 上重放（serve.ts 的 CordisHub ctx）。
+- **desktop sidecar 必须用 boot 系列**：`mount*`+CordisHub 会经过 `@wopal/ellamaka-cordis` index 导入链，其内部 `.js` 扩展名导入 Node `--experimental-strip-types` 无法解析；boot 系列自包含，直接加载。
 
 ### 3.6 关键路径与事实
 
-- **dsh profile**：`~/.dsh/profiles/web/`（bundles: dsh-base + dsh-web-app）
+- **dsh profile**：`web/`（bundles: dsh-base + dsh-web-app，完整 UI）、`ellamaka-tools/`（bundles: dsh-base，补丁层禁用 agent-loop 专属插件）。两者都在 `$DSH_HOME/profiles/` 下。
+- **profile 机制**：profile 目录含 `package.json`（`dsh.profile.bundles` 有序 bundle 列表）+ `cordis.patch.yml`（用户补丁层，按 entry id 覆盖/禁用，应用于全部 bundle 层之后）。`initProfile` 只创建缺失文件不覆盖；ellamaka 只在补丁层仍是空模板时播种默认禁用条目，用户编辑永远不会被覆盖。
 - **dsh webserver**：`packages/host/webserver`，原生支持 `port: number`（0 为随机），`host: '127.0.0.1'`，不设 X-Frame-Options/CSP
 - **dsh boot 序列**：`boot()` = `new Context()` + baseUrl + `provide('dshHomePath')` + `ctx.plugin(Loader)` + prepare + `mountRootInclude` + loader await + `assertEntriesActivated`；除 `new Context()` 外全部由 `@deepseek-ai/dsh-app-boot` 单独导出
 - **Loader 插件**：`@deepseek-ai/cordis-plugin-loader`，`ctx.registry.plugin(Loader)` 挂载；`loader.remove(entryId)` 干净卸载
@@ -104,10 +119,10 @@ ellamaka serve / sidecar (单进程)
 | `packages/ellamaka-app/src/pages/workbench/parts/top-bar.tsx` | 顶栏 DSH 按钮（toggle dshVisible） |
 | `packages/ellamaka-app/src/pages/workbench/view-store.tsx` | `dshVisible` + `setDshVisible` |
 | `packages/ellamaka-app/src/context/platform.tsx` | `getDshPort()`（desktop 侧读取） |
-| `packages/ellamaka-cordis/src/dsh-web.ts` | dsh 引擎装配（mountDshWeb/bootDshWeb） |
+| `packages/ellamaka-cordis/src/dsh-web.ts` | dsh 引擎装配（mountDshWeb/bootDshWeb/mountDshTools/bootDshTools） |
 | `packages/ellamaka-cordis/src/index.ts` | 拆出 dsh-web 顶层导出（子路径） |
-| `packages/opencode/src/cli/cmd/serve.ts` | `ELLAMAKA_DSH=1` 挂载 dsh，固定端口 4098；动态 import |
-| `packages/ellamaka-desktop/src/main/sidecar.ts` | bootDshWeb + dshPort（ready 携带） |
+| `packages/opencode/src/cli/cmd/serve.ts` | `ELLAMAKA_DSH=1` 双容器挂载：web（4098）+ tools（globalThis 暴露）；动态 import |
+| `packages/ellamaka-desktop/src/main/sidecar.ts` | bootDshWeb + bootDshTools + dshPort（ready 携带） |
 | `packages/ellamaka-desktop/src/main/server.ts` | spawn → 传递 dshPort |
 | `packages/ellamaka-desktop/src/main/sidecar-supervisor.ts` | connection.dshPort 字段 |
 | `packages/ellamaka-desktop/src/preload/types.ts` | ServerReadyData/SidecarRuntimeState.dshPort |
@@ -130,11 +145,41 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 | **配置动态化**（现在启动期静态、无热重载） | patch 声明式 entry 树、增量重扫 | **吸收**（运行时机制复刻） |
 | **插件规范化 + 动态插拔**（现在三路由混杂、静态装配） | Loader 动态装载、`loader.remove(entry)` 干净卸载、dual-face | **吸收**（宿主机制） |
 
-### 4.1 桥轨 — 工具能力增强（个案、可立即落地）
+### 4.1 桥轨 — 工具容器 + adapter 逐项采用 dsh 能力
 
-- 从最强候选开始：**fs-search 替换 grep/glob**（消灭运行时下载 ripgrep + 工程治理厚）。
-- 每工具一次契约符合性，权限走原生 Permission。
-- **不建整套桥体系**，个案评估。
+当前优先级是让 ellamaka 直接使用 dsh 已有的强能力。首个候选仍是 **fs-search 替换 grep/glob**，它消除运行时下载 ripgrep，并提供更完整的搜索治理。
+
+**承载形态：工具容器 + adapter**（§3.1）：
+
+- **工具容器**（ellamaka-tools profile）是能力的"货架"：载入 dsh-base 全部插件，用 profile 补丁层按 id 禁用 agent-loop 专属插件（当前仅有 `session-checkpoint-policy`）。工具容器不承载任何 dsh 会话，只暴露 `tools` 等服务。禁用清单是用户自有文件（`$DSH_HOME/profiles/ellamaka-tools/cordis.patch.yml`），ellamaka 不覆盖用户编辑。
+- **dsh-adapter**（`.wopal/plugins/dsh-adapter`）是能力的"投影仪"：按映射白名单把容器工具投影到 ellamaka ToolRegistry 并送出执行。执行时只携带工具实际消费的最小 per-call context——`agent.session.header.cwd`（spawn 工作目录）与 `agent.session.header.id`（spill 归属标签），其他一切省略。
+- **每次只采用一个能力**。权限继续由 ellamaka 原生 Permission 处理。
+- 采用成本超过独立实现成本时，保留 ellamaka 原生能力。dsh 是能力来源，不是必须迁入的运行时归宿。
+
+#### 4.1.1 采用边界
+
+| 能力形态 | 采用方式 |
+|---|---|
+| 输入、输出和生命周期可由 dsh 通用工具契约表达 | 通过 `.wopal/plugins/dsh-adapter` 逐项投影到 ellamaka ToolRegistry |
+| 只需少量调用上下文 | 在 adapter 内按需传入最小 per-call context（如 header.cwd/header.id），完全按工具的实测消费面供给，缺的字段省略 |
+| 依赖 dsh 自身的 session、agent loop、事件日志或子会话语义 | 不采用该包，按 ellamaka 的数据模型复刻所需机制 |
+| 依赖 ellamaka Hook、Session/Part、Permission、Question、Task、UI 或 Instance 生命周期 | 由 ellamaka 原生插件负责 |
+
+**session-checkpoint-policy 的实证结论**：该插件监听 `tools/execute`，对 `exec.agent.session` 执行账本 flush（"执行副作用前，账本已持久化"的 agent-loop 语义）。adapter 不传 agent 时它短路放行，但 fs-search 的 spill 因缺 owner id 而降级；传入轻量 agent 时它抛 `session not live`（store 校验不过）。因此工具容器在 profile 层禁用该插件——这意味着：**工具容器不做请求边界持久化，但也不创建、不持有任何 session，账本持久化的缺失不产生功能影响**。web 容器保持完整 profile，checkpoint 与 UI 模式照常。
+
+#### 4.1.2 fs-search 采用现状（P2 首批落地）
+
+- **grep/glob 已在工具容器完整可用**：内联 cap（250 匹配）内直接返回；超 cap 的结果 spill 到 `$TMPDIR/dsh-spill-*/session-<hash>/` 并返回恢复指示，spill 文件完整保存全部匹配。
+- **adapter 映射白名单**：`.wopal/plugins/dsh-adapter` 配置 `tools: [{source: grep, target: grep}, {source: glob, target: glob}]`。同名 target 覆盖 ellamaka 内置工具；容器缺失时 adapter 挂 0 个工具，内置工具原样可用。
+- **验证记录**：adapter 单测 7 项；dsh-web 集成测试含"工具容器 profile 完整执行 + 零 session 断言"；端到端证明 web 容器 + 工具容器并存、UI 完整、spill 完整、容器 `sessions.list()` 恒为空。
+
+#### 4.1.3 wopal-plugin 边界（暂不迁移）
+
+wopal-plugin 是 ellamaka 的原生集成层。它继续拥有规则与记忆注入、任务协作、上下文恢复、权限交互和运行时监控。
+
+这些能力的价值来自 ellamaka 的宿主语义。把它们改写为 dsh 插件不会扩大可用范围，只会增加 adapter 与生命周期维护成本。
+
+未来某个 wopal 能力若能脱离 ellamaka 语义，并在其他 dsh 宿主中产生独立价值，再单独评估。当前 PoC 不拆分、不迁移、不为此建设 Hook、Task 或 Session 桥。
 
 ### 4.2 吸收轨 — 配置动态化 + 插件规范化 + 动态插拔（宿主机制，长期主线）
 
@@ -180,7 +225,7 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 
 ### 6.4 日志桥接（已实现）
 
-dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDshBase`/`mountDshWeb` 装配时注册）→ 独立文件 `dsh-plugins.log`（`$WOPAL_HOME/logs/`），不进 ellamaka 主日志。这是**唯一**的容器日志：进程级容器 → 全局日志目录，规则单一可预测。旧 Plan 1 的 per-instance hub 日志（`cordis-plugins.log`）已随旧机制一并拆除（见 §3.4）。
+dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDshWeb`/`mountDshTools` 装配时注册）→ 独立文件 `dsh-plugins.log`（`$WOPAL_HOME/logs/`），不进 ellamaka 主日志。这是**唯一**的容器日志：进程级容器 → 全局日志目录，规则单一可预测。旧 Plan 1 的 per-instance hub 日志（`cordis-plugins.log`）已随旧机制一并拆除（见 §3.4）。
 
 ### 6.5 复刻方法论（研究报告 §11）
 
@@ -192,10 +237,9 @@ dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDsh
 
 ### 6.6 工具选型（研究报告 §12）
 
-- **倾向直接采用 dsh**：`fs-search`（替换原生 glob/grep，顺带消灭运行时下载问题）、`fs-observation-policy`（先读后写门禁，纯增量）。
-- **倾向保留自研（包装迁移）**：`edit`（成熟度）；`read/write` 初判保留。
-- **待深评**：`bash`（保留 shell 主体吸收 run_in_background/jobs 语义，或整体换 dsh tool-bash 换取 sandbox）；`wopal_task_*` 契约化重造。
-- **增量采用候选**（空白槽位）：ask-user、jobs、goal、schedule、session-query、terminal。
+- **优先直接采用**：`fs-search`（替换原生 glob/grep，消除运行时下载问题）、`fs-observation-policy`（先读后写门禁，纯增量）。
+- **保留 ellamaka 原生实现**：`edit`、`read/write` 和 `wopal_task_*`。它们的现有语义或宿主集成更重要。
+- **逐项评估**：`bash`、ask-user、jobs、goal、schedule、session-query、terminal。只有可用通用工具契约低成本接入时才进入采用清单。
 
 ### 6.7 session 语义模型（研究报告 §13）
 
@@ -210,6 +254,8 @@ dsh 是"账本"（只记流水，余额随时可算），ellamaka 是"余额表"
 3. **session 所有权（当前约定）**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
 4. **对外契约稳定（当前约定）**：SSE 事件、HttpApi、SDK 在实验中保持稳定。
 5. **桥的加法原则（当前约定）**：桥接优先为新增文件/包装层，保持删除桥即回滚的能力。
+6. **wopal-plugin 原生边界（当前约定）**：wopal-plugin 继续作为 ellamaka 原生插件运行。PoC 只采用独立 dsh 能力，不拆分或迁移 wopal-plugin。
+7. **工具容器边界（当前约定）**：工具调用走专用工具容器（ellamaka-tools profile），**容器内不创建任何 dsh session**；adapter 只传递工具实测消费的最小 per-call context。web 容器保持完整 profile，不复用为工具后端。工具容器的 agent-loop 插件禁用清单是该 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 
 ## 8. 实验步骤（核心到外围）
 
@@ -218,7 +264,7 @@ dsh 是"账本"（只记流水，余额随时可算），ellamaka 是"余额表"
 | 批次 | 内容 | 核心度 | 状态 |
 |------|------|--------|------|
 | P1 | 插件生态融合验证：dsh 插件在 ellamaka 容器内完整运行、动态装载 | 核心 | ✅ 接线完成 |
-| P2 | 工具利用：fs-search 替换 grep/glob（桥首个实证） | 核心 | ⬜ |
+| P2 | 工具利用：fs-search（grep/glob）经工具容器 + adapter 落地；逐项采用继续 | 核心 | 🔶 当前重点（fs-search 已落地，工具容器 + adapter 机制搭就） |
 | P3 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | ⬜ |
 | P4 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | ⬜ |
 | P5 | 界面演进：iframe → 原生（远期） | 外围 | ⬜ |

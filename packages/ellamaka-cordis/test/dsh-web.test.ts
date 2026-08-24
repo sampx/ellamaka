@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
-import { bootDshWeb, mountDshWeb } from "../src/dsh-web"
+import { bootDshWeb, mountDshWeb, mountDshTools } from "../src/dsh-web"
 
 /**
  * Mount the dsh web engine on a second loopback port (final scheme, PoC §7.11).
@@ -81,4 +81,63 @@ describe("dsh web engine", () => {
       await ctx.fiber.dispose()
     }
   }, 30_000)
+})
+
+/**
+ * The tool-container profile: a dedicated dsh profile for ellamaka's direct
+ * tool adoption. It initializes a user-editable profile entry whose patch
+ * layer disables the agent-loop-only plugins, so tools execute with a
+ * lightweight per-call context without live dsh sessions.
+ */
+describe("dsh tools profile", () => {
+  test("mountDshTools mounts the tool profile on a context and disposes cleanly", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const tools = ctx.get("tools") as { schemas(): { name: string }[] }
+      const names = tools.schemas().map((t) => t.name)
+      expect(names).toContain("grep")
+      expect(names).toContain("glob")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshTools disables session-checkpoint-policy via the profile patch layer", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const ws = mkdtempSync(join(tmpdir(), "dsh-tools-ws-"))
+      for (let i = 0; i < 400; i++) {
+        writeFileSync(join(ws, `f${i}.txt`), `needle line ${i}\n`)
+      }
+
+      const tools = ctx.get("tools") as {
+        execute(exec: unknown): Promise<{ isError: boolean; content?: { type: string; text?: string }[] }>
+      }
+      const facade = { session: { header: { id: `tools-${Date.now()}`, cwd: ws } } }
+      const result = await tools.execute({
+        callId: "tools-profile-call",
+        name: "grep",
+        arguments: { pattern: "needle", path: ws },
+        signal: new AbortController().signal,
+        agent: facade,
+      })
+      const text = (result.content ?? []).map((b) => b.text ?? "").join("\n")
+      expect(result.isError).toBe(false)
+      expect(text).toContain("250 of 400")
+
+      // No live session was created.
+      const sessions = ctx.get("sessions") as { list(): unknown[] } | undefined
+      expect(sessions?.list() ?? []).toEqual([])
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
 })

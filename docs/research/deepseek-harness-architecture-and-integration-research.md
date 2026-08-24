@@ -747,3 +747,31 @@ base profile **已挂载** `dsh-session`、`dsh-agent-loop`、`dsh-session-query
 4. B1 与"多用插件"目标不冲突：最大化工具层采用（fs/bash/pwsh/fs-obs/spill/editor），引擎层明确留给载体决定。
 
 > **B2 澄清（2026-08-21 用户定案）**：B2 的"双核心"价值**已由 dsh 界面集成 workbench 承接**（双界面双核心可选）。因此 B2 不是"未来选项"，而是已存在的现实；B1 才是 ellamaka 与 dsh **共享容器内插件**的核心机制。B1 设计复杂度未知，需先研究 ellamaka vs dsh session 差异才能定稿，故先提交当前变更存档，再做 B1 研究定稿；若不可行再退回 A。
+
+#### 17.10 dsh 工具消费的 `exec.agent` 契约面（2026-08-21，源码实证）
+
+> **用途**：B1 session 门面设计的契约对照证据（设计定稿见 `DESIGN-dsh-poc.md` §4.1.1）。本节只记录 dsh 工具实际消费的 `exec.agent` 面与 ellamaka 侧可提供的数据，不含设计决策。
+
+对 base profile 工具层逐包读源码，`exec.agent` 实际被消费的面：
+
+| 消费面 | 语法 | 消费插件 | 语义 |
+|---|---|---|---|
+| `header.id` | `exec.agent?.session.header.id` | fs-search（spill 目录名）、shell-env（`DSH_SESSION_ID`）、spill-policy | 会话身份 |
+| `header.cwd` | `exec.agent?.session.header.cwd` | fs-search（默认工作目录）、tool-fs、tool-bash、tool-pwsh | 会话工作目录 |
+| `requestHeader()` | `exec.agent?.session.requestHeader()?.config` | tool-fs（provider/model 路由） | 最新请求头（含 config） |
+| `append()` | `exec.agent.session.append("todo/write", { todos })` | tool-todo | 写事件日志 |
+| `options` | `exec.agent?.options.provider` / `options.model` | tool-fs（requestHeader 缺失时回退） | 路由回退 |
+| `policy.resolve({ session })` | `this.policy?.resolve({ session: exec.agent.session })` | tool-fs、sandbox-policy、str-replace-editor | 策略解析（读 session 对象） |
+
+`exec.agent.session` 是一个对象，工具通过属性访问（`header.id`/`header.cwd`）与方法调用（`requestHeader()`/`append()`）消费它。工具层不消费 `events`/`deriveMessages`/`surface`/`requestContext` 等引擎层方法。
+
+ellamaka 侧可提供的 session 数据：
+
+| ellamaka 数据 | 来源 | 映射到 dsh 面 |
+|---|---|---|
+| `ctx.sessionID` | ToolContext | `header.id` |
+| `ctx.directory` | ToolContext | `header.cwd` |
+| `session.model`（`{ id, providerID, variant }`） | SessionTable | `requestHeader().config.provider/model` |
+| todo 写入 | TodoTable | `append("todo/write", …)` → 落 TodoTable |
+
+关键差异：ellamaka 的 session 是关系型持久化（SQLite 表），dsh 的 session 是事件溯源（append-only log）。门面不复制 dsh 的事件日志语义，只把工具消费的面映射到 ellamaka 自己的数据源。
