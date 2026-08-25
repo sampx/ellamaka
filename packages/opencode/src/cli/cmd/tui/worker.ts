@@ -14,9 +14,7 @@ import { AppRuntime } from "@/effect/app-runtime"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { Global } from "@opencode-ai/core/global"
-import { join } from "node:path"
+import { mountDshIfEnabled } from "@/cli/cmd/tui/dsh-mount"
 
 ensureProcessMetadata("worker")
 
@@ -49,35 +47,23 @@ GlobalBus.on("event", (event) => {
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
-// Optional dsh base engine (single-process, no webserver). Enabled via
-// ELLAMAKA_DSH=1; mounts the dsh-base profile onto a process-level cordis hub
-// and exposes the container so the dsh-adapter plugin can project container
-// tools into ellamaka's ToolRegistry. When disabled, nothing dsh-related is
-// mounted and the TUI runs untouched.
+// Optional dsh tool container (single-process, no webserver). Enabled via
+// ELLAMAKA_DSH=1; mounts the ellamaka-tools profile onto a process-level
+// cordis hub and exposes the container so the dsh-adapter plugin can project
+// container tools into ellamaka's ToolRegistry. When disabled, nothing
+// dsh-related is mounted and the TUI runs untouched.
 let dshHost: { dispose(): Promise<void> } | undefined
 
-async function mountDshIfEnabled() {
-  if (!Flag.ELLAMAKA_DSH) return
-  try {
-    const [{ CordisHub }, { mountDshBase }] = await Promise.all([
-      import("@wopal/ellamaka-cordis"),
-      import("@wopal/ellamaka-cordis/dsh-web"),
-    ])
-    const hub = new CordisHub(null)
-    dshHost = await mountDshBase(hub.ctx, {
-      port: 0,
-      logFile: join(Global.Path.log, "dsh-plugins.log"),
-    })
-    ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = hub.ctx
-    Log.Default.info("dsh base engine mounted", {})
-  } catch (error) {
-    Log.Default.error("failed to mount dsh base engine", {
+void mountDshIfEnabled()
+  .then((host) => {
+    dshHost = host
+    if (host) Log.Default.info("dsh tool container mounted", {})
+  })
+  .catch((error) => {
+    Log.Default.error("failed to mount dsh tool container", {
       error: error instanceof Error ? error.message : String(error),
     })
-  }
-}
-
-void mountDshIfEnabled()
+  })
 
 export const rpc = {
   async fetch(input: { url: string; method: string; headers: Record<string, string>; body?: string }) {

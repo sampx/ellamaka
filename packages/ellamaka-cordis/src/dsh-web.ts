@@ -8,9 +8,9 @@
  *   binds the dsh NATIVE webserver to a second loopback port — the surface
  *   the Workbench iframe embeds. The port is chosen by the caller (explicit,
  *   or `0` for an OS-assigned port).
- * - {@link mountDshBase} loads the `base` profile (dsh-base only) with NO
- *   webserver — the full container of core tools without a web surface, the
- *   shape the in-process TUI needs.
+ * - {@link mountDshTools} loads the `ellamaka-tools` profile (dsh-base with
+ *   the agent-loop-only plugins disabled) with NO webserver — the pure tool
+ *   backend the dsh-adapter drives with a lightweight per-call context.
  *
  * dsh source is untouched and community plugins keep working.
  *
@@ -42,8 +42,6 @@ import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
 const WEB_PROFILE_NAME = "web"
-/** The base-only profile: dsh-base, no webserver. */
-const BASE_PROFILE_NAME = "base"
 /** The tool-container profile: dsh-base with agent-loop plugins disabled. */
 const TOOLS_PROFILE_NAME = "ellamaka-tools"
 
@@ -65,12 +63,106 @@ const SHIPPED_PRESET_ROOT = join(
  * Default patch layer for the `ellamaka-tools` profile. Written on first
  * mount (never afterwards — user edits win), so the disable list lives in the
  * user-owned profile file, not in code.
+ *
+ * The tool container is a pure tool backend: the dsh-adapter drives its
+ * tools with a lightweight per-call context (no live dsh sessions, no agent
+ * loops). Every row below is agent-loop infrastructure — it needs live
+ * sessions or serves the dsh chat surface — and is disabled so the container
+ * stays session-free and its tool surface stays clean. Re-enable a row only
+ * when adopting the corresponding capability together with its full runtime
+ * context.
  */
 const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profile.
-# Tools are driven directly by the ellamaka adapter with a lightweight
-# per-call context (no dsh agent loops). Plugins below rely on live dsh
-# sessions and are disabled so tools execute without creating sessions.
+#
+# The tool container is a pure tool backend: the dsh-adapter drives its tools
+# with a lightweight per-call context (no live dsh sessions, no agent loops).
+# Every row below is agent-loop infrastructure — it needs live sessions or
+# serves the dsh chat surface — and is disabled so the container stays
+# session-free and its tool surface stays clean. Re-enable a row only when
+# adopting the corresponding capability together with its full runtime
+# context.
+
+# --- session & agent-loop core ---
+# Session lifecycle belongs to ellamaka; the container must stay session-free.
+- { id: session, disabled: true }
+# Flushes the calling agent's live session before every tool call; the
+# adapter's per-call context has no live session, so this would throw.
 - { id: session-checkpoint-policy, disabled: true }
+- { id: agent, disabled: true }
+- { id: agent-loop, disabled: true }
+- { id: agent-default-model, disabled: true }
+- { id: agent-instructions, disabled: true }
+
+# --- session persistence / query / projection / telemetry ---
+- { id: session-title, disabled: true }
+- { id: session-title-llm, disabled: true }
+- { id: session-persistence-jsonl, disabled: true }
+- { id: session-query-sqlite, disabled: true }
+- { id: session-projection, disabled: true }
+- { id: session-telemetry-otel, disabled: true }
+
+# --- llm runtime & credentials (no model calls in the tool container) ---
+- { id: llm, disabled: true }
+- { id: llm-retry, disabled: true }
+- { id: llm-deepseek, disabled: true }
+- { id: llm-pi-ai, disabled: true }
+- { id: settings, disabled: true }
+- { id: credentials, disabled: true }
+
+# --- api gateway (typert) ---
+- { id: typert, disabled: true }
+- { id: typert-loader, disabled: true }
+- { id: typert-gateway, disabled: true }
+
+# --- interactive surface (questions, approval, permission presets) ---
+- { id: user-questions, disabled: true }
+- { id: approval, disabled: true }
+- { id: permission, disabled: true }
+
+# --- subagent delegation (agent-loop stack; ellamaka has native subagents) ---
+- { id: subagent, disabled: true }
+- { id: subagent-spawn-in-process, disabled: true }
+- { id: subagent-fork-in-process, disabled: true }
+- { id: tool-subagent, disabled: true }
+- { id: tool-subagent-fork, disabled: true }
+- { id: tool-subagent-control, disabled: true }
+- { id: tool-subagent-report, disabled: true }
+- { id: tool-subagent-list-agents, disabled: true }
+- { id: workflow-worker-thread, disabled: true }
+- { id: tool-workflow, disabled: true }
+- { id: tool-ralph, disabled: true }
+
+# --- background jobs ---
+- { id: jobs, disabled: true }
+- { id: tool-jobs, disabled: true }
+
+# --- goals / plan mode / commands / skills ---
+- { id: goal, disabled: true }
+- { id: goal-round-driver, disabled: true }
+- { id: tool-goal, disabled: true }
+- { id: command-goal, disabled: true }
+- { id: plan-mode, disabled: true }
+- { id: commands, disabled: true }
+- { id: command-feedback, disabled: true }
+- { id: command-compact, disabled: true }
+- { id: skill, disabled: true }
+- { id: skill-filesystem, disabled: true }
+- { id: tool-skill, disabled: true }
+
+# --- compaction / token accounting ---
+- { id: compaction-basic, disabled: true }
+- { id: token-meter, disabled: true }
+- { id: tool-result-pruner, disabled: true }
+
+# --- web search (needs llm + credentials) ---
+- { id: web, disabled: true }
+- { id: web-search-deepseek, disabled: true }
+- { id: tool-web, disabled: true }
+
+# --- attachments / todo / reminders (agent-loop UX) ---
+- { id: attachment-local, disabled: true }
+- { id: tool-todo, disabled: true }
+- { id: repeat-tool-reminder, disabled: true }
 `
 
 /** A handle to a mounted dsh engine. */
@@ -179,12 +271,6 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // closure (matches how the dsh launcher boots a profile).
   healProfilesModuleFallback(installAnchor, home)
 
-  // The base profile has no shipped template; initialize it with the default
-  // bundle list (dsh-base) so loadProfile finds a manifest.
-  if (profileName === BASE_PROFILE_NAME) {
-    initProfile(resolveProfileDir(profileName, home), DEFAULT_PROFILE_BUNDLES)
-  }
-
   // The tool-container profile seeds its default patch layer (disable the
   // agent-loop-only plugins) on first mount. The file is user-owned: once the
   // user edits it (anything beyond initProfile's empty template), it is never
@@ -292,35 +378,6 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
 }
 
 /**
- * Mount the dsh base engine onto an existing cordis context.
- *
- * Loads the `base` profile (dsh-base only) — the full container of core tools
- * with NO webserver. This is the shape the in-process TUI needs: complete
- * container, no 4098 / no web surface.
- *
- * @param ctx - the host cordis context (e.g. a CordisHub's ctx).
- * @param options - home, port, and optional prepare hook.
- * @returns a {@link DshHost} handle.
- */
-export async function mountDshBase(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
-  return mountProfile(ctx, {
-    ...opts,
-    profileName: BASE_PROFILE_NAME,
-    requireWebServer: false,
-    extraPatches: [
-      // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
-      // which the bun dev runtime lacks. It is a code-execution capability, not
-      // part of the TUI chat surface, so disable it to boot under bun.
-      { id: "code-runtime", disabled: true },
-      // HMR needs --expose-internals (bun lacks it); the TUI has no hot-reload
-      // need, so disable it to boot under bun.
-      { id: "hmr", disabled: true },
-      ...(opts.extraPatches ?? []),
-    ],
-  })
-}
-
-/**
  * Mount the tool-container profile onto an existing cordis context.
  *
  * A dedicated dsh profile for ellamaka's direct tool adoption: same
@@ -339,9 +396,8 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
     profileName: TOOLS_PROFILE_NAME,
     requireWebServer: false,
     extraPatches: [
-      // Same bun-environment constraints as the base profile (no webserver,
-      // no hot-reload on the tool surface).
-      { id: "code-runtime", disabled: true },
+      // HMR needs --expose-internals (bun lacks it); the tool surface has no
+      // hot-reload need, so disable it to boot under bun.
       { id: "hmr", disabled: true },
       ...(opts.extraPatches ?? []),
     ],
@@ -358,26 +414,6 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshHost> {
   const { Context } = await import("@deepseek-ai/cordis")
   const ctx = new Context()
   const host = await mountDshWeb(ctx, opts)
-  return {
-    port: host.port,
-    url: host.url,
-    dispose: async () => {
-      await host.dispose()
-      await ctx.fiber.dispose()
-    },
-  }
-}
-
-/**
- * Boot the dsh base engine on a fresh context (standalone use, tests).
- *
- * Convenience wrapper around {@link mountDshBase} that owns the container:
- * dispose tears the whole context down.
- */
-export async function bootDshBase(opts: DshHostOptions): Promise<DshHost> {
-  const { Context } = await import("@deepseek-ai/cordis")
-  const ctx = new Context()
-  const host = await mountDshBase(ctx, opts)
   return {
     port: host.port,
     url: host.url,
