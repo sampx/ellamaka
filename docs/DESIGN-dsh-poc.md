@@ -165,12 +165,13 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 - **每次只采用一个能力**。权限继续由 ellamaka 原生 Permission 处理。
 - 采用成本超过独立实现成本时，保留 ellamaka 原生能力。dsh 是能力来源，不是必须迁入的运行时归宿。
 
-#### 3.2.2 采用边界
+**采用边界**：
 
 | 能力形态 | 采用方式 |
 |---|---|
 | 输入、输出和生命周期可由 dsh 通用工具契约表达 | 通过 `.wopal/plugins/dsh-adapter` 逐项投影到 ellamaka ToolRegistry |
 | 只需少量调用上下文 | 在 adapter 内按需传入最小 per-call context（如 header.cwd/header.id），完全按工具的实测消费面供给，缺的字段省略 |
+| 依赖 dsh 沙箱底座（fs-sandbox / bash-sandbox） | 阶段 A 在工具容器内直接装配沙箱后端，让工具在沙箱内运行（§3.2.4） |
 | 依赖 dsh 自身的 session、agent loop、事件日志或子会话语义 | 不采用该包，按 ellamaka 的数据模型复刻所需机制 |
 | 依赖 ellamaka Hook、Session/Part、Permission、Question、Task、UI 或 Instance 生命周期 | 由 ellamaka 原生插件负责 |
 
@@ -182,15 +183,46 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 - **instance 粒度对应**：ellamaka instance 目录 ≈ dsh per-call `header.cwd`，粒度一一对应；空间内子目录（instance）作为工作根，路径解析与 spawn 工作目录正确。
 - **当前缺口与扩展点**：容器装配差异（per-space 不同 profile）当前不需要——工具全在池中，差异走投影层；工具参数（如 grep maxMatches）per-space 覆盖、per-space 沙箱策略（A 只读、B 可写）尚未实现，扩展点分别是 adapter 层 per-call 参数注入与 facade 合成 `sandbox/mode` 事件。
 
-**受限工具采用的前置条件（facade 缺口）**：grep/glob 只读 `header.cwd`/`header.id`，当前 facade 足够。tool-fs 的 write/edit 与 tool-bash 每次调用都走 `sandbox-policy.resolve()`，它读 `session.events`（遍历找 `sandbox/mode` 覆盖）并返回顶层 `session.id` 作为 per-session 私有临时目录的隔离键。当前 facade 两者皆缺——`events` 缺失直接 TypeError，顶层 `id` 缺失导致隔离键塌缩为 `undefined`。采用这些工具前，facade 必须补 `events: []`（回落进程级默认模式）与顶层 `id`。
+**受限工具采用的前置条件（facade 缺口）**：grep/glob 只读 `header.cwd`/`header.id`，当前 facade 足够。tool-fs 的 write/edit 与 tool-bash 每次调用都走 `sandbox-policy.resolve()`，它折叠 `session.events`（遍历找 `sandbox/mode` 覆盖，缺省回落进程级默认模式）。真 dsh Session 的 events 恒为数组（未播种也是 `[]`），因此 adapter 喂 `session.events: []` 是防御性补全而非必须；`session.id` 只喂 spill/日志，临时目录隔离键实为 `header.cwd`（§4.9 实证）。采用这些工具前，facade 补 `events: []` 即可。
 
-#### 3.2.3 fs-search 采用现状（P2 首批落地）
+#### 3.2.3 工具采用现状（2026-08-26 盘点后修订）
 
-- **grep/glob 已在工具容器完整可用**：内联 cap（250 匹配）内直接返回；超 cap 的结果 spill 到 `$TMPDIR/dsh-spill-*/session-<hash>/` 并返回恢复指示，spill 文件完整保存全部匹配。
+**已落地：fs-search（grep/glob）**：
+
+- **grep / glob 已在工具容器完整可用**：内联 cap（250 匹配）内直接返回；超 cap 的结果 spill 到 `$TMPDIR/dsh-spill-*/session-<hash>/` 并返回恢复指示，spill 文件完整保存全部匹配。
 - **adapter 映射白名单**：`.wopal/plugins/dsh-adapter` 配置 `tools: [{source: grep, target: grep}, {source: glob, target: glob}]`。同名 target 覆盖 ellamaka 内置工具；容器缺失时 adapter 挂 0 个工具，内置工具原样可用。
 - **schema 投影**：adapter 把 dsh 的 JSON Schema 文档解包为 ZodRawShape（插件 SDK 契约），registry 走 zod 路径生成正确的扁平 schema；不支持的类型降级 `z.unknown()`，dsh schema 扩展不会破坏投影。
 - **调用日志**：adapter 经容器 logger 记录每次调用（成功 `tool call`、失败 `tool call failed`，携带 tool/sessionID/callID），落入 dsh-plugins.log。
-- **验证记录**：adapter 单测 10 项；dsh-web 集成测试含"工具容器 profile 完整执行 + 零 session 断言"；端到端证明 web 容器 + 工具容器并存、UI 完整、spill 完整、容器 `sessions.list()` 恒为空。
+- **验证记录**：adapter 单测 10 项；dsh-web 集成测试含"工具容器 profile 完整执行 + 零 session 断言"；端到端证明 web 容器 + 工具容器并存、UI 完整、spill 完整、容器 `sessions()` 恒为空。
+
+**盘点结论（2026-08-26 源码实证，见 §4.9）**：工具容器拟采用的能力分为三类依赖面——纯形状（A）、语义事件（B）、语义写（C）。**没有任何工具需要深 agent-loop（D）**。据此确立"先 A 后 B"两阶段路径（§3.2.4）。
+
+#### 3.2.4 工具采用双阶段（先 A 后 B）
+
+**阶段 A（工具在沙箱内运行）**：让 tool-fs / str_replace / tool-bash 在**沙箱后端**下完整运行。容器装配 **`fs-sandbox` / `bash-sandbox`**，`ctx.fs.sandboxMode` / `ctx.shell.sandboxMode` 有值，`sandboxPolicy.resolve()` 正常参与执行链并折叠模式覆盖。**采用 dsh 工具的核心动机就是沙箱能力**——ellamaka 现有文件/命令工具完全无沙箱，A 阶段若用非沙箱后端等于白接。adapter 喂最小 session 形状：`session.header.cwd` + `session.header.id` + `session.events: []`（回落进程级默认模式）。此阶段验证沙箱底座可用（受限读写、read-first 门禁、模式决议生效），**不引入审批流与策略层**——`approval`/`jobs` 均非硬依赖（`ctx.get` 降级，见 §4.9）。
+
+**阶段 B（待定）**：不接管 dsh 权限体系。dsh 的 approval/permission-presets 为 dsh 自身 UI 闭环服务，接管它等于拆掉 ellamaka 权限系统，成本极高、收益为零（工具替换定位下）。已记录大体思路（§3.2.5），核心小决策是"沙箱拒绝后模型主动申请更宽模式（escalation）的审批，要不要桥接到 ellamaka 的 ask"。随后期细化评估可行性，不可行则放弃。
+
+**现状**：grep/glob（纯形状 A）已落地；tool-fs / str_replace / tool-bash 的 A 阶段（沙箱内运行）待实施；B 阶段待定。
+
+#### 3.2.5 权限思路（B 阶段待定，只记录不做决策）
+
+**权限继续走 ellamaka 原生体系，沙箱只当执行底座**——两者不是冲突：
+- ellamaka Permission 回答"允不允许调这个工具/这个路径"（审批层，规则引擎 + 用户确认）
+- dsh 沙箱回答"写入限在 workspace 内"（执行层，内核强制）
+
+**留给后期的唯一小决策：escalation 桥接**。dsh 的模型在写入被沙箱拒绝后，可主动回填 `sandbox_permissions` + `justification` 申请一次更宽模式，该申请需经 dsh approval 服务审批。两个候选：
+1. **桥接**：把 dsh escalation 审批接到 ellamaka 的 ask（approveEscalation 通道 → Permission.ask）。可用但需专用桥。
+2. **不做**：模型被拒后由用户从 UI 切模式（settings.jsonc 三模式），再重试。零成本。
+
+若完全不可行或成本太高则放弃，不影响阶段 A 的沙箱能力。相关对照（仅存档）：
+
+| | ellamaka 原生 Permission | dsh 权限体系 |
+|---|---|---|
+| 模型 | 规则引擎（permission + pattern + action） | 模式旋钮（sandbox-mode + approval-policy） |
+| 粒度 | 细（按工具+路径模式） | 粗（会话级模式）+ 审批兜底 |
+| 状态存哪 | SQLite 规则表 | session events 日志 |
+| 执行点 | 工具调用前检查 | 能力执行时由沙箱后端强制 |
 
 #### 3.2.4 wopal-plugin 边界（暂不迁移）
 
@@ -223,6 +255,8 @@ wopal-plugin 是 ellamaka 的原生集成层。它继续拥有规则与记忆注
 ### 4.1 深耦合包不可桥接（C2）
 
 session-query / schedule / subagent / system prompt 注入等能力依赖 dsh 自家 loop/session 语义的引擎层（事件日志语料重放、agent.send 唤醒通道、子会话模型）。契约桥只能翻译接口层形状，翻译不了引擎层语义。这些能力的获取路径是**原生复刻**（机制设计可剥离，包与数据模型不可复用）。
+
+> **重要区分（2026-08-26 盘点实证）**：上述"深耦合"指**引擎能力包**（session-query、schedule、subagent 等）。**工具插件（tool-fs、tool-bash、tool-fs-search 等）不在深耦合之列**——它们是叶子工具，只消费 session 的浅层形状（header.cwd / header.id / events 折叠），不依赖 agent-loop 语义。见 §4.9 消费面盘点。
 
 ### 4.2 工具管道设计（ctx.tools）
 
@@ -258,11 +292,63 @@ dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDsh
 - **B 类 — 能力插件**：新能力天然是插件形态（工具、后台服务）。自研实现 + 自持契约封装，底层接 ellamaka Storage/Bus。
 - **C 类 — 现状增强**：ellamaka 已有对应能力，仅缺 dsh 的某个精妙语义。将语义 diff 移植进现有实现。
 
-### 4.8 工具选型
+### 4.8 工具选型（2026-08-26 盘点后修订）
 
-- **优先直接采用**：`fs-search`（替换原生 glob/grep，消除运行时下载问题）、`fs-observation-policy`（先读后写门禁，纯增量）。
-- **保留 ellamaka 原生实现**：`edit`、`read/write` 和 `wopal_task_*`。它们的现有语义或宿主集成更重要。
-- **逐项评估**：`bash`、ask-user、jobs、goal、schedule、session-query、terminal。只有可用通用工具契约低成本接入时才进入采用清单。
+- **优先直接采用（阶段 A，沙箱内运行）**：`fs-search`（grep/glob，已落地）、`tool-fs`（read/write/edit）、`tool-str-replace-editor`（绝对路径，更简单）。阶段 A 容器装配 `fs-sandbox`，让这些工具在沙箱底座下运行。
+- **阶段 A 评估**：`tool-bash`（配 `bash-sandbox`；要 `ctx.shell`+`shellEnv` 服务，`approval`/`jobs` 均非硬依赖，见 §4.9）。
+- **阶段 B（待定）**：escalation 审批桥接（模型申请更宽模式接不接 ellamaka ask），随后期细化（§3.2.5）。
+- **保留 ellamaka 原生实现**：`edit`、`read/write` 和 `wopal_task_*`。现有语义或宿主集成更重要。
+- **需原生复刻（深耦合）**：session-query、schedule、subagent 等引擎能力包（§4.1）。
+
+### 4.9 工具消费面盘点（2026-08-26 源码实证）
+
+对工具容器拟采用的全部能力做源码级盘点（`labs/ref-repos/deepseek-harness`）。核心结论：**工具插件的 session/agent 依赖是浅层的，无一个需要深 agent-loop（D 类）**。分三类：
+
+- **A 纯形状**：只读 `header.cwd` / `header.id` 标量，无事件折叠、无持久化追加。adapter 喂这两个字段即可。
+  - `tool-fs-search`（grep/glob）、`tool-bash-persistent`（还要求一个持有 agent 的 owner）、`spill-policy`。
+- **B 语义事件**：折叠 `session.events`（经 `sandboxPolicy.resolve()` 读 `sandbox/mode` 覆盖）。工具在沙箱后端下运行时 `sandboxMode` 有值，`resolve()` 折叠 `events` 中缺省的模式覆盖、回落进程级默认模式。
+  - `tool-fs`（write/edit）、`tool-str-replace-editor`、`tool-bash`。
+- **C 语义写**：写持久事件（`fs/observed`）或依赖 `fs/write-intent` / `fs/edit-intent` 瀑布。
+  - `tool-fs`、`tool-str-replace-editor`（emit `fs/observed`）；`fs-observation-policy`（消费观察状态）。
+
+**关键纠正（相对旧认知）**：
+- **`session.events` 缺失不会 TypeError**：真 dsh Session 的 events 恒为数组（未播种也是 `[]`）。旧"缺 events → TypeError"的说法不成立；适配器喂 `events: []` 即可，是防御性而非必须。
+- **`session.id` 不是临时目录隔离键**：隔离键是 `header.cwd`（缺了回落 `process.cwd()`），`id` 只喂 spill/日志，缺了无害。
+- **工具无 D 类**：所有工具插件都是叶子，无模型调用、无重放。唯一"要活 agent"的是 `tool-bash-persistent`（owner 前提），但那是 `exec.agent` 存在性要求，不是 agent-loop 语义。
+
+**服务依赖**（哪些真必需、哪些仅可选检查）：
+
+| 服务 | 真必需 | 仅可选检查 |
+|---|---|---|
+| `tools` | 全部工具（registry） | — |
+| `fs` | tool-fs、str-replace-editor | — |
+| `shell` | tool-bash | — |
+| `shellEnv` | **tool-bash 唯一硬依赖**（declared inject） | — |
+| `systemPrompt` | tool-fs、tool-fs-search、tool-bash | sandbox-policy（context section） |
+| `subprocess` | tool-fs-search | — |
+| `terminals` | tool-bash-persistent | — |
+| `sandboxPolicy` | 工具在沙箱内运行的决议组件（tool-fs/tool-bash/str-replace）——**阶段 A 装配沙箱后端即可用**；阶段 B 待定 | — |
+| `approval` | **无任何工具无条件需要**；仅沙箱 escalation 路径 `ctx.get` | tool-fs、tool-bash |
+| `jobs` | 无；仅 `run_in_background` 启用且使用 | tool-bash |
+| `spillStore` | 无；处处 `ctx.get` 降级 | tool-fs-search、spill-policy |
+
+**结论**：阶段 A 的最小可行 session 形状 = `header.cwd` + `header.id` + `events: []`，容器装配 **`fs-sandbox` / `bash-sandbox` 沙箱后端**让工具在沙箱内运行（`sandboxPolicy.resolve()` 折叠 `events` 里缺省的模式覆盖、回落进程级默认模式）；`approval`/`jobs`/`spillStore` 均非硬依赖（`ctx.get` 降级）。阶段 B 待定（§3.2.5）。
+
+### 4.10 沙箱可用性实测（2026-08-26，前置验证）
+
+macOS Seatbelt 沙箱**已实测可用**（`.wopal-space/.tmp` 下用 dsh 同款 profile 验证）：probe exit 0；`read-only` 拒写；`workspace-write` 工作区内可写、工作区外拒写；bun 环境（ellamaka dev 运行时）spawn `sandbox-exec` 正常。
+
+三平台 runner 链（源码实证，`@deepseek-ai/dsh-sandbox-local`）：
+
+| 平台 | 机制 | 依赖 | 强制完整度 |
+|---|---|---|---|
+| macOS | Seatbelt（`sandbox-exec`，系统自带） | 无 | full |
+| Linux | bwrap（bubblewrap）优先，回退 Landlock（内核特性，自带 native launcher） | bwrap 需安装 | full（老内核 ABI 自报 partial） |
+| Windows | ACL restricted-token runner（受限令牌） | 自带 `process.execPath` 跑 runner | partial（Everyone 组保留、NTFS 硬链接别名两个已知缺口） |
+
+探测失败即拒绝执行（`SANDBOX_UNAVAILABLE`），不裸奔。
+
+**沙箱模式配置来源（决定）**：不用 `DSH_PERMISSION_MODE` 环境变量。空间级 `.wopal/config/settings.jsonc`（+ `settings.local.jsonc`）配置 dsh 沙箱模式，adapter 每次调用按该空间配置注入 `sandbox/mode` 事件到伪 session 的 events fold。容器进程级默认值仅兜底。UI 三模式切换 = 写空间 settings；`danger-full-access` 即"关闭沙箱"。
 
 ## 5. 当前约定（双人确认制，无红线）
 
@@ -283,12 +369,14 @@ dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDsh
 
 | 批次 | 内容 | 核心度 | 状态 |
 |------|------|--------|------|
-| P1 | 插件生态融合验证：dsh 插件在 ellamaka 容器内完整运行、动态装载 | 核心 | ✅ 接线完成 |
-| P2 | 工具利用：fs-search（grep/glob）经工具容器 + adapter 落地；逐项采用继续 | 核心 | 🔶 当前重点（fs-search 已落地，工具容器 + adapter 机制搭就） |
-| P3 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | ⬜ |
-| P4 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | ⬜ |
-| P5 | 界面演进：iframe → 原生（远期） | 外围 | ⬜ |
-| P6 | desktop 依赖安装：打包版首次启动自动安装 dsh 包到 `$WOPAL_HOME/ellamaka/cache`（见 §2.2） | 外围 | ⬜ |
+| P1 | 插件生态融合验证：dsh 插件在 ellamaka 容器内完整运行、动态装载 | 核心 | ✅ 完成 |
+| P2 | 工具利用：fs-search（grep/glob）经工具容器 + adapter 落地 | 核心 | ✅ grep/glob 已落地 |
+| P3 | **阶段 A 扩展**：tool-fs / str_replace / tool-bash 沙箱内运行（`fs-sandbox` / `bash-sandbox` 后端） | 核心 | ⬜ 当前重点 |
+| P4 | **阶段 B（待定）**：escalation 审批桥接思路细化（§3.2.5） | 核心 | ⏸ 待定 |
+| P5 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | ⬜ |
+| P6 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | ⬜ |
+| P7 | 界面演进：iframe → 原生（远期） | 外围 | ⬜ |
+| P8 | desktop 依赖安装：打包版首次启动自动安装 dsh 包到 `$WOPAL_HOME/ellamaka/cache`（见 §2.2） | 外围 | ⬜ |
 
 详细任务分解见 `PLAN-TODOS.md`。
 
