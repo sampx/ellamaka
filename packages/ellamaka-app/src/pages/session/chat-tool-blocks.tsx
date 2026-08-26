@@ -2,7 +2,6 @@ import { createMemo, createSignal, Show, type Component, type JSX } from "solid-
 import type { AssistantMessage, ToolPart } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { getFilename } from "@opencode-ai/core/util/path"
 import { agentColor } from "@/utils/agent"
 import { agentDisplayName } from "./chat-render.utils"
 import { chatExpansionState } from "./chat-expansion-state"
@@ -127,7 +126,7 @@ export function ContextToolBlock(props: { part: ToolPart; message: AssistantMess
     const filePath = typeof i.filePath === "string" ? i.filePath : undefined
     const pattern = typeof i.pattern === "string" ? i.pattern : undefined
     const path = typeof i.path === "string" ? i.path : undefined
-    return filePath ? getFilename(filePath) : pattern ?? path
+    return filePath ?? pattern ?? path
   })
   const output = createMemo(() => {
     const s = props.part.state
@@ -320,7 +319,7 @@ export function FileChangeBlock(props: {
 
   const subtitle = createMemo(() => {
     const fp = filePath()
-    if (fp) return getFilename(fp)
+    if (fp) return fp
     if (props.part.tool === "apply_patch") {
       const files = Array.isArray(metadata().files) ? (metadata().files as unknown[]) : []
       if (files.length > 0) return `${files.length} files`
@@ -440,9 +439,10 @@ const GENERIC_LABEL_KEYS = ["command", "action", "description", "query", "url", 
 
 function genericToolSubtitle(input: Record<string, unknown> | undefined): string {
   if (!input) return ""
+  const parts: string[] = []
   for (const key of GENERIC_LABEL_KEYS) {
     const value = input[key]
-    if (typeof value === "string" && value.trim()) return value.trim()
+    if (typeof value === "string" && value.trim()) parts.push(value.trim())
   }
   const skip = new Set(GENERIC_LABEL_KEYS)
   const args = Object.entries(input)
@@ -454,7 +454,7 @@ function genericToolSubtitle(input: Record<string, unknown> | undefined): string
       return []
     })
     .slice(0, 3)
-  return args.join(" ")
+  return [...parts, ...args].join(" ")
 }
 
 export function GenericToolBlock(props: { part: ToolPart; message: AssistantMessage }) {

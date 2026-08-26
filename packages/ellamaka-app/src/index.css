@@ -672,6 +672,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-trigger"] {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   max-width: 100%;
@@ -715,6 +716,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 /* Non-expandable info bar for read tools - same look as the header, no interaction */
 [data-slot="chat-context-info-bar"] {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-height: 30px;
@@ -742,10 +744,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   min-width: 0;
   flex: 0 1 auto;
   font-size: var(--font-size-small);
+  font-weight: 400;
   color: var(--text-weak);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 [data-slot="chat-tool-title"] + [data-slot="chat-tool-subtitle"]::before {
