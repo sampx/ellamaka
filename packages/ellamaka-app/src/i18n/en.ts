@@ -752,7 +752,7 @@ export const dict = {
   "settings.general.row.language.description": "Change the display language for Ellamaka",
   "settings.general.row.shell.title": "Terminal Shell",
   "settings.general.row.shell.description":
-    "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls.",
+    "Choose the shell used for your terminal. Compatible shells are also used for agent tool calls. Changing this reloads the global config and interrupts running sessions.",
   "settings.general.row.shell.autoDefault": "Auto (Default)",
   "settings.general.row.shell.terminalOnly": "terminal only",
   "settings.general.row.appearance.title": "Appearance",

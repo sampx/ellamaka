@@ -640,6 +640,11 @@ export const dict = {
   "settings.general.row.language.description": "更改 Ellamaka 的显示语言",
   "settings.general.row.appearance.title": "外观",
   "settings.general.row.appearance.description": "自定义 Ellamaka 在你的设备上的外观",
+  "settings.general.row.shell.title": "终端 Shell",
+  "settings.general.row.shell.description":
+    "选择终端使用的 shell，兼容的 shell 也会用于 agent 工具调用。更改此配置会全局重载配置并中断当前会话。",
+  "settings.general.row.shell.autoDefault": "自动（默认）",
+  "settings.general.row.shell.terminalOnly": "仅终端",
   "settings.general.row.colorScheme.title": "配色方案",
   "settings.general.row.colorScheme.description": "选择 Ellamaka 跟随系统、浅色或深色主题",
   "settings.general.row.theme.title": "主题",

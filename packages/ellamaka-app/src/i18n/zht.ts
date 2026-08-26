@@ -626,6 +626,11 @@ export const dict = {
   "settings.general.row.language.description": "變更 OpenCode 的顯示語言",
   "settings.general.row.appearance.title": "外觀",
   "settings.general.row.appearance.description": "自訂 OpenCode 在你的裝置上的外觀",
+  "settings.general.row.shell.title": "終端 Shell",
+  "settings.general.row.shell.description":
+    "選擇終端使用的 shell，相容的 shell 也會用於 agent 工具呼叫。變更此設定會全域重載設定並中斷目前工作階段。",
+  "settings.general.row.shell.autoDefault": "自動（預設）",
+  "settings.general.row.shell.terminalOnly": "僅終端",
   "settings.general.row.colorScheme.title": "配色方案",
   "settings.general.row.colorScheme.description": "選擇 OpenCode 要跟隨系統、淺色或深色主題",
   "settings.general.row.theme.title": "主題",

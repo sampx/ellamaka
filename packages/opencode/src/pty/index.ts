@@ -228,6 +228,7 @@ export const makeLayer = (graceMs: number = DEFAULT_GRACE_MS) =>
         ...input.env,
         ...shell.env,
         TERM: "xterm-256color",
+        COLORTERM: "truecolor",
         OPENCODE_TERMINAL: "1",
       } as Record<string, string>
 

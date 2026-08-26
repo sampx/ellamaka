@@ -605,6 +605,76 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+it.instance(
+  "loop entry finalizes an orphaned assistant without finish (error + completed)",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const seeded = yield* seed(chat.id)
+      yield* llm.text("world")
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const orphan = [...MessageV2.stream(chat.id)].find((m) => m.info.id === seeded.assistant.id)
+      expect(orphan?.info.role).toBe("assistant")
+      if (orphan?.info.role === "assistant") {
+        expect(typeof orphan.info.time.completed).toBe("number")
+        expect(orphan.info.error).toBeDefined()
+        expect(orphan.info.error?.name).toBe("MessageAbortedError")
+      }
+    }),
+)
+
+noLLMServer.instance(
+  "loop entry finalizes an orphaned assistant with finish (completed only)",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      const seeded = yield* seed(chat.id, { finish: "stop" })
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const orphan = [...MessageV2.stream(chat.id)].find((m) => m.info.id === seeded.assistant.id)
+      expect(orphan?.info.role).toBe("assistant")
+      if (orphan?.info.role === "assistant") {
+        expect(typeof orphan.info.time.completed).toBe("number")
+        expect(orphan.info.error).toBeUndefined()
+      }
+    }),
+  { config: cfg },
+)
+
+noLLMServer.instance(
+  "loop entry leaves fully-completed assistants untouched",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      const seeded = yield* seed(chat.id, { finish: "stop" })
+      const completed = Date.now()
+      yield* sessions.updateMessage({ ...seeded.assistant, time: { ...seeded.assistant.time, completed } })
+
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const orphan = [...MessageV2.stream(chat.id)].find((m) => m.info.id === seeded.assistant.id)
+      expect(orphan?.info.role).toBe("assistant")
+      if (orphan?.info.role === "assistant") {
+        expect(orphan.info.time.completed).toBe(completed)
+        expect(orphan.info.error).toBeUndefined()
+      }
+    }),
+  { config: cfg },
+)
+
 noLLMServer.instance(
   "prompt emits v2 prompted and synthetic events",
   () =>
