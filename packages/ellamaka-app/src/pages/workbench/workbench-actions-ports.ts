@@ -1,5 +1,6 @@
 import { ptyManager, ptyReferences } from "./pty-manager"
 import { scopePath, scopeName } from "./workbench-scope"
+import { uuid } from "@/utils/uuid"
 import type {
   WorkbenchActionPtyPort,
   WorkbenchActionSessionPort,
@@ -133,7 +134,7 @@ export function buildSessionPort(
             ? panel.directory.slice(scope.path.length + 1)
             : undefined,
         }
-      const result = await client.workbench.createSession({ requestID: crypto.randomUUID(), target })
+      const result = await client.workbench.createSession({ requestID: uuid(), target })
       if (!result.data?.id) throw new Error("Session creation returned no session id")
       const createdAt = typeof result.data.timeCreated === "number" ? result.data.timeCreated : Date.now()
       return {
