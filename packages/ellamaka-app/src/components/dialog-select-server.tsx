@@ -8,7 +8,7 @@ import { List } from "@opencode-ai/ui/list"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { useMutation } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createResource, onCleanup, Show } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
@@ -16,6 +16,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
+import { serverSwitchRedirect } from "@/utils/server-switch-route"
 
 const DEFAULT_USERNAME = "opencode"
 
@@ -172,6 +173,7 @@ function ServerForm(props: ServerFormProps) {
 }
 
 export function DialogSelectServer() {
+  const location = useLocation()
   const navigate = useNavigate()
   const dialog = useDialog()
   const server = useServer()
@@ -354,10 +356,12 @@ export function DialogSelectServer() {
     dialog.close()
     if (persist && conn.type === "http") {
       server.add(conn)
-      navigate("/")
+      const redirect = serverSwitchRedirect(location.pathname)
+      if (redirect) navigate(redirect)
       return
     }
-    navigate("/")
+    const redirect = serverSwitchRedirect(location.pathname)
+    if (redirect) navigate(redirect)
     queueMicrotask(() => server.setActive(ServerConnection.key(conn)))
   }
 

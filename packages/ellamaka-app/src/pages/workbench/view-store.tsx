@@ -12,6 +12,8 @@ import {
 import { scopeFromTab, type SpaceScope } from "./workbench-scope"
 import { selectActiveWorkbenchContext } from "./active-workbench-context"
 import type { BoundWorkbenchPanel } from "./workbench-actions"
+import { useServer } from "@/context/server"
+import { LEGACY_WORKBENCH_STORAGE_NAME, prepareWorkbenchStorage } from "./workbench-storage"
 
 export {
   DISPLAY_DEFAULTS,
@@ -52,15 +54,18 @@ export function watchWorkbenchPersistence(
   })
 }
 
-export function initWorkbenchState() {
+export function initWorkbenchState(
+  storageName = LEGACY_WORKBENCH_STORAGE_NAME,
+  storage = typeof window !== "undefined" ? window.localStorage : undefined,
+) {
   const workbench = createWorkbenchStore()
   const [hydrated, setHydrated] = createSignal(false)
 
   const [persisted, setPersisted] = makePersisted(
       createStore<PersistedWorkbench>(clonePersistedWorkbench(PERSISTED_DEFAULTS)),
       {
-        name: "workbench",
-        storage: typeof window !== "undefined" ? window.localStorage : undefined,
+        name: storageName,
+        storage,
       },
     )
 
@@ -103,6 +108,7 @@ export function initWorkbenchState() {
       window.addEventListener("visibilitychange", handleVisibility)
       window.addEventListener("pagehide", handlePageHide)
       onCleanup(() => {
+        syncToPersisted()
         window.removeEventListener("visibilitychange", handleVisibility)
         window.removeEventListener("pagehide", handlePageHide)
         if (saveTimer) clearTimeout(saveTimer)
@@ -301,7 +307,11 @@ export function initWorkbenchState() {
 
 const WorkbenchStateContext = createSimpleContext({
   name: "WorkbenchState",
-  init: initWorkbenchState,
+  init: () => {
+    const server = useServer()
+    const storage = typeof window !== "undefined" ? window.localStorage : undefined
+    return initWorkbenchState(prepareWorkbenchStorage(storage, server.current), storage)
+  },
 })
 
 export const useWorkbenchState = () => WorkbenchStateContext.use()
