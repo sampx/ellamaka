@@ -597,12 +597,14 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 [data-slot="chat-reasoning-trigger"] {
-  display: flex;
+  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  width: calc(100% + 12px);
-  min-height: 30px;
-  margin-inline: -6px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 3px 6px;
   font-size: var(--font-size-base);
   font-weight: 500;
   color: var(--text-weak);
@@ -610,7 +612,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  padding: 4px 6px;
+  text-align: left;
   outline: none;
   transition: background-color 150ms ease, color 150ms ease;
 }
@@ -636,18 +638,6 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-/* Only the live preview is height-limited. A completed thought that the user
-   explicitly expands must never clip its last line against the next part. */
-[data-component="chat-reasoning"][data-streaming] [data-slot="chat-reasoning-content"] {
-  max-height: 120px;
-  overflow: auto;
-
-  /* Keep scrolling inside the streaming preview: scroll chains must not move
-     the outer chat scroller (the region opts in via data-scrollable so the
-     outer auto-follow ignores wheel events inside it). */
-  overscroll-behavior: contain;
 }
 
 [data-component="chat-context-tool"],

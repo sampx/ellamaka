@@ -374,49 +374,18 @@ describe("ReasoningBlock", () => {
     remountedHost.remove()
   })
 
-  test("marks the streaming content as a nested scrollable region", () => {
-    const running = assistantMessage("a-scrollable", "u-scrollable", { time: { created: 2000 } })
-    const part = reasoningPart("r-scrollable", "a-scrollable", "thinking")
+  test("renders the thinking text as a natural-height block", () => {
+    const running = assistantMessage("a-natural", "u-natural", { time: { created: 2000 } })
+    const [part, setPart] = createStore(reasoningPart("r-natural", "a-natural", "line 1") as Extract<Part, { type: "reasoning" }>)
     const host = mount(() => <ReasoningBlock part={part} message={running} />)
     const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
     expect(content).not.toBeNull()
-    expect(content.hasAttribute("data-scrollable")).toBe(true)
-    host.remove()
-  })
-
-  test("follows the latest streaming output while running", () => {
-    const running = assistantMessage("a-follow", "u-follow", { time: { created: 2000 } })
-    const [part, setPart] = createStore(reasoningPart("r-follow", "a-follow", "line 1") as Extract<Part, { type: "reasoning" }>)
-    const host = mount(() => <ReasoningBlock part={part} message={running} />)
-    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
-    expect(content).not.toBeNull()
-    Object.defineProperty(content, "scrollHeight", { configurable: true, get: () => 500 })
-    Object.defineProperty(content, "clientHeight", { configurable: true, get: () => 120 })
-    setPart("text", "line 1\nline 2")
-    expect(content.scrollTop).toBe(500)
-    host.remove()
-  })
-
-  test("stops following after the user scrolls away and resumes near the bottom", () => {
-    const running = assistantMessage("a-pause", "u-pause", { time: { created: 2000 } })
-    const [part, setPart] = createStore(reasoningPart("r-pause", "a-pause", "line 1") as Extract<Part, { type: "reasoning" }>)
-    const host = mount(() => <ReasoningBlock part={part} message={running} />)
-    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
-    expect(content).not.toBeNull()
-    Object.defineProperty(content, "scrollHeight", { configurable: true, get: () => 500 })
-    Object.defineProperty(content, "clientHeight", { configurable: true, get: () => 120 })
-
-    // User scrolls away from the bottom: follow mode pauses.
-    content.scrollTop = 0
-    content.dispatchEvent(new Event("scroll"))
-    setPart("text", "line 1\nline 2")
-    expect(content.scrollTop).toBe(0)
-
-    // User scrolls back near the bottom: follow mode resumes.
-    content.scrollTop = 500
-    content.dispatchEvent(new Event("scroll"))
+    // Streaming preview is no longer its own nested scroll region — it grows
+    // naturally with the content and the outer chat auto-follow owns scrolling.
+    expect(content.hasAttribute("data-scrollable")).toBe(false)
+    expect(content.textContent).toContain("line 1")
     setPart("text", "line 1\nline 2\nline 3")
-    expect(content.scrollTop).toBe(500)
+    expect(content.textContent).toContain("line 3")
     host.remove()
   })
 })
