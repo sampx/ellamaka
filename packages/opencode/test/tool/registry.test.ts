@@ -118,6 +118,24 @@ function providerPluginLayer(supply: { current: Record<string, unknown> }) {
   )
 }
 
+// Fake Plugin.Service whose `tool.provider` hook always throws. Used to prove
+// a throwing provider degrades to the static tool set instead of breaking the
+// model request. Mirrors the real `Plugin.trigger`, which wraps each hook call
+// in `Effect.promise`, so a throwing hook surfaces as a recoverable error.
+const throwingProviderLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((name: unknown, _input: unknown, _output: unknown) =>
+      name === "tool.provider"
+        ? Effect.promise(async () => {
+            throw new Error("provider boom")
+          })
+        : Effect.succeed({})) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([]),
+  }),
+)
+
 const dynamicTool = (description: string) => ({
   description,
   args: {},
@@ -130,6 +148,9 @@ const scout = testEffect(
 )
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
+)
+const withThrowingProvider = testEffect(
+  Layer.mergeAll(registryLayer({ plugin: throwingProviderLayer }), node, Agent.defaultLayer),
 )
 
 afterEach(async () => {
@@ -690,12 +711,82 @@ describe("tool.registry", () => {
       }),
     )
 
-    it.instance("unchanged tool set produces byte-identical output across requests", () =>
+    // W-02: lock the D-02 ordering mechanics. A same-name dynamic tool keeps
+    // the static base's original position; brand-new ids are appended in
+    // `localeCompare` sorted order after the (possibly overridden) base.
+    withProvider.instance("orders merged ids: same-name keeps base position, new ids appended sorted", () =>
       Effect.gen(function* () {
         const registry = yield* ToolRegistry.Service
+        // Baseline filtered base order (no dynamic tools supplied).
+        supply.current = {}
+        const base = (yield* toolsFor(registry)).map((t) => t.id)
+        const grepIdx = base.indexOf("grep")
+        expect(grepIdx).toBeGreaterThanOrEqual(0)
+
+        // Override an existing builtin (grep) and add three brand-new ids out
+        // of sorted order to prove append-then-sort.
+        supply.current = {
+          zzz_tool: dynamicTool("z"),
+          grep: { description: "dynamic grep", args: {}, execute: async () => "dynamic grep" },
+          aaa_tool: dynamicTool("a"),
+          mmm_tool: dynamicTool("m"),
+        }
+        const tools = yield* toolsFor(registry)
+        const ids = tools.map((t) => t.id)
+
+        // Same-name override keeps grep at its base position; base order intact.
+        expect(ids.slice(0, base.length)).toEqual(base)
+        // New ids appended in localeCompare order after the base.
+        expect(ids.slice(base.length)).toEqual(["aaa_tool", "mmm_tool", "zzz_tool"])
+        // grep is the dynamic version at its original position.
+        const grepTool = tools[grepIdx]
+        expect(grepTool.id).toBe("grep")
+        const out = yield* grepTool.execute(
+          {},
+          {
+            sessionID: SessionID.make("ses_test"),
+            messageID: MessageID.make("msg_test"),
+            agent: "build",
+            abort: new AbortController().signal,
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          } satisfies Tool.Context,
+        )
+        expect(out.output).toBe("dynamic grep")
+      }),
+    )
+
+    // W-01: byte stability must run through the dynamic provider path, with a
+    // fixed collection containing both a same-name override and new ids.
+    withProvider.instance("unchanged dynamic tool set produces byte-identical output across requests", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        supply.current = {
+          grep: { description: "dynamic grep", args: {}, execute: async () => "dynamic grep" },
+          custom_probe: dynamicTool("a dynamic probe tool"),
+        }
         const first = yield* toolsFor(registry)
         const second = yield* toolsFor(registry)
         expect(JSON.stringify(first)).toBe(JSON.stringify(second))
+      }),
+    )
+
+    // B-01: a throwing provider must degrade to the static set, not break the
+    // model request. Compare against the base produced by a provider that
+    // supplies nothing (empty supply) — a throwing provider must yield the
+    // exact same static set.
+    withThrowingProvider.instance("throwing provider degrades to static tool set", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const tools = yield* toolsFor(registry)
+        const ids = tools.map((t) => t.id)
+        // Static builtin surface intact (the throwing provider added nothing).
+        for (const builtin of ["invalid", "bash", "read", "glob", "grep", "write", "edit"]) {
+          expect(ids).toContain(builtin)
+        }
+        // No dynamic tool leaked in.
+        expect(ids).not.toContain("custom_probe")
       }),
     )
   })

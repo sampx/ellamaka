@@ -323,11 +323,18 @@ export const layer: Layer.Layer<
       // dsh mounts/unmounts) can change the tool set in real time. Dynamic
       // definitions win on id collision; new ids are appended in stable order.
       const ctx = yield* InstanceState.context
-      const provided = yield* plugin.trigger(
-        "tool.provider",
-        { providerID: input.providerID, modelID: String(input.modelID) },
-        { tools: {} },
-      )
+      // Error boundary: a throwing `tool.provider` hook must never break the
+      // model request. `Plugin.trigger` runs hooks via `Effect.promise`, so a
+      // throw surfaces as a defect that `Effect.catch` cannot recover; catch
+      // the defect and fall back to the static tool set.
+      const provided = yield* plugin
+        .trigger("tool.provider", { providerID: input.providerID, modelID: String(input.modelID) }, { tools: {} })
+        .pipe(
+          Effect.catchDefect((defect) => {
+            log.warn("tool.provider failed; falling back to static tool set", { error: defect })
+            return Effect.succeed({ tools: {} })
+          }),
+        )
       const dynamic = new Map<string, Tool.Def>()
       for (const [id, def] of Object.entries(provided.tools)) {
         if (!isPluginTool(def)) continue
