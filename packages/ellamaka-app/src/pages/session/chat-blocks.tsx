@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -285,6 +285,25 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage })
     chatExpansionState.set(props.part.sessionID, "reasoning", props.part.id, next)
   }
 
+  // The streaming preview is its own scroll container (height-limited while
+  // data-streaming). Follow the latest output unless the user scrolled away;
+  // scrolling back near the bottom resumes following.
+  let contentEl: HTMLDivElement | undefined
+  const [following, setFollowing] = createSignal(true)
+  const handleContentScroll = () => {
+    const el = contentEl
+    if (!el) return
+    setFollowing(el.scrollHeight - el.clientHeight - el.scrollTop <= 10)
+  }
+  const text = createMemo(() => (props.part.type === "reasoning" ? props.part.text : undefined))
+  createEffect(
+    on(text, () => {
+      const el = contentEl
+      if (!el || !running() || !following()) return
+      el.scrollTop = el.scrollHeight
+    }),
+  )
+
   return (
     <div
       data-component="chat-reasoning"
@@ -296,7 +315,12 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage })
           <Icon name="brain" size="small" />
           <span data-slot="chat-reasoning-label">思考</span>
         </Collapsible.Trigger>
-        <Collapsible.Content data-slot="chat-reasoning-content">
+        <Collapsible.Content
+          data-slot="chat-reasoning-content"
+          data-scrollable=""
+          ref={(el: HTMLDivElement) => (contentEl = el)}
+          onScroll={handleContentScroll}
+        >
           <div data-slot="chat-reasoning-text">{props.part.text}</div>
         </Collapsible.Content>
       </Collapsible>

@@ -636,6 +636,11 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-component="chat-reasoning"][data-streaming] [data-slot="chat-reasoning-content"] {
   max-height: 120px;
   overflow: auto;
+
+  /* Keep scrolling inside the streaming preview: scroll chains must not move
+     the outer chat scroller (the region opts in via data-scrollable so the
+     outer auto-follow ignores wheel events inside it). */
+  overscroll-behavior: contain;
 }
 
 [data-component="chat-context-tool"],

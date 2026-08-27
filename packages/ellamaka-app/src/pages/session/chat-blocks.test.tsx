@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test"
 import { render } from "solid-js/web"
 import h from "solid-js/h"
 import { createComponent, createSignal } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 
@@ -90,7 +91,7 @@ mock.module("@opencode-ai/ui/collapsible", () => ({
           {props.children}
         </button>
       ),
-      Content: (props: { children: JSX.Element }) => <div data-slot="collapsible-content">{props.children}</div>,
+      Content: (props: JSX.HTMLAttributes<HTMLDivElement>) => <div {...props} />,
     },
   ),
 }))
@@ -340,6 +341,52 @@ describe("ReasoningBlock", () => {
     expect(remountedTrigger.getAttribute("aria-expanded")).toBe("true")
     expect(remountedHost.textContent).toContain("persistent thinking")
     remountedHost.remove()
+  })
+
+  test("marks the streaming content as a nested scrollable region", () => {
+    const running = assistantMessage("a-scrollable", "u-scrollable", { time: { created: 2000 } })
+    const part = reasoningPart("r-scrollable", "a-scrollable", "thinking")
+    const host = mount(() => <ReasoningBlock part={part} message={running} />)
+    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
+    expect(content).not.toBeNull()
+    expect(content.hasAttribute("data-scrollable")).toBe(true)
+    host.remove()
+  })
+
+  test("follows the latest streaming output while running", () => {
+    const running = assistantMessage("a-follow", "u-follow", { time: { created: 2000 } })
+    const [part, setPart] = createStore(reasoningPart("r-follow", "a-follow", "line 1") as Extract<Part, { type: "reasoning" }>)
+    const host = mount(() => <ReasoningBlock part={part} message={running} />)
+    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
+    expect(content).not.toBeNull()
+    Object.defineProperty(content, "scrollHeight", { configurable: true, get: () => 500 })
+    Object.defineProperty(content, "clientHeight", { configurable: true, get: () => 120 })
+    setPart("text", "line 1\nline 2")
+    expect(content.scrollTop).toBe(500)
+    host.remove()
+  })
+
+  test("stops following after the user scrolls away and resumes near the bottom", () => {
+    const running = assistantMessage("a-pause", "u-pause", { time: { created: 2000 } })
+    const [part, setPart] = createStore(reasoningPart("r-pause", "a-pause", "line 1") as Extract<Part, { type: "reasoning" }>)
+    const host = mount(() => <ReasoningBlock part={part} message={running} />)
+    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
+    expect(content).not.toBeNull()
+    Object.defineProperty(content, "scrollHeight", { configurable: true, get: () => 500 })
+    Object.defineProperty(content, "clientHeight", { configurable: true, get: () => 120 })
+
+    // User scrolls away from the bottom: follow mode pauses.
+    content.scrollTop = 0
+    content.dispatchEvent(new Event("scroll"))
+    setPart("text", "line 1\nline 2")
+    expect(content.scrollTop).toBe(0)
+
+    // User scrolls back near the bottom: follow mode resumes.
+    content.scrollTop = 500
+    content.dispatchEvent(new Event("scroll"))
+    setPart("text", "line 1\nline 2\nline 3")
+    expect(content.scrollTop).toBe(500)
+    host.remove()
   })
 })
 
