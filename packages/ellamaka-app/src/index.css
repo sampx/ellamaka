@@ -597,10 +597,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 [data-slot="chat-reasoning-trigger"] {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   max-width: 100%;
   min-height: 26px;
@@ -614,7 +614,54 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   cursor: pointer;
   text-align: left;
   outline: none;
+  overflow: hidden;
   transition: background-color 150ms ease, color 150ms ease;
+}
+
+[data-slot="chat-reasoning-header-left"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+[data-slot="chat-reasoning-preview"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+  font-weight: 400;
+  color: var(--text-weaker);
+  scrollbar-width: none;
+}
+
+[data-slot="chat-reasoning-preview"]::-webkit-scrollbar {
+  display: none;
+}
+
+[data-slot="chat-reasoning-preview"]::before {
+  content: "»";
+  margin-right: 6px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-weaker);
+}
+
+[data-slot="chat-reasoning-preview"] span {
+  display: inline-block;
+  vertical-align: bottom;
+}
+
+[data-component="chat-reasoning"][data-streaming] [data-slot="chat-reasoning-preview"] {
+  direction: rtl;
+  text-align: left;
+}
+
+[data-component="chat-reasoning"]:not([data-streaming]) [data-slot="chat-reasoning-preview"] {
+  text-overflow: ellipsis;
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
 }
 
 [data-slot="chat-reasoning-trigger"]:hover {

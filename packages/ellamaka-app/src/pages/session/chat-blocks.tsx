@@ -271,11 +271,14 @@ export function NarrativeBlock(props: {
 
 /**
  * ReasoningBlock renders a collapsible thinking block. It stays expanded while
- * the owning assistant message is running. When the reasoning-summaries
- * preference enables `defaultOpen`, a completed thought also stays expanded;
- * otherwise it collapses to a single-line summary. A manual toggle always wins
- * and is remembered across virtual-list remounts.
+ * the owning assistant message is running (if defaultOpen or running). When
+ * collapsed, it displays a single-line header whose preview always shows the
+ * latest tail of the reasoning stream (a bounded trailing window), so newly
+ * streamed tokens appear immediately and stay pinned at the tail. A manual
+ * toggle always wins and is remembered across virtual-list remounts.
  */
+const REASONING_PREVIEW_MAX = 140
+
 export function ReasoningBlock(props: { part: Part; message: AssistantMessage; defaultOpen?: boolean }) {
   if (props.part.type !== "reasoning") return null
   const running = () => typeof props.message.time.completed !== "number"
@@ -287,6 +290,14 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
     chatExpansionState.set(props.part.sessionID, "reasoning", props.part.id, next)
   }
 
+  // Always a bounded trailing window of the latest reasoning text: the newest
+  // tokens are what the user wants to see, and they stay pinned at the tail.
+  const previewText = createMemo(() => {
+    const raw = props.part.type === "reasoning" ? props.part.text.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim() : ""
+    if (raw.length <= REASONING_PREVIEW_MAX) return raw
+    return `…${raw.slice(-REASONING_PREVIEW_MAX + 1)}`
+  })
+
   return (
     <div
       data-component="chat-reasoning"
@@ -295,8 +306,15 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
     >
       <Collapsible open={open()} onOpenChange={setOpen}>
         <Collapsible.Trigger data-slot="chat-reasoning-trigger" aria-expanded={open()}>
-          <Icon name="brain" size="small" />
-          <span data-slot="chat-reasoning-label">思考</span>
+          <div data-slot="chat-reasoning-header-left">
+            <Icon name="brain" size="small" />
+            <span data-slot="chat-reasoning-label">思考</span>
+          </div>
+          <Show when={!open() && previewText().length > 0}>
+            <div data-slot="chat-reasoning-preview" title={props.part.type === "reasoning" ? props.part.text : ""}>
+              {previewText()}
+            </div>
+          </Show>
         </Collapsible.Trigger>
         <Collapsible.Content data-slot="chat-reasoning-content">
           <div data-slot="chat-reasoning-text">{props.part.text}</div>

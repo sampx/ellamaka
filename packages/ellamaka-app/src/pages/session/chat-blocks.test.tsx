@@ -339,12 +339,30 @@ describe("ReasoningBlock", () => {
     host.remove()
   })
 
-  test("defaults to collapsed after completion when the default is off", () => {
+  test("defaults to collapsed after completion when the default is off and shows the preview tail", () => {
     const completed = assistantMessage("a-default-closed", "u-default-closed")
     const part = reasoningPart("r-default-closed", "a-default-closed", "internal reasoning")
     const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={false} />)
     const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
     expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    const preview = host.querySelector("[data-slot='chat-reasoning-preview']")
+    expect(preview).not.toBeNull()
+    expect(preview?.textContent).toContain("internal reasoning")
+    host.remove()
+  })
+
+  test("collapsed preview pins the latest tail and updates as the stream grows", () => {
+    const running = assistantMessage("a-tail", "u-tail", { time: { created: 2000 } })
+    const longText = "prefix " + "mid ".repeat(50) + "the-latest-thinking"
+    const [part, setPart] = createStore(reasoningPart("r-tail", "a-tail", longText) as Extract<Part, { type: "reasoning" }>)
+    const host = mount(() => <ReasoningBlock part={part} message={running} defaultOpen={false} />)
+    const preview = host.querySelector("[data-slot='chat-reasoning-preview']") as HTMLElement
+    expect(preview).not.toBeNull()
+    expect(preview.textContent).toContain("the-latest-thinking")
+    expect(preview.textContent).not.toContain("prefix")
+
+    setPart("text", longText + " even-more-newer")
+    expect(preview.textContent).toContain("even-more-newer")
     host.remove()
   })
 
