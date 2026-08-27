@@ -457,15 +457,27 @@ describe("InteractionBlock", () => {
 })
 
 describe("ContextToolBlock", () => {
-  test("renders a read tool with file path", () => {
+  test("renders a read tool with a path relativized to the session directory", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "read", "c1", {
-      input: { filePath: "/repo/a.ts" },
+      input: { filePath: "/repo/src/a.ts" },
       output: "file contents",
     })
-    const host = mount(() => <ContextToolBlock part={part} message={a} />)
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
     expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
-    expect(host.textContent).toContain("/repo/a.ts")
+    expect(host.textContent).toContain("src/a.ts")
+    host.remove()
+  })
+
+  test("keeps the full absolute path for read files outside the session directory", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "read", "c1", {
+      input: { filePath: "/outside/repo/a.ts" },
+      output: "file contents",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
+    expect(host.textContent).toContain("/outside/repo/a.ts")
     host.remove()
   })
 
@@ -506,13 +518,27 @@ describe("ContextToolBlock", () => {
       input: { filePath: "/repo/big.md" },
       output: "huge file contents",
     })
-    const host = mount(() => <ContextToolBlock part={part} message={a} />)
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
     expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
     expect(host.querySelector("[data-slot='chat-context-info-bar']")).not.toBeNull()
-    expect(host.textContent).toContain("/repo/big.md")
+    expect(host.textContent).toContain("big.md")
     expect(host.textContent).not.toContain("huge file contents")
     expect(host.querySelector("[data-slot='chat-tool-header']")).toBeNull()
     expect(host.querySelector("[data-slot='collapsible-trigger']")).toBeNull()
+    host.remove()
+  })
+
+  test("exposes the full absolute path of a read file on hover via the title attribute", () => {
+    const a = assistantMessage("a-read-title", "u1")
+    const part = toolPart("t-read-title", "a-read-title", "read", "c-read-title", {
+      input: { filePath: "/repo/deep/nested/big.ts" },
+      output: "file contents",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
+    expect(subtitle).not.toBeNull()
+    expect(subtitle.textContent).toBe("deep/nested/big.ts")
+    expect(subtitle.getAttribute("title")).toBe("/repo/deep/nested/big.ts")
     host.remove()
   })
 
@@ -731,15 +757,18 @@ describe("FileChangeBlock", () => {
   test("renders with the standard ToolBlockHeader and embeds the edit renderer in content", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "edit", "c1", {
-      input: { filePath: "/repo/b.ts" },
-      metadata: { filediff: { file: "/repo/b.ts", additions: 1, deletions: 1 } },
+      input: { filePath: "/repo/src/b.ts" },
+      metadata: { filediff: { file: "/repo/src/b.ts", additions: 1, deletions: 1 } },
     })
-    const host = mount(() => <FileChangeBlock part={part} message={a} editRenderer={OpenCodeMessagePartStub} />)
+    const host = mount(() => (
+      <FileChangeBlock part={part} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
+    ))
     // Outer component uses standard ToolBlockHeader
     const trigger = host.querySelector("[data-slot='chat-tool-trigger']") as HTMLButtonElement
     expect(trigger).not.toBeNull()
     expect(trigger.querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("edit")
-    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("/repo/b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("src/b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBe("/repo/src/b.ts")
     expect(host.querySelector("[data-component='chat-file-change-wrapper']")).not.toBeNull()
     expect(host.querySelector("[data-renderer='opencode-message-part']")).not.toBeNull()
     host.remove()
@@ -775,14 +804,14 @@ describe("FileChangeBlock", () => {
     })
     const host = mount(() => (
       <div>
-        <FileChangeBlock part={write} message={a} editRenderer={OpenCodeMessagePartStub} />
-        <FileChangeBlock part={patch} message={a} editRenderer={OpenCodeMessagePartStub} />
+        <FileChangeBlock part={write} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
+        <FileChangeBlock part={patch} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
       </div>
     ))
     const triggers = host.querySelectorAll("[data-slot='chat-tool-trigger']")
     expect(triggers.length).toBe(2)
     expect(triggers[0].querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("write")
-    expect(triggers[0].querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("/repo/new.ts")
+    expect(triggers[0].querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("new.ts")
     expect(triggers[1].querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("patch")
     expect(host.querySelectorAll("[data-renderer='opencode-message-part']").length).toBe(2)
     expect(host.querySelectorAll("[data-component='chat-file-change-wrapper']").length).toBe(2)

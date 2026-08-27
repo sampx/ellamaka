@@ -380,6 +380,7 @@ function PanelChatInner(props: {
             historyLoading={historyLoading()}
             loadOlder={historyLoader.loadAndReveal}
             scroll={ui.scroll}
+            directory={props.directory}
             showReasoningSummaries={settings.general.showReasoningSummaries()}
             shellToolPartsExpanded={settings.general.shellToolPartsExpanded()}
             editToolPartsExpanded={settings.general.editToolPartsExpanded()}

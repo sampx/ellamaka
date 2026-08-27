@@ -3,7 +3,7 @@ import type { AssistantMessage, ToolPart } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { agentColor } from "@/utils/agent"
-import { agentDisplayName } from "./chat-render.utils"
+import { agentDisplayName, relativizeProjectPath } from "./chat-render.utils"
 import { chatExpansionState } from "./chat-expansion-state"
 
 export type OpenCodeEditRendererProps = {
@@ -42,6 +42,7 @@ function ToolBlockHeader(props: {
   title: string
   titleColor?: string
   subtitle?: string
+  subtitleTitle?: string
   status: string
   open: boolean
   toggle: (event: MouseEvent) => void
@@ -72,7 +73,7 @@ function ToolBlockHeader(props: {
           {props.title}
         </span>
         <Show when={props.subtitle}>
-          <span data-slot="chat-tool-subtitle">{props.subtitle}</span>
+          <span data-slot="chat-tool-subtitle" title={props.subtitleTitle}>{props.subtitle}</span>
         </Show>
         <span data-slot="chat-tool-chevron" aria-hidden="true">
           <Icon name="chevron-down" size="small" />
@@ -119,7 +120,12 @@ function useToolOpen(
  * bar (Kilo Code behavior); list/glob/grep stay collapsible and collapse
  * again once they complete unless the user toggled them.
  */
-export function ContextToolBlock(props: { part: ToolPart; message: AssistantMessage; defaultOpen?: boolean }) {
+export function ContextToolBlock(props: {
+  part: ToolPart
+  message: AssistantMessage
+  defaultOpen?: boolean
+  directory?: string
+}) {
   const input = () => props.part.state.input
   const subtitle = createMemo(() => {
     const i = input()
@@ -135,13 +141,16 @@ export function ContextToolBlock(props: { part: ToolPart; message: AssistantMess
   })
 
   if (props.part.tool === "read") {
+    const i = input() as Record<string, unknown>
+    const rawPath = typeof i.filePath === "string" ? i.filePath : undefined
+    const displayPath = rawPath ? relativizeProjectPath(rawPath, props.directory) : subtitle()
     return (
       <div data-component="chat-context-tool" data-tool="read" data-call-id={props.part.callID}>
         <div data-slot="chat-context-info-bar">
           <Icon name="glasses" size="small" />
           <span data-slot="chat-tool-title">read</span>
           <Show when={subtitle()}>
-            <span data-slot="chat-tool-subtitle">{subtitle()}</span>
+            <span data-slot="chat-tool-subtitle" title={rawPath}>{displayPath}</span>
           </Show>
           <span data-slot="chat-tool-status" data-status={props.part.state.status}>
             {toolStatusLabel(props.part.state.status)}
@@ -285,6 +294,7 @@ export function FileChangeBlock(props: {
   part: ToolPart
   message: AssistantMessage
   defaultOpen?: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
 }) {
   const { open, setOpen } = useToolOpen(
@@ -323,7 +333,7 @@ export function FileChangeBlock(props: {
 
   const subtitle = createMemo(() => {
     const fp = filePath()
-    if (fp) return fp
+    if (fp) return relativizeProjectPath(fp, props.directory)
     if (props.part.tool === "apply_patch") {
       const files = Array.isArray(metadata().files) ? (metadata().files as unknown[]) : []
       if (files.length > 0) return `${files.length} files`
@@ -338,6 +348,7 @@ export function FileChangeBlock(props: {
           icon="code-lines"
           title={title()}
           subtitle={subtitle()}
+          subtitleTitle={filePath()}
           status={props.part.state.status}
           open={open()}
           toggle={(_event: MouseEvent) => setOpen(!open())}

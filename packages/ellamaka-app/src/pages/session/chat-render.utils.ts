@@ -158,6 +158,25 @@ export function cleanSummary(text: string): string {
 }
 
 /**
+ * Returns a display path for a tool argument relative to the session working
+ * directory, mirroring the official timeline's `relativizeProjectPath`. Files
+ * inside the directory render as a relative path; files outside it keep their
+ * full absolute path so the user always sees which file the agent touched.
+ */
+export function relativizeProjectPath(path: string, directory?: string): string {
+  if (!path) return ""
+  if (!directory) return path
+  if (directory === "/" || directory === "\\") return path
+  if (path === directory) return ""
+  const separator = directory.includes("\\") ? "\\" : "/"
+  const prefix = directory.endsWith(separator) ? directory : directory + separator
+  if (!path.startsWith(prefix)) return path
+  let rel = path.slice(directory.length)
+  if (rel.startsWith(separator)) rel = rel.slice(separator.length)
+  return rel
+}
+
+/**
  * Capitalizes an agent identifier for display, matching the official
  * timeline's agent header convention (`fae` → `Fae`).
  */

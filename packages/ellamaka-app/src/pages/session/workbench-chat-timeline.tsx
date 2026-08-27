@@ -44,6 +44,8 @@ export type MessageTimelineScrollPort = {
 export type WorkbenchChatTimelineProps = {
   sessionID: string
   userMessages: UserMessage[]
+  /** Session working directory, used to relativize displayed file paths. */
+  directory?: string
   historyShift: boolean
   historyMore: boolean
   historyLoading: boolean
@@ -157,6 +159,7 @@ function ToolPartBlock(props: {
   message: AssistantMessage
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   onSyncChild?: (childID: string) => void
 }) {
@@ -187,6 +190,7 @@ function ToolPartBlock(props: {
                 part={props.part}
                 message={props.message}
                 defaultOpen={props.editToolPartsExpanded}
+                directory={props.directory}
                 editRenderer={props.editRenderer}
               />
             </Show>
@@ -200,7 +204,7 @@ function ToolPartBlock(props: {
         </Show>
       }
     >
-      <ContextToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} />
+      <ContextToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} directory={props.directory} />
     </Show>
   )
 }
@@ -262,6 +266,7 @@ function TranscriptRowView(props: {
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
@@ -304,6 +309,7 @@ function TranscriptRowView(props: {
                   message={row().message as AssistantMessage}
                   shellToolPartsExpanded={props.shellToolPartsExpanded}
                   editToolPartsExpanded={props.editToolPartsExpanded}
+                  directory={props.directory}
                   editRenderer={props.editRenderer}
                   onSyncChild={props.onSyncChild}
                 />
@@ -337,6 +343,7 @@ function VirtualHistory(props: {
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
@@ -359,6 +366,7 @@ function VirtualHistory(props: {
               activeUserMessageID={props.activeUserMessageID}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}
@@ -387,6 +395,7 @@ function VirtualHistory(props: {
             activeUserMessageID={props.activeUserMessageID}
             shellToolPartsExpanded={props.shellToolPartsExpanded}
             editToolPartsExpanded={props.editToolPartsExpanded}
+            directory={props.directory}
             editRenderer={props.editRenderer}
             actions={props.actions}
             actionLabels={props.actionLabels}
@@ -411,6 +420,7 @@ function LiveTranscriptTail(props: {
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
@@ -428,6 +438,7 @@ function LiveTranscriptTail(props: {
             activeUserMessageID={props.activeUserMessageID}
             shellToolPartsExpanded={props.shellToolPartsExpanded}
             editToolPartsExpanded={props.editToolPartsExpanded}
+            directory={props.directory}
             editRenderer={props.editRenderer}
             actions={props.actions}
             actionLabels={props.actionLabels}
@@ -630,6 +641,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               activeUserMessageID={{ current: activeUserMessageID }}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}
@@ -649,6 +661,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               activeUserMessageID={{ current: activeUserMessageID }}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}

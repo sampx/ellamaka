@@ -718,7 +718,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 /* Non-expandable info bar for read tools - same look as the header, no interaction */
 [data-slot="chat-context-info-bar"] {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   min-height: 30px;
@@ -729,10 +729,33 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   background: transparent;
   border: none;
   cursor: default;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 [data-slot="chat-context-info-bar"] > [data-component="icon"] {
   flex: 0 0 auto;
+}
+
+/* Read info bar subtitle truncates to a single line with an ellipsis, so long
+   relative paths never wrap. The full absolute path is exposed on hover via
+   the title attribute. */
+[data-slot="chat-context-info-bar"] [data-slot="chat-tool-subtitle"] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File-change (edit/write/patch) trigger subtitle aligns with the read info
+   bar: a single-line ellipsized relative path with the full path on hover. */
+[data-component="chat-file-change"] [data-slot="chat-tool-subtitle"] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-slot="chat-tool-title"] {
