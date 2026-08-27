@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { bootDshWeb, mountDshWeb, mountDshTools } from "../src/dsh-web"
@@ -135,6 +135,156 @@ describe("dsh tools profile", () => {
       // No live session was created.
       const sessions = ctx.get("sessions") as { list(): unknown[] } | undefined
       expect(sessions?.list() ?? []).toEqual([])
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
+
+  test("mountDshTools runs read, write, and edit through the sandboxed filesystem", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-ws-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const tools = ctx.get("tools") as {
+        schemas(): { name: string }[]
+        execute(exec: unknown): Promise<{
+          isError: boolean
+          error?: { info?: { code?: string } }
+        }>
+      }
+      const session = { header: { id: "tools-fs-session", cwd: workspace }, events: [] }
+      const execute = (name: string, arguments_: Record<string, unknown>) =>
+        tools.execute({
+          callId: `tools-fs-${name}`,
+          name,
+          arguments: arguments_,
+          signal: new AbortController().signal,
+          agent: { session },
+        })
+
+      expect((ctx.get("fs") as { sandboxMode?: string }).sandboxMode).toBe("workspace-write")
+      expect(tools.schemas().map((tool) => tool.name)).toEqual(expect.arrayContaining(["read", "write", "edit"]))
+
+      expect((await execute("write", { file_path: "created.txt", content: "created" })).isError).toBe(false)
+      expect((await execute("read", { file_path: "created.txt" })).isError).toBe(false)
+
+      writeFileSync(join(workspace, "edit.txt"), "before")
+      const unreadEdit = await execute("edit", { file_path: "edit.txt", old_string: "before", new_string: "after" })
+      expect(unreadEdit.isError).toBe(true)
+      expect(unreadEdit.error?.info?.code).toBe("FS_NOT_OBSERVED")
+
+      expect((await execute("read", { file_path: "edit.txt" })).isError).toBe(false)
+      expect((await execute("edit", { file_path: "edit.txt", old_string: "before", new_string: "after" })).isError).toBe(false)
+      expect(readFileSync(join(workspace, "edit.txt"), "utf-8")).toBe("after")
+
+      const denied = await execute("write", {
+        file_path: join(homedir(), `.dsh-tools-denied-${Date.now()}.txt`),
+        content: "denied",
+      })
+      expect(denied.isError).toBe(true)
+      expect(denied.error?.info?.code).toBe("FS_SANDBOX_DENIED")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
+
+  test("mountDshTools runs str_replace_editor through the sandboxed filesystem", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-editor-ws-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const tools = ctx.get("tools") as {
+        schemas(): { name: string }[]
+        execute(exec: unknown): Promise<{
+          isError: boolean
+          content?: { type: string; text?: string }[]
+          error?: { info?: { code?: string } }
+        }>
+      }
+      const session = { header: { id: "tools-editor-session", cwd: workspace }, events: [] }
+      let call = 0
+      const execute = (arguments_: Record<string, unknown>) =>
+        tools.execute({
+          callId: `tools-editor-${++call}`,
+          name: "str_replace_editor",
+          arguments: arguments_,
+          signal: new AbortController().signal,
+          agent: { session },
+        })
+      const editorPath = join(workspace, "editor.txt")
+
+      expect(tools.schemas().map((tool) => tool.name)).toContain("str_replace_editor")
+      expect((await execute({ command: "create", path: editorPath, file_text: "one\ntwo" })).isError).toBe(false)
+      expect((await execute({ command: "view", path: editorPath })).isError).toBe(false)
+      expect((await execute({ command: "str_replace", path: editorPath, old_str: "two", new_str: "TWO" })).isError).toBe(false)
+      expect((await execute({ command: "insert", path: editorPath, insert_line: 1, new_str: "between" })).isError).toBe(false)
+      expect(readFileSync(editorPath, "utf-8")).toBe("one\nbetween\nTWO")
+
+      writeFileSync(join(workspace, "unseen.txt"), "before")
+      const unseen = await execute({ command: "str_replace", path: join(workspace, "unseen.txt"), old_str: "before", new_str: "after" })
+      expect(unseen.isError).toBe(true)
+      expect(unseen.error?.info?.code).toBe("FS_NOT_OBSERVED")
+      expect((await execute({ command: "view", path: "relative.txt" })).isError).toBe(true)
+
+      const denied = await execute({
+        command: "create",
+        path: join(homedir(), `.dsh-tools-editor-denied-${Date.now()}.txt`),
+        file_text: "denied",
+      })
+      expect(denied.isError).toBe(true)
+      expect(denied.error?.info?.code).toBe("FS_SANDBOX_DENIED")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
+
+  test("mountDshTools runs foreground bash through the sandbox executor", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-bash-ws-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const tools = ctx.get("tools") as {
+        schemas(): { name: string; parameters: { properties: Record<string, unknown> } }[]
+        execute(exec: unknown): Promise<{
+          isError: boolean
+          content?: { type: string; text?: string }[]
+        }>
+      }
+      const session = { header: { id: "tools-bash-session", cwd: workspace }, events: [] }
+      let call = 0
+      const execute = (arguments_: Record<string, unknown>) =>
+        tools.execute({
+          callId: `tools-bash-${++call}`,
+          name: "bash",
+          arguments: arguments_,
+          signal: new AbortController().signal,
+          agent: { session },
+        })
+      const allowed = join(workspace, "allowed.txt")
+      const bash = tools.schemas().find((tool) => tool.name === "bash")
+
+      expect((ctx.get("shell") as { sandboxMode?: string }).sandboxMode).toBe("workspace-write")
+      expect(ctx.get("shellEnv")).toBeDefined()
+      expect(bash).toBeDefined()
+      expect(bash?.parameters.properties).not.toHaveProperty("run_in_background")
+      const pwd = await execute({ command: "pwd", description: "Print sandbox workspace directory" })
+      expect((pwd.content ?? []).map((block) => block.text ?? "").join("\n")).toContain(workspace)
+      expect((await execute({ command: `printf bash-ok > "${allowed}"`, description: "Write sandbox proof file" })).isError).toBe(false)
+      expect(readFileSync(allowed, "utf-8")).toBe("bash-ok")
+
+      const outside = join(homedir(), `.dsh-tools-bash-denied-${Date.now()}.txt`)
+      const denied = await execute({ command: `printf denied > "${outside}"`, description: "Attempt external sandbox write" })
+      expect(denied.isError).toBe(false)
+      expect((denied.content ?? []).map((block) => block.text ?? "").join("\n")).toContain("[sandbox: file access denied under workspace-write mode]")
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()

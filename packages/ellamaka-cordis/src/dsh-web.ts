@@ -399,6 +399,7 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
       // HMR needs --expose-internals (bun lacks it); the tool surface has no
       // hot-reload need, so disable it to boot under bun.
       { id: "hmr", disabled: true },
+      { id: "tool-bash", config: { enableRunInBackground: false } },
       ...(opts.extraPatches ?? []),
     ],
   })

@@ -53,7 +53,7 @@ ellamaka 进程
 
 - **dsh 源码零改动、社区插件零改动、ellamaka HTTP 路由层零改动**。
 - **两种使用模式物理隔离**：iframe UI 需要 dsh 的 agent-loop 语义（会话账本 + checkpoint 屏障 + 完整插件集）；工具采用只需要工具本体 + 最小调用上下文。同一容器无法同时满足两种装配（checkpoint 插件会强制 flush 调用方的 live session），因此拆成两个容器，各装配各的 profile。
-- **工具容器用 `mountDshTools` / `bootDshTools`**：加载 `ellamaka-tools` profile（bundles: dsh-base），其用户补丁层禁用全部 agent-loop 基础设施（session/agent-loop/llm/subagent/jobs/goal/plan-mode/compaction/web 等约 57 行，按依赖分组附理由），只保留工具注册表与执行链（tools/system-prompt/subprocess/fs/sandbox/spill/tool-fs/tool-fs-search 等）。工具以轻量 per-call context 执行——传给 `tools.execute` 的 agent 只携带 `session.header.cwd`（spawn 工作目录）与 `session.header.id`（spill 归属标签），**容器内不创建任何 dsh session**。
+- **工具容器用 `mountDshTools` / `bootDshTools`**：加载 `ellamaka-tools` profile（bundles: dsh-base），其用户补丁层禁用全部 agent-loop 基础设施（session/agent-loop/llm/subagent/jobs/goal/plan-mode/compaction/web 等约 57 行，按依赖分组附理由），只保留工具注册表与执行链（tools/system-prompt/subprocess/fs/sandbox/spill/tool-fs/tool-fs-search 等）。工具以按 ellamaka session ID 缓存的轻量 facade 执行——传给 `tools.execute` 的 agent 携带 `session.header.cwd`（spawn 工作目录）、`session.header.id`（spill 归属标签）和 `session.events: []`（沙箱模式折叠），**容器内不创建任何 dsh session**。
 - **desktop sidecar 用 `bootDshWeb` / `bootDshTools`**（自包含，Node strip-types 可直接 import）；`mountDshWeb`+CordisHub 的 `.js` 导入 Node 无法解析。
 - **动态装载保留**：前端 UI bundle 保持"后端 scan → `/plugins/<id>/client.js` 从磁盘动态 serve"机制，不内联。
 - **`$DSH_HOME` 缺省** `$WOPAL_HOME/ellamaka/data/dsh`，闭包缺失不挂载（kill switch）。
@@ -161,7 +161,7 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 #### 3.2.1 承载形态
 
 - **工具容器**（ellamaka-tools profile）是能力的"货架"：载入 dsh-base 全部插件，用 profile 补丁层按 id 禁用 agent-loop 专属插件（禁用清单见 §2.2）。工具容器不承载任何 dsh 会话，只暴露 `tools` 等服务。禁用清单是用户自有文件（`$DSH_HOME/profiles/ellamaka-tools/cordis.patch.yml`），ellamaka 不覆盖用户编辑。
-- **dsh-adapter**（`.wopal/plugins/dsh-adapter`）是能力的"投影仪"：按映射白名单把容器工具投影到 ellamaka ToolRegistry 并送出执行。执行时只携带工具实际消费的最小 per-call context——`agent.session.header.cwd`（spawn 工作目录）与 `agent.session.header.id`（spill 归属标签），其他一切省略。
+- **dsh-adapter**（`.wopal/plugins/dsh-adapter`）是能力的"投影仪"：按映射白名单把容器工具投影到 ellamaka ToolRegistry 并送出执行。执行时按 ellamaka session ID 复用最小 facade——`agent.session.header.cwd`（spawn 工作目录）、`agent.session.header.id`（spill 归属标签）与 `agent.session.events`（沙箱模式折叠）；其他一切省略。
 - **每次只采用一个能力**。权限继续由 ellamaka 原生 Permission 处理。
 - 采用成本超过独立实现成本时，保留 ellamaka 原生能力。dsh 是能力来源，不是必须迁入的运行时归宿。
 
@@ -199,11 +199,11 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 
 #### 3.2.4 工具采用双阶段（先 A 后 B）
 
-**阶段 A（工具在沙箱内运行）**：让 tool-fs / str_replace / tool-bash 在**沙箱后端**下完整运行。容器装配 **`fs-sandbox` / `bash-sandbox`**，`ctx.fs.sandboxMode` / `ctx.shell.sandboxMode` 有值，`sandboxPolicy.resolve()` 正常参与执行链并折叠模式覆盖。**采用 dsh 工具的核心动机就是沙箱能力**——ellamaka 现有文件/命令工具完全无沙箱，A 阶段若用非沙箱后端等于白接。adapter 喂最小 session 形状：`session.header.cwd` + `session.header.id` + `session.events: []`（回落进程级默认模式）。此阶段验证沙箱底座可用（受限读写、read-first 门禁、模式决议生效），**不引入审批流与策略层**——`approval`/`jobs` 均非硬依赖（`ctx.get` 降级，见 §4.9）。
+**阶段 A（工具在沙箱内运行）**：tool-fs（read/write/edit）、str_replace_editor（view/create/str_replace/insert）和前台 tool-bash 已在**沙箱后端**下运行。容器装配 **`fs-sandbox` / `bash-sandbox`**，`ctx.fs.sandboxMode` / `ctx.shell.sandboxMode` 有值，`sandboxPolicy.resolve()` 正常参与执行链并折叠模式覆盖。**采用 dsh 工具的核心动机就是沙箱能力**——ellamaka 现有文件/命令工具完全没有沙箱，而阶段 A 若用非沙箱后端等于白接。adapter 喂最小 session 输入：`session.header.cwd` + `session.header.id` + `session.events`。沙箱策略由空间级 `ellamaka.dsh.sandbox` 配置驱动（§4.10）：`enabled: true` 时 adapter 在 facade session 注入 `sandbox/mode` 事件（`mode` 限 `read-only`/`workspace-write`，默认 `workspace-write`）；`enabled: false` 时关闭沙箱（注入 `danger-full-access`），**不切换本地 fs/bash 后端**。真实容器验证了工作区写入、read-first 门禁、工作区外拒写与 session cwd。该阶段不引入审批流与策略层。`approval` 是可选依赖，`jobs` 未装配，因此工具容器隐藏 bash 的后台执行能力。
 
 **阶段 B（待定）**：不接管 dsh 权限体系。dsh 的 approval/permission-presets 为 dsh 自身 UI 闭环服务，接管它等于拆掉 ellamaka 权限系统，成本极高、收益为零（工具替换定位下）。已记录大体思路（§3.2.5），核心小决策是"沙箱拒绝后模型主动申请更宽模式（escalation）的审批，要不要桥接到 ellamaka 的 ask"。随后期细化评估可行性，不可行则放弃。
 
-**现状**：grep/glob（纯形状 A）已落地；tool-fs / str_replace / tool-bash 的 A 阶段（沙箱内运行）待实施；B 阶段待定。
+**现状**：grep/glob（纯形状 A）、tool-fs（P3.1，read/write/edit）、str_replace_editor（P3.2，view/create/str_replace/insert）与 tool-bash（P3.3，前台命令）已落地；B 阶段待定。
 
 #### 3.2.5 权限思路（B 阶段待定，只记录不做决策）
 
@@ -213,7 +213,7 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 
 **留给后期的唯一小决策：escalation 桥接**。dsh 的模型在写入被沙箱拒绝后，可主动回填 `sandbox_permissions` + `justification` 申请一次更宽模式，该申请需经 dsh approval 服务审批。两个候选：
 1. **桥接**：把 dsh escalation 审批接到 ellamaka 的 ask（approveEscalation 通道 → Permission.ask）。可用但需专用桥。
-2. **不做**：模型被拒后由用户从 UI 切模式（settings.jsonc 三模式），再重试。零成本。
+2. **不做**：模型被拒后由用户在空间设置中调整沙箱开关或受限模式，再重试。零成本。
 
 若完全不可行或成本太高则放弃，不影响阶段 A 的沙箱能力。相关对照（仅存档）：
 
@@ -294,8 +294,8 @@ dsh 容器插件日志经 `ctx.logger`（自动命名）→ Exporter（`mountDsh
 
 ### 4.8 工具选型（2026-08-26 盘点后修订）
 
-- **优先直接采用（阶段 A，沙箱内运行）**：`fs-search`（grep/glob，已落地）、`tool-fs`（read/write/edit）、`tool-str-replace-editor`（绝对路径，更简单）。阶段 A 容器装配 `fs-sandbox`，让这些工具在沙箱底座下运行。
-- **阶段 A 评估**：`tool-bash`（配 `bash-sandbox`；要 `ctx.shell`+`shellEnv` 服务，`approval`/`jobs` 均非硬依赖，见 §4.9）。
+- **优先直接采用（阶段 A，沙箱内运行）**：`fs-search`（grep/glob，已落地）、`tool-fs`（read/write/edit，P3.1 已落地）、`tool-str-replace-editor`（P3.2 已落地，绝对路径）。阶段 A 容器装配 `fs-sandbox`，让这些工具在沙箱底座下运行。
+- **阶段 A 已落地**：`tool-bash`（配 `bash-sandbox` 与 `shellEnv`；`approval` 非硬依赖；`jobs` 未装配，因此工具容器禁用 `run_in_background`）。
 - **阶段 B（待定）**：escalation 审批桥接（模型申请更宽模式接不接 ellamaka ask），随后期细化（§3.2.5）。
 - **保留 ellamaka 原生实现**：`edit`、`read/write` 和 `wopal_task_*`。现有语义或宿主集成更重要。
 - **需原生复刻（深耦合）**：session-query、schedule、subagent 等引擎能力包（§4.1）。
@@ -348,7 +348,96 @@ macOS Seatbelt 沙箱**已实测可用**（`.wopal-space/.tmp` 下用 dsh 同款
 
 探测失败即拒绝执行（`SANDBOX_UNAVAILABLE`），不裸奔。
 
-**沙箱模式配置来源（决定）**：不用 `DSH_PERMISSION_MODE` 环境变量。空间级 `.wopal/config/settings.jsonc`（+ `settings.local.jsonc`）配置 dsh 沙箱模式，adapter 每次调用按该空间配置注入 `sandbox/mode` 事件到伪 session 的 events fold。容器进程级默认值仅兜底。UI 三模式切换 = 写空间 settings；`danger-full-access` 即"关闭沙箱"。
+**空间沙箱配置（设计决策）**：不用 `DSH_PERMISSION_MODE` 环境变量。空间级 `.wopal/config/settings.jsonc`（+ `settings.local.jsonc`）拥有 dsh 工具容器的沙箱策略，配置形态为 `ellamaka.dsh.sandbox: { enabled, mode }`。
+
+- `enabled: true` 启用沙箱。`mode` 在 `read-only` 与 `workspace-write` 间选择，adapter 为每次调用在 facade session 注入对应的 `sandbox/mode` 事件。
+- `enabled: false` **关闭沙箱**。adapter 注入 `danger-full-access`，让工具在容器默认的不受限后端下运行。**它不切换本地 fs/bash 后端**——工具始终走同一个 dsh 容器与已装配的沙箱后端，关沙箱只是把有效模式放开为 `danger-full-access`。
+- `danger-full-access` 同时保留为 dsh 的内部一次性 escalation 目标。它不作为空间级配置值暴露，只作为"沙箱关闭"的内部映射。
+
+容器进程级默认值只在尚未解析空间配置时兜底。用户界面以明确的"启用沙箱"开关呈现该决策（关 → `danger-full-access`，开 → `read-only`/`workspace-write`），受限模式仅在沙箱启用后出现。
+
+### 4.11 模型输入分层与动态装配（dsh 精髓复刻）
+
+**核心原则**：每次模型请求的输入分成三个部分——`system`（长期稳定）、`tools`（native function-calling schema）、`messages`（历史 + 当前动态信息）。dsh 的关键纪律是**按内容性质决定它落在哪一部分**，而不是把所有动态能力都塞进一个地方：
+
+| 内容 | dsh 放置位置 | 动态方式 | 缓存结果 |
+|---|---|---|---|
+| Persona、固定规则 | `system` header | 静态 section | 变化会破坏最前部缓存 |
+| Native tools | `tools` header | `ctx.tools.register()` / disposer | schema 变化从首个变化 token 起失效 |
+| MCP tools | `tools` header | 整代 register/unregister | MCP 工具变化同样失效 |
+| Skill loader | `tools` header | 单个固定 `skill` 工具 | schema 长期稳定 |
+| Skill 目录 | 历史尾部 user message | 完整目录快照 + digest + tombstone | 仅追加，不破坏既有前缀 |
+| Skill 正文 | tool result / user 注入 | 按需加载 | 仅追加 |
+| 沙箱模式、运行时策略 | 历史尾部 runtime-context snapshot | 变化时追加完整快照 | 仅追加 |
+| Tool result | 历史尾部 | 正常会话事件 | 仅追加 |
+
+**三个关键事实**：
+
+1. **tools schema 不能放进 history**：`tools` 字段是模型 API 的"可调用函数协议"——它声明哪些工具可生成原生 tool call、参数 JSON Schema、`tool_choice` 与并行调用。把它降级成普通 user message，provider 不再把它当作可调用函数。Skill 能放 history，是因为真正的原生工具只有一个固定 `skill(name)`；普通 tools 若要放 history，必须先收缩为一个固定 dispatcher（`call_tool(name, args)` + 动态工具目录），这会在建模函数调用能力上付出代价。dsh 默认保留 native function calling，因此接受工具集合真正变化时缓存失效。
+
+2. **native tools 变化必然破坏缓存**：若模型可见工具集合真新增/删除/改 schema，`tools` header 变化，从首个变化 token 起缓存失效。dsh 自身也明确这一代价（`tools/README`：registration/disposal/restriction 可能从首个变化 schema token 起失效；MCP 同理）。这是物理约束，无规避方法。
+
+3. **每轮重建 ≠ 破坏缓存**：dsh 每轮（pre-step）都重新装配 `assembly.tools`（`system-prompt/index.ts` 遍历 tool provider 现场解析）。这仅是内存级重建（微秒级），不涉及 IO/进程/网络。只要工具集合不变且按稳定顺序排列、字节一致，重建多少次发出去的请求都一样，缓存照样命中。动态装配的正确含义是"每轮读当前 registry 得到最新集合"，而不是"每轮改动模型看到的 schema"。
+
+**对 ellamaka 的目标形态**：
+
+```text
+system:
+  Agent/Provider 提示词
+  固定环境说明
+  固定规则
+
+tools:
+  稳定 ellamaka builtin schemas
+  每轮从 dsh registry 读取的当前 dsh 工具 schemas
+  固定 skill loader schema
+  当前 MCP native schemas
+
+messages:
+  已有会话历史
+  当前用户消息
+  动态 runtime-context 更新（仅变化时追加）
+  动态 skill 目录更新（仅变化时追加）
+  显式加载的 skill 正文
+```
+
+**对 dsh 工具动态装配（当前 PoC 收尾）**：
+
+- adapter 不再只启动时读取一次 dsh `tools.schemas()`，而是**每轮模型调用前**读取当前 dsh registry，合并 builtin + 静态插件工具 + 当前 dsh 工具，按工具名覆盖（dsh 赢），稳定排序后生成 native tools。
+- dsh 插件动态加载/卸载 → 工具增删 → 下一轮请求自动看到新集合；同名 dsh 工具卸载后 builtin 自动恢复。
+- 工具集合真变化时缓存失效是预期行为（同 dsh）；未变化时通过稳定排序保证字节一致、缓存命中。
+- **不需要在 dsh 与 ellamaka 后端之间切换**——这从未是需求。界面只控制沙箱开关与保护层级（§4.10）。
+
+**对 skill 目录改造（独立收尾）**：
+- 从 `system`（`session/system.ts: sys.skills()`）与 `skill` 工具 description（`tool/registry.ts: describeSkill`）中移除动态目录。
+- 改为 dsh 模式：固定 `skill` schema + 历史尾部持久 skill catalog + digest 变化时完整替换目录 + 空 tombstone + source metadata。
+- 这独立于 dsh 工具收尾，可单独排期。
+
+### 4.12 单端口统一方案源码核实（2026-08-27）
+
+消除双端口、在单进程单端口（4097）下经 Cordis 插件替换机制提供两套 API 与两套界面，是 §2.4.1「为什么双端口」决策的**后续演进方向**。以下为源码级核实结论（基于 dsh rc.6 实装副本），机制可行，但原实现方案有多处与真实源码不符，需修正后落地。**本文档记录核实结果与修正方向，不构成已批准的实施计划。**
+
+**总体判断**：方案骨架成立。`VirtualWebServer`（复刻 `WebServer` 类但虚拟化路由表）+ 主服务器 `/dsh` 分发 + patch 层按 id 替换官方插件，这一组合技术上可行，且不触碰 dsh 上游包。但下列 6 项源码事实推翻或修正了原方案的若干具体假设。
+
+**核实到的关键源码事实**：
+
+1. **`./src/*` 子路径导出不可用**。官方各包 `exports` 声明 `"./src/*": "./src/*"`，但发布包 `files` 只含 `lib/`，无 `src/` 目录，`./src/*` 实际解析不到。内部模块（`http-bridge`、`api-request-trust`、`websocket-downlink`、`rpc-host`、`api-path`）以编译产物存在 `lib/types/*.js`。自定义插件应从 `lib/` import 编译版，而非原方案的 `./src/*.ts`。
+
+2. **`renderIndex` / `collectIndexInjections` / `renderIndexInjections` / `IndexInjection` 均不存在**。真实的 index 变换机制是 `WebServer.tapIndex(fn)` + `WebServer.applyIndexTaps(html)`。`client-modules` 通过 `webServer.tapIndex` 注入 boot manifest，`frontend-static` 经 `registerFallback` + `applyIndexTaps` 渲染 index。VirtualWebServer 需实现这两个方法，而非 plan 假设的 `renderIndex` 一族。`/plugins/ → /dsh/plugins/` 的 HTML 重写应在 `applyIndexTaps` 内追加一个 tap。
+
+3. **HMR 插件 id 是 `client-hmr`，不是 `hmr`**。`hmr`（base 层）→ `@deepseek-ai/cordis-plugin-hmr`（通用 HMR，web-app 层已 `disabled: true`）；DSH 客户端 HMR 的 id 是 `client-hmr`（web-app 层，未禁用），name `@deepseek-ai/dsh-client-hmr`，服务端注册 `/plugins/events` SSE，浏览器端 `new EventSource('/plugins/events')`。原方案的 `{ id: 'hmr', disabled: true }` 禁错插件，需改为 `client-hmr`。
+
+4. **`createSharedFetchHandler(channel)` 的 `channel` 参数被收窄为字面量 `/api`**，且 `registerInterceptor` 强制校验 `channel === "/api"`。但官方 `apply` 用的是 `createSharedFetchHandler`（非 interceptor），其 `endpointFromPath(channel, pathname)` 接受任意前缀字符串。改为 `/dsh/api` 需处理字面量类型收窄（类型层面），运行时通道匹配可用。
+
+5. **底层 `node:http.Server` 引用无法从 Effect 层获取**（原方案 Q1）。`packages/opencode/src/server/server.ts` 中 `serverLayer` 在闭包内 `createServer()`（server.ts:201），`server` 未对外暴露，`NodeHttpServer.layer` 只拿到 Effect 封装。原方案「从 Effect 层获取底层 server 引用」在当前代码不成立。可行接入点需改 `serverLayer` 暴露原始 server，或在 Effect `HttpRouter` 层添加 `/dsh/*` 路由桥接（两候选均需实施时 spike）。
+
+6. **禁用 `web-startup` 会连带 `webserver`/`web-runtime` 的 `inject: [webStartup]` 失败**。`web-startup`（name `@deepseek-ai/dsh-web-app/startup`）提供 `webStartup` 服务，`webserver` 与 `web-runtime` 两行都 `inject: [webStartup]` 并读 `ctx.webStartup.*`。禁用它需同时提供替代 `webStartup` 服务，或保留 `web-startup` 行仅禁用 `webserver` 行。当前 `mountProfile` 用 `provideCmdline(ctx, { args: ["--port", String(port)] })` 喂它（dsh-web.ts:320）。
+
+7. **`--expose-internals` 依赖属于 `cordis-plugin-loader`，非 HMR 专属**。`ModuleLoader.fromInternal()` 先查 `--expose-internals`，回退 `node-addon-require-builtin`。bun 缺两者故失败（fork 注释据此声明）。这是 bun 运行时既有约束，不是单端口方案新增问题；工具容器（`mountDshTools`）已因该约束禁用 `client-hmr`，web 容器若启用热更需处理。
+
+**未确认项**：bun 下 `cordis-plugin-loader` 的 `fromInternal()` 具体失败行为（注释层断言，未在已读源码实证崩溃点）。
+
+> 结论：机制可行，落地前需修正上述 1-6 项源码假设。具体实施计划另立 PLAN。
 
 ## 5. 当前约定（双人确认制，无红线）
 
@@ -371,7 +460,7 @@ macOS Seatbelt 沙箱**已实测可用**（`.wopal-space/.tmp` 下用 dsh 同款
 |------|------|--------|------|
 | P1 | 插件生态融合验证：dsh 插件在 ellamaka 容器内完整运行、动态装载 | 核心 | ✅ 完成 |
 | P2 | 工具利用：fs-search（grep/glob）经工具容器 + adapter 落地 | 核心 | ✅ grep/glob 已落地 |
-| P3 | **阶段 A 扩展**：tool-fs / str_replace / tool-bash 沙箱内运行（`fs-sandbox` / `bash-sandbox` 后端） | 核心 | ⬜ 当前重点 |
+| P3 | **阶段 A 扩展 + 动态装配收尾**：tool-fs / str_replace / tool-bash 沙箱内运行；adapter 每轮读当前 dsh registry；skill 目录模型输入改造（§4.11，分解见 PLAN P3.1–P3.6） | 核心 | 🔶 收尾中 |
 | P4 | **阶段 B（待定）**：escalation 审批桥接思路细化（§3.2.5） | 核心 | ⏸ 待定 |
 | P5 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | ⬜ |
 | P6 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | ⬜ |

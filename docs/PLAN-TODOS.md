@@ -109,38 +109,56 @@
 
 ### P3.1 tool-fs（read / write / edit）接入
 
-- [ ] 3.1.1 容器装配：工具容器改用 `fs-sandbox`（沙箱 fs 后端），确认 `ctx.fs.sandboxMode` 有值
-- [ ] 3.1.2 adapter 映射：`tools: [{source: read, target: read}, {source: write, target: write}, {source: edit, target: edit}]`
-- [ ] 3.1.3 补 session 形状：adapter 喂 `session.header.cwd` + `session.events: []`（write/edit 的 sessionResolveOptions 消费）
-- [ ] 3.1.4 read-first 门禁确认：沙箱后端默认 mode 下 read 放行、write/edit 受限（read-first 门禁生效）
-- [ ] 3.1.5 测试：tool-fs 三工具在容器内读写文件行为正确；adapter 投影 schema 正确（read 无参、write 有 file_path/content）
-- [ ] 3.1.6 验证：模型可见 read/write/edit；写文件成功且沙箱限制生效；与原生文件工具并存或覆盖的取舍记录
+- [x] 3.1.1 容器装配：工具容器使用 `fs-sandbox`（沙箱 fs 后端），`ctx.fs.sandboxMode` 为 `workspace-write`
+- [x] 3.1.2 adapter 映射：`tools: [{source: read, target: read}, {source: write, target: write}, {source: edit, target: edit}]`
+- [x] 3.1.3 补 session 形状：adapter 喂 `session.header.cwd` + `session.events: []`，并按 ellamaka session ID 复用 facade 对象
+- [x] 3.1.4 read-first 门禁确认：read 放行；未读 edit 返回 `FS_NOT_OBSERVED`；工作区外 write 返回 `FS_SANDBOX_DENIED`
+- [x] 3.1.5 测试：tool-fs 三工具在容器内读写文件行为正确；adapter 投影 schema 保留 read 的 `file_path`、write 的 `file_path/content` 与沙箱 escalation 字段
+- [x] 3.1.6 验证：真实容器经 adapter 投影 read/write/edit；工作区写入成功且沙箱限制生效。同名 target 覆盖原生工具，adapter 在执行前复用 ellamaka 的 read/edit 与 external_directory 权限门禁。
 
 ### P3.2（str_replace_editor）接入
 
-- [ ] **预读**：`tool-str-replace-editor/src/index.ts`（用绝对路径，不读 session.cwd，走 `ctx.fs` 解析）
-- [ ] **设计**：str_replace_editor 依赖 `tools`+`fs`，用绝对路径；沙箱后端下 `ctx.fs.sandboxMode` 有值 → 走 MutationPolicy.resolve（read-first 门禁）
-- [ ] 3.2.1 adapter 映射：`tools: [{source: str_replace_editor, target: str_replace_editor}]`
-- [ ] 3.2.2 测试：view/create/str_replace/insert 四命令在容器内行为；绝对路径解析正确；沙箱内受限操作受门禁约束
-- [ ] 3.2.3 边界：str_replace_editor 需绝对路径，adapter 无需喂 cwd（工具自解析）
+- [x] **预读**：`tool-str-replace-editor/src/index.ts`（用绝对路径，走 `ctx.fs` 解析）
+- [x] **设计**：str_replace_editor 依赖 `tools`+`fs`，以绝对路径解析；沙箱后端下 `ctx.fs.sandboxMode` 有值，MutationPolicy.resolve 以 facade session 决议模式与工作区根，fs-observation-policy 负责 read-first 门禁
+- [x] 3.2.1 adapter 映射：`tools: [{source: str_replace_editor, target: str_replace_editor}]`
+- [x] 3.2.2 测试：view/create/str_replace/insert 四命令在容器内行为正确；相对路径拒绝；未观察编辑与工作区外创建均受沙箱门禁约束
+- [x] 3.2.3 边界：str_replace_editor 的目标路径必须绝对；路径解析不使用 session cwd，facade cwd 继续作为 sandboxPolicy 的工作区根，facade 对象身份继续承载观察状态
 
 ### P3.3（tool-bash）接入
 
-- [ ] **预读**：`tool-bash/src/index.ts`（依赖 shell/shellEnv；shellEnv 是硬依赖）
-- [ ] **预读**：`shell/bash-sandbox/src/index.ts`（沙箱 bash 后端，sandboxMode 有值）
-- [ ] **设计**：tool-bash 需要 `ctx.shell`（bash-sandbox）+ `ctx.shellEnv`。前者沙箱；后者 declared inject 必须提供。需确认 shell-env 是否依赖 session-persistence（`ctx.get` 可选）
-- [ ] 3.3.1 容器装配 `bash-sandbox`（沙箱）+ `shell-env`；确认 `ctx.shell.sandboxMode` 有值
-- [ ] 3.3.2 adapter 映射：`tools: [{source: bash, target: bash}]`；喂 `session.header.cwd`（workdir 回落）
-- [ ] 3.3.3 shellEnv 接入：提供 `shellEnv.collect(exec)` 的最小实现（读 header.id 即可），或确认容器自带
-- [ ] 3.3.4 测试：bash 命令在容器内沙箱执行正确；workdir 回落 session cwd；沙箱限制生效
-- [ ] 3.3.5 边界：`run_in_background` 需 jobs（阶段 A 可禁用 `enableRunInBackground: false`，或评估）
+- [x] **预读**：`tool-bash/src/index.ts`（依赖 shell/shellEnv；shellEnv 是硬依赖）
+- [x] **预读**：`shell/bash-sandbox/src/index.ts`（沙箱 bash 后端，sandboxMode 有值）
+- [x] **设计**：tool-bash 使用 `ctx.shell`（bash-sandbox）与容器现有的 `shellEnv`；shellEnv 对缺失 session-persistence 以 `ctx.get` 降级
+- [x] 3.3.1 容器装配 `bash-sandbox`（沙箱）+ `shell-env`；`ctx.shell.sandboxMode` 为 `workspace-write`
+- [x] 3.3.2 adapter 映射：`tools: [{source: bash, target: bash}]`；facade `session.header.cwd` 作为默认 workdir 与 sandboxPolicy 工作区根
+- [x] 3.3.3 shellEnv 接入：容器已提供 `shellEnv.collect(exec)`，为 facade session 注入 `DSH_SESSION_ID`
+- [x] 3.3.4 测试：bash 在容器内以 session cwd 运行；工作区写入成功；工作区外写入以 sandbox denial 返回
+- [x] 3.3.5 边界：容器禁用 `run_in_background`，避免依赖未装配的 jobs；schema 隐藏该字段，强制传入时由 dsh 拒绝
 
 ### P3.4 阶段 A 验证收口
 
-- [ ] 3.4.1 回归：tool-fs/str_replace/bash 行为对照原生；沙箱限制生效；adapter 测试全绿；typecheck
-- [ ] 3.4.2 桥成本记录：记录"沙箱内运行三类工具"的实际成本（复用 §2.5 的基建，边际成本应低）
-- [ ] 3.4.3 文档：DESIGN §3.2.4 更新（工具沙箱内运行现状）、PLAN 勾选
-- [ ] 3.4.4 settings.jsonc 沙箱模式配置接入（§4.10），模式切换生效验证
+- [x] 3.4.1 回归：tool-fs、str_replace_editor 与 bash 的真实容器投影均通过；workspace-write、read-first 和工作区外拒写生效；adapter 13 项、dsh-web 8 项、真实 adapter 3 项测试与 typecheck 全绿
+- [x] 3.4.2 桥成本记录：P3.1 扩展 facade 与原生权限门禁；P3.2 复用既有 fs-sandbox 无新增容器装配；P3.3 只增加前台 bash 配置与权限投影。三类工具复用同一 adapter、容器和沙箱底座，边际实现量保持很低
+- [x] 3.4.3 文档：DESIGN §3.2.4 更新工具沙箱内运行现状，PLAN 记录全部 P3.1–P3.3 验证结论
+- [x] 3.4.4 settings.jsonc 沙箱模式配置接入（§4.10），模式切换生效验证
+
+### P3.5 动态装配收尾：每轮读当前 dsh registry + 修正 enabled:false 语义 🔶
+
+> **目标**：让 dsh 插件动态加载/卸载后，下一轮模型请求自动看到新 native tools 集合；修正 P3.4.4 中 `enabled:false` 的语义错误（见 §4.10/§4.11）。
+> **原理**：dsh 每轮（pre-step）都重新装配 `assembly.tools`，仅是内存级重建（微秒级）；工具集合不变且按稳定顺序排列、字节一致时，重建不破坏缓存。动态装配的正确含义是"每轮读当前 registry 得到最新集合"，而非"每轮改动 schema"。
+> **验收故事**：dsh 插件加载新工具 → 下一轮请求 `tools` 出现新工具；卸载同名工具 → builtin 自动恢复；`enabled:false` 真正关闭沙箱（注入 `danger-full-access`），不再回落容器默认 `workspace-write`。
+
+- [ ] 3.5.1 adapter 改为每轮模型调用前读取当前 dsh registry（`container.get("tools").schemas()`），不再启动时冻结
+- [ ] 3.5.2 ToolRegistry 增加每请求动态工具提供者：builtin + 静态插件工具 + 当前 dsh 工具，按工具名覆盖（dsh 赢），稳定排序
+- [ ] 3.5.3 修正 `enabled:false`：注入 `danger-full-access` 关闭沙箱，不切换本地后端
+- [ ] 3.5.4 测试：工具集合变化后下一轮请求反映新集合；未变化时字节稳定、缓存不破坏；关沙箱后工作区外写入放行
+
+### P3.6 skill 目录模型输入改造：目录从 system + tool description 移到历史尾部 ⬜
+
+- [ ] 3.6.1 从 `session/system.ts` 的 `sys.skills()` 移除动态目录输出
+- [ ] 3.6.2 从 `tool/registry.ts` 的 `describeSkill()` 移除动态目录，`skill` 工具 description 变为固定文本
+- [ ] 3.6.3 新增持久 skill catalog 投影：初始完整目录 + digest 变化时完整替换 + 空 tombstone + source metadata
+- [ ] 3.6.4 测试：skill 增删只追加历史尾部消息，system/tool schema 不变；正文仅在调用 `skill(name)` 后作为 tool result 出现
 
 ---
 
@@ -210,3 +228,7 @@
 | 2026-08-20 | P1 | **P1 完成**：spill/grep 桥废弃（提交 8d79bfd45e），零残留引用 |
 | 2026-08-21 | P1 | 旧 P1 残留拆除：per-instance hub 机制退役 |
 | 2026-08-26 | — | **全量重写**：对 dsh 工具源码级消费面盘点（§4.9），确立"先 A 后 B"双阶段；grep/glob 已落地；工具选型修正（fs-observation-policy 不再单独采用，跟随 tool-fs） |
+| 2026-08-26 | P3.1 | read/write/edit 经真实工具容器与 adapter 接入；workspace-write、read-first 和工作区外拒写均已实证 |
+| 2026-08-26 | P3.2 | str_replace_editor 经真实工具容器与 adapter 接入；四个命令、绝对路径、read-first 与工作区外拒写均已实证 |
+| 2026-08-26 | P3.3 | bash 经真实工具容器与 adapter 接入；session cwd、workspace-write 与工作区外拒写均已实证，后台任务保持禁用 |
+| 2026-08-26 | P3.4.4 | settings.jsonc 沙箱模式配置接入：adapter 解析 `ellamaka.dsh.sandbox`，enabled 注入 sandbox/mode 事件、mode 限 read-only/workspace-write，enabled:false 不注入；单测 16 项全绿 |
