@@ -787,8 +787,8 @@ export const dict = {
   "settings.general.row.showStatus.description": "Show the server status button in the desktop title bar",
   "settings.general.row.showCustomAgents.title": "Custom agents",
   "settings.general.row.showCustomAgents.description": "Show the agent picker in the v2 desktop composer",
-  "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
-  "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
+  "settings.general.row.reasoningSummaries.title": "Expand reasoning summaries",
+  "settings.general.row.reasoningSummaries.description": "Default to expanding model reasoning thoughts in the timeline (collapses to a single line when off)",
   "settings.general.row.shellToolPartsExpanded.title": "Expand tool call results",
   "settings.general.row.shellToolPartsExpanded.description":
     "Show tool call results expanded by default in the timeline",

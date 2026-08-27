@@ -221,7 +221,7 @@ describe("WorkbenchChatTimeline", () => {
     host.remove()
   })
 
-  test("omits the reasoning block entirely when the reasoning-summaries setting is off", () => {
+  test("renders the reasoning block as collapsed when the reasoning-summaries setting is off", () => {
     const u1 = userMessage("u-reason-off")
     const a1 = assistantMessage("a-reason-off", "u-reason-off")
     const messages: Message[] = [u1, a1]
@@ -239,7 +239,10 @@ describe("WorkbenchChatTimeline", () => {
       />
     ))
 
-    expect(host.querySelector("[data-component='chat-reasoning']")).toBeNull()
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']")
+    expect(trigger).not.toBeNull()
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false")
+    expect(host.querySelector("[data-component='chat-reasoning']")).not.toBeNull()
     expect(host.querySelector("[data-component='chat-narrative']")).not.toBeNull()
     host.remove()
   })

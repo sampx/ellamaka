@@ -107,11 +107,9 @@ function isAborted(message: AssistantMessage): boolean {
 function visibleParts(
   message: AssistantMessage,
   getParts: (id: string) => Part[],
-  showReasoningSummaries: boolean,
+  _showReasoningSummaries: boolean,
 ): Part[] {
-  return getParts(message.id).filter(
-    (part) => (part.type !== "reasoning" || showReasoningSummaries) && isRenderablePart(part, message),
-  )
+  return getParts(message.id).filter((part) => isRenderablePart(part, message))
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

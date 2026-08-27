@@ -84,26 +84,26 @@ function partsByID(parts: Part[]): (id: string) => Part[] {
 }
 
 describe("projectTranscript", () => {
-  test("respects the reasoning-summary visibility preference", () => {
+  test("includes reasoning parts in transcript regardless of showReasoningSummaries", () => {
     const u1 = userMessage("u1")
     const a1 = assistantMessage("a1", "u1")
     const parts = [reasoningPart("r1", "a1", "private reasoning"), textPart("p1", "a1", "answer")]
 
-    const hidden = projectTranscript({
+    const defaultOff = projectTranscript({
       messages: [u1, a1],
       getParts: partsByID(parts),
       status: idle,
       showReasoningSummaries: false,
     })
-    const shown = projectTranscript({
+    const defaultOn = projectTranscript({
       messages: [u1, a1],
       getParts: partsByID(parts),
       status: idle,
       showReasoningSummaries: true,
     })
 
-    expect(hidden.rows.flatMap((row) => (row.type === "assistant" ? row.parts : [])).map((part) => part.id)).toEqual(["p1"])
-    expect(shown.rows.flatMap((row) => (row.type === "assistant" ? row.parts : [])).map((part) => part.id)).toEqual(["r1", "p1"])
+    expect(defaultOff.rows.flatMap((row) => (row.type === "assistant" ? row.parts : [])).map((part) => part.id)).toEqual(["r1", "p1"])
+    expect(defaultOn.rows.flatMap((row) => (row.type === "assistant" ? row.parts : [])).map((part) => part.id)).toEqual(["r1", "p1"])
   })
 
   test("groups assistant messages by parentID into stable turns", () => {
