@@ -6,6 +6,7 @@ import { Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
+import type { ToolDefinition } from "@opencode-ai/plugin"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
@@ -94,6 +95,34 @@ const brokenPluginLayer = Layer.succeed(
       ]),
   }),
 )
+
+// Fake Plugin.Service that exposes a `tool.provider` hook reading the current
+// supplied set from a mutable closure variable. This models a dsh container
+// whose mounted tool set changes between model requests.
+function providerPluginLayer(supply: { current: Record<string, unknown> }) {
+  return Layer.succeed(
+    Plugin.Service,
+    Plugin.Service.of({
+      init: () => Effect.void,
+      trigger: ((name: unknown, input: unknown, output: unknown) => {
+        if (name === "tool.provider") {
+          const out = output as { tools: Record<string, ToolDefinition> }
+          for (const [id, def] of Object.entries(supply.current)) {
+            out.tools[id] = def as ToolDefinition
+          }
+        }
+        return Effect.succeed(output)
+      }) as Plugin.Interface["trigger"],
+      list: () => Effect.succeed([]),
+    }),
+  )
+}
+
+const dynamicTool = (description: string) => ({
+  description,
+  args: {},
+  execute: async () => "dynamic",
+})
 
 const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
 const scout = testEffect(
@@ -556,4 +585,118 @@ describe("tool.registry", () => {
       expect(ids).toContain("cowsay")
     }),
   )
+
+  describe("dynamic tool provider", () => {
+    const supply: { current: Record<string, unknown> } = { current: {} }
+    const withProvider = testEffect(
+      Layer.mergeAll(
+        registryLayer({ plugin: providerPluginLayer(supply) }),
+        node,
+        Agent.defaultLayer,
+      ),
+    )
+
+    const toolsFor = (registry: ToolRegistry.Interface) =>
+      Effect.gen(function* () {
+        const agent = yield* Agent.Service
+        return yield* registry.tools({
+          providerID: ProviderID.opencode,
+          modelID: ModelID.make("test"),
+          agent: yield* agent.defaultInfo(),
+        })
+      })
+
+    withProvider.instance("exposes a dynamically supplied tool", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        supply.current = { custom_probe: dynamicTool("a dynamic probe tool") }
+        const tools = yield* toolsFor(registry)
+        const probe = tools.find((t) => t.id === "custom_probe")
+        expect(probe).toBeDefined()
+        if (!probe) throw new Error("custom_probe tool was not returned")
+        expect(probe.description).toBe("a dynamic probe tool")
+      }),
+    )
+
+    withProvider.instance("dynamic provider wins over builtin on id collision", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        supply.current = { grep: { description: "dynamic grep", args: {}, execute: async () => "dynamic grep" } }
+        const tools = yield* toolsFor(registry)
+        const grep = tools.find((t) => t.id === "grep")
+        if (!grep) throw new Error("grep tool was not returned")
+        const output = yield* grep.execute(
+          {},
+          {
+            sessionID: SessionID.make("ses_test"),
+            messageID: MessageID.make("msg_test"),
+            agent: "build",
+            abort: new AbortController().signal,
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          } satisfies Tool.Context,
+        )
+        expect(output.output).toBe("dynamic grep")
+      }),
+    )
+
+    withProvider.instance("removing a dynamic tool restores the builtin", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        supply.current = { grep: { description: "dynamic grep", args: {}, execute: async () => "dynamic grep" } }
+        const withProvider = yield* toolsFor(registry)
+        const overridden = withProvider.find((t) => t.id === "grep")
+        if (!overridden) throw new Error("grep tool was not returned")
+        expect((yield* overridden.execute({}, {
+          sessionID: SessionID.make("ses_test"),
+          messageID: MessageID.make("msg_test"),
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context)).output).toBe("dynamic grep")
+
+        supply.current = {}
+        const after = yield* toolsFor(registry)
+        const restored = after.find((t) => t.id === "grep")
+        if (!restored) throw new Error("grep tool was not returned after removal")
+        const output = yield* restored.execute(
+          { pattern: "x", path: "." },
+          {
+            sessionID: SessionID.make("ses_test"),
+            messageID: MessageID.make("msg_test"),
+            agent: "build",
+            abort: new AbortController().signal,
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          } satisfies Tool.Context,
+        )
+        expect(output.output).not.toBe("dynamic grep")
+      }),
+    )
+
+    it.instance("no provider equals static collection (builtin + custom)", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const withProviderTools = yield* toolsFor(registry)
+        const registryNoProvider = yield* ToolRegistry.Service
+        const baseTools = yield* toolsFor(registryNoProvider)
+        // Both resolve the same service instance; when nothing provides dynamic
+        // tools the merged set equals the static base.
+        expect(withProviderTools.map((t) => t.id).sort()).toEqual(baseTools.map((t) => t.id).sort())
+      }),
+    )
+
+    it.instance("unchanged tool set produces byte-identical output across requests", () =>
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        const first = yield* toolsFor(registry)
+        const second = yield* toolsFor(registry)
+        expect(JSON.stringify(first)).toBe(JSON.stringify(second))
+      }),
+    )
+  })
 })
