@@ -680,11 +680,16 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   padding: 10px 12px 12px;
   border-radius: 6px;
   background: var(--surface-weak);
-  overflow: visible;
+  max-height: calc(var(--font-size-small) * 1.6 * 20);
+  overflow-y: auto;
   font-size: var(--font-size-small);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+
+  /* Reserve the scrollbar track so streaming past the max-height threshold
+     does not shrink the content box horizontally when the scrollbar appears. */
+  scrollbar-gutter: stable;
 }
 
 [data-component="chat-context-tool"],
