@@ -292,6 +292,10 @@ describe("dsh tools profile", () => {
       expect((await execute({ command: `printf bash-ok > "${allowed}"`, description: "Write sandbox proof file" })).isError).toBe(false)
       expect(readFileSync(allowed, "utf-8")).toBe("bash-ok")
 
+      // homedir is used (not /tmp) because dsh's `workspace-write` sandbox
+      // allows host /tmp but denies homedir — so the external write probe is
+      // only denied under `workspace-write` and only allowed under
+      // `danger-full-access`.
       const outsidePath = join(homedir(), `.dsh-tools-bash-${mode}-${Date.now()}.txt`)
       const result = await execute({ command: `printf outside > "${outsidePath}"`, description: "Write outside the workspace" })
       if (outside === "denied") {
