@@ -524,6 +524,13 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
+
+  /* Pin the box geometry so the plain streaming <pre> and the highlighted
+     shiki <pre> (which injects its own padding/tab-size inline) occupy the
+     same box. The deferred highlight then only recolors tokens instead of
+     resizing the block mid-stream, which is the render flicker source. */
+  padding: 12px 16px !important;
+  tab-size: 4;
 }
 
 /* Shiki dual-theme switch: codeToHtml emits github-light colors as the inline
@@ -800,6 +807,54 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   border-radius: 6px;
   background: var(--surface-weak);
   overflow: hidden;
+}
+
+/* Question result card: matches the surface + radius of the tool result
+   blocks so a completed Q&A reads as a first-class chat block, not a bare
+   text line. Always expanded — a finished answer has nothing to collapse. */
+[data-component="chat-interaction"] {
+  background: var(--surface-weak);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-slot="chat-interaction-header"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  min-width: 0;
+}
+
+[data-slot="chat-interaction-icon"] {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--icon-weak);
+}
+
+[data-slot="chat-interaction-label"] {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-base);
+  flex: 0 0 auto;
+}
+
+[data-slot="chat-interaction-question"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+[data-slot="chat-interaction-answer"] {
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* When FileChangeBlock embeds OpenCodeMessagePart inside its Collapsible.Content,
@@ -1180,6 +1235,11 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-slot="chat-generic-output"] {
   max-height: 240px;
   overflow: auto;
+
+  /* Reserve the scrollbar track so an auto-expanding tool result that crosses
+     the max-height threshold does not shrink the content box horizontally when
+     the scrollbar appears — that reflow is the expand flicker. */
+  scrollbar-gutter: stable;
 }
 
 [data-slot="chat-shell-error"] {

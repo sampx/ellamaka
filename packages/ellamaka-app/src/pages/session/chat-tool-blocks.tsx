@@ -119,7 +119,7 @@ function useToolOpen(
  * bar (Kilo Code behavior); list/glob/grep stay collapsible and collapse
  * again once they complete unless the user toggled them.
  */
-export function ContextToolBlock(props: { part: ToolPart; message: AssistantMessage }) {
+export function ContextToolBlock(props: { part: ToolPart; message: AssistantMessage; defaultOpen?: boolean }) {
   const input = () => props.part.state.input
   const subtitle = createMemo(() => {
     const i = input()
@@ -151,7 +151,11 @@ export function ContextToolBlock(props: { part: ToolPart; message: AssistantMess
     )
   }
 
-  const { open, setOpen } = useToolOpen(props.part, undefined, false)
+  const { open, setOpen } = useToolOpen(
+    props.part,
+    () => props.part.state.status === "error" || (props.defaultOpen ?? isToolRunning(props.part)),
+    false,
+  )
 
   return (
     <div data-component="chat-context-tool" data-tool={props.part.tool} data-call-id={props.part.callID}>
@@ -457,8 +461,11 @@ function genericToolSubtitle(input: Record<string, unknown> | undefined): string
   return [...parts, ...args].join(" ")
 }
 
-export function GenericToolBlock(props: { part: ToolPart; message: AssistantMessage }) {
-  const { open, setOpen } = useToolOpen(props.part)
+export function GenericToolBlock(props: { part: ToolPart; message: AssistantMessage; defaultOpen?: boolean }) {
+  const { open, setOpen } = useToolOpen(
+    props.part,
+    () => props.part.state.status === "error" || (props.defaultOpen ?? isToolRunning(props.part)),
+  )
   const input = () => props.part.state.input as Record<string, unknown> | undefined
   const subtitle = createMemo(() => genericToolSubtitle(input()))
   const output = createMemo(() => {

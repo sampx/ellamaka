@@ -585,12 +585,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "即座に実行 (Steer)",
   "settings.general.row.reasoningSummaries.title": "推論の要約を表示",
   "settings.general.row.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
-  "settings.general.row.shellToolPartsExpanded.title": "shell ツールパーツを展開",
+  "settings.general.row.shellToolPartsExpanded.title": "ツール呼び出し結果を展開",
   "settings.general.row.shellToolPartsExpanded.description":
-    "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
-  "settings.general.row.editToolPartsExpanded.title": "edit ツールパーツを展開",
+    "タイムラインでツール呼び出し結果をデフォルトで展開して表示します",
+  "settings.general.row.editToolPartsExpanded.title": "編集ツール結果を展開",
   "settings.general.row.editToolPartsExpanded.description":
-    "タイムラインで edit、write、patch ツールパーツをデフォルトで展開して表示します",
+    "タイムラインで edit、write、patch ツール結果をデフォルトで展開して表示します",
   "settings.general.row.showSessionProgressBar.title": "セッション進行状況バーを表示",
   "settings.general.row.showSessionProgressBar.description":
     "エージェントの作業中に、セッション上部にアニメーション付きの進行状況バーを表示します",

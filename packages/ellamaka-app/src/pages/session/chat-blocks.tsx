@@ -271,15 +271,17 @@ export function NarrativeBlock(props: {
 
 /**
  * ReasoningBlock renders a collapsible thinking block. It stays expanded while
- * the owning assistant message is running and collapses to a single-line
- * summary once completed.
+ * the owning assistant message is running. When the reasoning-summaries
+ * preference enables `defaultOpen`, a completed thought also stays expanded;
+ * otherwise it collapses to a single-line summary. A manual toggle always wins
+ * and is remembered across virtual-list remounts.
  */
-export function ReasoningBlock(props: { part: Part; message: AssistantMessage }) {
+export function ReasoningBlock(props: { part: Part; message: AssistantMessage; defaultOpen?: boolean }) {
   if (props.part.type !== "reasoning") return null
   const running = () => typeof props.message.time.completed !== "number"
   const stored = () => chatExpansionState.get(props.part.sessionID, "reasoning", props.part.id)
   const [selected, setSelected] = createSignal(stored())
-  const open = () => selected() ?? running()
+  const open = () => selected() ?? (props.defaultOpen ?? running())
   const setOpen = (next: boolean) => {
     setSelected(next)
     chatExpansionState.set(props.part.sessionID, "reasoning", props.part.id, next)
@@ -420,10 +422,31 @@ export function InteractionBlock(props: { part: Part; message: AssistantMessage 
   if (props.part.type !== "tool" || props.part.tool !== "question") return null
   const state = props.part.state
   const output = state.status === "completed" && typeof state.output === "string" ? state.output : ""
+  const input = () => (state.input ?? {}) as Record<string, unknown>
+  const question = createMemo(() => {
+    const i = input()
+    if (typeof i.question === "string" && i.question.trim()) return i.question.trim()
+    if (Array.isArray(i.questions)) {
+      const first = i.questions[0]
+      if (typeof first === "string" && first.trim()) return first.trim()
+      if (first && typeof first === "object" && typeof (first as Record<string, unknown>).question === "string") {
+        return ((first as Record<string, unknown>).question as string).trim()
+      }
+    }
+    return undefined
+  })
   return (
     <div data-component="chat-interaction" data-part-id={props.part.id}>
-      <Icon name="speech-bubble" size="small" />
-      <span data-slot="chat-interaction-output">{output || "问题已回答"}</span>
+      <div data-slot="chat-interaction-header">
+        <span data-slot="chat-interaction-icon">
+          <Icon name="speech-bubble" size="small" />
+        </span>
+        <span data-slot="chat-interaction-label">问题</span>
+        <Show when={question()}>
+          <span data-slot="chat-interaction-question">{question()}</span>
+        </Show>
+      </div>
+      <div data-slot="chat-interaction-answer">{output || "问题已回答"}</div>
     </div>
   )
 }

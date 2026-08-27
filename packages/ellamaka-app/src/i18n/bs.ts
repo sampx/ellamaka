@@ -653,12 +653,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
+  "settings.general.row.shellToolPartsExpanded.title": "Proširi rezultate poziva alata",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",
-  "settings.general.row.editToolPartsExpanded.title": "Proširi dijelove alata za uređivanje",
+    "Prikaži rezultate poziva alata podrazumijevano proširene na vremenskoj traci",
+  "settings.general.row.editToolPartsExpanded.title": "Proširi rezultate alata za uređivanje",
   "settings.general.row.editToolPartsExpanded.description":
-    "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
+    "Prikaži rezultate alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
   "settings.general.row.showSessionProgressBar.title": "Prikaži traku napretka sesije",
   "settings.general.row.showSessionProgressBar.description":
     "Prikaži animiranu traku napretka na vrhu sesije kada agent radi",

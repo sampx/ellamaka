@@ -596,12 +596,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",
-  "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Développer les résultats d'appel d'outil",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Afficher les parties de l'outil shell développées par défaut dans la chronologie",
-  "settings.general.row.editToolPartsExpanded.title": "Développer les parties de l'outil edit",
+    "Afficher les résultats d'appel d'outil développés par défaut dans la chronologie",
+  "settings.general.row.editToolPartsExpanded.title": "Développer les résultats de l'outil d'édition",
   "settings.general.row.editToolPartsExpanded.description":
-    "Afficher les parties des outils edit, write et patch développées par défaut dans la chronologie",
+    "Afficher les résultats des outils edit, write et patch développés par défaut dans la chronologie",
   "settings.general.row.showSessionProgressBar.title": "Afficher la barre de progression de la session",
   "settings.general.row.showSessionProgressBar.description":
     "Afficher la barre de progression animée en haut de la session lorsque l'agent travaille",

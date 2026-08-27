@@ -660,12 +660,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Yönlendir",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
-  "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
+  "settings.general.row.shellToolPartsExpanded.title": "Araç çağrısı sonuçlarını genişlet",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
-  "settings.general.row.editToolPartsExpanded.title": "Düzenleme araç bileşenlerini genişlet",
+    "Zaman çizelgesinde araç çağrısı sonuçlarını varsayılan olarak genişletilmiş göster",
+  "settings.general.row.editToolPartsExpanded.title": "Düzenleme aracı sonuçlarını genişlet",
   "settings.general.row.editToolPartsExpanded.description":
-    "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
+    "Zaman çizelgesinde düzenleme, yazma ve yama aracı sonuçlarını varsayılan olarak genişletilmiş göster",
 
   "settings.general.row.showSessionProgressBar.title": "Oturum ilerleme çubuğunu göster",
   "settings.general.row.showSessionProgressBar.description":

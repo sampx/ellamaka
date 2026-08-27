@@ -655,11 +655,11 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Styr",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
-  "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
-  "settings.general.row.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
-  "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",
+  "settings.general.row.shellToolPartsExpanded.title": "Utvid resultater av verktøykall",
+  "settings.general.row.shellToolPartsExpanded.description": "Vis resultater av verktøykall utvidet som standard i tidslinjen",
+  "settings.general.row.editToolPartsExpanded.title": "Utvid resultater av redigeringsverktøy",
   "settings.general.row.editToolPartsExpanded.description":
-    "Vis edit-, write- og patch-verktøydeler utvidet som standard i tidslinjen",
+    "Vis edit-, write- og patch-verktøyresultater utvidet som standard i tidslinjen",
   "settings.general.row.showSessionProgressBar.title": "Vis fremdriftslinje for sesjonen",
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerte fremdriftslinjen øverst i sesjonen når agenten jobber",

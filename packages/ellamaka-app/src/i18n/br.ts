@@ -588,12 +588,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Orientar",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
-  "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Expandir resultados de chamadas de ferramentas",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Mostrar partes da ferramenta shell expandidas por padrão na linha do tempo",
-  "settings.general.row.editToolPartsExpanded.title": "Expandir partes da ferramenta de edição",
+    "Mostrar resultados de chamadas de ferramentas expandidos por padrão na linha do tempo",
+  "settings.general.row.editToolPartsExpanded.title": "Expandir resultados da ferramenta de edição",
   "settings.general.row.editToolPartsExpanded.description":
-    "Mostrar partes das ferramentas de edição, escrita e patch expandidas por padrão na linha do tempo",
+    "Mostrar resultados das ferramentas de edição, escrita e patch expandidos por padrão na linha do tempo",
   "settings.general.row.showSessionProgressBar.title": "Mostrar barra de progresso da sessão",
   "settings.general.row.showSessionProgressBar.description":
     "Exibir a barra de progresso animada no topo da sessão quando o agente estiver trabalhando",

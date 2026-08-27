@@ -648,11 +648,11 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
-  "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",
-  "settings.general.row.editToolPartsExpanded.title": "Udvid edit-værktøjsdele",
+  "settings.general.row.shellToolPartsExpanded.title": "Udvid resultater af værktøjskald",
+  "settings.general.row.shellToolPartsExpanded.description": "Vis resultater af værktøjskald udvidet som standard i tidslinjen",
+  "settings.general.row.editToolPartsExpanded.title": "Udvid resultater af redigeringsværktøj",
   "settings.general.row.editToolPartsExpanded.description":
-    "Vis edit-, write- og patch-værktøjsdele udvidet som standard i tidslinjen",
+    "Vis edit-, write- og patch-værktøjsresultater udvidet som standard i tidslinjen",
   "settings.general.row.showSessionProgressBar.title": "Vis sessionens fremdriftslinje",
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerede fremdriftslinje øverst i sessionen, når agenten arbejder",

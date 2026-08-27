@@ -654,12 +654,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Разворачивать результаты вызовов инструментов",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",
-  "settings.general.row.editToolPartsExpanded.title": "Разворачивать элементы инструмента edit",
+    "Показывать результаты вызовов инструментов в ленте развернутыми по умолчанию",
+  "settings.general.row.editToolPartsExpanded.title": "Разворачивать результаты инструмента редактирования",
   "settings.general.row.editToolPartsExpanded.description":
-    "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
+    "Показывать результаты инструментов edit, write и patch в ленте развернутыми по умолчанию",
   "settings.general.row.showSessionProgressBar.title": "Показывать индикатор прогресса сессии",
   "settings.general.row.showSessionProgressBar.description":
     "Показывать анимированный индикатор прогресса вверху сессии, когда агент работает",

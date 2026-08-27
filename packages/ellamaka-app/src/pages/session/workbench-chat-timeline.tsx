@@ -174,7 +174,7 @@ function ToolPartBlock(props: {
                 <Show
                   when={kind() === "subagent"}
                   fallback={
-                    <Show when={kind() === "interaction"} fallback={<GenericToolBlock part={props.part} message={props.message} />}>
+                    <Show when={kind() === "interaction"} fallback={<GenericToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} />}>
                       <InteractionBlock part={props.part} message={props.message} />
                     </Show>
                   }
@@ -200,7 +200,7 @@ function ToolPartBlock(props: {
         </Show>
       }
     >
-      <ContextToolBlock part={props.part} message={props.message} />
+      <ContextToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} />
     </Show>
   )
 }
@@ -209,6 +209,7 @@ function AssistantPartBlock(props: {
   part: Part
   message: AssistantMessage
   showMeta?: boolean
+  showReasoningSummaries?: boolean
   modelName?: (providerID: string, modelID: string) => string | undefined
 }) {
   const kind = createMemo(() => classifyPart(props.part, props.message).kind)
@@ -241,7 +242,7 @@ function AssistantPartBlock(props: {
             </Show>
           }
         >
-          <ReasoningBlock part={props.part} message={props.message} />
+          <ReasoningBlock part={props.part} message={props.message} defaultOpen={props.showReasoningSummaries} />
         </Show>
       }
     >
@@ -266,6 +267,7 @@ function TranscriptRowView(props: {
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
   const row = () => props.row
   const activeUserMessageID = () => {
@@ -296,7 +298,7 @@ function TranscriptRowView(props: {
         <Show when={row().type === "assistant"}>
           <For each={(row() as Extract<TranscriptRow, { type: "assistant" }>).parts}>
             {(part) => (
-              <Show when={part.type === "tool"} fallback={<AssistantPartBlock part={part} message={row().message as AssistantMessage} showMeta={part.id === metaPartID()} modelName={props.modelName} />}>
+              <Show when={part.type === "tool"} fallback={<AssistantPartBlock part={part} message={row().message as AssistantMessage} showMeta={part.id === metaPartID()} showReasoningSummaries={props.showReasoningSummaries} modelName={props.modelName} />}>
                 <ToolPartBlock
                   part={part as ToolPart}
                   message={row().message as AssistantMessage}
@@ -340,6 +342,7 @@ function VirtualHistory(props: {
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
   if (props.virtualize === false) {
     // Provide a stub handle so the seam is testable without a real Virtualizer.
@@ -361,6 +364,7 @@ function VirtualHistory(props: {
               actionLabels={props.actionLabels}
               onSyncChild={props.onSyncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           )}
         </For>
@@ -388,6 +392,7 @@ function VirtualHistory(props: {
             actionLabels={props.actionLabels}
             onSyncChild={props.onSyncChild}
             modelName={props.modelName}
+            showReasoningSummaries={props.showReasoningSummaries}
           />
         )}
       </Virtualizer>
@@ -411,6 +416,7 @@ function LiveTranscriptTail(props: {
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
   return (
     <div data-component="chat-live-tail">
@@ -427,6 +433,7 @@ function LiveTranscriptTail(props: {
             actionLabels={props.actionLabels}
             onSyncChild={props.onSyncChild}
             modelName={props.modelName}
+            showReasoningSummaries={props.showReasoningSummaries}
           />
         )}
       </For>
@@ -632,6 +639,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               }}
               onSyncChild={syncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           </Show>
           <Show when={directRows().length > 0}>
@@ -646,6 +654,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               actionLabels={props.actionLabels}
               onSyncChild={syncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           </Show>
           <div data-component="chat-live-activity-slot">

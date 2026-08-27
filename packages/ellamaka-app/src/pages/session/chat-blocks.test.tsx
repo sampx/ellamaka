@@ -96,6 +96,7 @@ mock.module("@opencode-ai/ui/collapsible", () => ({
   ),
 }))
 import {
+  InteractionBlock,
   NarrativeBlock,
   ReasoningBlock,
   TurnChangeSummary,
@@ -327,6 +328,36 @@ describe("ReasoningBlock", () => {
     host.remove()
   })
 
+  test("stays expanded after completion when the reasoning-summaries default is on", () => {
+    const completed = assistantMessage("a-keep-open", "u-keep-open")
+    const part = reasoningPart("r-keep-open", "a-keep-open", "detailed reasoning")
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={true} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(host.querySelector("[data-component='chat-reasoning']")?.hasAttribute("data-streaming")).toBe(false)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(host.textContent).toContain("detailed reasoning")
+    host.remove()
+  })
+
+  test("defaults to collapsed after completion when the default is off", () => {
+    const completed = assistantMessage("a-default-closed", "u-default-closed")
+    const part = reasoningPart("r-default-closed", "a-default-closed", "internal reasoning")
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={false} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    host.remove()
+  })
+
+  test("a manual collapse still wins over the reasoning-summaries default", () => {
+    const completed = assistantMessage("a-manual-close", "u-manual-close")
+    const part = reasoningPart("r-manual-close", "a-manual-close", "reasoning")
+    chatExpansionState.set(part.sessionID, "reasoning", part.id, false)
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={true} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    host.remove()
+  })
+
   test("restores the selected expansion state after a virtual-list remount", () => {
     const completed = assistantMessage("a-remount", "u-remount")
     const part = reasoningPart("r-remount", "a-remount", "persistent thinking")
@@ -410,6 +441,48 @@ describe("TurnOutcome", () => {
     const host = mount(() => <TurnOutcome message={a} />)
     expect(host.querySelector("[data-component='chat-outcome']")).not.toBeNull()
     expect(host.textContent).toContain("boom")
+    host.remove()
+  })
+})
+
+describe("InteractionBlock", () => {
+  test("renders the question result as a styled card with label and answer", () => {
+    const a = assistantMessage("a-q", "u1")
+    const part = toolPart("t-q", "a-q", "question", "c-q", {
+      status: "completed",
+      input: { question: "继续吗?" },
+      output: "继续",
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-component='chat-interaction']")).not.toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-header']")).not.toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-label']")?.textContent).toContain("问题")
+    expect(host.querySelector("[data-slot='chat-interaction-answer']")?.textContent).toContain("继续")
+    host.remove()
+  })
+
+  test("shows the question text when present", () => {
+    const a = assistantMessage("a-q2", "u1")
+    const part = toolPart("t-q2", "a-q2", "question", "c-q2", {
+      status: "completed",
+      input: { question: "继续吗?" },
+      output: "继续",
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-slot='chat-interaction-question']")?.textContent).toContain("继续吗")
+    host.remove()
+  })
+
+  test("omits the question slot when the input carries no question", () => {
+    const a = assistantMessage("a-q3", "u1")
+    const part = toolPart("t-q3", "a-q3", "question", "c-q3", {
+      status: "completed",
+      input: {},
+      output: "好的",
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-slot='chat-interaction-question']")).toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-answer']")?.textContent).toContain("好的")
     host.remove()
   })
 })
@@ -506,6 +579,28 @@ describe("ContextToolBlock", () => {
     const host2 = mount(() => <ContextToolBlock part={part} message={a} />)
     expect(host2.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
     host2.remove()
+  })
+
+  test("expands a completed context tool when the tool-call-results default is on", () => {
+    const a = assistantMessage("a-ctx-default", "u1")
+    const part = toolPart("t-ctx-default", "a-ctx-default", "glob", "c-ctx-default", {
+      input: { pattern: "**/*.ts" },
+      output: "a.ts",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} defaultOpen={true} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
+    host.remove()
+  })
+
+  test("still collapses a completed context tool when the default is off", () => {
+    const a = assistantMessage("a-ctx-closed", "u1")
+    const part = toolPart("t-ctx-closed", "a-ctx-closed", "glob", "c-ctx-closed", {
+      input: { pattern: "**/*.ts" },
+      output: "a.ts",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} defaultOpen={false} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("false")
+    host.remove()
   })
 })
 
@@ -815,6 +910,17 @@ describe("GenericToolBlock", () => {
     const host = mount(() => <GenericToolBlock part={part} message={a} />)
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']")
     expect(subtitle?.textContent).toContain("limit=5")
+    host.remove()
+  })
+
+  test("expands a completed generic tool when the tool-call-results default is on", () => {
+    const a = assistantMessage("a-gen-default", "u1")
+    const part = toolPart("t-gen-default", "a-gen-default", "some_mcp_tool", "c-gen-default", {
+      input: { query: "x" },
+      output: "done",
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} defaultOpen={true} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
     host.remove()
   })
 })

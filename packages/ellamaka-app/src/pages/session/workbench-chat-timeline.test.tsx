@@ -198,6 +198,52 @@ describe("WorkbenchChatTimeline", () => {
     host.remove()
   })
 
+  test("keeps a completed reasoning block expanded when the reasoning-summaries setting is on", () => {
+    const u1 = userMessage("u-reason-on")
+    const a1 = assistantMessage("a-reason-on", "u-reason-on") // completed
+    const messages: Message[] = [u1, a1]
+    const reasoning = { id: "r-on", sessionID: "ses_1", messageID: "a-reason-on", type: "reasoning", text: "detailed chain", time: { start: 0, end: 1 } } as Part
+    const parts = [textPart("p-u-on", "u-reason-on", "q"), reasoning, textPart("p-a-on", "a-reason-on", "answer")]
+    withSync(messages, parts, { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: messages.filter((m) => m.role === "user") as UserMessage[],
+          virtualize: false,
+          showReasoningSummaries: true,
+        })}
+      />
+    ))
+
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']")
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true")
+    host.remove()
+  })
+
+  test("omits the reasoning block entirely when the reasoning-summaries setting is off", () => {
+    const u1 = userMessage("u-reason-off")
+    const a1 = assistantMessage("a-reason-off", "u-reason-off")
+    const messages: Message[] = [u1, a1]
+    const reasoning = { id: "r-off", sessionID: "ses_1", messageID: "a-reason-off", type: "reasoning", text: "chain", time: { start: 0, end: 1 } } as Part
+    const parts = [textPart("p-u-off", "u-reason-off", "q"), reasoning, textPart("p-a-off", "a-reason-off", "answer")]
+    withSync(messages, parts, { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: messages.filter((m) => m.role === "user") as UserMessage[],
+          virtualize: false,
+          showReasoningSummaries: false,
+        })}
+      />
+    ))
+
+    expect(host.querySelector("[data-component='chat-reasoning']")).toBeNull()
+    expect(host.querySelector("[data-component='chat-narrative']")).not.toBeNull()
+    host.remove()
+  })
+
   test("renders the live tail for a running turn", () => {
     const u1 = userMessage("u1")
     const a1 = assistantMessage("a1", "u1", { time: { created: 2000 } }) // running

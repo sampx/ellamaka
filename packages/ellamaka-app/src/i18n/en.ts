@@ -789,12 +789,12 @@ export const dict = {
   "settings.general.row.showCustomAgents.description": "Show the agent picker in the v2 desktop composer",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
-  "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
+  "settings.general.row.shellToolPartsExpanded.title": "Expand tool call results",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Show shell tool parts expanded by default in the timeline",
-  "settings.general.row.editToolPartsExpanded.title": "Expand edit tool parts",
+    "Show tool call results expanded by default in the timeline",
+  "settings.general.row.editToolPartsExpanded.title": "Expand edit tool results",
   "settings.general.row.editToolPartsExpanded.description":
-    "Show edit, write, and patch tool parts expanded by default in the timeline",
+    "Show edit, write, and patch tool results expanded by default in the timeline",
   "settings.general.row.showSessionProgressBar.title": "Show session progress bar",
   "settings.general.row.showSessionProgressBar.description":
     "Display the animated progress bar at the top of the session when the agent is working",

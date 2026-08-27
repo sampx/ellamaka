@@ -599,12 +599,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
-  "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
+  "settings.general.row.shellToolPartsExpanded.title": "Werkzeugaufruf-Ergebnisse ausklappen",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
-  "settings.general.row.editToolPartsExpanded.title": "Edit-Tool-Abschnitte ausklappen",
+    "Werkzeugaufruf-Ergebnisse standardmäßig in der Timeline ausgeklappt anzeigen",
+  "settings.general.row.editToolPartsExpanded.title": "Editier-Werkzeug-Ergebnisse ausklappen",
   "settings.general.row.editToolPartsExpanded.description":
-    "Edit-, Write- und Patch-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
+    "Edit-, Write- und Patch-Werkzeug-Ergebnisse standardmäßig in der Timeline ausgeklappt anzeigen",
   "settings.general.row.showSessionProgressBar.title": "Sitzungsfortschrittsleiste anzeigen",
   "settings.general.row.showSessionProgressBar.description":
     "Die animierte Fortschrittsleiste oben in der Sitzung anzeigen, wenn der Agent arbeitet",

@@ -581,12 +581,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "조종",
   "settings.general.row.reasoningSummaries.title": "추론 요약 표시",
   "settings.general.row.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
-  "settings.general.row.shellToolPartsExpanded.title": "shell 도구 파트 펼치기",
+  "settings.general.row.shellToolPartsExpanded.title": "도구 호출 결과 펼치기",
   "settings.general.row.shellToolPartsExpanded.description":
-    "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",
-  "settings.general.row.editToolPartsExpanded.title": "edit 도구 파트 펼치기",
+    "타임라인에서 기본적으로 도구 호출 결과를 펼친 상태로 표시합니다",
+  "settings.general.row.editToolPartsExpanded.title": "편집 도구 결과 펼치기",
   "settings.general.row.editToolPartsExpanded.description":
-    "타임라인에서 기본적으로 edit, write, patch 도구 파트를 펼친 상태로 표시합니다",
+    "타임라인에서 기본적으로 edit, write, patch 도구 결과를 펼친 상태로 표시합니다",
   "settings.general.row.showSessionProgressBar.title": "세션 진행 표시줄 표시",
   "settings.general.row.showSessionProgressBar.description":
     "에이전트가 작업 중일 때 세션 상단에 애니메이션 진행 표시줄을 표시합니다",

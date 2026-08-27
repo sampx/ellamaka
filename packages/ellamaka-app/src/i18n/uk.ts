@@ -772,12 +772,12 @@ export const dict = {
   "settings.general.row.showStatus.description": "Показувати кнопку статусу сервера в заголовку робочого столу",
   "settings.general.row.reasoningSummaries.title": "Показувати підсумки мислення",
   "settings.general.row.reasoningSummaries.description": "Відображати підсумки мислення моделі на часовій шкалі",
-  "settings.general.row.shellToolPartsExpanded.title": "Розгортати частини інструменту оболонки",
+  "settings.general.row.shellToolPartsExpanded.title": "Розгортати результати викликів інструментів",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Показувати частини інструменту оболонки розгорнутими за замовчуванням на часовій шкалі",
-  "settings.general.row.editToolPartsExpanded.title": "Розгортати частини інструменту редагування",
+    "Показувати результати викликів інструментів розгорнутими за замовчуванням на часовій шкалі",
+  "settings.general.row.editToolPartsExpanded.title": "Розгортати результати інструменту редагування",
   "settings.general.row.editToolPartsExpanded.description":
-    "Показувати частини інструментів редагування, запису та патчів розгорнутими за замовчуванням на часовій шкалі",
+    "Показувати результати інструментів редагування, запису та патчів розгорнутими за замовчуванням на часовій шкалі",
   "settings.general.row.showSessionProgressBar.title": "Показувати індикатор прогресу сесії",
   "settings.general.row.showSessionProgressBar.description":
     "Відображати анімований індикатор прогресу вгорі сесії, коли агент працює",
