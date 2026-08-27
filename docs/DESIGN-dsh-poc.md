@@ -413,31 +413,37 @@ messages:
 - 改为 dsh 模式：固定 `skill` schema + 历史尾部持久 skill catalog + digest 变化时完整替换目录 + 空 tombstone + source metadata。
 - 这独立于 dsh 工具收尾，可单独排期。
 
-### 4.12 单端口统一方案源码核实（2026-08-27）
+### 4.12 单端口统一目标（2026-08-27）
 
-消除双端口、在单进程单端口（4097）下经 Cordis 插件替换机制提供两套 API 与两套界面，是 §2.4.1「为什么双端口」决策的**后续演进方向**。以下为源码级核实结论（基于 dsh rc.6 实装副本），机制可行，但原实现方案有多处与真实源码不符，需修正后落地。**本文档记录核实结果与修正方向，不构成已批准的实施计划。**
+DSH Web 与 Ellamaka 共用进程和公开端口。Ellamaka 保持 `/api/*`、`/workbench` 与现有 WebSocket 所有权。DSH Web 统一挂载在 `/dsh/*`，Workbench iframe 使用同源 `/dsh/`。
 
-**总体判断**：方案骨架成立。`VirtualWebServer`（复刻 `WebServer` 类但虚拟化路由表）+ 主服务器 `/dsh` 分发 + patch 层按 id 替换官方插件，这一组合技术上可行，且不触碰 dsh 上游包。但下列 6 项源码事实推翻或修正了原方案的若干具体假设。
+**目标链路**：
 
-**核实到的关键源码事实**：
+```text
+Ellamaka node:http.Server（唯一监听端口）
+├── /dsh/* → 受控 Node 路由挂载点 → 剥离 /dsh → VirtualWebServer
+│   ├── /api/*            → 官方 dsh-client-connection
+│   ├── /api/events.*     → 官方 WebSocket downlinks
+│   ├── /plugins/*        → 官方 dsh-client-modules
+│   ├── /plugins/events   → 官方 dsh-client-hmr
+│   └── /*                → 官方 frontend-static fallback
+└── 其他路径 → Effect HttpApi 与 Ellamaka 原有升级处理
+```
 
-1. **`./src/*` 子路径导出不可用**。官方各包 `exports` 声明 `"./src/*": "./src/*"`，但发布包 `files` 只含 `lib/`，无 `src/` 目录，`./src/*` 实际解析不到。内部模块（`http-bridge`、`api-request-trust`、`websocket-downlink`、`rpc-host`、`api-path`）以编译产物存在 `lib/types/*.js`。自定义插件应从 `lib/` import 编译版，而非原方案的 `./src/*.ts`。
+**实现所有权**：
 
-2. **`renderIndex` / `collectIndexInjections` / `renderIndexInjections` / `IndexInjection` 均不存在**。真实的 index 变换机制是 `WebServer.tapIndex(fn)` + `WebServer.applyIndexTaps(html)`。`client-modules` 通过 `webServer.tapIndex` 注入 boot manifest，`frontend-static` 经 `registerFallback` + `applyIndexTaps` 渲染 index。VirtualWebServer 需实现这两个方法，而非 plan 假设的 `renderIndex` 一族。`/plugins/ → /dsh/plugins/` 的 HTML 重写应在 `applyIndexTaps` 内追加一个 tap。
+1. **`VirtualWebServer` 属于 `@wopal/ellamaka-cordis`**。它实现官方 `WebServer` 的 `register`、`registerUpgrade`、`registerFallback`、`tapIndex`、`applyIndexTaps`、`host` 与 `port`。它保存路由表并暴露 HTTP/upgrade 分发，不创建监听 socket。
+2. **Ellamaka Server 提供受控 Node 路由挂载点**。挂载点保存前缀与 HTTP/upgrade handler，保留 Effect 已注册 listener 的顺序与生命周期。调用方获得 register/dispose 能力，不获得原始 `node:http.Server`。`serve.ts` 与 Desktop sidecar 共用这一入口。
+3. **DSH 服务端插件保持官方原版**。主服务器剥离 `/dsh` 后，VirtualWebServer 看到的仍是官方 `/api`、`/plugins` 与 `/plugins/events`。`connection`、`client-hmr`、`modules`、`web-runtime` 与所有 UI 插件继续使用官方实现。Profile 只禁用真实 `webserver` 行，并在 Loader 挂载前提供 VirtualWebServer。
+4. **`web-startup` 保持启用**。它继续提供 `webStartup`，满足 `web-runtime` 的注入关系。VirtualWebServer 的 `host`/`port` 返回 Ellamaka 的公开地址，保证 DSH runtime URL、shell 环境与提示词仍指向真实入口。
+5. **浏览器前缀适配属于 DSH iframe 文档**。VirtualWebServer 在 index tap 链末尾注入启动脚本。脚本仅作用于隔离 iframe，负责把同源 `fetch('/api/*')`、WebSocket `/api/events.*` 与 EventSource `/plugins/events` 映射到 `/dsh/*`。外部 URL和已经带 `/dsh` 的 URL保持不变。
+6. **静态资源路径由 index 变换拥有**。DSH rc.6 frontend 使用根路径 `/assets/*`、`/favicon.svg` 与 boot manifest 的 `/plugins/*`。index 变换统一添加 `/dsh` 前缀，并移除 iframe 不需要的 PWA manifest link。VirtualWebServer fallback 接收剥离后的路径并继续使用官方 frontend-static。
+7. **DSH 上游发布包保持只读**。rc.6 包声明 `./src/*` 但发布物没有 `src/`，且 connection 运行时代码合并在 `lib/index.js`/`lib/client.js`。方案不 import 内部源文件、不派生官方 bundle，也不新增 dual-face 定制包。
+8. **HMR 路径沿用官方 `client-hmr`**。`hmr` 是 base 层 `@deepseek-ai/cordis-plugin-hmr`，Web overlay 已禁用；`client-hmr` 才拥有 `/plugins/events`。浏览器前缀适配覆盖其 EventSource，服务端路由保持原样。
 
-3. **HMR 插件 id 是 `client-hmr`，不是 `hmr`**。`hmr`（base 层）→ `@deepseek-ai/cordis-plugin-hmr`（通用 HMR，web-app 层已 `disabled: true`）；DSH 客户端 HMR 的 id 是 `client-hmr`（web-app 层，未禁用），name `@deepseek-ai/dsh-client-hmr`，服务端注册 `/plugins/events` SSE，浏览器端 `new EventSource('/plugins/events')`。原方案的 `{ id: 'hmr', disabled: true }` 禁错插件，需改为 `client-hmr`。
+**范围衔接**：单端口统一不改变工具容器、沙箱、escalation 或原生 UI 决策。它为后续 patch/dual-face 机制观察提供实证，并为 iframe → 原生 UI 保留稳定的同源基线。
 
-4. **`createSharedFetchHandler(channel)` 的 `channel` 参数被收窄为字面量 `/api`**，且 `registerInterceptor` 强制校验 `channel === "/api"`。但官方 `apply` 用的是 `createSharedFetchHandler`（非 interceptor），其 `endpointFromPath(channel, pathname)` 接受任意前缀字符串。改为 `/dsh/api` 需处理字面量类型收窄（类型层面），运行时通道匹配可用。
-
-5. **底层 `node:http.Server` 引用无法从 Effect 层获取**（原方案 Q1）。`packages/opencode/src/server/server.ts` 中 `serverLayer` 在闭包内 `createServer()`（server.ts:201），`server` 未对外暴露，`NodeHttpServer.layer` 只拿到 Effect 封装。原方案「从 Effect 层获取底层 server 引用」在当前代码不成立。可行接入点需改 `serverLayer` 暴露原始 server，或在 Effect `HttpRouter` 层添加 `/dsh/*` 路由桥接（两候选均需实施时 spike）。
-
-6. **禁用 `web-startup` 会连带 `webserver`/`web-runtime` 的 `inject: [webStartup]` 失败**。`web-startup`（name `@deepseek-ai/dsh-web-app/startup`）提供 `webStartup` 服务，`webserver` 与 `web-runtime` 两行都 `inject: [webStartup]` 并读 `ctx.webStartup.*`。禁用它需同时提供替代 `webStartup` 服务，或保留 `web-startup` 行仅禁用 `webserver` 行。当前 `mountProfile` 用 `provideCmdline(ctx, { args: ["--port", String(port)] })` 喂它（dsh-web.ts:320）。
-
-7. **`--expose-internals` 依赖属于 `cordis-plugin-loader`，非 HMR 专属**。`ModuleLoader.fromInternal()` 先查 `--expose-internals`，回退 `node-addon-require-builtin`。bun 缺两者故失败（fork 注释据此声明）。这是 bun 运行时既有约束，不是单端口方案新增问题；工具容器（`mountDshTools`）已因该约束禁用 `client-hmr`，web 容器若启用热更需处理。
-
-**未确认项**：bun 下 `cordis-plugin-loader` 的 `fromInternal()` 具体失败行为（注释层断言，未在已读源码实证崩溃点）。
-
-> 结论：机制可行，落地前需修正上述 1-6 项源码假设。具体实施计划另立 PLAN。
+> 结论：该目标可实施。正式实施与验收由 P4 dev-flow Plan 承载。
 
 ## 5. 当前约定（双人确认制，无红线）
 
@@ -460,12 +466,13 @@ messages:
 |------|------|--------|------|
 | P1 | 插件生态融合验证：dsh 插件在 ellamaka 容器内完整运行、动态装载 | 核心 | ✅ 完成 |
 | P2 | 工具利用：fs-search（grep/glob）经工具容器 + adapter 落地 | 核心 | ✅ grep/glob 已落地 |
-| P3 | **阶段 A 扩展 + 动态装配收尾**：tool-fs / str_replace / tool-bash 沙箱内运行；adapter 每轮读当前 dsh registry；skill 目录模型输入改造（§4.11，分解见 PLAN P3.1–P3.6） | 核心 | 🔶 收尾中 |
-| P4 | **阶段 B（待定）**：escalation 审批桥接思路细化（§3.2.5） | 核心 | ⏸ 待定 |
-| P5 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | ⬜ |
-| P6 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | ⬜ |
-| P7 | 界面演进：iframe → 原生（远期） | 外围 | ⬜ |
-| P8 | desktop 依赖安装：打包版首次启动自动安装 dsh 包到 `$WOPAL_HOME/ellamaka/cache`（见 §2.2） | 外围 | ⬜ |
+| P3 | **阶段 A 扩展 + 动态装配收尾**：tool-fs / str_replace / tool-bash 已落地；P3.5 完成动态 registry 与沙箱关闭语义；P3.6 在 P4 后处理 skill 目录模型输入 | 核心 | 🔶 收尾中 |
+| P4 | **DSH Web 单端口统一**：4097 同源挂载 `/dsh/*`，保留官方 connection/HMR/modules/UI 插件 | 核心 | 📋 已规划 |
+| P5 | **阶段 B（待定）**：escalation 审批桥接思路细化（§3.2.5） | 核心 | ⏸ 待定 |
+| P6 | 配置动态化实证整理：从 P4 提取 patch 覆盖与生命周期证据 | 吸收轨 | ⬜ |
+| P7 | 插件规范化实证整理：从 P4 提取 Loader、dual-face 与卸载证据 | 吸收轨 | ⬜ |
+| P8 | 界面演进：同源 iframe → 原生（远期） | 外围 | ⬜ |
+| P9 | desktop 依赖安装：打包版首次启动自动安装 dsh 包到 `$WOPAL_HOME/ellamaka/cache`（见 §2.2） | 外围 | ⬜ |
 
 详细任务分解见 `PLAN-TODOS.md`。
 

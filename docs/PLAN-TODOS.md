@@ -8,6 +8,7 @@
 ## 状态图例
 
 - ⬜ 未开始
+- 📋 已规划（正式 Plan 已提交审阅，尚未实施）
 - 🔶 进行中
 - ✅ 已完成
 - ⏸ 暂停（注明原因）
@@ -32,12 +33,25 @@
 |------|------|--------|------|------|------|
 | P1 | 双引擎容器宿主 + 日志桥接 | 核心 | 无 | ✅ 完成 | 接线 + 日志桥接 |
 | P2 | 工具利用：fs-search（grep/glob）落地 | 核心 | P1 | ✅ 落地 | adapter 机制 + grep/glob |
-| P3 | **阶段 A：tool-fs / str_replace / tool-bash 沙箱内运行** | 核心 | P2 | 🔶 当前重点 | 中 |
-| P4 | **阶段 B：escalation 审批桥接（待定）** | 核心 | P3 | ⏸ 待定 | 后期细化 |
-| P5 | 配置动态化观察：patch 声明式、增量重扫 | 吸收轨 | 无 | ⬜ | 按需 |
-| P6 | 插件规范化观察：dual-face、Loader 动态插拔 | 吸收轨 | 无 | ⬜ | 按需 |
-| P7 | 界面演进：iframe → 原生（远期） | 外围 | 设计决定 | ⬜ | 按需 |
-| P8 | desktop 依赖安装：首次启动自动装 dsh 包 | 外围 | 设计决定 | ⬜ | 单独立项 |
+| P3 | **阶段 A：tool-fs / str_replace / tool-bash 沙箱内运行** | 核心 | P2 | 🔶 P3.5 收尾 | 中 |
+| P4 | **DSH Web 单端口统一：4097 同源挂载 `/dsh/*`** | 核心 | P1；执行排在 P3.5 后 | 📋 正式 Plan reviewing | 大 |
+| P5 | **阶段 B：escalation 审批桥接（待定）** | 核心 | P3.5；排在 P4 后 | ⏸ 待定 | 后期细化 |
+| P6 | 配置动态化实证整理：patch 覆盖与生命周期 | 吸收轨 | P4 | ⬜ | 小 |
+| P7 | 插件规范化实证整理：Loader、dual-face、卸载 | 吸收轨 | P4 | ⬜ | 小 |
+| P8 | 界面演进：同源 iframe → 原生（远期） | 外围 | P4 + P5 决策 | ⬜ | 按需 |
+| P9 | desktop 依赖安装：首次启动自动装 dsh 包 | 交付 | P4 + 交付决定 | ⬜ | 单独立项 |
+
+### 推荐实施顺序
+
+`P3.5 → P4 → P3.6 → P5 → P6/P7 → P8 → P9`
+
+1. **P3.5 先收口**：修正 `enabled:false`，完成每轮动态工具装配。它仍是当前工具链的已知语义缺口。
+2. **P4 随后实施**：单端口统一与 P3.5 技术上独立，但共享长期 PoC 工作树。顺序执行可避免 dsh 装配文件并发修改。
+3. **P3.6 延后到 P4 之后**：skill 目录模型输入属于独立缓存优化，不阻塞单端口目标。
+4. **P5 保持暂停**：escalation 需要独立产品决策。P4 不引入权限体系变化。
+5. **P6/P7 从 P4 提取实证**：P4 会真实使用 patch 覆盖、Loader 生命周期与官方 dual-face 插件，无需先做抽象观察。
+6. **P8 建立在 P4 的同源基线上**：先稳定 iframe 的服务边界，再决定原生 UI 替换。
+7. **P9 继续属于交付阶段**：单端口完成后再处理打包版闭包安装，避免固化双端口协议。
 
 ---
 
@@ -162,52 +176,99 @@
 
 ---
 
-## P4 阶段 B：escalation 审批桥接（待定） ⏸
+## P4 DSH Web 单端口统一 📋
+
+> **目标**：Ellamaka 与 DSH Web 共用进程和公开端口。Ellamaka 保持现有 `/api/*` 与 `/workbench`；DSH 统一挂载 `/dsh/*`，Workbench iframe 使用同源 `/dsh/`。
+> **设计**：`VirtualWebServer` 保存官方 DSH 插件注册的 node:http 路由。Ellamaka Server 提供受控 Node 路由挂载点并剥离 `/dsh`。官方 connection、client-hmr、modules、web-runtime 与 UI 插件保持原版。iframe index 注入浏览器传输前缀适配，并重写 DSH 静态资源根路径。详见 `DESIGN-dsh-poc.md` §4.12。
+> **执行依赖**：技术依赖 P1。实施排在 P3.5 后，复用当前长期 PoC 工作树；P3.6 延后到本批次之后。
+> **验收故事**：`http://127.0.0.1:4097/dsh/` 加载完整 DSH 界面；DSH API/WS/HMR/插件资源全部走 `/dsh/*`；Ellamaka `/api/*` 不受影响；dev 与 Desktop 不再监听或传递第二个 dshPort。
+> **正式 Plan**：`.wopal-space/plans/ellamaka/feature-dsh-unify-web-services-on-one-port.md`（reviewing）
+
+### P4.1 Ellamaka Node 路由挂载点
+
+- [ ] 4.1.1 新增受控 prefix mount registry，统一分发 HTTP 与 upgrade 请求
+- [ ] 4.1.2 `/dsh` 与 `/dsh/*` 边界匹配并保留 query；非匹配请求继续进入 Effect listener
+- [ ] 4.1.3 注册返回 disposer；Server shutdown 保持 Effect/NodeHttpServer 所有权
+
+### P4.2 VirtualWebServer 与 iframe 前缀适配
+
+- [ ] 4.2.1 实现官方 WebServer 接口与 exact / longest-prefix / fallback / exact-upgrade 语义
+- [ ] 4.2.2 index 变换添加 `/dsh` 静态资源前缀并移除 iframe 不需要的 PWA manifest
+- [ ] 4.2.3 index 最前注入 fetch / WebSocket / EventSource 前缀适配；外部 URL 与已带 `/dsh` URL 保持不变
+
+### P4.3 DSH Web profile 虚拟挂载
+
+- [ ] 4.3.1 Loader 挂载前提供 VirtualWebServer，只禁用官方真实 `webserver` 行
+- [ ] 4.3.2 保留 `web-startup`、connection、client-hmr、modules、web-runtime 与全部 UI 插件
+- [ ] 4.3.3 Web host handle 暴露 VirtualWebServer 与 dispose；工具容器 API 保持独立
+
+### P4.4 CLI serve 单端口接线
+
+- [ ] 4.4.1 `serve.ts` 将 DSH VirtualWebServer 注册到 Listener `/dsh` mount
+- [ ] 4.4.2 生命周期 disposer 与 web/tools CordisHub 一起清理
+- [ ] 4.4.3 验证 Ellamaka API、DSH HTTP、WebSocket 与插件资源共享一个端口
+
+### P4.5 Desktop 与 Workbench 同源收口
+
+- [ ] 4.5.1 Desktop sidecar 在本地 Ellamaka Listener 上挂载 DSH，不再启动随机第二端口
+- [ ] 4.5.2 删除 ready → supervisor → preload → renderer → Platform 的 `dshPort/getDshPort` 透传链
+- [ ] 4.5.3 Workbench iframe 固定使用 `/dsh/`；无 DSH 闭包时继续自然降级
+
+### P4.6 回归、端到端与文档收口
+
+- [ ] 4.6.1 单元测试覆盖 route mount、VirtualWebServer、URL 适配与 profile patch
+- [ ] 4.6.2 集成验证覆盖 `/dsh/`、静态资源、RPC、WS、HMR 与 Ellamaka `/api/*` 隔离
+- [ ] 4.6.3 CLI、Workbench、Desktop 三包 typecheck/test/build 通过
+- [ ] 4.6.4 实施完成后将 DESIGN §2 双端口现状更新为单端口现实，并记录 P6/P7 的后续实证输入
+
+---
+
+## P5 阶段 B：escalation 审批桥接（待定） ⏸
 
 > **状态**：待定，只记录思路、不实施。dag 权限体系接管已放弃（dsh approval/permission-presets 为 dsh 自身 UI 闭环服务，接管成本极高、收益为零）。权限继续走 ellamaka 原生体系，沙箱只当执行底座（§3.2.5）。
 > **思路**：唯一待定的子问题是 escalation——模型写入被沙箱拒绝后主动申请更宽模式（`sandbox_permissions` + `justification`）的审批通道。候选：① 桥接到 ellamaka ask；② 不做，用户从 UI 切模式重试。后期细化可行性，不可行则放弃。
 
-- [ ] 4.1 细化 escalation 桥接方案（approveEscalation → Permission.ask 通道）
-- [ ] 4.2 评估成本；不可行即放弃，记录结论
+- [ ] 5.1 细化 escalation 桥接方案（approveEscalation → Permission.ask 通道）
+- [ ] 5.2 评估成本；不可行即放弃，记录结论
 
 ---
 
-## P5 配置动态化观察：patch 声明式、增量重扫 ⬜
+## P6 配置动态化实证整理：patch 声明式、增量重扫 ⬜
 
-> **目标**：观察 dsh 的配置动态化机制（patch 声明式 entry 树、增量重扫、HMR），评估吸收成本。**只观察、不写设计**，积累认知直到有信心决定载体。
-> **验收故事**：理解 dsh 配置动态化的完整机制与成本，形成吸收轨载体决定的输入。
+> **目标**：以 P4 的真实 patch 覆盖与 mount/dispose 证据为输入，整理 dsh 配置动态化机制与吸收成本。
+> **验收故事**：形成可复用的 patch 声明、增量重扫与生命周期事实，不从抽象源码观察重新开始。
 
-- [ ] 5.1 观察 patch 声明式 entry 树机制（insert/disable/override）
-- [ ] 5.2 观察增量重扫机制（dirty entry → microtask 刷新，只 diff 变更条目）
-- [ ] 5.3 观察 HMR 机制（client-hmr row 监听 onRebuilt）
-- [ ] 5.4 评估吸收成本：ellamaka 宿主层复刻这套机制的复杂度
-
----
-
-## P6 插件规范化观察：dual-face、Loader 动态插拔 ⬜
-
-> **目标**：观察 dsh 的插件规范化机制（Loader 动态装载、`loader.remove(entry)` 干净卸载、dual-face 前端 bundle），评估吸收成本。**只观察、不写设计**。
-> **验收故事**：理解 dsh 插件规范化与动态插拔的完整机制与成本，形成吸收轨载体决定的输入。
-
-- [ ] 6.1 观察 Loader 动态装载机制（`ctx.registry.plugin(Loader)` 挂载、`loader.remove(entryId)` 干净卸载）
-- [ ] 6.2 观察 dual-face 前端 bundle 机制（后端 Loader 决定前端插件集、按需拉取、rev 哈希热更）
-- [ ] 6.3 评估吸收成本：ellamaka 宿主层复刻这套机制的复杂度
+- [ ] 6.1 汇总 P4 的 webserver disable + host service replacement 证据
+- [ ] 6.2 观察增量重扫机制（dirty entry → microtask 刷新，只 diff 变更条目）
+- [ ] 6.3 记录 client-hmr graph/rebuilt 生命周期在单端口下的行为
+- [ ] 6.4 评估 ellamaka 宿主吸收 patch 机制的成本
 
 ---
 
-## P7 界面演进：iframe → 原生（远期）⬜
+## P7 插件规范化实证整理：dual-face、Loader 动态插拔 ⬜
 
-> **目标**：ellamaka 是独立产品，不是 dsh 的包装器。终局界面必然自己长，dsh 的 dual-face 前端 bundle 设计是反哺进 ellamaka 的设计。**依赖设计决定（§3.2.5）**。
+> **目标**：以 P4 保留官方 dual-face 插件并替换 WebServer host service 的实证为输入，整理 Loader 动态装载与卸载规律。
+> **验收故事**：明确 Ellamaka 可直接采用的 Loader/dual-face 机制，以及继续保持 DSH 原生的部分。
+
+- [ ] 7.1 汇总 Loader 挂载、`loader.remove(entryId)` 与 VirtualWebServer disposer 证据
+- [ ] 7.2 汇总 dual-face boot graph、按需 bundle 与 rev 热更在 `/dsh` 下的行为
+- [ ] 7.3 评估 ellamaka 宿主吸收 Loader/dual-face 机制的成本
+
+---
+
+## P8 界面演进：同源 iframe → 原生（远期）⬜
+
+> **目标**：ellamaka 是独立产品，不是 dsh 的包装器。终局界面由 ellamaka 原生承载，P4 的同源 iframe 是稳定过渡边界。**依赖 P4 与设计决定（§3.2.5）**。
 > **验收故事**：ellamaka 界面原生呈现 dsh 能力，不再用 iframe 完整包装 dsh 界面。
 
-- [ ] 7.1 设计决定后启动（阶段 B 权限决定）
-- [ ] 7.2 界面演进方案设计
+- [ ] 8.1 设计决定后启动（阶段 B 权限决定）
+- [ ] 8.2 以 `/dsh` 同源能力边界为输入编写界面演进方案
 
 ---
 
-## 远期 — 发布层面 ⬜
+## P9 Desktop 依赖安装与发布收口 ⬜
 
-> **目标**：PoC 是实验，不关注发布层面细节。设计决定后，dsh 成为可交付物时再处理。
+> **目标**：PoC 设计决定完成后，让打包版 Desktop 自动物化 dsh 闭包并验证单端口运行。P4 先移除 dshPort 协议，P9 再处理安装与发布。
 
 - [ ] onboarding npm 安装（`npm install --omit=dev` 物化到 dsh 数据目录，幂等）
 - [ ] 安装位置调整：`data/dsh/` → `$WOPAL_HOME/ellamaka/cache/dsh/`（更贴合缓存语义）
@@ -232,3 +293,4 @@
 | 2026-08-26 | P3.2 | str_replace_editor 经真实工具容器与 adapter 接入；四个命令、绝对路径、read-first 与工作区外拒写均已实证 |
 | 2026-08-26 | P3.3 | bash 经真实工具容器与 adapter 接入；session cwd、workspace-write 与工作区外拒写均已实证，后台任务保持禁用 |
 | 2026-08-26 | P3.4.4 | settings.jsonc 沙箱模式配置接入：adapter 解析 `ellamaka.dsh.sandbox`，enabled 注入 sandbox/mode 事件、mode 限 read-only/workspace-write，enabled:false 不注入；单测 16 项全绿 |
+| 2026-08-27 | P4 | 单端口目标定案：保留官方 connection/HMR/modules/UI 插件；VirtualWebServer + `/dsh` Node mount + iframe 前缀适配；后续批次重排为 P5–P9 |
