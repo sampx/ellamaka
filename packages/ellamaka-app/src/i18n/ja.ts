@@ -475,7 +475,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} 件のメッセージが待機中",
   "session.followupDock.summary.other": "{{count}} 件のメッセージが待機中",
   "session.followupDock.sendNow": "今すぐ送信",
-  "session.followupDock.edit": "編集",
+  "session.followupDock.withdraw": "取り消す",
   "session.followupDock.collapse": "待機中のメッセージを折りたたむ",
   "session.followupDock.expand": "待機中のメッセージを展開",
   "session.revertDock.summary.one": "{{count}} 件のロールバックされたメッセージ",

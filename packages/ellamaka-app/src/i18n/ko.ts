@@ -473,7 +473,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}}개의 대기 중인 메시지",
   "session.followupDock.summary.other": "{{count}}개의 대기 중인 메시지",
   "session.followupDock.sendNow": "지금 전송",
-  "session.followupDock.edit": "편집",
+  "session.followupDock.withdraw": "회수",
   "session.followupDock.collapse": "대기 중인 메시지 접기",
   "session.followupDock.expand": "대기 중인 메시지 펼치기",
   "session.revertDock.summary.one": "{{count}}개의 롤백된 메시지",

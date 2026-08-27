@@ -478,7 +478,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} mensagem na fila",
   "session.followupDock.summary.other": "{{count}} mensagens na fila",
   "session.followupDock.sendNow": "Enviar agora",
-  "session.followupDock.edit": "Editar",
+  "session.followupDock.withdraw": "Retirar",
   "session.followupDock.collapse": "Recolher mensagens na fila",
   "session.followupDock.expand": "Expandir mensagens na fila",
   "session.revertDock.summary.one": "{{count}} mensagem revertida",

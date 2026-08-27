@@ -528,7 +528,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} besked i kø",
   "session.followupDock.summary.other": "{{count}} beskeder i kø",
   "session.followupDock.sendNow": "Send nu",
-  "session.followupDock.edit": "Rediger",
+  "session.followupDock.withdraw": "Træk tilbage",
   "session.followupDock.collapse": "Skjul beskeder i kø",
   "session.followupDock.expand": "Udvid beskeder i kø",
   "session.revertDock.summary.one": "{{count}} tilbagerullet besked",

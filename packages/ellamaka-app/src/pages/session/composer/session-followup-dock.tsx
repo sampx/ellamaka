@@ -9,7 +9,7 @@ export function SessionFollowupDock(props: {
   items: { id: string; text: string }[]
   sending?: string
   onSend: (id: string) => void
-  onEdit: (id: string) => void
+  onWithdraw: (id: string) => void
 }) {
   const language = useLanguage()
   const [store, setStore] = createStore({
@@ -95,9 +95,9 @@ export function SessionFollowupDock(props: {
                   variant="ghost"
                   class="shrink-0"
                   disabled={!!props.sending}
-                  onClick={() => props.onEdit(item.id)}
+                  onClick={() => props.onWithdraw(item.id)}
                 >
-                  {language.t("session.followupDock.edit")}
+                  {language.t("session.followupDock.withdraw")}
                 </Button>
               </div>
             )}

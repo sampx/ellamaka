@@ -1351,7 +1351,7 @@ export default function Page() {
     return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
   }
 
-  const editFollowup = (id: string) => {
+  const withdrawFollowup = (id: string) => {
     const sessionID = params.id
     if (!sessionID) return
     if (followupBusy(sessionID)) return
@@ -1359,12 +1359,14 @@ export default function Page() {
     const item = queuedFollowups().find((entry) => entry.id === id)
     if (!item) return
 
-    setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
-    setFollowup("failed", sessionID, (value) => (value === id ? undefined : value))
-    setFollowup("edit", sessionID, {
-      id: item.id,
-      prompt: item.prompt,
-      context: item.context,
+    batch(() => {
+      setFollowup("items", sessionID, (items) => (items ?? []).filter((entry) => entry.id !== id))
+      setFollowup("failed", sessionID, (value) => (value === id ? undefined : value))
+      setFollowup("edit", sessionID, {
+        id: item.id,
+        prompt: item.prompt,
+        context: item.context,
+      })
     })
   }
 
@@ -1582,7 +1584,7 @@ export default function Page() {
               onSend: (id) => {
                 void sendFollowup(params.id!, id, { manual: true })
               },
-              onEdit: editFollowup,
+              onWithdraw: withdrawFollowup,
               onEditLoaded: clearFollowupEdit,
             }
           : undefined

@@ -569,7 +569,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} повідомлення в черзі",
   "session.followupDock.summary.other": "{{count}} повідомлень у черзі",
   "session.followupDock.sendNow": "Надіслати зараз",
-  "session.followupDock.edit": "Редагувати",
+  "session.followupDock.withdraw": "Відкликати",
   "session.followupDock.collapse": "Згорнути повідомлення в черзі",
   "session.followupDock.expand": "Розгорнути повідомлення в черзі",
   "session.revertDock.summary.one": "{{count}} скасоване повідомлення",

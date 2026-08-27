@@ -474,7 +474,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} رسالة في الانتظار",
   "session.followupDock.summary.other": "{{count}} رسائل في الانتظار",
   "session.followupDock.sendNow": "إرسال الآن",
-  "session.followupDock.edit": "تحرير",
+  "session.followupDock.withdraw": "سحب",
   "session.followupDock.collapse": "طي الرسائل المنتظرة",
   "session.followupDock.expand": "توسيع الرسائل المنتظرة",
   "session.revertDock.summary.one": "{{count}} رسالة تم التراجع عنها",

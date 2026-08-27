@@ -538,7 +538,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} sıradaki mesaj",
   "session.followupDock.summary.other": "{{count}} sıradaki mesaj",
   "session.followupDock.sendNow": "Şimdi gönder",
-  "session.followupDock.edit": "Düzenle",
+  "session.followupDock.withdraw": "Geri çek",
   "session.followupDock.collapse": "Sıradaki mesajları daralt",
   "session.followupDock.expand": "Sıradaki mesajları genişlet",
   "session.revertDock.summary.one": "{{count}} geri alınan mesaj",

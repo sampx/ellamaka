@@ -483,7 +483,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} message en file d'attente",
   "session.followupDock.summary.other": "{{count}} messages en file d'attente",
   "session.followupDock.sendNow": "Envoyer maintenant",
-  "session.followupDock.edit": "Modifier",
+  "session.followupDock.withdraw": "Retirer",
   "session.followupDock.collapse": "Réduire les messages en file d'attente",
   "session.followupDock.expand": "Développer les messages en file d'attente",
   "session.revertDock.summary.one": "{{count}} message annulé",

@@ -531,7 +531,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} сообщение в очереди",
   "session.followupDock.summary.other": "{{count}} сообщений в очереди",
   "session.followupDock.sendNow": "Отправить сейчас",
-  "session.followupDock.edit": "Редактировать",
+  "session.followupDock.withdraw": "Отозвать",
   "session.followupDock.collapse": "Свернуть сообщения в очереди",
   "session.followupDock.expand": "Развернуть сообщения в очереди",
   "session.revertDock.summary.one": "{{count}} сообщение возвращено",

@@ -10,6 +10,7 @@ import { Part as OpenCodeMessagePart } from "@opencode-ai/ui/message-part"
 import { DataProvider } from "@opencode-ai/ui/context"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
@@ -36,10 +37,16 @@ import type { Session } from "../session-store"
 import { useWorkbenchActions } from "../workbench-actions"
 import { scopeFromTab } from "../workbench-scope"
 import { panelChatRoute } from "./panel-chat-route"
+import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
+import { Identifier } from "@/utils/id"
+import { nextFollowupToSend } from "./panel-chat-followup"
 
 import { reportWorkbenchError } from "../workbench-error"
 
 const emptyUserMessages: UserMessage[] = []
+type FollowupItem = FollowupDraft & { id: string }
+type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
+const emptyFollowups: FollowupItem[] = []
 
 function PanelChatInner(props: {
   panel: WorkbenchPanel
@@ -52,6 +59,7 @@ function PanelChatInner(props: {
 }) {
   const sync = useSync()
   const sdk = useSDK()
+  const serverSync = useServerSync()
   const prompt = usePrompt()
   const language = useLanguage()
   const settings = useSettings()
@@ -71,6 +79,23 @@ function PanelChatInner(props: {
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
+
+  // Followups are transient Panel UI state. The server owns delivered
+  // messages; drafts must not be persisted as a second domain copy.
+  const [followup, setFollowup] = createStore<{
+    items: Record<string, FollowupItem[] | undefined>
+    failed: Record<string, string | undefined>
+    paused: Record<string, boolean | undefined>
+    edit: Record<string, FollowupEdit | undefined>
+  }>({
+    items: {},
+    failed: {},
+    paused: {},
+    edit: {},
+  })
+
+  const queuedFollowups = createMemo(() => followup.items[props.session.id] ?? emptyFollowups)
+  const editingFollowup = createMemo(() => followup.edit[props.session.id])
 
   useLocalPanelActions({
     sessionID: () => props.session.id,
@@ -162,6 +187,7 @@ function PanelChatInner(props: {
   const messagesReady = createMemo(() => sync.data.message[props.session.id] !== undefined)
 
   const info = createMemo(() => sync.data.session.find((item) => item.id === props.session.id))
+  const isChildSession = createMemo(() => !!info()?.parentID)
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
 
   const userMessages = createMemo(
@@ -252,6 +278,126 @@ function PanelChatInner(props: {
   const busy = (sessionID: string) => sync.data.session_working(sessionID)
   const halt = (sessionID: string) =>
     busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch((e) => reportWorkbenchError("abort", e, { silent: true })) : Promise.resolve()
+
+  const followupMutation = useMutation(() => ({
+    mutationFn: async (input: { sessionID: string; id: string; manual?: boolean }) => {
+      const item = (followup.items[input.sessionID] ?? []).find((entry) => entry.id === input.id)
+      if (!item) return
+
+      if (input.manual) setFollowup("paused", input.sessionID, undefined)
+      setFollowup("failed", input.sessionID, undefined)
+
+      const ok = await sendFollowupDraft({
+        client: sdk.client,
+        sync,
+        serverSync,
+        draft: item,
+        optimisticBusy: item.sessionDirectory === props.directory,
+      }).catch((err) => {
+        setFollowup("failed", input.sessionID, input.id)
+        fail(err)
+        return false
+      })
+      if (!ok) return
+
+      setFollowup("items", input.sessionID, (items) => (items ?? []).filter((entry) => entry.id !== input.id))
+      if (input.manual) resumeScroll()
+    },
+  }))
+
+  const followupBusy = (sessionID: string) =>
+    followupMutation.isPending && followupMutation.variables?.sessionID === sessionID
+
+  const sendingFollowup = createMemo(() => {
+    if (!followupBusy(props.session.id)) return undefined
+    return followupMutation.variables?.id
+  })
+
+  const queueEnabled = createMemo(() => {
+    return busy(props.session.id) && !composer.blocked() && !isChildSession()
+  })
+
+  const followupText = (item: FollowupDraft) => {
+    const text = item.prompt
+      .map((part) => {
+        if (part.type === "image") return `[image:${part.filename}]`
+        if (part.type === "file") return `[file:${part.path}]`
+        if (part.type === "agent") return `@${part.name}`
+        return part.content
+      })
+      .join("")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => !!line)
+
+    if (text) return text
+    return `[${language.t("common.attachment")}]`
+  }
+
+  const queueFollowup = (draft: FollowupDraft) => {
+    setFollowup("items", draft.sessionID, (items) => [
+      ...(items ?? []),
+      { id: Identifier.ascending("message"), ...draft },
+    ])
+    setFollowup("failed", draft.sessionID, undefined)
+    setFollowup("paused", draft.sessionID, undefined)
+  }
+
+  const followupDock = createMemo(() => queuedFollowups().map((item) => ({ id: item.id, text: followupText(item) })))
+
+  const sendFollowup = (sessionID: string, id: string, opts?: { manual?: boolean }) => {
+    if (sync.session.get(sessionID)?.parentID) return Promise.resolve()
+    const item = (followup.items[sessionID] ?? []).find((entry) => entry.id === id)
+    if (!item) return Promise.resolve()
+    if (followupBusy(sessionID)) return Promise.resolve()
+
+    // "Send now" must interrupt the running turn first: the backend
+    // ensureRunning discards a prompt submitted while the runner is busy, so
+    // aborting moves the runner to Idle before the prompt reaches it.
+    if (opts?.manual && busy(sessionID)) {
+      return halt(sessionID).then(() => followupMutation.mutateAsync({ sessionID, id, manual: opts.manual }))
+    }
+
+    return followupMutation.mutateAsync({ sessionID, id, manual: opts?.manual })
+  }
+
+  const withdrawFollowup = (id: string) => {
+    if (followupBusy(props.session.id)) return
+
+    const item = queuedFollowups().find((entry) => entry.id === id)
+    if (!item) return
+
+    batch(() => {
+      setFollowup("items", props.session.id, (items) => (items ?? []).filter((entry) => entry.id !== id))
+      setFollowup("failed", props.session.id, (value) => (value === id ? undefined : value))
+      setFollowup("edit", props.session.id, {
+        id: item.id,
+        prompt: item.prompt,
+        context: item.context,
+      })
+    })
+  }
+
+  const clearFollowupEdit = () => {
+    setFollowup("edit", props.session.id, undefined)
+  }
+
+  createEffect(() => {
+    const sessionID = props.session.id
+    if (!sessionID) return
+
+    const item = nextFollowupToSend(queuedFollowups(), {
+      busy: busy(sessionID),
+      sending: followupBusy(sessionID),
+      failedID: followup.failed[sessionID],
+      paused: !!followup.paused[sessionID],
+      child: isChildSession(),
+      blocked: composer.blocked(),
+    })
+    if (!item) return
+
+    void sendFollowup(sessionID, item.id)
+  })
 
   const revertMutation = useMutation(() => ({
     mutationFn: async (input: { sessionID: string; messageID: string }) => {
@@ -424,6 +570,21 @@ function PanelChatInner(props: {
         setPromptDockRef={() => {}}
         onSubmit={resumeScroll}
         onResponseSubmit={resumeScroll}
+        followup={{
+          queue: queueEnabled,
+          items: followupDock(),
+          sending: sendingFollowup(),
+          edit: editingFollowup(),
+          onQueue: queueFollowup,
+          onAbort: () => {
+            setFollowup("paused", props.session.id, true)
+          },
+          onSend: (id) => {
+            void sendFollowup(props.session.id, id, { manual: true })
+          },
+          onWithdraw: withdrawFollowup,
+          onEditLoaded: clearFollowupEdit,
+        }}
         revert={{
           items: rolled(),
           restoring: restoring(),

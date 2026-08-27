@@ -486,7 +486,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} Nachricht in der Warteschlange",
   "session.followupDock.summary.other": "{{count}} Nachrichten in der Warteschlange",
   "session.followupDock.sendNow": "Jetzt senden",
-  "session.followupDock.edit": "Bearbeiten",
+  "session.followupDock.withdraw": "Zurückziehen",
   "session.followupDock.collapse": "Warteschlange einklappen",
   "session.followupDock.expand": "Warteschlange ausklappen",
   "session.revertDock.summary.one": "{{count}} zurückgesetzte Nachricht",

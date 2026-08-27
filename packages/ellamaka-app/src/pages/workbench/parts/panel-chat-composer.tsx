@@ -1,5 +1,6 @@
 import { SessionComposerRegion } from "@/pages/session/composer"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
+import type { FollowupDraft } from "@/components/prompt-input/submit"
 
 /**
  * Panel Chat Composer — thin adapter wrapping the official SessionComposerRegion.
@@ -17,6 +18,17 @@ export function PanelChatComposer(props: {
   setPromptDockRef: (el: HTMLDivElement) => void
   onSubmit: () => void
   onResponseSubmit: () => void
+  followup?: {
+    queue: () => boolean
+    items: { id: string; text: string }[]
+    sending?: string
+    edit?: { id: string; prompt: FollowupDraft["prompt"]; context: FollowupDraft["context"] }
+    onQueue: (draft: FollowupDraft) => void
+    onAbort: () => void
+    onSend: (id: string) => void
+    onWithdraw: (id: string) => void
+    onEditLoaded: () => void
+  }
   revert?: {
     items: Array<{ id: string; text: string }>
     restoring?: string
@@ -38,6 +50,7 @@ export function PanelChatComposer(props: {
         onSubmit={props.onSubmit}
         onResponseSubmit={props.onResponseSubmit}
         setPromptDockRef={props.setPromptDockRef}
+        followup={props.followup}
         revert={props.revert}
       />
     </div>
