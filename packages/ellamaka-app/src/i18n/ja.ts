@@ -851,5 +851,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "永続プロジェクトメタデータの作成に失敗しました",
   "error.childStore.persistedProjectIconCreateFailed": "永続プロジェクトアイコンの作成に失敗しました",
   "error.childStore.storeCreateFailed": "ストアの作成に失敗しました",
+  "workbench.chat.question": "質問：",
+  "workbench.chat.answer": "回答：",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
 }

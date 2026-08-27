@@ -942,5 +942,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Kalıcı proje meta verileri oluşturulamadı",
   "error.childStore.persistedProjectIconCreateFailed": "Kalıcı proje simgesi oluşturulamadı",
   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
+  "workbench.chat.question": "Soru: ",
+  "workbench.chat.answer": "Cevap: ",
   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
 } satisfies Partial<Record<Keys, string>>

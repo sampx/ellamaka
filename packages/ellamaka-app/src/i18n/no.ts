@@ -934,5 +934,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Kunne ikke opprette vedvarende prosjektmetadata",
   "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke opprette vedvarende prosjektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke opprette lager",
+  "workbench.chat.question": "Spørsmål: ",
+  "workbench.chat.answer": "Svar: ",
   "terminal.connectionLost.abnormalClose": "WebSocket lukket unormalt: {{code}}",
 } satisfies Partial<Record<Keys, string>>

@@ -4,6 +4,7 @@ import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { getFilename } from "@opencode-ai/core/util/path"
+import { useLanguage } from "@/context/language"
 import { agentColor } from "@/utils/agent"
 import { agentDisplayName, formatTurnDuration } from "./chat-render.utils"
 import { chatExpansionState } from "./chat-expansion-state"
@@ -410,13 +411,42 @@ export function RetryOutcome(props: { part: Part }) {
 }
 
 /**
+ * Extracts a human-readable clean answer from question tool output/metadata.
+ * Strips the internal LLM prompt envelope ("User has answered your questions: ...").
+ */
+export function extractQuestionAnswer(part: Extract<Part, { type: "tool" }>): string {
+  const state = part.state
+  const metadata = "metadata" in state ? (state.metadata as { answers?: string[][] } | undefined) : undefined
+  if (Array.isArray(metadata?.answers) && metadata.answers.length > 0) {
+    const flat = metadata.answers.map((a) => (Array.isArray(a) ? a.join(", ") : String(a))).filter(Boolean)
+    if (flat.length > 0) return flat.join("; ")
+  }
+
+  const raw = state.status === "completed" && typeof state.output === "string" ? state.output : ""
+  if (!raw) return ""
+
+  // Match pattern: User has answered your questions: "..."="Answer". You can now continue...
+  const match = raw.match(/="([^"]+)"/)
+  if (match?.[1]) return match[1]
+
+  // Fallback: strip the standard prefix/suffix if present
+  const cleaned = raw
+    .replace(/^User has answered your questions:\s*/i, "")
+    .replace(/\.\s*You can now continue with the user's answers in mind\.?$/i, "")
+    .trim()
+
+  return cleaned || raw
+}
+
+/**
  * InteractionBlock renders a completed question tool as a read-only summary.
  */
 export function InteractionBlock(props: { part: Part; message: AssistantMessage }) {
   if (props.part.type !== "tool" || props.part.tool !== "question") return null
+  const language = useLanguage()
   const state = props.part.state
-  const output = state.status === "completed" && typeof state.output === "string" ? state.output : ""
   const input = () => (state.input ?? {}) as Record<string, unknown>
+
   const question = createMemo(() => {
     const i = input()
     if (typeof i.question === "string" && i.question.trim()) return i.question.trim()
@@ -429,18 +459,27 @@ export function InteractionBlock(props: { part: Part; message: AssistantMessage 
     }
     return undefined
   })
+
+  const answer = createMemo(() => {
+    if (props.part.type !== "tool") return ""
+    return extractQuestionAnswer(props.part as Extract<Part, { type: "tool" }>)
+  })
+
   return (
     <div data-component="chat-interaction" data-part-id={props.part.id}>
       <div data-slot="chat-interaction-header">
         <span data-slot="chat-interaction-icon">
           <Icon name="speech-bubble" size="small" />
         </span>
-        <span data-slot="chat-interaction-label">问题</span>
+        <span data-slot="chat-interaction-label">{language.t("workbench.chat.question")}</span>
         <Show when={question()}>
           <span data-slot="chat-interaction-question">{question()}</span>
         </Show>
       </div>
-      <div data-slot="chat-interaction-answer">{output || "问题已回答"}</div>
+      <div data-slot="chat-interaction-answer">
+        <span data-slot="chat-interaction-answer-label">{language.t("workbench.chat.answer")}</span>
+        <span data-slot="chat-interaction-answer-text">{answer() || "—"}</span>
+      </div>
     </div>
   )
 }

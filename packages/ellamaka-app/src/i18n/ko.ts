@@ -846,5 +846,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "영구 프로젝트 메타데이터 생성 실패",
   "error.childStore.persistedProjectIconCreateFailed": "영구 프로젝트 아이콘 생성 실패",
   "error.childStore.storeCreateFailed": "저장소 생성 실패",
+  "workbench.chat.question": "질문: ",
+  "workbench.chat.answer": "답변: ",
   "terminal.connectionLost.abnormalClose": "WebSocket이 비정상적으로 닫힘: {{code}}",
 }

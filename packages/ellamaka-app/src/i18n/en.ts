@@ -652,6 +652,8 @@ export const dict = {
   "terminal.close": "Close terminal",
   "terminal.copied": "Copied to clipboard",
   "terminal.connectionLost.title": "Connection Lost",
+  "workbench.chat.question": "Question: ",
+  "workbench.chat.answer": "Answer: ",
   "terminal.connectionLost.abnormalClose": "WebSocket closed abnormally: {{code}}",
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",

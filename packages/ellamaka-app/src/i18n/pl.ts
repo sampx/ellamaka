@@ -855,5 +855,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Nie udało się utworzyć trwałych metadanych projektu",
   "error.childStore.persistedProjectIconCreateFailed": "Nie udało się utworzyć trwałej ikony projektu",
   "error.childStore.storeCreateFailed": "Nie udało się utworzyć magazynu",
+  "workbench.chat.question": "Pytanie: ",
+  "workbench.chat.answer": "Odpowiedź: ",
   "terminal.connectionLost.abnormalClose": "WebSocket zamknięty nieprawidłowo: {{code}}",
 }

@@ -927,5 +927,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Kunne ikke oprette vedvarende projektmetadata",
   "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke oprette vedvarende projektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke oprette lager",
+  "workbench.chat.question": "Spørgsmål: ",
+  "workbench.chat.answer": "Svar: ",
   "terminal.connectionLost.abnormalClose": "WebSocket lukkede unormalt: {{code}}",
 }

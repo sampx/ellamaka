@@ -869,5 +869,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Dauerhafte Projektmetadaten konnten nicht erstellt werden",
   "error.childStore.persistedProjectIconCreateFailed": "Dauerhaftes Projekticon konnte nicht erstellt werden",
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
+  "workbench.chat.question": "Frage: ",
+  "workbench.chat.answer": "Antwort: ",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
 } satisfies Partial<Record<Keys, string>>

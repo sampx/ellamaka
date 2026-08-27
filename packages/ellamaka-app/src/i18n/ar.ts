@@ -844,5 +844,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "فشل إنشاء بيانات تعريف المشروع الدائمة",
   "error.childStore.persistedProjectIconCreateFailed": "فشل إنشاء أيقونة المشروع الدائمة",
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
+  "workbench.chat.question": "سؤال: ",
+  "workbench.chat.answer": "إجابة: ",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
 }

@@ -920,5 +920,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "建立持續性專案中繼資料失敗",
   "error.childStore.persistedProjectIconCreateFailed": "建立持續性專案圖示失敗",
   "error.childStore.storeCreateFailed": "建立儲存區失敗",
+  "workbench.chat.question": "問題：",
+  "workbench.chat.answer": "回答：",
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
 } satisfies Partial<Record<Keys, string>>

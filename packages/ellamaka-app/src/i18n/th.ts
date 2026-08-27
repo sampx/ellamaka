@@ -923,5 +923,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "ไม่สามารถสร้างเมตาดาต้าโปรเจกต์ถาวร",
   "error.childStore.persistedProjectIconCreateFailed": "ไม่สามารถสร้างไอคอนโปรเจกต์ถาวร",
   "error.childStore.storeCreateFailed": "ไม่สามารถสร้างที่เก็บ",
+  "workbench.chat.question": "คำถาม: ",
+  "workbench.chat.answer": "คำตอบ: ",
   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
 }

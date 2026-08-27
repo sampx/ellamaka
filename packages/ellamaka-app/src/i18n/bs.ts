@@ -933,5 +933,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Nije uspjelo kreiranje trajnih metapodataka projekta",
   "error.childStore.persistedProjectIconCreateFailed": "Nije uspjelo kreiranje trajne ikone projekta",
   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
+  "workbench.chat.question": "Pitanje: ",
+  "workbench.chat.answer": "Odgovor: ",
   "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
 }

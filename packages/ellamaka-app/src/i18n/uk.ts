@@ -639,6 +639,8 @@ export const dict = {
   "terminal.title.numbered": "Термінал {{number}}",
   "terminal.close": "Закрити термінал",
   "terminal.connectionLost.title": "З'єднання втрачено",
+  "workbench.chat.question": "Питання: ",
+  "workbench.chat.answer": "Відповідь: ",
   "terminal.connectionLost.abnormalClose": "WebSocket закрито аномально: {{code}}",
   "terminal.connectionLost.description":
     "З'єднання з терміналом було перервано. Це може статися під час перезапуску сервера.",

@@ -438,13 +438,14 @@ describe("InteractionBlock", () => {
     const part = toolPart("t-q", "a-q", "question", "c-q", {
       status: "completed",
       input: { question: "继续吗?" },
-      output: "继续",
+      output: 'User has answered your questions: "继续吗?"="继续". You can now continue with the user\'s answers in mind.',
     })
     const host = mount(() => <InteractionBlock part={part} message={a} />)
     expect(host.querySelector("[data-component='chat-interaction']")).not.toBeNull()
     expect(host.querySelector("[data-slot='chat-interaction-header']")).not.toBeNull()
-    expect(host.querySelector("[data-slot='chat-interaction-label']")?.textContent).toContain("问题")
-    expect(host.querySelector("[data-slot='chat-interaction-answer']")?.textContent).toContain("继续")
+    expect(host.querySelector("[data-slot='chat-interaction-label']")?.textContent).toBe("workbench.chat.question")
+    expect(host.querySelector("[data-slot='chat-interaction-answer-label']")?.textContent).toBe("workbench.chat.answer")
+    expect(host.querySelector("[data-slot='chat-interaction-answer-text']")?.textContent).toBe("继续")
     host.remove()
   })
 
@@ -469,7 +470,7 @@ describe("InteractionBlock", () => {
     })
     const host = mount(() => <InteractionBlock part={part} message={a} />)
     expect(host.querySelector("[data-slot='chat-interaction-question']")).toBeNull()
-    expect(host.querySelector("[data-slot='chat-interaction-answer']")?.textContent).toContain("好的")
+    expect(host.querySelector("[data-slot='chat-interaction-answer-text']")?.textContent).toContain("好的")
     host.remove()
   })
 })

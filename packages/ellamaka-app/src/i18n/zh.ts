@@ -937,6 +937,8 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "创建持久化项目元数据失败",
   "error.childStore.persistedProjectIconCreateFailed": "创建持久化项目图标失败",
   "error.childStore.storeCreateFailed": "创建存储失败",
+  "workbench.chat.question": "问题：",
+  "workbench.chat.answer": "回答：",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "workbench.entry": "工作台",
   "workbench.singleton.title": "工作台已在其他标签页打开",

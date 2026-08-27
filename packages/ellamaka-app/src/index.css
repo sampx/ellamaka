@@ -939,11 +939,25 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 [data-slot="chat-interaction-answer"] {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   color: var(--text-base);
   font-size: var(--font-size-small);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+[data-slot="chat-interaction-answer-label"] {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-weak);
+  flex-shrink: 0;
+}
+
+[data-slot="chat-interaction-answer-text"] {
+  color: var(--text-strong);
+  flex: 1 1 auto;
 }
 
 /* When FileChangeBlock embeds OpenCodeMessagePart inside its Collapsible.Content,
