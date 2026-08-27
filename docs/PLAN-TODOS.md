@@ -162,10 +162,10 @@
 > **原理**：dsh 每轮（pre-step）都重新装配 `assembly.tools`，仅是内存级重建（微秒级）；工具集合不变且按稳定顺序排列、字节一致时，重建不破坏缓存。动态装配的正确含义是"每轮读当前 registry 得到最新集合"，而非"每轮改动 schema"。
 > **验收故事**：dsh 插件加载新工具 → 下一轮请求 `tools` 出现新工具；卸载同名工具 → builtin 自动恢复；`enabled:false` 真正关闭沙箱（注入 `danger-full-access`），不再回落容器默认 `workspace-write`。
 
-- [ ] 3.5.1 adapter 改为每轮模型调用前读取当前 dsh registry（`container.get("tools").schemas()`），不再启动时冻结
-- [ ] 3.5.2 ToolRegistry 增加每请求动态工具提供者：builtin + 静态插件工具 + 当前 dsh 工具，按工具名覆盖（dsh 赢），稳定排序
-- [ ] 3.5.3 修正 `enabled:false`：注入 `danger-full-access` 关闭沙箱，不切换本地后端
-- [ ] 3.5.4 测试：工具集合变化后下一轮请求反映新集合；未变化时字节稳定、缓存不破坏；关沙箱后工作区外写入放行
+- [x] 3.5.1 adapter 改为每轮模型调用前读取当前 dsh registry（`container.get("tools").schemas()`），不再启动时冻结
+- [x] 3.5.2 ToolRegistry 增加每请求动态工具提供者：builtin + 静态插件工具 + 当前 dsh 工具，按工具名覆盖（dsh 赢），稳定排序
+- [x] 3.5.3 修正 `enabled:false`：注入 `danger-full-access` 关闭沙箱，不切换本地后端
+- [x] 3.5.4 测试：工具集合变化后下一轮请求反映新集合；未变化时字节稳定、缓存不破坏；关沙箱后工作区外写入放行
 
 ### P3.6 skill 目录模型输入改造：目录从 system + tool description 移到历史尾部 ⬜
 
@@ -294,3 +294,4 @@
 | 2026-08-26 | P3.3 | bash 经真实工具容器与 adapter 接入；session cwd、workspace-write 与工作区外拒写均已实证，后台任务保持禁用 |
 | 2026-08-26 | P3.4.4 | settings.jsonc 沙箱模式配置接入：adapter 解析 `ellamaka.dsh.sandbox`，enabled 注入 sandbox/mode 事件、mode 限 read-only/workspace-write，enabled:false 不注入；单测 16 项全绿 |
 | 2026-08-27 | P4 | 单端口目标定案：保留官方 connection/HMR/modules/UI 插件；VirtualWebServer + `/dsh` Node mount + iframe 前缀适配；后续批次重排为 P5–P9 |
+| 2026-08-27 | P3.5 | **动态装配收尾完成**：Plugin SDK 新增 `tool.provider` hook，`ToolRegistry.tools()` 每轮合并动态工具（dsh 同名赢、新 id 稳定排序，未变集合字节稳定）；adapter 改动态投影、不再启动时冻结；`enabled:false` 修正为注入 `danger-full-access` 关闭沙箱（不切换本地后端）。真实容器实证 danger-full-access 放行工作区外写入、workspace-write 拒写不回归；registry 单测 19 项 + adapter 单测 18 项全绿 |

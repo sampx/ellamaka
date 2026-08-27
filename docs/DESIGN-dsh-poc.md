@@ -351,7 +351,7 @@ macOS Seatbelt 沙箱**已实测可用**（`.wopal-space/.tmp` 下用 dsh 同款
 **空间沙箱配置（设计决策）**：不用 `DSH_PERMISSION_MODE` 环境变量。空间级 `.wopal/config/settings.jsonc`（+ `settings.local.jsonc`）拥有 dsh 工具容器的沙箱策略，配置形态为 `ellamaka.dsh.sandbox: { enabled, mode }`。
 
 - `enabled: true` 启用沙箱。`mode` 在 `read-only` 与 `workspace-write` 间选择，adapter 为每次调用在 facade session 注入对应的 `sandbox/mode` 事件。
-- `enabled: false` **关闭沙箱**。adapter 注入 `danger-full-access`，让工具在容器默认的不受限后端下运行。**它不切换本地 fs/bash 后端**——工具始终走同一个 dsh 容器与已装配的沙箱后端，关沙箱只是把有效模式放开为 `danger-full-access`。
+- `enabled: false`（或缺失）**关闭沙箱**（P3.5 已实施）。adapter 注入 `danger-full-access`，让工具在容器默认的不受限后端下运行。**它不切换本地 fs/bash 后端**——工具始终走同一个 dsh 容器与已装配的沙箱后端，关沙箱只是把有效模式放开为 `danger-full-access`。此前 P3.4.4 的实现错误地注入空 events，导致容器回落进程级默认 `workspace-write`，已在本批次修正。
 - `danger-full-access` 同时保留为 dsh 的内部一次性 escalation 目标。它不作为空间级配置值暴露，只作为"沙箱关闭"的内部映射。
 
 容器进程级默认值只在尚未解析空间配置时兜底。用户界面以明确的"启用沙箱"开关呈现该决策（关 → `danger-full-access`，开 → `read-only`/`workspace-write`），受限模式仅在沙箱启用后出现。
@@ -401,11 +401,12 @@ messages:
   显式加载的 skill 正文
 ```
 
-**对 dsh 工具动态装配（当前 PoC 收尾）**：
+**dsh 工具动态装配（P3.5 已实施）**：
 
-- adapter 不再只启动时读取一次 dsh `tools.schemas()`，而是**每轮模型调用前**读取当前 dsh registry，合并 builtin + 静态插件工具 + 当前 dsh 工具，按工具名覆盖（dsh 赢），稳定排序后生成 native tools。
-- dsh 插件动态加载/卸载 → 工具增删 → 下一轮请求自动看到新集合；同名 dsh 工具卸载后 builtin 自动恢复。
-- 工具集合真变化时缓存失效是预期行为（同 dsh）；未变化时通过稳定排序保证字节一致、缓存命中。
+- Plugin SDK `Hooks` 新增 `"tool.provider"` 动态工具提供者契约（`packages/plugin/src/index.ts`），签名 `(input, output) => Promise<void>`，`output.tools` 承载当前 `ToolDefinition` 集合，自动进入 `TriggerName` 供 `Plugin.trigger` 每请求调用。
+- `ToolRegistry.tools()`（`packages/opencode/src/tool/registry.ts`）在每轮模型请求先取静态集合（builtin + 静态插件工具），再 `plugin.trigger("tool.provider", ...)` 读取当前 dsh 工具，经共享投影函数 `fromPlugin` 转为 `Tool.Def`，按 id 合并：dsh 同名覆盖且保持原位置，新 id 按名字稳定排序追加。后续 `tool.definition` hook 与输出流程不变。
+- adapter（`.wopal/plugins/dsh-adapter/index.ts`）注册 `"tool.provider"`，每次调用实时读 `container.get("tools").schemas()`，不再启动时冻结。dsh 插件动态加载/卸载 → 工具增删 → 下一轮请求自动看到新集合；同名 dsh 工具卸载后 builtin 自动恢复。facade session 缓存、日志、权限询问逻辑在 adapter 作用域声明一次，随每轮投影复用（内存级成本）。
+- 工具集合真变化时缓存失效是预期行为（同 dsh）；未变化时通过确定性投影 + 名字排序保证字节一致、缓存命中（registry 单测覆盖字节稳定）。
 - **不需要在 dsh 与 ellamaka 后端之间切换**——这从未是需求。界面只控制沙箱开关与保护层级（§4.10）。
 
 **对 skill 目录改造（独立收尾）**：
