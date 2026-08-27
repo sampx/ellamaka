@@ -886,7 +886,7 @@ describe("GenericToolBlock", () => {
     host.remove()
   })
 
-  test("extracts a descriptive subtitle from the input fields", () => {
+  test("extracts a primary label from the input fields", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "memory_manage", "c1", {
       input: { command: "search", query: "dev-flow", limit: 5 },
@@ -894,20 +894,46 @@ describe("GenericToolBlock", () => {
     const host = mount(() => <GenericToolBlock part={part} message={a} />)
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']")
     expect(subtitle).not.toBeNull()
-    expect(subtitle?.textContent).toContain("search")
-    expect(subtitle?.textContent).toContain("dev-flow")
-    expect(subtitle?.textContent).toContain("limit=5")
+    expect(subtitle?.textContent).toBe("search")
     host.remove()
   })
 
-  test("shows structured args when no descriptive field exists", () => {
+  test("renders the remaining generic tool params as capped arg chips, not a concatenated blob", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "memory_manage", "c1", {
+      input: { command: "search", category: "experience", limit: 5, verbose: true },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+    const args = Array.from(host.querySelectorAll("[data-slot='chat-tool-arg']")).map((el) => el.textContent)
+    expect(args).toContain("category=experience")
+    expect(args).toContain("limit=5")
+    expect(args).toContain("verbose=true")
+    // The primary label stays separate and never swallows the params.
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("search")
+    host.remove()
+  })
+
+  test("caps generic tool arg chips to a bounded count for long inputs", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "some_mcp_tool", "c1", {
+      input: { a: "1", b: "2", c: "3", d: "4", e: "5", f: "6" },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+    const args = host.querySelectorAll("[data-slot='chat-tool-arg']")
+    expect(args.length).toBeLessThanOrEqual(3)
+    host.remove()
+  })
+
+  test("shows structured arg chips when no descriptive field exists", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "some_mcp_tool", "c1", {
       input: { limit: 5, verbose: true },
     })
     const host = mount(() => <GenericToolBlock part={part} message={a} />)
-    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']")
-    expect(subtitle?.textContent).toContain("limit=5")
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")).toBeNull()
+    const args = Array.from(host.querySelectorAll("[data-slot='chat-tool-arg']")).map((el) => el.textContent)
+    expect(args).toContain("limit=5")
+    expect(args).toContain("verbose=true")
     host.remove()
   })
 

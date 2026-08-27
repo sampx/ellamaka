@@ -674,7 +674,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-trigger"] {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   max-width: 100%;
@@ -689,6 +689,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   cursor: pointer;
   text-align: left;
   outline: none;
+  white-space: nowrap;
   transition: background-color 150ms ease, color 150ms ease;
 }
 
@@ -705,6 +706,16 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-trigger"] > [data-component="icon"] {
   flex: 0 0 auto;
+}
+
+/* Icon wrapper centers the 16px glyph against the text line, so the icon and
+   title sit on the same optical vertical center instead of the text baseline. */
+.chat-tool-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 1;
 }
 
 [data-slot="chat-tool-trailing"] {
@@ -763,6 +774,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   font-size: var(--font-size-base);
   font-weight: 500;
   color: inherit;
+  white-space: nowrap;
 }
 
 [data-slot="chat-tool-subtitle"] {
@@ -771,8 +783,20 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   font-size: var(--font-size-small);
   font-weight: 400;
   color: var(--text-weak);
-  overflow-wrap: anywhere;
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-slot="chat-tool-arg"] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+  font-weight: 400;
+  color: var(--text-weaker);
 }
 
 [data-slot="chat-tool-title"] + [data-slot="chat-tool-subtitle"]::before {

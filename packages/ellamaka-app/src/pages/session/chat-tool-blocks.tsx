@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show, type Component, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Show, type Component, type JSX } from "solid-js"
 import type { AssistantMessage, ToolPart } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
@@ -43,6 +43,7 @@ function ToolBlockHeader(props: {
   titleColor?: string
   subtitle?: string
   subtitleTitle?: string
+  args?: string[]
   status: string
   open: boolean
   toggle: (event: MouseEvent) => void
@@ -66,7 +67,7 @@ function ToolBlockHeader(props: {
           })
         }}
       >
-        <span style={props.titleColor ? { color: props.titleColor, display: "inline-flex" } : undefined}>
+        <span style={props.titleColor ? { color: props.titleColor } : undefined} class="chat-tool-icon-wrap">
           <Icon name={props.icon as never} size="small" />
         </span>
         <span data-slot="chat-tool-title" style={props.titleColor ? { color: props.titleColor } : undefined}>
@@ -75,6 +76,11 @@ function ToolBlockHeader(props: {
         <Show when={props.subtitle}>
           <span data-slot="chat-tool-subtitle" title={props.subtitleTitle}>{props.subtitle}</span>
         </Show>
+        <For each={props.args}>
+          {(arg) => (
+            <span data-slot="chat-tool-arg" title={arg}>{arg}</span>
+          )}
+        </For>
         <span data-slot="chat-tool-chevron" aria-hidden="true">
           <Icon name="chevron-down" size="small" />
         </span>
@@ -147,7 +153,9 @@ export function ContextToolBlock(props: {
     return (
       <div data-component="chat-context-tool" data-tool="read" data-call-id={props.part.callID}>
         <div data-slot="chat-context-info-bar">
-          <Icon name="glasses" size="small" />
+          <span class="chat-tool-icon-wrap">
+            <Icon name="glasses" size="small" />
+          </span>
           <span data-slot="chat-tool-title">read</span>
           <Show when={subtitle()}>
             <span data-slot="chat-tool-subtitle" title={rawPath}>{displayPath}</span>
@@ -445,22 +453,28 @@ export function SubagentActivityBlock(props: {
 
 /**
  * GenericToolBlock renders any tool without a dedicated renderer. It shows the
- * tool name plus a best-effort descriptive subtitle extracted from the input,
- * mirroring Kilo Code's GenericTool heuristic, with a safe text fallback for
- * the output.
+ * tool name plus a best-effort primary label extracted from the input, with the
+ * remaining parameters rendered as capped arg chips — mirroring TUI's GenericTool
+ * (label + args) instead of concatenating every field into one wrapping blob.
  */
 
 const GENERIC_LABEL_KEYS = ["command", "action", "description", "query", "url", "filePath", "path", "pattern", "name"]
 
-function genericToolSubtitle(input: Record<string, unknown> | undefined): string {
+/** Primary label: the first non-empty descriptive field, mirroring TUI's label(). */
+function genericToolLabel(input: Record<string, unknown> | undefined): string {
   if (!input) return ""
-  const parts: string[] = []
   for (const key of GENERIC_LABEL_KEYS) {
     const value = input[key]
-    if (typeof value === "string" && value.trim()) parts.push(value.trim())
+    if (typeof value === "string" && value.trim()) return value.trim()
   }
+  return ""
+}
+
+/** Arg chips: remaining params as key=value, capped to keep the header single-line. */
+function genericToolArgs(input: Record<string, unknown> | undefined): string[] {
+  if (!input) return []
   const skip = new Set(GENERIC_LABEL_KEYS)
-  const args = Object.entries(input)
+  return Object.entries(input)
     .filter(([key]) => !skip.has(key))
     .flatMap(([key, value]) => {
       if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -469,7 +483,6 @@ function genericToolSubtitle(input: Record<string, unknown> | undefined): string
       return []
     })
     .slice(0, 3)
-  return [...parts, ...args].join(" ")
 }
 
 export function GenericToolBlock(props: { part: ToolPart; message: AssistantMessage; defaultOpen?: boolean }) {
@@ -478,7 +491,8 @@ export function GenericToolBlock(props: { part: ToolPart; message: AssistantMess
     () => props.part.state.status === "error" || (props.defaultOpen ?? isToolRunning(props.part)),
   )
   const input = () => props.part.state.input as Record<string, unknown> | undefined
-  const subtitle = createMemo(() => genericToolSubtitle(input()))
+  const label = createMemo(() => genericToolLabel(input()))
+  const args = createMemo(() => genericToolArgs(input()))
   const output = createMemo(() => {
     const s = props.part.state
     if (s.status === "completed" && typeof s.output === "string") return s.output
@@ -491,7 +505,8 @@ export function GenericToolBlock(props: { part: ToolPart; message: AssistantMess
         <ToolBlockHeader
           icon="mcp"
           title={props.part.tool}
-          subtitle={subtitle() || undefined}
+          subtitle={label() || undefined}
+          args={args()}
           status={props.part.state.status}
           open={open()}
           toggle={(_event: MouseEvent) => setOpen(!open())}
