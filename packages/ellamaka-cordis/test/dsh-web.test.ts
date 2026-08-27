@@ -245,7 +245,15 @@ describe("dsh tools profile", () => {
     }
   }, 60_000)
 
-  test("mountDshTools runs foreground bash through the sandbox executor", async () => {
+  // Parameterized across sandbox modes: `workspace-write` confines the
+  // container's bash to the workspace (external writes denied), while
+  // `danger-full-access` (the adapter's "sandbox off" mapping, DESIGN §4.10)
+  // lets the same tool write outside the workspace. Both run in the real
+  // tool container — only the facade `sandbox/mode` event differs.
+  test.each([
+    { name: "workspace-write", mode: "workspace-write", outside: "denied" },
+    { name: "danger-full-access", mode: "danger-full-access", outside: "allowed" },
+  ])("mountDshTools runs foreground bash under $name sandbox mode", async ({ mode, outside }) => {
     const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
     const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-bash-ws-"))
     const ctx = new Context()
@@ -259,7 +267,7 @@ describe("dsh tools profile", () => {
           content?: { type: string; text?: string }[]
         }>
       }
-      const session = { header: { id: "tools-bash-session", cwd: workspace }, events: [] }
+      const session = { header: { id: "tools-bash-session", cwd: workspace }, events: [{ type: "sandbox/mode", data: { mode } }] }
       let call = 0
       const execute = (arguments_: Record<string, unknown>) =>
         tools.execute({
@@ -272,6 +280,9 @@ describe("dsh tools profile", () => {
       const allowed = join(workspace, "allowed.txt")
       const bash = tools.schemas().find((tool) => tool.name === "bash")
 
+      expect(tools.schemas().map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(["read", "write", "edit", "grep", "glob", "bash", "str_replace_editor"]),
+      )
       expect((ctx.get("shell") as { sandboxMode?: string }).sandboxMode).toBe("workspace-write")
       expect(ctx.get("shellEnv")).toBeDefined()
       expect(bash).toBeDefined()
@@ -281,10 +292,17 @@ describe("dsh tools profile", () => {
       expect((await execute({ command: `printf bash-ok > "${allowed}"`, description: "Write sandbox proof file" })).isError).toBe(false)
       expect(readFileSync(allowed, "utf-8")).toBe("bash-ok")
 
-      const outside = join(homedir(), `.dsh-tools-bash-denied-${Date.now()}.txt`)
-      const denied = await execute({ command: `printf denied > "${outside}"`, description: "Attempt external sandbox write" })
-      expect(denied.isError).toBe(false)
-      expect((denied.content ?? []).map((block) => block.text ?? "").join("\n")).toContain("[sandbox: file access denied under workspace-write mode]")
+      const outsidePath = join(homedir(), `.dsh-tools-bash-${mode}-${Date.now()}.txt`)
+      const result = await execute({ command: `printf outside > "${outsidePath}"`, description: "Write outside the workspace" })
+      if (outside === "denied") {
+        expect(result.isError).toBe(false)
+        expect((result.content ?? []).map((block) => block.text ?? "").join("\n")).toContain(
+          "[sandbox: file access denied under workspace-write mode]",
+        )
+      } else {
+        expect(result.isError).toBe(false)
+        expect(readFileSync(outsidePath, "utf-8")).toBe("outside")
+      }
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
