@@ -113,6 +113,7 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 **架构事实**：
 
 - **dsh 源码零改动、社区插件零改动、ellamaka HTTP 路由层零改动**。单端口方案只新增挂载层与 VirtualWebServer，不修改官方插件。
+- **单端口现实（P4 已实施）**：DSH 与 Ellamaka 同进程同端口。官方 web 插件把路由注册到 VirtualWebServer（`webServer` 服务），`Listener.mountNodeRoute` 在 `/dsh` 前缀下分发，Workbench iframe 恒 `/dsh/`。无第二端口、无 `dshPort` 协议。
 - **两种使用模式物理隔离**：iframe UI 需要 dsh 的 agent-loop 语义（会话账本 + checkpoint 屏障 + 完整插件集）；工具采用只需要工具本体 + 最小调用上下文。同一容器无法同时满足两种装配（checkpoint 插件会强制 flush 调用方的 live session），因此拆成两个容器，各装配各的 profile。
 - **工具容器用 `mountDshTools` / `bootDshTools`**：加载 `ellamaka-tools` profile（bundles: dsh-base），其用户补丁层禁用全部 agent-loop 基础设施（session/agent-loop/llm/subagent/jobs/goal/plan-mode/compaction/web 等约 57 行，按依赖分组附理由），只保留工具注册表与执行链（tools/system-prompt/subprocess/fs/sandbox/spill/tool-fs/tool-fs-search 等）。工具以按 ellamaka session ID 缓存的轻量 facade 执行——传给 `tools.execute` 的 agent 携带 `session.header.cwd`（spawn 工作目录）、`session.header.id`（spill 归属标签）和 `session.events: []`（沙箱模式折叠），**容器内不创建任何 dsh session**。
 - **desktop sidecar 用 `bootDshWeb` / `bootDshTools`**（自包含，Node strip-types 可直接 import）；`mountDshWeb`+CordisHub 的 `.js` 导入 Node 无法解析。sidecar 的模块 loader 将 `packages/ellamaka-cordis` 路径下的 `.js` 相对导入解析到 `.ts`。
@@ -130,9 +131,12 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 ### 2.5 装配 API
 
 ```ts
-// mountDshWeb(ctx, { home, publicAddress, installAnchor? })
+// mountDshWeb(ctx, { home, port, installAnchor? }) → DshWebHost
 //   └── 在宿主 ctx 上重放 dsh boot(): baseUrl → dshHomePath → Loader
 //       → launch env + cmdline public port → mountRootInclude → 激活审计
+//   └── 构造 VirtualWebServer（Service 构造器注册为 webServer），禁用官方
+//       webserver entry，关闭 web-runtime 的 printUrl/surfaceContext
+//   └── 返回 { mountPath: "/dsh", webServer, dispose }
 //   └── installAnchor: 显式指向已安装的 @deepseek-ai/dsh/package.json
 
 // mountDshTools(ctx, opts) —— 同上 boot 序列，profile = ellamaka-tools
@@ -140,7 +144,7 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 //       （agent-loop 基础设施按依赖分组附理由），用户后续编辑不会被覆盖
 
 // bootDshWeb(opts) —— 自建容器，standalone 用
-//   └── 自建 Context + mountDshWeb；dispose 连 ctx.fiber 一起拆
+//   └── 自建 Context + mountDshWeb；返回 DshWebHost；dispose 连 ctx.fiber 一起拆
 
 // bootDshTools(opts) —— 自建容器，desktop sidecar 用
 //   └── 自建 Context + mountDshTools；返回 handle 带 ctx，供 globalThis 暴露
@@ -149,26 +153,28 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 - `bootDshWeb`/`bootDshTools` 是 desktop sidecar 的加载入口（自建容器，Node strip-types 可直接 import）。
 - `mountDshWeb`/`mountDshTools` 用于在宿主 ctx 上重放（serve.ts 的 CordisHub ctx）。
 - **desktop sidecar 必须用 boot 系列**：`mount*`+CordisHub 会经过 `@wopal/ellamaka-cordis` index 导入链，其内部 `.js` 扩展名导入 Node `--experimental-strip-types` 无法解析；boot 系列自包含，直接加载。
+- **单端口接线**：`mountDshWeb` 返回的 `DshWebHost.webServer` 经 `Listener.mountNodeRoute({ prefix: "/dsh", request, upgrade })` 挂到 Ellamaka 主 listener。serve.ts 与 desktop sidecar 共用这一入口，不再有第二端口或 `dshPort` 协议。
 
 ### 2.6 相关文件
 
 | 文件 | 作用 |
 | :--- | :--- |
 | `packages/opencode/script/materialize-dsh.ts` | DSH home 物化脚本（生成 package.json、bun install、预置 profile 模板、锚点与 Node 导入验证） |
-| `packages/ellamaka-app/src/pages/workbench/index.tsx` | 全屏 DSH iframe 视图，覆盖 SpaceRail + Workspace |
+| `packages/ellamaka-app/src/pages/workbench/dsh-surface.tsx` | DSH 视图（`DshSurface`/`DshIframe`，iframe 恒 `/dsh/`） |
 | `packages/ellamaka-app/src/pages/workbench/parts/top-bar.tsx` | 顶栏 DSH 按钮（toggle dshVisible） |
 | `packages/ellamaka-app/src/pages/workbench/view-store.tsx` | `dshVisible` + `setDshVisible` |
-| `packages/ellamaka-app/src/context/platform.tsx` | `getDshPort()`（desktop 侧读取；P4 移除，iframe 固定 `/dsh/`） |
+| `packages/ellamaka-cordis/src/dsh-virtual-webserver.ts` | VirtualWebServer（官方 webServer 服务，route/tap/index 注入/upgrade socket 管理） |
 | `packages/ellamaka-cordis/src/dsh-web.ts` | dsh 引擎装配（mountDshWeb/bootDshWeb/mountDshTools/bootDshTools） |
 | `packages/ellamaka-cordis/src/index.ts` | 拆出 dsh-web 顶层导出（子路径） |
-| `packages/opencode/src/cli/cmd/serve.ts` | `ELLAMAKA_DSH=1` 双容器挂载；动态 import |
+| `packages/opencode/src/server/node-route-mount.ts` | 受控 Node 路由挂载点（`Listener.mountNodeRoute`） |
+| `packages/opencode/src/cli/cmd/serve.ts` | `ELLAMAKA_DSH=1` 双容器挂载 + `/dsh` mount；动态 import |
 | `packages/opencode/src/cli/cmd/tui/dsh-mount.ts` | TUI 工具容器挂载（`mountDshIfEnabled`，可测模块）；worker.ts 调用 |
 | `packages/opencode/src/cli/cmd/tui/worker.ts` | TUI 进程入口，调用 `mountDshIfEnabled` 并持有 dispose handle |
-| `packages/ellamaka-desktop/src/main/sidecar.ts` | bootDshWeb + bootDshTools + dshPort（P4 移除 dshPort） |
-| `packages/ellamaka-desktop/src/main/server.ts` | sidecar spawn 与健康检查（P4 移除 dshPort 传递） |
-| `packages/ellamaka-desktop/src/main/sidecar-supervisor.ts` | connection.dshPort 字段（P4 移除） |
-| `packages/ellamaka-desktop/src/preload/types.ts` | ServerReadyData/SidecarRuntimeState.dshPort（P4 移除） |
-| `packages/ellamaka-desktop/src/renderer/index.tsx` | `getDshPort()` 平台实现（P4 移除） |
+| `packages/ellamaka-desktop/src/main/sidecar.ts` | bootDshWeb + bootDshTools + `/dsh` mount（无 dshPort） |
+| `packages/ellamaka-desktop/src/main/server.ts` | sidecar spawn 与健康检查（无 dshPort 传递） |
+| `packages/ellamaka-desktop/src/main/sidecar-supervisor.ts` | connection 仅 url/username/password（无 dshPort） |
+| `packages/ellamaka-desktop/src/preload/types.ts` | ServerReadyData/SidecarRuntimeState（无 dshPort） |
+| `packages/ellamaka-desktop/src/renderer/index.tsx` | 平台实现（无 getDshPort） |
 | `bunfig.toml` | dsh 包加入 minimumReleaseAgeExcludes |
 
 ## 3. 决策记录
@@ -185,6 +191,8 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 - **双端口零侵入**：dsh 源码、社区插件、ellamaka HTTP 路由层全部零改动，天然规避上述全部问题。
 
 **转向单端口的动因（2026-08-27 定稿）**：跨端口带来第二端口发现协议（dshPort 全链路）、Desktop 随机端口管理、HMR 与同源语义割裂。VirtualWebServer 方案解开了当时的死结——**不改任何 bundle**：官方插件继续注册原始 `/api`、`/plugins` 路由，只是注册到 VirtualWebServer 而非真实 socket；`/dsh` 前缀由边界适配层剥离。详细设计见 §2.1。
+
+**单端口已实施（2026-08-28，P4）**：`VirtualWebServer`（`packages/ellamaka-cordis/src/dsh-virtual-webserver.ts`）实现官方 `webServer` 服务，`Listener.mountNodeRoute` 提供受控挂载点，serve.ts 与 desktop sidecar 把 DSH 挂到 Ellamaka 主 listener 的 `/dsh`。`dshPort` 协议全链路移除，Workbench iframe 恒 `/dsh/`。双端口方案自此为历史决策，不再作为当前架构。
 
 ### 3.2 被否定的早期路线
 

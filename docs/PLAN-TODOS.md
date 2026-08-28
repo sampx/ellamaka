@@ -34,8 +34,8 @@
 | P1 | 双引擎容器宿主 + 日志桥接 | 核心 | 无 | ✅ 完成 | 接线 + 日志桥接 |
 | P2 | 工具利用：fs-search（grep/glob）落地 | 核心 | P1 | ✅ 落地 | adapter 机制 + grep/glob |
 | P3 | **阶段 A：tool-fs / str_replace / tool-bash 沙箱内运行** | 核心 | P2 | 🔶 P3.5 收尾 | 中 |
-| P3.5+ | **DSH home 收口**：物化到 `$WOPAL_HOME/dsh` 唯一 home（P4 Plan Task 0） | 基础 | 无 | 📋 随 P4 Plan 审阅 | 小 |
-| P4 | **DSH Web 单端口统一：同源挂载 `/dsh/*`** | 核心 | P1；执行排在 Task 0 后 | 📋 正式 Plan reviewing | 大 |
+| P3.5+ | **DSH home 收口**：物化到 `$WOPAL_HOME/dsh` 唯一 home（P4 Plan Task 0） | 基础 | 无 | ✅ 完成 | 小 |
+| P4 | **DSH Web 单端口统一：同源挂载 `/dsh/*`** | 核心 | P1；执行排在 Task 0 后 | ✅ 完成 | 大 |
 | P6 | 配置动态化实证整理：patch 覆盖与生命周期 | 吸收轨 | P4 | ⬜ | 小 |
 | P7 | 插件规范化实证整理：Loader、dual-face、卸载 | 吸收轨 | P4 | ⬜ | 小 |
 | P8 | 界面演进：同源 iframe → 原生（远期） | 外围 | P4 + P5 决策 | ⬜ | 按需 |
@@ -176,49 +176,51 @@
 
 ---
 
-## P4 DSH Web 单端口统一 📋
+## P4 DSH Web 单端口统一 ✅
 
 > **目标**：Ellamaka 与 DSH Web 共用进程和公开端口。Ellamaka 保持现有 `/api/*` 与 `/workbench`；DSH 统一挂载 `/dsh/*`，Workbench iframe 使用同源 `/dsh/`。
 > **设计**：`VirtualWebServer` 保存官方 DSH 插件注册的 node:http 路由与 upgrade socket，实现含 `renderIndex` 结构化注入在内的官方 WebServer 接口。Ellamaka Server 提供受控 Node 路由挂载点并剥离 `/dsh`。官方 connection、client-hmr、modules、web-runtime 与 UI 插件保持原版；`web-runtime` 的根路径 URL 输出与注入被关闭。iframe index 注入浏览器传输前缀适配，并重写 DSH 静态资源根路径。详见 `DESIGN-dsh-poc.md` §2.1。
 > **执行依赖**：技术依赖 P1。前置 Task 0（DSH home 收口）随本 Plan 实施，复用当前长期 PoC 工作树；P3.6 延后到本批次之后。
 > **验收故事**：`http://127.0.0.1:4097/dsh/` 加载完整 DSH 界面；DSH API/WS/HMR/插件资源全部走 `/dsh/*`；Ellamaka `/api/*` 不受影响；dev 与 Desktop 不再监听或传递第二个 dshPort。
-> **正式 Plan**：`.wopal-space/plans/ellamaka/feature-dsh-unify-web-services-on-one-port.md`（reviewing）
+> **正式 Plan**：`.wopal-space/plans/ellamaka/feature-dsh-unify-web-services-on-one-port.md`（已完成）
 
 ### P4.1 Ellamaka Node 路由挂载点
 
-- [ ] 4.1.1 新增受控 prefix mount registry，统一分发 HTTP 与 upgrade 请求
-- [ ] 4.1.2 `/dsh` 与 `/dsh/*` 边界匹配并保留 query；非匹配请求继续进入 Effect listener
-- [ ] 4.1.3 注册返回 disposer；Server shutdown 保持 Effect/NodeHttpServer 所有权
+- [x] 4.1.1 新增受控 prefix mount registry，统一分发 HTTP 与 upgrade 请求
+- [x] 4.1.2 `/dsh` 与 `/dsh/*` 边界匹配并保留 query；非匹配请求继续进入 Effect listener
+- [x] 4.1.3 注册返回 disposer；Server shutdown 保持 Effect/NodeHttpServer 所有权
 
 ### P4.2 VirtualWebServer 与 iframe 前缀适配
 
-- [ ] 4.2.1 实现官方 WebServer 接口（含 `collectIndexInjections`/`renderIndex` 结构化注入）与 exact / longest-prefix / fallback / exact-upgrade 语义
-- [ ] 4.2.2 index 变换添加 `/dsh` 静态资源前缀并移除 iframe 不需要的 PWA manifest
-- [ ] 4.2.3 index 最前注入 fetch / WebSocket / EventSource 前缀适配；外部 URL 与已带 `/dsh` URL 保持不变
-- [ ] 4.2.4 upgrade socket 由 VirtualWebServer 跟踪并在 dispose 时销毁
+- [x] 4.2.1 实现官方 WebServer 接口（含 `collectIndexInjections`/`renderIndex` 结构化注入）与 exact / longest-prefix / fallback / exact-upgrade 语义
+- [x] 4.2.2 index 变换添加 `/dsh` 静态资源前缀并移除 iframe 不需要的 PWA manifest
+- [x] 4.2.3 index 最前注入 fetch / WebSocket / EventSource 前缀适配；外部 URL 与已带 `/dsh` URL 保持不变
+- [x] 4.2.4 upgrade socket 由 VirtualWebServer 跟踪并在 dispose 时销毁
 
-- [ ] 4.3.1 Loader 挂载前提供 VirtualWebServer，只禁用官方真实 `webserver` 行
-- [ ] 4.3.2 保留 `web-startup`、connection、client-hmr、modules、web-runtime 与全部 UI 插件；`web-runtime` 的根路径 URL 打印与 shell/prompt 注入被关闭
-- [ ] 4.3.3 Web host handle 暴露 VirtualWebServer 与 dispose；工具容器 API 保持独立
+- [x] 4.3.1 Loader 挂载前提供 VirtualWebServer，只禁用官方真实 `webserver` 行
+- [x] 4.3.2 保留 `web-startup`、connection、client-hmr、modules、web-runtime 与全部 UI 插件；`web-runtime` 的根路径 URL 打印与 shell/prompt 注入被关闭
+- [x] 4.3.3 Web host handle 暴露 VirtualWebServer 与 dispose；工具容器 API 保持独立
 
 ### P4.4 CLI serve 单端口接线
 
-- [ ] 4.4.1 `serve.ts` 将 DSH VirtualWebServer 注册到 Listener `/dsh` mount
-- [ ] 4.4.2 生命周期 disposer 与 web/tools CordisHub 一起清理
-- [ ] 4.4.3 验证 Ellamaka API、DSH HTTP、WebSocket 与插件资源共享一个端口
+- [x] 4.4.1 `serve.ts` 将 DSH VirtualWebServer 注册到 Listener `/dsh` mount
+- [x] 4.4.2 生命周期 disposer 与 web/tools CordisHub 一起清理
+- [x] 4.4.3 验证 Ellamaka API、DSH HTTP、WebSocket 与插件资源共享一个端口
 
 ### P4.5 Desktop 与 Workbench 同源收口
 
-- [ ] 4.5.1 Desktop sidecar 在本地 Ellamaka Listener 上挂载 DSH，不再启动随机第二端口
-- [ ] 4.5.2 删除 ready → supervisor → preload → renderer → Platform 的 `dshPort/getDshPort` 透传链
-- [ ] 4.5.3 Workbench iframe 固定使用 `/dsh/`；无 DSH 闭包时继续自然降级
+- [x] 4.5.1 Desktop sidecar 在本地 Ellamaka Listener 上挂载 DSH，不再启动随机第二端口
+- [x] 4.5.2 删除 ready → supervisor → preload → renderer → Platform 的 `dshPort/getDshPort` 透传链
+- [x] 4.5.3 Workbench iframe 固定使用 `/dsh/`；无 DSH 闭包时继续自然降级
 
 ### P4.6 回归、端到端与文档收口
 
-- [ ] 4.6.1 单元测试覆盖 route mount、VirtualWebServer、URL 适配与 profile patch
-- [ ] 4.6.2 集成验证覆盖 `/dsh/`、静态资源、RPC、WS、HMR 与 Ellamaka `/api/*` 隔离
-- [ ] 4.6.3 CLI、Workbench、Desktop 三包 typecheck/test/build 通过
-- [ ] 4.6.4 实施完成后将 DESIGN §2 双端口现状更新为单端口现实，并记录 P6/P7 的后续实证输入
+- [x] 4.6.1 单元测试覆盖 route mount、VirtualWebServer、URL 适配与 profile patch
+- [x] 4.6.2 集成验证覆盖 `/dsh/`、静态资源、RPC、WS、HMR 与 Ellamaka `/api/*` 隔离
+- [x] 4.6.3 CLI、Workbench、Desktop 三包 typecheck/test/build 通过
+- [x] 4.6.4 实施完成后将 DESIGN §2 双端口现状更新为单端口现实，并记录 P6/P7 的后续实证输入
+
+> **P4 验证结果（2026-08-28）**：单端口方案全链路落地。`VirtualWebServer`（`packages/ellamaka-cordis/src/dsh-virtual-webserver.ts`）实现官方 `webServer` 服务；`Listener.mountNodeRoute`（`packages/opencode/src/server/node-route-mount.ts`）提供受控挂载点；serve.ts 与 desktop sidecar 把 DSH 挂到 Ellamaka 主 listener 的 `/dsh`。`dshPort` 协议全链路移除，Workbench iframe 恒 `/dsh/`。验证：cordis 18 项、opencode server 10 项、app 915 项、desktop 31 项测试全绿；四包 typecheck + desktop build 通过；生产代码无 `dshPort`/`getDshPort`/`127.0.0.1:4098` 残留。P6/P7 的实证输入见下。
 
 ---
 
@@ -236,6 +238,7 @@
 
 > **目标**：以 P4 的真实 patch 覆盖与 mount/dispose 证据为输入，整理 dsh 配置动态化机制与吸收成本。
 > **验收故事**：形成可复用的 patch 声明、增量重扫与生命周期事实，不从抽象源码观察重新开始。
+> **P4 实证输入（待整理，未完成）**：P4 在 `mountDshWeb` 的 extraPatches 中真实使用了 patch 覆盖——禁用官方 `webserver` 行、完整替换 `web-runtime` 配置（`printUrl`/`surfaceContext`/`trustedHosts`）、保留 `web-startup` 与 `provideCmdline`。这些是 patch 声明式覆盖与 host service replacement 的第一手证据，供 6.1 汇总。
 
 - [ ] 6.1 汇总 P4 的 webserver disable + host service replacement 证据
 - [ ] 6.2 观察增量重扫机制（dirty entry → microtask 刷新，只 diff 变更条目）
@@ -248,6 +251,7 @@
 
 > **目标**：以 P4 保留官方 dual-face 插件并替换 WebServer host service 的实证为输入，整理 Loader 动态装载与卸载规律。
 > **验收故事**：明确 Ellamaka 可直接采用的 Loader/dual-face 机制，以及继续保持 DSH 原生的部分。
+> **P4 实证输入（待整理，未完成）**：P4 在 `mountDshWeb` 中真实使用了 Loader 生命周期——`mountRootInclude` 挂载、`loader.remove(includeEntry.id)` 卸载、`assertEntriesActivated` 激活审计；`VirtualWebServer.dispose` 关闭 upgrade socket。官方 dual-face 插件（client-modules 的 `__DSH_BOOT__` 注入、`/plugins/<id>/client.js` 动态 serve）在 `/dsh` 下完整运行。这些是 Loader 动态插拔与 dual-face 的第一手证据，供 7.1/7.2 汇总。
 
 - [ ] 7.1 汇总 Loader 挂载、`loader.remove(entryId)` 与 VirtualWebServer disposer 证据
 - [ ] 7.2 汇总 dual-face boot graph、按需 bundle 与 rev 热更在 `/dsh` 下的行为
@@ -295,3 +299,4 @@
 | 2026-08-27 | P3.5 | **动态装配收尾完成**：Plugin SDK 新增 `tool.provider` hook，`ToolRegistry.tools()` 每轮合并动态工具（dsh 同名赢、新 id 稳定排序，未变集合字节稳定）；adapter 改动态投影、不再启动时冻结；`enabled:false` 修正为注入 `danger-full-access` 关闭沙箱（不切换本地后端）。真实容器实证 danger-full-access 放行工作区外写入、workspace-write 拒写不回归；registry 单测 19 项 + adapter 单测 18 项全绿 |
 | 2026-08-28 | — | **工具结果契约映射设计定案**（`DESIGN-dsh-poc.md` §4.13）：adapter 一处补齐两处契约断裂（`file_path`→`filePath` 参数映射、`meta.diffs`→`filediff` 透传），前端零改动；实施待 dev-flow Plan |
 | 2026-08-28 | P4 | **P4 Plan 修订**：按审查结论补齐 VirtualWebServer 的 `renderIndex`/结构化 index 注入契约（D-11）、upgrade socket 生命周期（D-12）、`web-runtime` 根路径 URL 输出关闭（D-05 修订）；物化脚本路径定为 `packages/opencode/script/materialize-dsh.ts` 且验证含 Node strip-types 导入冒烟；DSH home 收口并入 P4 Plan Task 0，批次表新增 P3.5+ 行 |
+| 2026-08-28 | P4 | **P4 完成（单端口统一）**：Task 0 home 收口（提交 4861dee972）→ Task 1 Node route mount（96349415e5）→ Task 2 VirtualWebServer（aea2923ba7）→ Task 3 虚拟挂载 web profile（2ecdd47dda）→ Task 4 serve 单端口集成（b2e3f887ba）→ Task 5 Desktop/Workbench 同源收口（13a5130ad4 + 补修 6530f4558b）。`dshPort` 协议全链路移除，Workbench iframe 恒 `/dsh/`。验证：cordis 18 项、opencode server 10 项、app 915 项、desktop 31 项测试全绿；四包 typecheck + desktop build 通过；生产代码无 `dshPort`/`getDshPort`/`127.0.0.1:4098` 残留。P6/P7 实证输入已记录（见 P6/P7 节） |
