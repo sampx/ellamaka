@@ -290,6 +290,7 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
   const reasoningText = () => (props.part.type === "reasoning" ? props.part.text : "")
   let content: HTMLDivElement | undefined
   let frame: number | undefined
+  let observedScrollTop = 0
   const setOpen = (next: boolean) => {
     setSelected(next)
     chatExpansionState.set(props.part.sessionID, "reasoning", props.part.id, next)
@@ -297,6 +298,11 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
 
   const updateFollowStream = (event: Event) => {
     const element = event.currentTarget as HTMLDivElement
+    // A capped region can dispatch `scroll` merely because its content grew
+    // past max-height. Only a real position change represents the user's
+    // intent to inspect earlier reasoning and should pause tail-following.
+    if (Math.abs(element.scrollTop - observedScrollTop) <= 1) return
+    observedScrollTop = element.scrollTop
     setFollowStream(element.scrollHeight - element.clientHeight - element.scrollTop <= 2)
   }
 
@@ -312,6 +318,7 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
       frame = undefined
       if (!running() || !open() || !followStream() || content !== element) return
       element.scrollTop = element.scrollHeight
+      observedScrollTop = element.scrollTop
     })
   })
   onCleanup(() => {
@@ -346,7 +353,10 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
         </Collapsible.Trigger>
         <Collapsible.Content
           data-slot="chat-reasoning-content"
-          ref={content}
+          ref={(element: HTMLDivElement) => {
+            content = element
+            observedScrollTop = element.scrollTop
+          }}
           on:scroll={updateFollowStream}
         >
           <div data-slot="chat-reasoning-text">{props.part.text}</div>

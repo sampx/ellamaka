@@ -399,7 +399,7 @@ describe("ReasoningBlock", () => {
     const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
     expect(content).not.toBeNull()
     let scrollTop = 0
-    let scrollHeight = 400
+    let scrollHeight = 100
     Object.defineProperties(content, {
       clientHeight: { configurable: true, get: () => 100 },
       scrollHeight: { configurable: true, get: () => scrollHeight },
@@ -413,6 +413,11 @@ describe("ReasoningBlock", () => {
     })
 
     setPart("text", "line 1\nline 2\nline 3")
+    // Crossing the max-height threshold may emit a native scroll event before
+    // the block has actually moved. That is a layout update, not the user's
+    // intent to inspect earlier reasoning, so tail-following must stay on.
+    scrollHeight = 400
+    content.dispatchEvent(new Event("scroll"))
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
     expect(scrollTop).toBe(400)
 
