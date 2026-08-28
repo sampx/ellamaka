@@ -187,7 +187,7 @@ export interface DshWebHost {
 }
 
 export interface DshHostOptions {
-  /** The dsh home directory (`$DSH_HOME`). Defaults to `$WOPAL_HOME/dsh`. */
+  /** The dsh home directory (`$WOPAL_HOME/dsh`). */
   home?: string
   /** The loopback port for the dsh webserver; `0` asks the OS for a free one. */
   port: number
@@ -195,7 +195,7 @@ export interface DshHostOptions {
    * Explicit path to the `@deepseek-ai/dsh` package.json acting as the
    * installation anchor. When omitted, `require.resolve` locates it from
    * this host package's closure. Desktop packaged mode passes the
-   * materialised closure copy under `$DSH_HOME` because `require.resolve`
+   * materialised closure copy under `$WOPAL_HOME/dsh` because `require.resolve`
    * cannot reach it from the bundled sidecar.
    */
   installAnchor?: string
@@ -221,6 +221,14 @@ export interface DshHostOptions {
    * tool backend rather than a full dsh session host.
    */
   extraPatches?: Record<string, unknown>[]
+  /**
+   * Disable the `code-runtime` plugin. It depends on
+   * `node:module.stripTypeScriptTypes` (Node 22.18+), which the bun dev
+   * runtime lacks — so the CLI serve path (bun) must disable it. The Desktop
+   * sidecar runs under Node 22.18+ and should keep it enabled. Defaults to
+   * `false` (enabled).
+   */
+  disableCodeRuntime?: boolean
 }
 
 /** Internal mount options shared by the web and base entry points. */
@@ -252,7 +260,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
-  // materialised closure copy under $DSH_HOME because require.resolve cannot
+  // materialised closure copy under $WOPAL_HOME/dsh because require.resolve cannot
   // reach the resource directory from the bundled sidecar.
   const installAnchor = opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
 
@@ -396,8 +404,9 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
       { id: "agent-presets", config: { default: "standard", roots: [{ path: SHIPPED_PRESET_ROOT, trust: "system" }] } },
       // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
       // which the bun dev runtime lacks. It is a code-execution capability, not
-      // part of the web UI chat surface, so disable it to boot under bun.
-      { id: "code-runtime", disabled: true },
+      // part of the web UI chat surface. The CLI serve path (bun) disables it
+      // via `disableCodeRuntime`; the Desktop sidecar (Node 22.18+) keeps it.
+      ...(opts.disableCodeRuntime ? [{ id: "code-runtime", disabled: true }] : []),
       // The official webserver binds a real socket; the virtual profile
       // provides VirtualWebServer instead, so disable the real one.
       { id: "webserver", disabled: true },
@@ -413,16 +422,24 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   })
   // Register the DSH iframe prefix adaptation as the last index tap: rewrite
   // static asset URLs to /dsh and inject the browser fetch/WebSocket/
-  // EventSource adapter. frontend-static renders the index through
+  // EventSource adapter as a real <script> node (a bare text splice into
+  // </head> would not execute). frontend-static renders the index through
   // applyIndexTaps, so this runs after the official taps.
   virtualWebServer.tapIndex((html) => {
     const rewritten = virtualWebServer.rewriteIndex(html)
-    return rewritten.replace("</head>", `${virtualWebServer.iframeAdapterScript()}</head>`)
+    const script = `<script>${virtualWebServer.iframeAdapterScript()}</script>`
+    return rewritten.replace("</head>", `${script}</head>`)
   })
   return {
     mountPath: DSH_MOUNT_PREFIX,
     webServer: virtualWebServer,
-    dispose: host.dispose,
+    // Dispose the VirtualWebServer first (closes every upgrade socket it
+    // dispatched, per DESIGN-dsh-poc §2.1 item 10) before unmounting the
+    // Loader, so Node closeAllConnections() does not strand raw WebSockets.
+    dispose: async () => {
+      virtualWebServer.dispose()
+      await host.dispose()
+    },
   }
 }
 

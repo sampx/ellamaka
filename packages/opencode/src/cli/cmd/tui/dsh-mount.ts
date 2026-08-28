@@ -6,7 +6,7 @@ import { join } from "node:path"
 const CONTAINER_KEY = "__ellamakaDshContainer"
 
 export interface DshMountOptions {
-  /** The dsh home directory (`$DSH_HOME`). Defaults to `$WOPAL_HOME/dsh`. */
+  /** The dsh home directory (`$WOPAL_HOME/dsh`). */
   home?: string
   /** Path to the dedicated dsh-plugins log file. */
   logFile?: string

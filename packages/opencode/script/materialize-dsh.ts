@@ -1,8 +1,9 @@
 /**
- * Materialise the DSH home closure at `$DSH_HOME` (default `$WOPAL_HOME/dsh`).
+ * Materialise the DSH home closure at `$WOPAL_HOME/dsh`.
  *
  * The DSH home is the single location where the dsh dependency closure and
- * the two profiles live (DESIGN-dsh-poc §2.2). This script:
+ * the two profiles live (DESIGN-dsh-poc §2.2). Ellamaka integration always
+ * uses `$WOPAL_HOME/dsh` — never `$DSH_HOME`. This script:
  *
  *   1. writes the closure `package.json` — the 7 `@deepseek-ai/*` packages the
  *      `@wopal/ellamaka-cordis` source actually imports, plus
@@ -54,9 +55,9 @@ const LOADER_VERSION = "1.0.2"
 /** The two profile names the closure pre-seeds. */
 const PROFILES = ["web", "ellamaka-tools"] as const
 
-/** Resolve the DSH home: `$DSH_HOME` or `$WOPAL_HOME/dsh`. */
+/** Resolve the DSH home: always `$WOPAL_HOME/dsh` (never `$DSH_HOME`). */
 function resolveDshHome(): string {
-  return process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  return join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
 }
 
 /** Resolve the workspace root (the repo root, parent of `packages/`). */

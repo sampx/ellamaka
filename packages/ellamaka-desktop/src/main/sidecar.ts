@@ -136,8 +136,9 @@ async function start(command: StartCommand) {
       cors: ["oc://renderer"],
     })
     // Optional dsh web engine (single-process, DESIGN-dsh-poc §2.1).
-    // The dsh closure lives at $DSH_HOME (default $WOPAL_HOME/dsh), materialised
-    // by `packages/opencode/script/materialize-dsh.ts` (DESIGN-dsh-poc §2.2).
+    // The dsh closure lives at $WOPAL_HOME/dsh, materialised by
+    // `packages/opencode/script/materialize-dsh.ts` (DESIGN-dsh-poc §2.2).
+    // Ellamaka integration always uses $WOPAL_HOME/dsh — never $DSH_HOME.
     // The sidecar mounts the VirtualWebServer onto the Ellamaka listener under
     // /dsh. When the closure is absent (not yet installed), dsh is skipped and
     // the sidecar runs normally — the same kill-switch semantics as
@@ -155,16 +156,17 @@ async function start(command: StartCommand) {
 }
 
 /**
- * Mount the dsh web engine when its closure is present under $DSH_HOME.
+ * Mount the dsh web engine when its closure is present under $WOPAL_HOME/dsh.
  *
- * Resolves the closure home as `$DSH_HOME` (fallback `$WOPAL_HOME/dsh`).
- * If the `@deepseek-ai/dsh` package is not materialised there yet, returns
- * and the sidecar continues without dsh. A successful mount registers the
- * VirtualWebServer onto the Ellamaka listener under `/dsh`; the host handle is
- * retained for clean unmount on stop.
+ * Resolves the closure home as `$WOPAL_HOME/dsh` (ellamaka integration never
+ * uses `$DSH_HOME`). If the `@deepseek-ai/dsh` package is not materialised
+ * there yet, returns and the sidecar continues without dsh. A successful mount
+ * registers the VirtualWebServer onto the Ellamaka listener under `/dsh`; the
+ * host handle is retained for clean unmount on stop.
  */
 async function mountDshIfPresent(): Promise<void> {
-  const dshHome = process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+  const dshHome = join(wopalHome, "dsh")
   const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
   if (!existsSync(anchor)) {
     // Closure not materialised yet — skip dsh without error (onboarding not done).
@@ -179,7 +181,6 @@ async function mountDshIfPresent(): Promise<void> {
   const requireFromClosure = createRequire(join(dshHome, "package.json"))
   const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
   const { bootDshWeb } = await import(pathToFileURL(dshWebEntry).href)
-  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const host = await bootDshWeb({
     home: dshHome,
     port: listener?.port ?? 0,
@@ -209,7 +210,8 @@ async function mountDshIfPresent(): Promise<void> {
  * projected tools; ellamaka builtins keep serving).
  */
 async function mountDshToolsIfPresent(): Promise<void> {
-  const dshHome = process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+  const dshHome = join(wopalHome, "dsh")
   const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
   if (!existsSync(anchor)) {
     return undefined
@@ -217,7 +219,6 @@ async function mountDshToolsIfPresent(): Promise<void> {
   const requireFromClosure = createRequire(join(dshHome, "package.json"))
   const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
   const { bootDshTools } = await import(pathToFileURL(dshWebEntry).href)
-  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const host = await bootDshTools({
     home: dshHome,
     port: 0,

@@ -57,6 +57,8 @@ async function mountDsh(listener: Awaited<ReturnType<typeof startListener>>) {
     home,
     port: listener.port,
     logFile: join(home, "dsh-plugins.log"),
+    // The test runs under bun, which lacks node:module.stripTypeScriptTypes.
+    disableCodeRuntime: true,
   })
   const unmount = listener.mountNodeRoute({
     prefix: dsh.mountPath,
@@ -139,29 +141,86 @@ describe("dsh single-port integration", () => {
     await listener.stop()
   }, 60_000)
 
-  test("upgrade /dsh/api/events.mux routes to the DSH downlink", async () => {
+  test("upgrade /dsh/api/events.mux routes to the DSH downlink and returns 101", async () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const port = listener.port
 
     try {
       const socket = connect(port, "127.0.0.1")
+      let response = ""
+      socket.on("data", (chunk) => { response += chunk.toString() })
       socket.write(
         "GET /dsh/api/events.mux HTTP/1.1\r\n" +
           "Host: 127.0.0.1\r\n" +
           "Connection: Upgrade\r\n" +
           "Upgrade: websocket\r\n" +
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+          "Sec-WebSocket-Version: 13\r\n" +
           "\r\n",
       )
-      // The DSH downlink either upgrades or closes; either way the socket
-      // terminates without hanging (the mount routes it to the DSH upgrade
-      // table, not the Ellamaka default). Wait briefly for a close/error.
+      // The DSH downlink must accept the upgrade (101) — not fall through to
+      // the Ellamaka default or hang. Wait for the handshake response.
       await Promise.race([
-        once(socket, "close"),
-        once(socket, "error"),
-        new Promise((r) => setTimeout(r, 2000)),
+        new Promise<void>((resolve) => {
+          const check = () => {
+            if (response.includes("101")) resolve()
+            else setTimeout(check, 20)
+          }
+          check()
+        }),
+        once(socket, "close").then(() => {}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("upgrade handshake timed out")), 5000)),
       ])
+      expect(response).toContain("101 Switching Protocols")
+      expect(response).toContain("Upgrade: websocket")
       socket.destroy()
+    } finally {
+      await mount.dispose()
+      await listener.stop()
+    }
+  }, 60_000)
+
+  test("EventSource /dsh/plugins/events is served by the DSH HMR downlink", async () => {
+    const listener = await startListener()
+    const mount = await mountDsh(listener)
+    const base = listener.url.toString().replace(/\/$/, "")
+
+    try {
+      // The client-hmr plugin owns /plugins/events (an EventSource stream).
+      // Under the single-port scheme it is served at /dsh/plugins/events.
+      const res = await fetch(base + "/dsh/plugins/events", {
+        headers: { authorization: authorization(), accept: "text/event-stream" },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers.get("content-type") ?? "").toContain("text/event-stream")
+      // Read the first chunk to prove the stream is live, then abort.
+      const reader = res.body!.getReader()
+      const first = await reader.read()
+      expect(first.done).toBe(false)
+      await reader.cancel()
+    } finally {
+      await mount.dispose()
+      await listener.stop()
+    }
+  }, 60_000)
+
+  test("rendered /dsh index carries the iframe adapter as an executable <script> node", async () => {
+    const listener = await startListener()
+    const mount = await mountDsh(listener)
+    const base = listener.url.toString().replace(/\/$/, "")
+
+    try {
+      const index = await fetch(base + "/dsh/", { headers: { authorization: authorization() } })
+      expect(index.status).toBe(200)
+      const html = await index.text()
+      // The adapter must be injected as a real <script> node (a bare text
+      // splice into </head> would not execute in a browser).
+      const adapterMatch = html.match(/<script>\(\(\) => \{\n  const prefix = "\/dsh"[\s\S]*?<\/script>/)
+      expect(adapterMatch).not.toBeNull()
+      const adapterBody = adapterMatch![0].replace(/^<script>/, "").replace(/<\/script>$/, "")
+      expect(adapterBody).toContain("const prefix = \"/dsh\"")
+      expect(adapterBody).toContain("globalThis.fetch")
     } finally {
       await mount.dispose()
       await listener.stop()

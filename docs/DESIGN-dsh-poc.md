@@ -70,7 +70,7 @@ ellamaka 进程（唯一监听端口）
 
 ### 2.2 DSH home 与依赖物化
 
-**唯一 home**：`$DSH_HOME` 缺省 `$WOPAL_HOME/dsh`。dev（serve/TUI）与 Desktop sidecar 读取同一位置；`$DSH_HOME` 环境变量可覆盖。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不读写。
+**唯一 home**：`$WOPAL_HOME/dsh`。dev（serve/TUI）与 Desktop sidecar 读取同一位置。**ellamaka 集成 dsh 永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`**——`$DSH_HOME` 覆盖逻辑已移除，任何路径都不得回退到它。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不读写。
 
 ```text
 $WOPAL_HOME/dsh/                          ← 唯一 DSH home
@@ -97,16 +97,16 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 **依赖解析（installAnchor）**：`installAnchor` 决定 dsh 软件包从哪解析。
 
 - dev 模式（CLI serve/TUI）：`require.resolve("@deepseek-ai/dsh/package.json")` 解析到 workspace 的 node_modules（dsh 包已声明在 `packages/ellamaka-cordis/package.json`，随 `bun install` 一起安装，零额外操作）。
-- Desktop sidecar：bundle 不携带 dsh 包，Node 无法从 bundle 解析，installAnchor 显式指向 `$DSH_HOME/node_modules/@deepseek-ai/dsh/package.json`。
+- Desktop sidecar：bundle 不携带 dsh 包，Node 无法从 bundle 解析，installAnchor 显式指向 `$WOPAL_HOME/dsh/node_modules/@deepseek-ai/dsh/package.json`。
 
 **kill switch**：sidecar 检查锚点存在才挂载 dsh；闭包缺失时跳过 dsh，sidecar 正常运行（与 `ELLAMAKA_DSH=0` 等效）。打包分发的首次启动自动安装归 P9（见 §8）。
 
 ### 2.3 profile 机制
 
 - profile 目录含 `package.json`（`dsh.profile.bundles` 有序 bundle 列表）+ `cordis.yml`（插件行清单）+ `cordis.patch.yml`（用户补丁层，按 entry id 覆盖/禁用，应用于全部 bundle 层之后）。
-- 两个 profile 都在 `$DSH_HOME/profiles/` 下：`web/`（bundles: dsh-base + dsh-web-app，完整 UI）、`ellamaka-tools/`（bundles: dsh-base，补丁层禁用 agent-loop 专属插件）。
+- 两个 profile 都在 `$WOPAL_HOME/dsh/profiles/` 下：`web/`（bundles: dsh-base + dsh-web-app，完整 UI）、`ellamaka-tools/`（bundles: dsh-base，补丁层禁用 agent-loop 专属插件）。
 - `initProfile` 只创建缺失文件不覆盖；ellamaka 只在补丁层仍是空模板时播种默认禁用条目，用户编辑永远不会被覆盖。
-- `$DSH_HOME/profiles/node_modules` 是快捷方式目录：`healProfilesModuleFallback(installAnchor, home)` 在每次挂载时从 installAnchor 出发遍历依赖清单，把每个包建一个快捷方式（symlink）到 `$DSH_HOME/profiles/node_modules/<name>`，使 profile 的插件行在 Loader 解析时能找到宿主已安装的包（与 dsh launcher 启动 profile 的方式一致）。它不是独立安装，指向哪份安装取决于 installAnchor。
+- `$WOPAL_HOME/dsh/profiles/node_modules` 是快捷方式目录：`healProfilesModuleFallback(installAnchor, home)` 在每次挂载时从 installAnchor 出发遍历依赖清单，把每个包建一个快捷方式（symlink）到 `$WOPAL_HOME/dsh/profiles/node_modules/<name>`，使 profile 的插件行在 Loader 解析时能找到宿主已安装的包（与 dsh launcher 启动 profile 的方式一致）。它不是独立安装，指向哪份安装取决于 installAnchor。
 
 ### 2.4 关键事实
 
@@ -219,7 +219,7 @@ dev 与 Desktop 各用不同 home，profile 与依赖分散——这是文档与
 - `ellamaka-tools` 补丁层重新播种默认禁用清单（不迁移旧补丁；旧内容确认为默认值）。
 - 物化验证通过后清理旧闭包目录与 `~/.dsh` 内 ellamaka 产物。
 - `~/.dsh` 归 dsh 官方 CLI 专用。
-- P9 自动安装目标同步改为 `$DSH_HOME`（缺省 `$WOPAL_HOME/dsh`）。
+- P9 自动安装目标同步改为 `$WOPAL_HOME/dsh`（ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`）。
 
 ### 3.4 iframe 是界面问题，不是架构结论
 
@@ -245,7 +245,7 @@ ellamaka 借 dsh 解决四类问题，分两轨：
 
 #### 4.2.1 承载形态
 
-- **工具容器**（ellamaka-tools profile）是能力的"货架"：载入 dsh-base 全部插件，用 profile 补丁层按 id 禁用 agent-loop 专属插件（禁用清单见 §2.4）。工具容器不承载任何 dsh 会话，只暴露 `tools` 等服务。禁用清单是用户自有文件（`$DSH_HOME/profiles/ellamaka-tools/cordis.patch.yml`），ellamaka 不覆盖用户编辑。
+- **工具容器**（ellamaka-tools profile）是能力的"货架"：载入 dsh-base 全部插件，用 profile 补丁层按 id 禁用 agent-loop 专属插件（禁用清单见 §2.4）。工具容器不承载任何 dsh 会话，只暴露 `tools` 等服务。禁用清单是用户自有文件（`$WOPAL_HOME/dsh/profiles/ellamaka-tools/cordis.patch.yml`），ellamaka 不覆盖用户编辑。
 - **dsh-adapter**（`.wopal/plugins/dsh-adapter`）是能力的"投影仪"：按映射白名单把容器工具投影到 ellamaka ToolRegistry 并送出执行。执行时按 ellamaka session ID 复用最小 facade——`agent.session.header.cwd`（spawn 工作目录）、`agent.session.header.id`（spill 归属标签）与 `agent.session.events`（沙箱模式折叠）；其他一切省略。
 - **每次只采用一个能力**。权限继续由 ellamaka 原生 Permission 处理。
 - 采用成本超过独立实现成本时，保留 ellamaka 原生能力。dsh 是能力来源，不是必须迁入的运行时归宿。
@@ -562,7 +562,7 @@ dsh 的 edit/write 把 diff 放在 `meta.diffs`（`presentationMeta` 投影，�
 7. **wopal-plugin 原生边界**：wopal-plugin 继续作为 ellamaka 原生插件运行。PoC 只采用独立 dsh 能力，不拆分或迁移 wopal-plugin。
 8. **工具容器边界**：工具调用走专用工具容器（ellamaka-tools profile），**容器内不创建任何 dsh session**；adapter 只传递工具实测消费的最小 per-call context（细节见 §2.5、§4.2.1）。web 容器保持完整 profile，不复用为工具后端。禁用清单是该 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 9. **per-space 隔离**：容器装配是进程级共享能力池，per-space 差异在投影层解决（细节见 §4.2.1）。
-10. **DSH home 唯一**：依赖闭包与 profile 只物化在 `$DSH_HOME`（缺省 `$WOPAL_HOME/dsh`，见 §2.2）；dev 与 Desktop 读取同一 home；`~/.dsh` 归 dsh 官方 CLI 专用。禁止引入第二份闭包或第二处 profile 位置（决策见 §3.3）。
+10. **DSH home 唯一**：依赖闭包与 profile 只物化在 `$WOPAL_HOME/dsh`（见 §2.2）；dev 与 Desktop 读取同一 home；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`；`~/.dsh` 归 dsh 官方 CLI 专用。禁止引入第二份闭包或第二处 profile 位置（决策见 §3.3）。
 
 ## 8. 实验步骤（核心到外围）
 
@@ -579,7 +579,7 @@ dsh 的 edit/write 把 diff 放在 `meta.diffs`（`presentationMeta` 投影，�
 | P6 | 配置动态化实证整理：从 P4 提取 patch 覆盖与生命周期证据 | 吸收轨 | ⬜ |
 | P7 | 插件规范化实证整理：从 P4 提取 Loader、dual-face 与卸载证据 | 吸收轨 | ⬜ |
 | P8 | 界面演进：同源 iframe → 原生（远期） | 外围 | ⬜ |
-| P9 | desktop 依赖安装：打包版首次启动自动安装 dsh 依赖闭包到 `$DSH_HOME`（缺省 `$WOPAL_HOME/dsh`，见 §2.2），移除 dev 期 file: 链接 | 外围 | ⬜ |
+| P9 | desktop 依赖安装：打包版首次启动自动安装 dsh 依赖闭包到 `$WOPAL_HOME/dsh`（见 §2.2），移除 dev 期 file: 链接 | 外围 | ⬜ |
 
 详细任务分解见 `PLAN-TODOS.md`。
 

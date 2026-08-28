@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServer, type Server } from "node:http"
 import { once } from "node:events"
+import { connect } from "node:net"
 import { Context } from "@deepseek-ai/cordis"
 import { bootDshWeb, mountDshWeb, mountDshTools } from "../src/dsh-web"
 
@@ -18,6 +19,30 @@ async function attachAndListen(webServer: { attach(server: Server): void }) {
   return { server, baseUrl: `http://127.0.0.1:${port}` }
 }
 
+/** Run a browser script in an isolated VM with fake fetch/WebSocket/EventSource. */
+function runInIsolatedVm(script: string, calls: { fetch: unknown[]; ws: unknown[]; es: unknown[] }) {
+  const sandbox = {
+    fetch: (...args: unknown[]) => {
+      calls.fetch.push(args)
+      return Promise.resolve({ ok: true })
+    },
+    WebSocket: class {
+      constructor(...args: unknown[]) {
+        calls.ws.push(args)
+      }
+    },
+    EventSource: class {
+      constructor(...args: unknown[]) {
+        calls.es.push(args)
+      }
+    },
+    console,
+  }
+  const vm = require("node:vm")
+  vm.runInNewContext(script, sandbox)
+  return sandbox
+}
+
 /**
  * Mount the dsh web engine virtually: the official web profile registers its
  * routes on a VirtualWebServer instead of a second listening socket (final
@@ -28,7 +53,7 @@ describe("dsh web engine", () => {
   test("mountDshWeb activates the web profile without creating a listening socket", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
     const ctx = new Context()
-    const host = await mountDshWeb(ctx, { home, port: 4097 })
+    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
 
     try {
       // The virtual host reports the Ellamaka public address and mount path.
@@ -71,7 +96,7 @@ describe("dsh web engine", () => {
 
   test("bootDshWeb owns a fresh context and disposes it", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
-    const host = await bootDshWeb({ home, port: 4097 })
+    const host = await bootDshWeb({ home, port: 4097, disableCodeRuntime: true })
 
     try {
       expect(host.mountPath).toBe("/dsh")
@@ -87,11 +112,85 @@ describe("dsh web engine", () => {
     }
   }, 30_000)
 
+  test("mountDshWeb injects the iframe adapter as a real <script> node that executes", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
+
+    try {
+      const { server, baseUrl } = await attachAndListen(host.webServer)
+      try {
+        // The rendered index must carry the adapter inside a <script> node, not
+        // as a bare text splice (a bare splice would not execute in a browser).
+        const root = await fetch(baseUrl + "/")
+        const html = await root.text()
+        const adapterMatch = html.match(/<script>\(\(\) => \{\n  const prefix = "\/dsh"[\s\S]*?<\/script>/)
+        expect(adapterMatch).not.toBeNull()
+        const adapterBody = adapterMatch![0].replace(/^<script>/, "").replace(/<\/script>$/, "")
+        expect(adapterBody).toContain("const prefix = \"/dsh\"")
+        expect(adapterBody).toContain("globalThis.fetch")
+
+        // Extract the adapter body and run it in an isolated VM with fake
+        // fetch/WebSocket/EventSource, then drive the wrapped calls to prove
+        // the injected script actually adapts same-origin URLs to /dsh.
+        const calls = { fetch: [], ws: [], es: [] }
+        runInIsolatedVm(
+          adapterBody +
+            `;fetch("/api/x"); new WebSocket("/api/events.mux"); new EventSource("/plugins/events");`,
+          calls,
+        )
+        expect(calls.fetch[0][0]).toBe("/dsh/api/x")
+        expect(calls.ws[0][0]).toBe("/dsh/api/events.mux")
+        expect(calls.es[0][0]).toBe("/dsh/plugins/events")
+      } finally {
+        server.close()
+      }
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshWeb dispose closes upgrade sockets dispatched through the virtual webserver", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
+
+    const { server, baseUrl } = await attachAndListen(host.webServer)
+    const port = (server.address() as { port: number }).port
+    let socketClosed = false
+    try {
+      // Open a raw WebSocket upgrade to the DSH downlink. The official
+      // client-hmr plugin owns /plugins/events; the downlink is /api/events.mux.
+      const socket = connect(port, "127.0.0.1")
+      socket.once("close", () => { socketClosed = true })
+      socket.write(
+        "GET /api/events.mux HTTP/1.1\r\n" +
+          "Host: 127.0.0.1\r\n" +
+          "Connection: Upgrade\r\n" +
+          "Upgrade: websocket\r\n" +
+          "\r\n",
+      )
+      await once(socket, "connect")
+      // Give the upgrade dispatch a tick to register the socket.
+      await new Promise((r) => setTimeout(r, 20))
+      expect(socketClosed).toBe(false)
+
+      // Host dispose must close the upgraded socket (D-12 / DESIGN §2.1 item 10).
+      await host.dispose()
+      await once(socket, "close")
+      expect(socketClosed).toBe(true)
+    } finally {
+      server.close()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
   test("mountDshWeb writes dsh plugin logs to the dedicated log file", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
     const logFile = join(home, "dsh-plugins.log")
     const ctx = new Context()
-    const host = await mountDshWeb(ctx, { home, port: 4097, logFile })
+    const host = await mountDshWeb(ctx, { home, port: 4097, logFile, disableCodeRuntime: true })
 
     try {
       // The dsh engine boots a webServer service; its startup logs should

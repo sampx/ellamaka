@@ -44,14 +44,16 @@ export const ServeCommand = effectCmd({
       ])
       const webHub = new CordisHub(null)
       const toolsHub = new CordisHub(null)
-      // Fixed loopback port so the Workbench /dsh iframe can address it without
-      // a runtime port-discovery round trip (dev 4098; Desktop uses a random
-      // port via its own sidecar wiring in a later phase).
+      // The dsh web engine mounts on the same Ellamaka listener under /dsh
+      // (single-port scheme, DESIGN-dsh-poc §2.1). The CLI serve runtime is
+      // bun, which lacks node:module.stripTypeScriptTypes, so code-runtime is
+      // disabled here; the Desktop sidecar (Node 22.18+) keeps it enabled.
       const dsh = yield* Effect.promise(() =>
         mountDshWeb(webHub.ctx, {
           home: join(Global.Path.wopalHome, "dsh"),
           port: server.port,
           logFile: join(Global.Path.log, "dsh-plugins.log"),
+          disableCodeRuntime: true,
         }),
       )
       // Mount the VirtualWebServer under /dsh on the Ellamaka listener. The
@@ -86,6 +88,9 @@ export const ServeCommand = effectCmd({
         Effect.ensuring(
           Effect.promise(async () => {
             unmountDsh()
+            // dsh.dispose() closes the VirtualWebServer's upgrade sockets first,
+            // then unmounts the dsh plugin tree from the web hub.
+            await dsh.dispose()
             await webHub.dispose()
             await toolsHub.dispose()
           }),
