@@ -528,7 +528,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} besked i kø",
   "session.followupDock.summary.other": "{{count}} beskeder i kø",
   "session.followupDock.sendNow": "Send nu",
-  "session.followupDock.edit": "Rediger",
+  "session.followupDock.withdraw": "Træk tilbage",
   "session.followupDock.collapse": "Skjul beskeder i kø",
   "session.followupDock.expand": "Udvid beskeder i kø",
   "session.revertDock.summary.one": "{{count}} tilbagerullet besked",
@@ -648,11 +648,11 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
-  "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",
-  "settings.general.row.editToolPartsExpanded.title": "Udvid edit-værktøjsdele",
+  "settings.general.row.shellToolPartsExpanded.title": "Udvid resultater af værktøjskald",
+  "settings.general.row.shellToolPartsExpanded.description": "Vis resultater af værktøjskald udvidet som standard i tidslinjen",
+  "settings.general.row.editToolPartsExpanded.title": "Udvid resultater af redigeringsværktøj",
   "settings.general.row.editToolPartsExpanded.description":
-    "Vis edit-, write- og patch-værktøjsdele udvidet som standard i tidslinjen",
+    "Vis edit-, write- og patch-værktøjsresultater udvidet som standard i tidslinjen",
   "settings.general.row.showSessionProgressBar.title": "Vis sessionens fremdriftslinje",
   "settings.general.row.showSessionProgressBar.description":
     "Vis den animerede fremdriftslinje øverst i sessionen, når agenten arbejder",
@@ -927,5 +927,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Kunne ikke oprette vedvarende projektmetadata",
   "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke oprette vedvarende projektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke oprette lager",
+  "workbench.chat.question": "Spørgsmål: ",
+  "workbench.chat.answer": "Svar: ",
   "terminal.connectionLost.abnormalClose": "WebSocket lukkede unormalt: {{code}}",
 }

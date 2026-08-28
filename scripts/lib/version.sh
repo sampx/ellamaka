@@ -5,22 +5,16 @@
 
 # resolve_build_version <product> <suffix> [project_root]
 #
-# Resolves the build version as <next>-<suffix>.<timestamp>: the next patch
-# version after the highest SemVer tag of the product (stable preferred over
-# prerelease, e.g. latest ellamaka-cli-v2.0.1 → 2.0.2), suffixed with "main"
-# (CLI) or the channel (Desktop), then a local timestamp. An exact tag on
-# HEAD wins and is used verbatim (release builds).
+# Resolves the local/dev build version as <next>-<suffix>.<timestamp>: the next
+# patch version after the highest SemVer tag of the product (stable preferred
+# over prerelease, e.g. latest ellamaka-cli-v2.0.1 → 2.0.2), suffixed with the
+# channel ("main" for CLI, the channel for Desktop), then a local timestamp.
+# Local builds are always identifiable by this suffix — release versions come
+# from release.sh/CI inputs and never pass through this function.
 function resolve_build_version() {
   local product="$1" suffix="$2" project_root="${3:-$PROJECT_ROOT}"
-  local exact_tag version_tag timestamp
+  local version_tag timestamp
   local product_filter="${product}-v*"
-
-  exact_tag=$(git -C "$project_root" describe --tags --exact-match HEAD 2>/dev/null || true)
-  exact_tag="${exact_tag#v}"
-  if [[ -n "$exact_tag" ]]; then
-    echo "$exact_tag"
-    return
-  fi
 
   # Highest SemVer tag for this product (stable beats prerelease at the same
   # X.Y.Z), then the next patch version. git's own --sort=v:refname does not

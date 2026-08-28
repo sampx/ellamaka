@@ -4,12 +4,14 @@ import { Global } from "@opencode-ai/core/global"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Context, Layer, ManagedRuntime } from "effect"
+import { Effect, Context, Layer, ManagedRuntime, Scope, Exit } from "effect"
 import type * as PlatformError from "effect/PlatformError"
-import type * as Scope from "effect/Scope"
+import type * as ScopeType from "effect/Scope"
+import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import type { Config } from "@/config/config"
+import { Config as ConfigService } from "@/config/config"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import type { InstanceContext } from "../../src/project/instance-context"
@@ -94,6 +96,22 @@ export function removeGlobalTestConfig() {
   return fs.rm(globalSettingsFile, { force: true }).catch(() => undefined)
 }
 
+// The Config layer caches the global config forever
+// (cachedInvalidateWithTTL(Duration.infinity)) on the shared process-wide
+// memoMap. When a test writes a new global config via tmpdir({config}) /
+// tmpdirScoped({config}), the cache must be invalidated so the next read
+// picks up the new file. This helper runs Config.invalidate() against the
+// shared memoMap so it targets the same Config instance the engine uses.
+export function invalidateGlobalConfig() {
+  return Effect.gen(function* () {
+    const scope = yield* Scope.make()
+    const ctx = yield* Layer.buildWithMemoMap(ConfigService.defaultLayer, memoMap, scope)
+    const exit = yield* ConfigService.use.invalidate().pipe(Effect.scoped, Effect.provide(ctx), Effect.exit)
+    yield* Scope.close(scope, Exit.void)
+    if (Exit.isFailure(exit)) return yield* exit
+  }).pipe(Effect.runPromise)
+}
+
 type TmpDirOptions<T> = {
   git?: boolean
   config?: Partial<Config.Info>
@@ -115,13 +133,20 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   if (options?.config) {
     await writeGlobalTestConfig(options.config)
     wroteConfig = true
+    // The server's Config layer caches the global config forever on the shared
+    // memoMap. Invalidate it so the next read (e.g. through the shared
+    // Server.Default webHandler) picks up the config just written.
+    await invalidateGlobalConfig()
   }
   const realpath = sanitizePath(await fs.realpath(dirpath))
   let extra: T | undefined
   try {
     extra = await options?.init?.(realpath)
   } catch (err) {
-    if (wroteConfig) await removeGlobalTestConfig()
+    if (wroteConfig) {
+      await removeGlobalTestConfig()
+      await invalidateGlobalConfig()
+    }
     throw err
   }
   const result = {
@@ -130,7 +155,10 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
         await options?.dispose?.(realpath)
       } finally {
         if (options?.git) await stop(realpath).catch(() => undefined)
-        if (wroteConfig) await removeGlobalTestConfig()
+        if (wroteConfig) {
+          await removeGlobalTestConfig()
+          await invalidateGlobalConfig()
+        }
         await clean(realpath).catch(() => undefined)
       }
     },
@@ -155,7 +183,10 @@ export function tmpdirScoped(options?: {
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         if (options?.git) await stop(dir).catch(() => undefined)
-        if (wroteConfig) await removeGlobalTestConfig()
+        if (wroteConfig) {
+          await removeGlobalTestConfig()
+          await invalidateGlobalConfig()
+        }
         await clean(dir).catch(() => undefined)
       }),
     )
@@ -176,6 +207,9 @@ export function tmpdirScoped(options?: {
       const resolved = typeof options.config === "function" ? options.config() : options.config
       yield* Effect.promise(() => writeGlobalTestConfig(resolved))
       wroteConfig = true
+      // Invalidate the shared Config cache so the next read picks up the
+      // config just written (see tmpdir above).
+      yield* Effect.promise(() => invalidateGlobalConfig())
     }
 
     return dir
@@ -247,7 +281,7 @@ export function provideTmpdirServer<A, E, R>(
 ): Effect.Effect<
   A,
   E | PlatformError.PlatformError,
-  R | TestLLMServer | ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+  R | TestLLMServer | ChildProcessSpawner.ChildProcessSpawner | ScopeType.Scope
 > {
   return Effect.gen(function* () {
     const llm = yield* TestLLMServer

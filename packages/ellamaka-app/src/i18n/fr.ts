@@ -483,7 +483,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} message en file d'attente",
   "session.followupDock.summary.other": "{{count}} messages en file d'attente",
   "session.followupDock.sendNow": "Envoyer maintenant",
-  "session.followupDock.edit": "Modifier",
+  "session.followupDock.withdraw": "Retirer",
   "session.followupDock.collapse": "Réduire les messages en file d'attente",
   "session.followupDock.expand": "Développer les messages en file d'attente",
   "session.revertDock.summary.one": "{{count}} message annulé",
@@ -596,12 +596,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",
-  "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Développer les résultats d'appel d'outil",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Afficher les parties de l'outil shell développées par défaut dans la chronologie",
-  "settings.general.row.editToolPartsExpanded.title": "Développer les parties de l'outil edit",
+    "Afficher les résultats d'appel d'outil développés par défaut dans la chronologie",
+  "settings.general.row.editToolPartsExpanded.title": "Développer les résultats de l'outil d'édition",
   "settings.general.row.editToolPartsExpanded.description":
-    "Afficher les parties des outils edit, write et patch développées par défaut dans la chronologie",
+    "Afficher les résultats des outils edit, write et patch développés par défaut dans la chronologie",
   "settings.general.row.showSessionProgressBar.title": "Afficher la barre de progression de la session",
   "settings.general.row.showSessionProgressBar.description":
     "Afficher la barre de progression animée en haut de la session lorsque l'agent travaille",
@@ -868,5 +868,7 @@ export const dict = {
     "Échec de la création des métadonnées de projet persistantes",
   "error.childStore.persistedProjectIconCreateFailed": "Échec de la création de l'icône de projet persistante",
   "error.childStore.storeCreateFailed": "Échec de la création du stockage",
+  "workbench.chat.question": "Question : ",
+  "workbench.chat.answer": "Réponse : ",
   "terminal.connectionLost.abnormalClose": "WebSocket fermé anormalement : {{code}}",
 }

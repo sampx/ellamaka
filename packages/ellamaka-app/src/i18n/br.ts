@@ -478,7 +478,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} mensagem na fila",
   "session.followupDock.summary.other": "{{count}} mensagens na fila",
   "session.followupDock.sendNow": "Enviar agora",
-  "session.followupDock.edit": "Editar",
+  "session.followupDock.withdraw": "Retirar",
   "session.followupDock.collapse": "Recolher mensagens na fila",
   "session.followupDock.expand": "Expandir mensagens na fila",
   "session.revertDock.summary.one": "{{count}} mensagem revertida",
@@ -588,12 +588,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Orientar",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
-  "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Expandir resultados de chamadas de ferramentas",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Mostrar partes da ferramenta shell expandidas por padrão na linha do tempo",
-  "settings.general.row.editToolPartsExpanded.title": "Expandir partes da ferramenta de edição",
+    "Mostrar resultados de chamadas de ferramentas expandidos por padrão na linha do tempo",
+  "settings.general.row.editToolPartsExpanded.title": "Expandir resultados da ferramenta de edição",
   "settings.general.row.editToolPartsExpanded.description":
-    "Mostrar partes das ferramentas de edição, escrita e patch expandidas por padrão na linha do tempo",
+    "Mostrar resultados das ferramentas de edição, escrita e patch expandidos por padrão na linha do tempo",
   "settings.general.row.showSessionProgressBar.title": "Mostrar barra de progresso da sessão",
   "settings.general.row.showSessionProgressBar.description":
     "Exibir a barra de progresso animada no topo da sessão quando o agente estiver trabalhando",
@@ -857,5 +857,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Falha ao criar metadados de projeto persistentes",
   "error.childStore.persistedProjectIconCreateFailed": "Falha ao criar ícone de projeto persistente",
   "error.childStore.storeCreateFailed": "Falha ao criar armazenamento",
+  "workbench.chat.question": "Pergunta: ",
+  "workbench.chat.answer": "Resposta: ",
   "terminal.connectionLost.abnormalClose": "WebSocket fechado anormalmente: {{code}}",
 }

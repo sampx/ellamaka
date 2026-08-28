@@ -486,7 +486,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} Nachricht in der Warteschlange",
   "session.followupDock.summary.other": "{{count}} Nachrichten in der Warteschlange",
   "session.followupDock.sendNow": "Jetzt senden",
-  "session.followupDock.edit": "Bearbeiten",
+  "session.followupDock.withdraw": "Zurückziehen",
   "session.followupDock.collapse": "Warteschlange einklappen",
   "session.followupDock.expand": "Warteschlange ausklappen",
   "session.revertDock.summary.one": "{{count}} zurückgesetzte Nachricht",
@@ -599,12 +599,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
   "settings.general.row.reasoningSummaries.description":
     "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
-  "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
+  "settings.general.row.shellToolPartsExpanded.title": "Werkzeugaufruf-Ergebnisse ausklappen",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
-  "settings.general.row.editToolPartsExpanded.title": "Edit-Tool-Abschnitte ausklappen",
+    "Werkzeugaufruf-Ergebnisse standardmäßig in der Timeline ausgeklappt anzeigen",
+  "settings.general.row.editToolPartsExpanded.title": "Editier-Werkzeug-Ergebnisse ausklappen",
   "settings.general.row.editToolPartsExpanded.description":
-    "Edit-, Write- und Patch-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
+    "Edit-, Write- und Patch-Werkzeug-Ergebnisse standardmäßig in der Timeline ausgeklappt anzeigen",
   "settings.general.row.showSessionProgressBar.title": "Sitzungsfortschrittsleiste anzeigen",
   "settings.general.row.showSessionProgressBar.description":
     "Die animierte Fortschrittsleiste oben in der Sitzung anzeigen, wenn der Agent arbeitet",
@@ -869,5 +869,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Dauerhafte Projektmetadaten konnten nicht erstellt werden",
   "error.childStore.persistedProjectIconCreateFailed": "Dauerhaftes Projekticon konnte nicht erstellt werden",
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
+  "workbench.chat.question": "Frage: ",
+  "workbench.chat.answer": "Antwort: ",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
 } satisfies Partial<Record<Keys, string>>

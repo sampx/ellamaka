@@ -1242,6 +1242,36 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    // Repair assistant messages left incomplete by a hard-killed process. The
+    // only writers of `time.completed` are in-process Effect finalizers, which
+    // never run when the sidecar is SIGKILLed mid-stream, so a session can
+    // accumulate orphaned assistants with no finish/error/completed. This runs
+    // at the loop entry (before the while), where `state.ensureRunning`'s
+    // single-writer guarantee means every incomplete assistant is a historical
+    // orphan, never the in-flight turn (the current turn's assistant is created
+    // inside the loop body). Orphans without a finish get an AbortError error
+    // (matching the interrupt finalizer shape) plus a completion timestamp;
+    // orphans that already carry a finish only get the timestamp.
+    const finalizeOrphanedAssistants = Effect.fn("SessionPrompt.finalizeOrphanedAssistants")(function* (
+      sessionID: SessionID,
+    ) {
+      const orphans = [...MessageV2.stream(sessionID)].filter(
+        (m) => m.info.role === "assistant" && m.info.time.completed == null,
+      )
+      for (const orphan of orphans) {
+        const info = orphan.info
+        if (info.role !== "assistant") continue
+        if (info.finish == null) {
+          info.error ??= MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+            providerID: info.providerID,
+            aborted: true,
+          })
+        }
+        info.time.completed = Date.now()
+        yield* sessions.updateMessage(info)
+      }
+    })
+
     const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
@@ -1249,6 +1279,7 @@ export const layer = Layer.effect(
         let structured: unknown
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        yield* finalizeOrphanedAssistants(sessionID)
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })

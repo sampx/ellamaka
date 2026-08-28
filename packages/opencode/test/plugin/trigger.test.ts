@@ -5,7 +5,6 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import path from "path"
-import { pathToFileURL } from "url"
 import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
 import { Env } from "../../src/env"
@@ -42,26 +41,8 @@ const systemHook = "experimental.chat.system.transform"
 function withProject<A, E, R>(source: string, self: Effect.Effect<A, E, R>) {
   return provideTmpdirInstance((dir) =>
     Effect.gen(function* () {
-      const file = path.join(dir, "plugin.ts")
-      yield* Effect.all(
-        [
-          Effect.promise(() => Bun.write(file, source)),
-          Effect.promise(() =>
-            Bun.write(
-              path.join(dir, "opencode.json"),
-              JSON.stringify(
-                {
-                  $schema: "https://opencode.ai/config.json",
-                  plugin: [pathToFileURL(file).href],
-                },
-                null,
-                2,
-              ),
-            ),
-          ),
-        ],
-        { discard: true, concurrency: 2 },
-      )
+      const file = path.join(dir, ".opencode", "plugin", "plugin.ts")
+      yield* Effect.promise(() => Bun.write(file, source))
       return yield* self
     }),
   )

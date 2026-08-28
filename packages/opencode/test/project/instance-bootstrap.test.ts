@@ -1,7 +1,6 @@
 import { afterEach, expect } from "bun:test"
 import { existsSync } from "node:fs"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
@@ -28,7 +27,7 @@ afterEach(async () => {
 const bootstrapFixture = Effect.gen(function* () {
   const dir = yield* tmpdirScoped({ git: true })
   const marker = path.join(dir, "config-hook-fired")
-  const pluginFile = path.join(dir, "plugin.ts")
+  const pluginFile = path.join(dir, ".opencode", "plugin", "plugin.ts")
   yield* Effect.promise(() =>
     Bun.write(
       pluginFile,
@@ -41,15 +40,6 @@ const bootstrapFixture = Effect.gen(function* () {
         "})",
         "",
       ].join("\n"),
-    ),
-  )
-  yield* Effect.promise(() =>
-    Bun.write(
-      path.join(dir, "opencode.json"),
-      JSON.stringify({
-        $schema: "https://opencode.ai/config.json",
-        plugin: [pathToFileURL(pluginFile).href],
-      }),
     ),
   )
   return { directory: dir, marker }

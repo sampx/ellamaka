@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2"
 import { Binary } from "@opencode-ai/core/util/binary"
-import { mergeMessages, keyOf } from "@/cli/cmd/tui/context/sync-merge"
+import { mergeMessages, keyOf, activeTurnAssistantID } from "@/cli/cmd/tui/context/sync-merge"
 
 /**
  * Build a minimal user message literal. Only the fields relevant to the
@@ -260,5 +260,41 @@ describe("sync.tsx event-path composite-key lookup", () => {
     if (index >= 0) merged.splice(index, 1)
 
     expect(merged.map((m) => m.id)).toEqual(["msg_fa2c3af72001"])
+  })
+})
+
+// The QUEUED badge is driven by the last open assistant turn. A historical
+// orphan (an assistant killed mid-stream with no time.completed) buried in the
+// middle of the array must not mark every later user message as QUEUED.
+describe("activeTurnAssistantID", () => {
+  test("returns the last unfinished assistant when it is the trailing open turn", () => {
+    const messages = [userMsg("u1", 1), assistantMsg("a1", 2), userMsg("u2", 3)]
+    expect(activeTurnAssistantID(messages)).toBe("a1")
+  })
+
+  test("returns undefined when the last assistant is completed", () => {
+    const messages = [userMsg("u1", 1), assistantMsg("a1", 2, 100), userMsg("u2", 3), assistantMsg("a2", 4, 200)]
+    expect(activeTurnAssistantID(messages)).toBeUndefined()
+  })
+
+  test("ignores a buried orphan and returns undefined when a later assistant completed", () => {
+    const messages = [
+      userMsg("u1", 1),
+      assistantMsg("a1", 2),
+      userMsg("u2", 3),
+      assistantMsg("a2", 4, 200),
+      userMsg("u3", 5),
+    ]
+    expect(activeTurnAssistantID(messages)).toBeUndefined()
+  })
+
+  test("returns the trailing orphan as an open turn (retry semantics preserved)", () => {
+    const messages = [userMsg("u1", 1), assistantMsg("a1", 2)]
+    expect(activeTurnAssistantID(messages)).toBe("a1")
+  })
+
+  test("returns undefined for empty or user-only arrays", () => {
+    expect(activeTurnAssistantID([])).toBeUndefined()
+    expect(activeTurnAssistantID([userMsg("u1", 1)])).toBeUndefined()
   })
 })

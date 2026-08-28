@@ -474,7 +474,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} رسالة في الانتظار",
   "session.followupDock.summary.other": "{{count}} رسائل في الانتظار",
   "session.followupDock.sendNow": "إرسال الآن",
-  "session.followupDock.edit": "تحرير",
+  "session.followupDock.withdraw": "سحب",
   "session.followupDock.collapse": "طي الرسائل المنتظرة",
   "session.followupDock.expand": "توسيع الرسائل المنتظرة",
   "session.revertDock.summary.one": "{{count}} رسالة تم التراجع عنها",
@@ -580,12 +580,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "توجيه",
   "settings.general.row.reasoningSummaries.title": "إظهار ملخصات الاستنتاج",
   "settings.general.row.reasoningSummaries.description": "عرض ملخصات استنتاج النموذج في الشريط الزمني",
-  "settings.general.row.shellToolPartsExpanded.title": "توسيع أجزاء أداة shell",
+  "settings.general.row.shellToolPartsExpanded.title": "توسيع نتائج استدعاء الأدوات",
   "settings.general.row.shellToolPartsExpanded.description":
-    "إظهار أجزاء أداة shell موسعة بشكل افتراضي في الشريط الزمني",
-  "settings.general.row.editToolPartsExpanded.title": "توسيع أجزاء أداة edit",
+    "إظهار نتائج استدعاء الأدوات موسعة بشكل افتراضي في الشريط الزمني",
+  "settings.general.row.editToolPartsExpanded.title": "توسيع نتائج أداة التحرير",
   "settings.general.row.editToolPartsExpanded.description":
-    "إظهار أجزاء أدوات edit و write و patch موسعة بشكل افتراضي في الشريط الزمني",
+    "إظهار نتائج أدوات edit و write و patch موسعة بشكل افتراضي في الشريط الزمني",
   "settings.general.row.showSessionProgressBar.title": "إظهار شريط تقدم الجلسة",
   "settings.general.row.showSessionProgressBar.description": "عرض شريط التقدم المتحرك أعلى الجلسة أثناء عمل الوكيل",
   "settings.general.row.wayland.title": "استخدام Wayland الأصلي",
@@ -844,5 +844,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "فشل إنشاء بيانات تعريف المشروع الدائمة",
   "error.childStore.persistedProjectIconCreateFailed": "فشل إنشاء أيقونة المشروع الدائمة",
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
+  "workbench.chat.question": "سؤال: ",
+  "workbench.chat.answer": "إجابة: ",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
 }

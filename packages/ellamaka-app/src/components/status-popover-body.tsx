@@ -5,7 +5,7 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { useMutation, useQueryClient } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
@@ -18,6 +18,7 @@ import { type ServerHealth } from "@/utils/server-health"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { useServers } from "@/context/servers"
+import { serverSwitchRedirect } from "@/utils/server-switch-route"
 
 const pollMs = 10_000
 
@@ -158,6 +159,7 @@ export function StatusPopoverServerBody() {
   const platform = usePlatform()
   const dialog = useDialog()
   const language = useLanguage()
+  const location = useLocation()
   const navigate = useNavigate()
 
   let dialogRun = 0
@@ -179,7 +181,8 @@ export function StatusPopoverServerBody() {
         blocked: servers.health[key]?.healthy === false,
         active: !!server.current && key === ServerConnection.key(server.current),
         onSelect: () => {
-          navigate("/")
+          const redirect = serverSwitchRedirect(location.pathname)
+          if (redirect) navigate(redirect)
           queueMicrotask(() => server.setActive(key))
         },
       }
@@ -293,6 +296,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const platform = usePlatform()
   const dialog = useDialog()
   const language = useLanguage()
+  const location = useLocation()
   const navigate = useNavigate()
 
   const fail = (err: unknown) => {
@@ -374,7 +378,8 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                       aria-disabled={blocked()}
                       onClick={() => {
                         if (blocked()) return
-                        navigate("/")
+                        const redirect = serverSwitchRedirect(location.pathname)
+                        if (redirect) navigate(redirect)
                         queueMicrotask(() => server.setActive(key))
                       }}
                     >

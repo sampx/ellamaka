@@ -21,6 +21,10 @@ export function PromptSurfaceGate(props: {
     event.preventDefault()
     event.stopPropagation()
   }
+  const blockFocus = (event: FocusEvent) => {
+    if (event.target instanceof HTMLElement) event.target.blur()
+    block(event)
+  }
   createEffect(() => {
     const disabled = mode() === "prompt-disabled"
     if (!ref) return
@@ -31,6 +35,9 @@ export function PromptSurfaceGate(props: {
       ref.addEventListener("keyup", block, true)
       ref.addEventListener("paste", block, true)
       ref.addEventListener("beforeinput", block, true)
+      ref.addEventListener("focusin", blockFocus, true)
+      const active = document.activeElement
+      if (active instanceof HTMLElement && ref.contains(active)) active.blur()
     } else {
       ref.removeAttribute("inert")
       ref.classList.remove("pointer-events-none", "opacity-60")
@@ -38,6 +45,7 @@ export function PromptSurfaceGate(props: {
       ref.removeEventListener("keyup", block, true)
       ref.removeEventListener("paste", block, true)
       ref.removeEventListener("beforeinput", block, true)
+      ref.removeEventListener("focusin", blockFocus, true)
     }
   })
   return h(

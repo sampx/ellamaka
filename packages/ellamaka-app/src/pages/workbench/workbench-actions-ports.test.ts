@@ -2,6 +2,51 @@ import { expect, test } from "bun:test"
 import { buildSessionPort, probePtyRequest, type SessionServerSDK } from "./workbench-actions-ports"
 import { createSessionProjection } from "./session-store"
 
+test("creates a session when crypto.randomUUID is unavailable (insecure context)", async () => {
+  const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")
+  const secureDescriptor = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext")
+  Object.defineProperty(globalThis, "crypto", { configurable: true, value: {} })
+  const restore = () => {
+    if (cryptoDescriptor) Object.defineProperty(globalThis, "crypto", cryptoDescriptor)
+    else delete (globalThis as { crypto?: unknown }).crypto
+    if (secureDescriptor) Object.defineProperty(globalThis, "isSecureContext", secureDescriptor)
+    else delete (globalThis as { isSecureContext?: boolean }).isSecureContext
+  }
+
+  try {
+    const projection = createSessionProjection()
+    const requests: unknown[] = []
+    const serverSDK: SessionServerSDK = {
+      createClient: () => ({
+        workbench: {
+          createSession: async (input) => {
+            requests.push(input)
+            return { data: { id: "session-created", directory: "", timeCreated: 1, timeUpdated: 1 } }
+          },
+        },
+        session: {
+          get: async () => ({ data: { id: "unused", directory: "", time: { created: 1 } } }),
+          update: async () => {},
+          delete: async () => {},
+        },
+      }),
+    }
+    const port = buildSessionPort(serverSDK, projection.reader, projection.writer)
+
+    const session = await port.create({
+      scope: { kind: "general" },
+      panel: { id: "p-1", slotState: "empty", mode: "", directory: "", width: 1 },
+      initialView: "chat",
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toMatchObject({ requestID: expect.any(String) })
+    expect(session.id).toBe("session-created")
+  } finally {
+    restore()
+  }
+})
+
 test("renaming a session patches the projection without invalidating the tree", async () => {
   const projection = createSessionProjection()
   projection.writer.upsert({

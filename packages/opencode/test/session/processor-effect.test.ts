@@ -728,13 +728,13 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
   ),
 )
 
-it.live("session.processor effect tests mark pending tools as aborted on cleanup", () =>
+it.live("session.processor effect tests retain streamed pending tool input before cleanup", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const { processors, session, provider } = yield* boot()
 
-        yield* llm.toolHang("bash", { cmd: "pwd" })
+        yield* llm.toolHang("read", { filePath: "/repo/src/streamed.ts" })
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "tool abort")
@@ -766,10 +766,17 @@ it.live("session.processor effect tests mark pending tools as aborted on cleanup
           .pipe(Effect.forkChild)
 
         yield* llm.wait(1)
-        yield* waitFor(
-          Effect.sync(() => MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")),
-          "timed out waiting for tool part",
+        const pending = yield* waitFor(
+          Effect.sync(() => {
+            const part = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
+            return part?.state.status === "pending" && part.state.raw ? part : undefined
+          }),
+          "timed out waiting for streamed pending tool input",
         )
+        expect(pending.tool).toBe("read")
+        if (pending.state.status === "pending") {
+          expect(pending.state.raw).toContain('"filePath"')
+        }
         yield* Fiber.interrupt(run)
 
         const exit = yield* Fiber.await(run)

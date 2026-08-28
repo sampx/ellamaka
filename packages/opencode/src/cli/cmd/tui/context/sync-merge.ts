@@ -18,6 +18,22 @@ function keyOf(message: Message): string {
 export { keyOf }
 
 /**
+ * Return the id of the last assistant message that has not completed, or
+ * `undefined` when the trailing assistant is finished (or there is none).
+ *
+ * The QUEUED badge is driven by the *last* open turn: only a trailing
+ * unfinished assistant represents an active turn. A historical orphan (an
+ * assistant killed mid-stream with no `time.completed`) buried earlier in the
+ * array must not mark every later user message as QUEUED, so we inspect only
+ * the last assistant rather than scanning for any unfinished one.
+ */
+export function activeTurnAssistantID(messages: Message[]): string | undefined {
+  const last = messages.findLast((x) => x.role === "assistant")
+  if (!last) return undefined
+  return last.time.completed == null ? last.id : undefined
+}
+
+/**
  * Merge an API snapshot (`incoming`) into the current store array (`existing`)
  * while preserving the time-ordered sort contract required by
  * `Binary.search`/`Binary.insert`.

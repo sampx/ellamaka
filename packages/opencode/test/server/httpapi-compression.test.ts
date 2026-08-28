@@ -3,13 +3,17 @@ import { gunzipSync, inflateSync } from "node:zlib"
 import * as Log from "@opencode-ai/core/util/log"
 import { Server } from "../../src/server/server"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, tmpdir } from "../fixture/fixture"
+import { disposeAllInstances, invalidateGlobalConfig, tmpdir } from "../fixture/fixture"
 
 void Log.init({ print: false })
 
 afterEach(async () => {
   await disposeAllInstances()
   await resetDatabase()
+  // The server's Config layer caches the global config forever on the shared
+  // memoMap. Each test writes its own config to the shared settings.jsonc, so
+  // invalidate the cache between tests to avoid cross-test config pollution.
+  await invalidateGlobalConfig()
 })
 
 function app() {

@@ -31,6 +31,18 @@ TEST_PROFILE_GLOB='test/server/**/*.test.ts' bun run profile:test
 TEST_PROFILE_LIMIT=20 bun run profile:test
 ```
 
+### Default Subset
+
+The full suite mixes slow I/O-heavy integration tests (server/session/cli/snapshot/project/tool/control-plane, ~252s) with fast unit directories (~25-60s). By default, use the fast unit subset to avoid paying integration-test cost during iteration:
+
+```sh
+bun run test:unit     # default dev loop: all test/<dir>/ except the 7 integration dirs, plus top-level test/*.test.ts
+bun run test:integration # only the integration dirs (server/session/cli/snapshot/project/tool/control-plane)
+bun run test:all      # full regression, equivalent to `bun test --timeout 30000 --force-exit`
+```
+
+The existing `bun test` (and `test:ci`) still runs the full suite and is unchanged. Directory arguments are expanded by `packages/opencode/script/run-tests.ts`; `bun run script/run-tests.ts --mode unit -- <extra bun args>` forwards extra arguments to `bun test`.
+
 ## Primary Metric
 
 `METRIC test_suite_seconds=<median wall clock seconds>`

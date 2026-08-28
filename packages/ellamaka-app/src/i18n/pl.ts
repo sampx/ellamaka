@@ -476,7 +476,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} wiadomość w kolejce",
   "session.followupDock.summary.other": "{{count}} wiadomości w kolejce",
   "session.followupDock.sendNow": "Wyślij teraz",
-  "session.followupDock.edit": "Edytuj",
+  "session.followupDock.withdraw": "Wycofaj",
   "session.followupDock.collapse": "Zwiń wiadomości w kolejce",
   "session.followupDock.expand": "Rozwiń wiadomości w kolejce",
   "session.revertDock.summary.one": "{{count}} cofnięta wiadomość",
@@ -586,12 +586,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Sterowanie",
   "settings.general.row.reasoningSummaries.title": "Pokaż podsumowania wnioskowania",
   "settings.general.row.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
-  "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj wyniki wywołań narzędzi",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",
-  "settings.general.row.editToolPartsExpanded.title": "Rozwijaj elementy narzędzia edit",
+    "Domyślnie pokazuj rozwinięte wyniki wywołań narzędzi na osi czasu",
+  "settings.general.row.editToolPartsExpanded.title": "Rozwijaj wyniki narzędzia edycji",
   "settings.general.row.editToolPartsExpanded.description":
-    "Domyślnie pokazuj rozwinięte elementy narzędzi edit, write i patch na osi czasu",
+    "Domyślnie pokazuj rozwinięte wyniki narzędzi edit, write i patch na osi czasu",
   "settings.general.row.showSessionProgressBar.title": "Pokazuj pasek postępu sesji",
   "settings.general.row.showSessionProgressBar.description":
     "Wyświetlaj animowany pasek postępu u góry sesji, gdy agent pracuje",
@@ -855,5 +855,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Nie udało się utworzyć trwałych metadanych projektu",
   "error.childStore.persistedProjectIconCreateFailed": "Nie udało się utworzyć trwałej ikony projektu",
   "error.childStore.storeCreateFailed": "Nie udało się utworzyć magazynu",
+  "workbench.chat.question": "Pytanie: ",
+  "workbench.chat.answer": "Odpowiedź: ",
   "terminal.connectionLost.abnormalClose": "WebSocket zamknięty nieprawidłowo: {{code}}",
 }

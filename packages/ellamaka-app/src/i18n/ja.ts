@@ -475,7 +475,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} 件のメッセージが待機中",
   "session.followupDock.summary.other": "{{count}} 件のメッセージが待機中",
   "session.followupDock.sendNow": "今すぐ送信",
-  "session.followupDock.edit": "編集",
+  "session.followupDock.withdraw": "取り消す",
   "session.followupDock.collapse": "待機中のメッセージを折りたたむ",
   "session.followupDock.expand": "待機中のメッセージを展開",
   "session.revertDock.summary.one": "{{count}} 件のロールバックされたメッセージ",
@@ -585,12 +585,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "即座に実行 (Steer)",
   "settings.general.row.reasoningSummaries.title": "推論の要約を表示",
   "settings.general.row.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
-  "settings.general.row.shellToolPartsExpanded.title": "shell ツールパーツを展開",
+  "settings.general.row.shellToolPartsExpanded.title": "ツール呼び出し結果を展開",
   "settings.general.row.shellToolPartsExpanded.description":
-    "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
-  "settings.general.row.editToolPartsExpanded.title": "edit ツールパーツを展開",
+    "タイムラインでツール呼び出し結果をデフォルトで展開して表示します",
+  "settings.general.row.editToolPartsExpanded.title": "編集ツール結果を展開",
   "settings.general.row.editToolPartsExpanded.description":
-    "タイムラインで edit、write、patch ツールパーツをデフォルトで展開して表示します",
+    "タイムラインで edit、write、patch ツール結果をデフォルトで展開して表示します",
   "settings.general.row.showSessionProgressBar.title": "セッション進行状況バーを表示",
   "settings.general.row.showSessionProgressBar.description":
     "エージェントの作業中に、セッション上部にアニメーション付きの進行状況バーを表示します",
@@ -851,5 +851,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "永続プロジェクトメタデータの作成に失敗しました",
   "error.childStore.persistedProjectIconCreateFailed": "永続プロジェクトアイコンの作成に失敗しました",
   "error.childStore.storeCreateFailed": "ストアの作成に失敗しました",
+  "workbench.chat.question": "質問：",
+  "workbench.chat.answer": "回答：",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
 }

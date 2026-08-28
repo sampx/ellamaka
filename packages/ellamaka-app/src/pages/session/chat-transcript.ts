@@ -107,11 +107,9 @@ function isAborted(message: AssistantMessage): boolean {
 function visibleParts(
   message: AssistantMessage,
   getParts: (id: string) => Part[],
-  showReasoningSummaries: boolean,
+  _showReasoningSummaries: boolean,
 ): Part[] {
-  return getParts(message.id).filter(
-    (part) => (part.type !== "reasoning" || showReasoningSummaries) && isRenderablePart(part, message),
-  )
+  return getParts(message.id).filter((part) => isRenderablePart(part, message))
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -226,8 +224,12 @@ export function createRowStabilizer() {
   const previous = new Map<string, { fingerprint: string; row: TranscriptRow }>()
 
   function partFingerprint(part: Part): string {
-    const state = (part as { state?: { status?: string; time?: { end?: number } } }).state
-    return `${part.id}:${part.type}:${state?.status ?? ""}:${state?.time?.end ?? ""}`
+    const state = (part as { state?: { status?: string; raw?: string; time?: { end?: number } } }).state
+    // `read` exposes a compact path while its JSON parameters stream. Preserve
+    // stable rows for every other high-frequency update, but refresh this one
+    // pending row when its raw input contains a newly completed file path.
+    const raw = part.type === "tool" && part.tool === "read" && state?.status === "pending" ? (state.raw ?? "") : ""
+    return `${part.id}:${part.type}:${state?.status ?? ""}:${state?.time?.end ?? ""}:${raw}`
   }
 
   function rowFingerprint(row: TranscriptRow): string {
@@ -334,8 +336,13 @@ export function projectTranscript(input: TranscriptProjectionInput): TranscriptP
 
   // Determine which turns are "live" (the running turn and everything after it).
   const runningTurnIndex = turns.findIndex((t) => t.assistant.some(isRunning))
-  const hasRunningTurn = runningTurnIndex !== -1
-  const liveTurnIndex = hasRunningTurn ? runningTurnIndex : -1
+  // The submitted user row is already the live turn while the Session is busy,
+  // even during the short gap before its Assistant message arrives. Keeping it
+  // direct from the start prevents a full row from entering Virtua and then
+  // moving back out as soon as the first streamed Part is created.
+  const activeTurnIndex = status.type === "idle" ? -1 : turns.length - 1
+  const liveTurnIndex = runningTurnIndex !== -1 ? runningTurnIndex : activeTurnIndex
+  const hasLiveTurn = liveTurnIndex !== -1
 
   const rows: TranscriptRow[] = []
   const virtual: TranscriptRow[] = []
@@ -346,9 +353,10 @@ export function projectTranscript(input: TranscriptProjectionInput): TranscriptP
     rows.push(...turnRows)
     if (!promptIndex.has(turn.id)) promptIndex.set(turn.id, turnRows[0]?.key ?? userRowKey(turn.id))
 
-    const isLiveTurn = hasRunningTurn && index >= liveTurnIndex
+    const isLiveTurn = hasLiveTurn && index >= liveTurnIndex
     const turnRunning = turn.assistant.some(isRunning)
-    const inDirect = isLiveTurn && (turnRunning || (live && index === liveTurnIndex))
+    const turnActive = index === activeTurnIndex
+    const inDirect = isLiveTurn && (turnRunning || turnActive || (live && index === liveTurnIndex))
 
     if (inDirect) {
       direct.push(...turnRows)

@@ -528,7 +528,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} ข้อความในคิว",
   "session.followupDock.summary.other": "{{count}} ข้อความในคิว",
   "session.followupDock.sendNow": "ส่งทันที",
-  "session.followupDock.edit": "แก้ไข",
+  "session.followupDock.withdraw": "ถอนกลับ",
   "session.followupDock.collapse": "ย่อข้อความในคิว",
   "session.followupDock.expand": "ขยายข้อความในคิว",
   "session.revertDock.summary.one": "{{count}} ข้อความที่ถูกย้อนกลับ",
@@ -646,11 +646,11 @@ export const dict = {
   "settings.general.row.followup.option.steer": "นำทาง",
   "settings.general.row.reasoningSummaries.title": "แสดงสรุปการใช้เหตุผล",
   "settings.general.row.reasoningSummaries.description": "แสดงสรุปการใช้เหตุผลของโมเดลในไทม์ไลน์",
-  "settings.general.row.shellToolPartsExpanded.title": "ขยายส่วนเครื่องมือ shell",
-  "settings.general.row.shellToolPartsExpanded.description": "แสดงส่วนเครื่องมือ shell แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
-  "settings.general.row.editToolPartsExpanded.title": "ขยายส่วนเครื่องมือ edit",
+  "settings.general.row.shellToolPartsExpanded.title": "ขยายผลลัพธ์การเรียกเครื่องมือ",
+  "settings.general.row.shellToolPartsExpanded.description": "แสดงผลลัพธ์การเรียกเครื่องมือแบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
+  "settings.general.row.editToolPartsExpanded.title": "ขยายผลลัพธ์เครื่องมือแก้ไข",
   "settings.general.row.editToolPartsExpanded.description":
-    "แสดงส่วนเครื่องมือ edit, write และ patch แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
+    "แสดงผลลัพธ์เครื่องมือ edit, write และ patch แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
   "settings.general.row.showSessionProgressBar.title": "แสดงแถบความคืบหน้าของเซสชัน",
   "settings.general.row.showSessionProgressBar.description":
     "แสดงแถบความคืบหน้าแบบเคลื่อนไหวที่ด้านบนของเซสชันเมื่อเอเจนต์กำลังทำงาน",
@@ -923,5 +923,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "ไม่สามารถสร้างเมตาดาต้าโปรเจกต์ถาวร",
   "error.childStore.persistedProjectIconCreateFailed": "ไม่สามารถสร้างไอคอนโปรเจกต์ถาวร",
   "error.childStore.storeCreateFailed": "ไม่สามารถสร้างที่เก็บ",
+  "workbench.chat.question": "คำถาม: ",
+  "workbench.chat.answer": "คำตอบ: ",
   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
 }

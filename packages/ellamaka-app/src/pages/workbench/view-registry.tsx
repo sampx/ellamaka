@@ -10,6 +10,7 @@ import type { Session } from "./session-store"
 import { useWorkbenchActions } from "./workbench-actions"
 import { scopeFromTab } from "./workbench-scope"
 import { reportWorkbenchError } from "./workbench-error"
+import { attachUrl } from "@/utils/attach-url"
 
 // Task 3 (O18): ViewId enum constants replace string literals "tui"/"chat"/"context".
 export const ViewId = {
@@ -133,7 +134,7 @@ export function registerDefaultViews(registry: ViewRegistry) {
 
         const sessionId = ctx.session?.id
         const args = sessionId
-          ? ["attach", ctx.sdk.url || "http://localhost:3000", "-s", sessionId, "--dir", ctx.directory]
+          ? ["attach", attachUrl(ctx.sdk.url), "-s", sessionId, "--dir", ctx.directory]
           : undefined
 
         void actions.ensurePanelPty({

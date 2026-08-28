@@ -25,9 +25,40 @@ export function preserveServerSdkEventStatus<
   }
 }
 
+/**
+ * Tracks whether the event stream has ever connected so that a reconnect can
+ * be distinguished from the initial connect. Reconnects must notify listeners
+ * because events emitted while the transport was down are lost; consumers use
+ * this signal to run message-level reconciliation for active sessions.
+ */
+export function createServerSdkEventResync() {
+  const listeners = new Set<() => void>()
+  let everConnected = false
+  let wasDisconnected = false
+
+  return {
+    onResync(fn: () => void) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
+    notifyConnected() {
+      if (everConnected && wasDisconnected) {
+        for (const fn of listeners) fn()
+      }
+      everConnected = true
+      wasDisconnected = false
+    },
+    notifyDisconnected() {
+      if (!everConnected) return
+      wasDisconnected = true
+    },
+  }
+}
+
 function createServerSdkContext(server: ServerConnection.Any) {
   const platform = usePlatform()
   const abort = new AbortController()
+  const resync = createServerSdkEventResync()
 
   const eventFetch = (() => {
     if (!platform.fetch || !server) return
@@ -94,7 +125,17 @@ function createServerSdkContext(server: ServerConnection.Any) {
           const props = event.payload.properties
           if (skip.has(deltaKey(event.directory, props.messageID, props.partID))) continue
         }
-        emitter.emit(event.directory, event.payload)
+        // A listener exception must not escape and kill the SSE consumer loop;
+        // that would silently freeze all chat updates until the next reconnect.
+        try {
+          emitter.emit(event.directory, event.payload)
+        } catch (listenerError) {
+          console.error("[global-sdk] event listener failed", {
+            directory: event.directory,
+            type: event.payload.type,
+            error: listenerError,
+          })
+        }
       }
     })
 
@@ -158,6 +199,12 @@ function createServerSdkContext(server: ServerConnection.Any) {
             },
           })
           setEventStatus("connected")
+          // Reconnect implies a gap in the event stream: events emitted while
+          // the transport was down are lost. Flush whatever was queued so the
+          // UI converges on the latest known state, then notify consumers so
+          // they can run message-level reconciliation for active sessions.
+          flush()
+          resync.notifyConnected()
           let yielded = Date.now()
           resetHeartbeat()
           for await (const event of events.stream) {
@@ -203,6 +250,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
           abort.signal.removeEventListener("abort", onAbort)
           attempt = undefined
           clearHeartbeat()
+          resync.notifyDisconnected()
         }
 
         if (abort.signal.aborted || !started) return
@@ -251,6 +299,7 @@ function createServerSdkContext(server: ServerConnection.Any) {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),
       start,
+      onResync: resync.onResync,
     },
     get eventStatus() {
       return eventStatus()

@@ -538,7 +538,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} sıradaki mesaj",
   "session.followupDock.summary.other": "{{count}} sıradaki mesaj",
   "session.followupDock.sendNow": "Şimdi gönder",
-  "session.followupDock.edit": "Düzenle",
+  "session.followupDock.withdraw": "Geri çek",
   "session.followupDock.collapse": "Sıradaki mesajları daralt",
   "session.followupDock.expand": "Sıradaki mesajları genişlet",
   "session.revertDock.summary.one": "{{count}} geri alınan mesaj",
@@ -660,12 +660,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Yönlendir",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
-  "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
+  "settings.general.row.shellToolPartsExpanded.title": "Araç çağrısı sonuçlarını genişlet",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
-  "settings.general.row.editToolPartsExpanded.title": "Düzenleme araç bileşenlerini genişlet",
+    "Zaman çizelgesinde araç çağrısı sonuçlarını varsayılan olarak genişletilmiş göster",
+  "settings.general.row.editToolPartsExpanded.title": "Düzenleme aracı sonuçlarını genişlet",
   "settings.general.row.editToolPartsExpanded.description":
-    "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
+    "Zaman çizelgesinde düzenleme, yazma ve yama aracı sonuçlarını varsayılan olarak genişletilmiş göster",
 
   "settings.general.row.showSessionProgressBar.title": "Oturum ilerleme çubuğunu göster",
   "settings.general.row.showSessionProgressBar.description":
@@ -942,5 +942,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Kalıcı proje meta verileri oluşturulamadı",
   "error.childStore.persistedProjectIconCreateFailed": "Kalıcı proje simgesi oluşturulamadı",
   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
+  "workbench.chat.question": "Soru: ",
+  "workbench.chat.answer": "Cevap: ",
   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
 } satisfies Partial<Record<Keys, string>>

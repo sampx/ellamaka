@@ -473,7 +473,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}}개의 대기 중인 메시지",
   "session.followupDock.summary.other": "{{count}}개의 대기 중인 메시지",
   "session.followupDock.sendNow": "지금 전송",
-  "session.followupDock.edit": "편집",
+  "session.followupDock.withdraw": "회수",
   "session.followupDock.collapse": "대기 중인 메시지 접기",
   "session.followupDock.expand": "대기 중인 메시지 펼치기",
   "session.revertDock.summary.one": "{{count}}개의 롤백된 메시지",
@@ -581,12 +581,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "조종",
   "settings.general.row.reasoningSummaries.title": "추론 요약 표시",
   "settings.general.row.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
-  "settings.general.row.shellToolPartsExpanded.title": "shell 도구 파트 펼치기",
+  "settings.general.row.shellToolPartsExpanded.title": "도구 호출 결과 펼치기",
   "settings.general.row.shellToolPartsExpanded.description":
-    "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",
-  "settings.general.row.editToolPartsExpanded.title": "edit 도구 파트 펼치기",
+    "타임라인에서 기본적으로 도구 호출 결과를 펼친 상태로 표시합니다",
+  "settings.general.row.editToolPartsExpanded.title": "편집 도구 결과 펼치기",
   "settings.general.row.editToolPartsExpanded.description":
-    "타임라인에서 기본적으로 edit, write, patch 도구 파트를 펼친 상태로 표시합니다",
+    "타임라인에서 기본적으로 edit, write, patch 도구 결과를 펼친 상태로 표시합니다",
   "settings.general.row.showSessionProgressBar.title": "세션 진행 표시줄 표시",
   "settings.general.row.showSessionProgressBar.description":
     "에이전트가 작업 중일 때 세션 상단에 애니메이션 진행 표시줄을 표시합니다",
@@ -846,5 +846,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "영구 프로젝트 메타데이터 생성 실패",
   "error.childStore.persistedProjectIconCreateFailed": "영구 프로젝트 아이콘 생성 실패",
   "error.childStore.storeCreateFailed": "저장소 생성 실패",
+  "workbench.chat.question": "질문: ",
+  "workbench.chat.answer": "답변: ",
   "terminal.connectionLost.abnormalClose": "WebSocket이 비정상적으로 닫힘: {{code}}",
 }

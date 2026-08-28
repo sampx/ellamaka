@@ -569,7 +569,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} повідомлення в черзі",
   "session.followupDock.summary.other": "{{count}} повідомлень у черзі",
   "session.followupDock.sendNow": "Надіслати зараз",
-  "session.followupDock.edit": "Редагувати",
+  "session.followupDock.withdraw": "Відкликати",
   "session.followupDock.collapse": "Згорнути повідомлення в черзі",
   "session.followupDock.expand": "Розгорнути повідомлення в черзі",
   "session.revertDock.summary.one": "{{count}} скасоване повідомлення",
@@ -639,6 +639,8 @@ export const dict = {
   "terminal.title.numbered": "Термінал {{number}}",
   "terminal.close": "Закрити термінал",
   "terminal.connectionLost.title": "З'єднання втрачено",
+  "workbench.chat.question": "Питання: ",
+  "workbench.chat.answer": "Відповідь: ",
   "terminal.connectionLost.abnormalClose": "WebSocket закрито аномально: {{code}}",
   "terminal.connectionLost.description":
     "З'єднання з терміналом було перервано. Це може статися під час перезапуску сервера.",
@@ -772,12 +774,12 @@ export const dict = {
   "settings.general.row.showStatus.description": "Показувати кнопку статусу сервера в заголовку робочого столу",
   "settings.general.row.reasoningSummaries.title": "Показувати підсумки мислення",
   "settings.general.row.reasoningSummaries.description": "Відображати підсумки мислення моделі на часовій шкалі",
-  "settings.general.row.shellToolPartsExpanded.title": "Розгортати частини інструменту оболонки",
+  "settings.general.row.shellToolPartsExpanded.title": "Розгортати результати викликів інструментів",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Показувати частини інструменту оболонки розгорнутими за замовчуванням на часовій шкалі",
-  "settings.general.row.editToolPartsExpanded.title": "Розгортати частини інструменту редагування",
+    "Показувати результати викликів інструментів розгорнутими за замовчуванням на часовій шкалі",
+  "settings.general.row.editToolPartsExpanded.title": "Розгортати результати інструменту редагування",
   "settings.general.row.editToolPartsExpanded.description":
-    "Показувати частини інструментів редагування, запису та патчів розгорнутими за замовчуванням на часовій шкалі",
+    "Показувати результати інструментів редагування, запису та патчів розгорнутими за замовчуванням на часовій шкалі",
   "settings.general.row.showSessionProgressBar.title": "Показувати індикатор прогресу сесії",
   "settings.general.row.showSessionProgressBar.description":
     "Відображати анімований індикатор прогресу вгорі сесії, коли агент працює",

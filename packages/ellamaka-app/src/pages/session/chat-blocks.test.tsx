@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test"
 import { render } from "solid-js/web"
 import h from "solid-js/h"
 import { createComponent, createSignal } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 
@@ -90,11 +91,12 @@ mock.module("@opencode-ai/ui/collapsible", () => ({
           {props.children}
         </button>
       ),
-      Content: (props: { children: JSX.Element }) => <div data-slot="collapsible-content">{props.children}</div>,
+      Content: (props: JSX.HTMLAttributes<HTMLDivElement>) => <div {...props} />,
     },
   ),
 }))
 import {
+  InteractionBlock,
   NarrativeBlock,
   ReasoningBlock,
   TurnChangeSummary,
@@ -326,6 +328,54 @@ describe("ReasoningBlock", () => {
     host.remove()
   })
 
+  test("stays expanded after completion when the reasoning-summaries default is on", () => {
+    const completed = assistantMessage("a-keep-open", "u-keep-open")
+    const part = reasoningPart("r-keep-open", "a-keep-open", "detailed reasoning")
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={true} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(host.querySelector("[data-component='chat-reasoning']")?.hasAttribute("data-streaming")).toBe(false)
+    expect(trigger.getAttribute("aria-expanded")).toBe("true")
+    expect(host.textContent).toContain("detailed reasoning")
+    host.remove()
+  })
+
+  test("defaults to collapsed after completion when the default is off and shows the preview tail", () => {
+    const completed = assistantMessage("a-default-closed", "u-default-closed")
+    const part = reasoningPart("r-default-closed", "a-default-closed", "internal reasoning")
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={false} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    const preview = host.querySelector("[data-slot='chat-reasoning-preview']")
+    expect(preview).not.toBeNull()
+    expect(preview?.textContent).toContain("internal reasoning")
+    host.remove()
+  })
+
+  test("collapsed preview pins the latest tail and updates as the stream grows", () => {
+    const running = assistantMessage("a-tail", "u-tail", { time: { created: 2000 } })
+    const longText = "prefix " + "mid ".repeat(50) + "the-latest-thinking"
+    const [part, setPart] = createStore(reasoningPart("r-tail", "a-tail", longText) as Extract<Part, { type: "reasoning" }>)
+    const host = mount(() => <ReasoningBlock part={part} message={running} defaultOpen={false} />)
+    const preview = host.querySelector("[data-slot='chat-reasoning-preview']") as HTMLElement
+    expect(preview).not.toBeNull()
+    expect(preview.textContent).toContain("the-latest-thinking")
+    expect(preview.textContent).not.toContain("prefix")
+
+    setPart("text", longText + " even-more-newer")
+    expect(preview.textContent).toContain("even-more-newer")
+    host.remove()
+  })
+
+  test("a manual collapse still wins over the reasoning-summaries default", () => {
+    const completed = assistantMessage("a-manual-close", "u-manual-close")
+    const part = reasoningPart("r-manual-close", "a-manual-close", "reasoning")
+    chatExpansionState.set(part.sessionID, "reasoning", part.id, false)
+    const host = mount(() => <ReasoningBlock part={part} message={completed} defaultOpen={true} />)
+    const trigger = host.querySelector("[data-slot='chat-reasoning-trigger']") as HTMLElement
+    expect(trigger.getAttribute("aria-expanded")).toBe("false")
+    host.remove()
+  })
+
   test("restores the selected expansion state after a virtual-list remount", () => {
     const completed = assistantMessage("a-remount", "u-remount")
     const part = reasoningPart("r-remount", "a-remount", "persistent thinking")
@@ -340,6 +390,46 @@ describe("ReasoningBlock", () => {
     expect(remountedTrigger.getAttribute("aria-expanded")).toBe("true")
     expect(remountedHost.textContent).toContain("persistent thinking")
     remountedHost.remove()
+  })
+
+  test("follows streamed reasoning inside its capped scroll region until the user scrolls away", async () => {
+    const running = assistantMessage("a-natural", "u-natural", { time: { created: 2000 } })
+    const [part, setPart] = createStore(reasoningPart("r-natural", "a-natural", "line 1") as Extract<Part, { type: "reasoning" }>)
+    const host = mount(() => <ReasoningBlock part={part} message={running} />)
+    const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
+    expect(content).not.toBeNull()
+    let scrollTop = 0
+    let scrollHeight = 400
+    Object.defineProperties(content, {
+      clientHeight: { configurable: true, get: () => 100 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value
+        },
+      },
+    })
+
+    setPart("text", "line 1\nline 2\nline 3")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(400)
+
+    scrollTop = 120
+    content.dispatchEvent(new Event("scroll"))
+    scrollHeight = 600
+    setPart("text", "line 1\nline 2\nline 3\nline 4")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(120)
+
+    scrollTop = 500
+    content.dispatchEvent(new Event("scroll"))
+    scrollHeight = 800
+    setPart("text", "line 1\nline 2\nline 3\nline 4\nline 5")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(800)
+    host.remove()
   })
 })
 
@@ -367,16 +457,71 @@ describe("TurnOutcome", () => {
   })
 })
 
+describe("InteractionBlock", () => {
+  test("renders the question result as a styled card with label and answer", () => {
+    const a = assistantMessage("a-q", "u1")
+    const part = toolPart("t-q", "a-q", "question", "c-q", {
+      status: "completed",
+      input: { question: "继续吗?" },
+      output: 'User has answered your questions: "继续吗?"="继续". You can now continue with the user\'s answers in mind.',
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-component='chat-interaction']")).not.toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-header']")).not.toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-label']")?.textContent).toBe("workbench.chat.question")
+    expect(host.querySelector("[data-slot='chat-interaction-answer-label']")?.textContent).toBe("workbench.chat.answer")
+    expect(host.querySelector("[data-slot='chat-interaction-answer-text']")?.textContent).toBe("继续")
+    host.remove()
+  })
+
+  test("shows the question text when present", () => {
+    const a = assistantMessage("a-q2", "u1")
+    const part = toolPart("t-q2", "a-q2", "question", "c-q2", {
+      status: "completed",
+      input: { question: "继续吗?" },
+      output: "继续",
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-slot='chat-interaction-question']")?.textContent).toContain("继续吗")
+    host.remove()
+  })
+
+  test("omits the question slot when the input carries no question", () => {
+    const a = assistantMessage("a-q3", "u1")
+    const part = toolPart("t-q3", "a-q3", "question", "c-q3", {
+      status: "completed",
+      input: {},
+      output: "好的",
+    })
+    const host = mount(() => <InteractionBlock part={part} message={a} />)
+    expect(host.querySelector("[data-slot='chat-interaction-question']")).toBeNull()
+    expect(host.querySelector("[data-slot='chat-interaction-answer-text']")?.textContent).toContain("好的")
+    host.remove()
+  })
+})
+
 describe("ContextToolBlock", () => {
-  test("renders a read tool with file path", () => {
+  test("renders a read tool with a path relativized to the session directory", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "read", "c1", {
-      input: { filePath: "/repo/a.ts" },
+      input: { filePath: "/repo/src/a.ts" },
       output: "file contents",
     })
-    const host = mount(() => <ContextToolBlock part={part} message={a} />)
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
     expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
-    expect(host.textContent).toContain("a.ts")
+    expect(host.textContent).toContain("src/a.ts")
+    host.remove()
+  })
+
+  test("keeps the full absolute path for read files outside the session directory", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "read", "c1", {
+      input: { filePath: "/outside/repo/a.ts" },
+      output: "file contents",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
+    expect(host.textContent).toContain("/outside/repo/a.ts")
     host.remove()
   })
 
@@ -417,13 +562,42 @@ describe("ContextToolBlock", () => {
       input: { filePath: "/repo/big.md" },
       output: "huge file contents",
     })
-    const host = mount(() => <ContextToolBlock part={part} message={a} />)
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
     expect(host.querySelector("[data-component='chat-context-tool']")).not.toBeNull()
     expect(host.querySelector("[data-slot='chat-context-info-bar']")).not.toBeNull()
     expect(host.textContent).toContain("big.md")
     expect(host.textContent).not.toContain("huge file contents")
     expect(host.querySelector("[data-slot='chat-tool-header']")).toBeNull()
     expect(host.querySelector("[data-slot='collapsible-trigger']")).toBeNull()
+    host.remove()
+  })
+
+  test("exposes the full absolute path of a read file on hover via the title attribute", () => {
+    const a = assistantMessage("a-read-title", "u1")
+    const part = toolPart("t-read-title", "a-read-title", "read", "c-read-title", {
+      input: { filePath: "/repo/deep/nested/big.ts" },
+      output: "file contents",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
+    expect(subtitle).not.toBeNull()
+    expect(subtitle.textContent).toBe("deep/nested/big.ts")
+    expect(subtitle.getAttribute("title")).toBe("/repo/deep/nested/big.ts")
+    host.remove()
+  })
+
+  test("shows a read path as soon as its streamed raw input closes the filePath string", () => {
+    const a = assistantMessage("a-read-stream", "u1", { time: { created: 2000 } })
+    const part = toolPart("t-read-stream", "a-read-stream", "read", "c-read-stream", {
+      status: "pending",
+      input: {},
+      raw: '{"filePath":"/repo/src/early.ts","line',
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
+    expect(subtitle).not.toBeNull()
+    expect(subtitle.textContent).toBe("src/early.ts")
+    expect(subtitle.getAttribute("title")).toBe("/repo/src/early.ts")
     host.remove()
   })
 
@@ -459,6 +633,28 @@ describe("ContextToolBlock", () => {
     const host2 = mount(() => <ContextToolBlock part={part} message={a} />)
     expect(host2.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
     host2.remove()
+  })
+
+  test("expands a completed context tool when the tool-call-results default is on", () => {
+    const a = assistantMessage("a-ctx-default", "u1")
+    const part = toolPart("t-ctx-default", "a-ctx-default", "glob", "c-ctx-default", {
+      input: { pattern: "**/*.ts" },
+      output: "a.ts",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} defaultOpen={true} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
+    host.remove()
+  })
+
+  test("still collapses a completed context tool when the default is off", () => {
+    const a = assistantMessage("a-ctx-closed", "u1")
+    const part = toolPart("t-ctx-closed", "a-ctx-closed", "glob", "c-ctx-closed", {
+      input: { pattern: "**/*.ts" },
+      output: "a.ts",
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} defaultOpen={false} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("false")
+    host.remove()
   })
 })
 
@@ -620,15 +816,18 @@ describe("FileChangeBlock", () => {
   test("renders with the standard ToolBlockHeader and embeds the edit renderer in content", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "edit", "c1", {
-      input: { filePath: "/repo/b.ts" },
-      metadata: { filediff: { file: "/repo/b.ts", additions: 1, deletions: 1 } },
+      input: { filePath: "/repo/src/b.ts" },
+      metadata: { filediff: { file: "/repo/src/b.ts", additions: 1, deletions: 1 } },
     })
-    const host = mount(() => <FileChangeBlock part={part} message={a} editRenderer={OpenCodeMessagePartStub} />)
+    const host = mount(() => (
+      <FileChangeBlock part={part} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
+    ))
     // Outer component uses standard ToolBlockHeader
     const trigger = host.querySelector("[data-slot='chat-tool-trigger']") as HTMLButtonElement
     expect(trigger).not.toBeNull()
     expect(trigger.querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("edit")
-    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("src/b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBe("/repo/src/b.ts")
     expect(host.querySelector("[data-component='chat-file-change-wrapper']")).not.toBeNull()
     expect(host.querySelector("[data-renderer='opencode-message-part']")).not.toBeNull()
     host.remove()
@@ -664,8 +863,8 @@ describe("FileChangeBlock", () => {
     })
     const host = mount(() => (
       <div>
-        <FileChangeBlock part={write} message={a} editRenderer={OpenCodeMessagePartStub} />
-        <FileChangeBlock part={patch} message={a} editRenderer={OpenCodeMessagePartStub} />
+        <FileChangeBlock part={write} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
+        <FileChangeBlock part={patch} message={a} directory="/repo" editRenderer={OpenCodeMessagePartStub} />
       </div>
     ))
     const triggers = host.querySelectorAll("[data-slot='chat-tool-trigger']")
@@ -746,7 +945,7 @@ describe("GenericToolBlock", () => {
     host.remove()
   })
 
-  test("extracts a descriptive subtitle from the input fields", () => {
+  test("extracts a primary label from the input fields", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "memory_manage", "c1", {
       input: { command: "search", query: "dev-flow", limit: 5 },
@@ -754,18 +953,57 @@ describe("GenericToolBlock", () => {
     const host = mount(() => <GenericToolBlock part={part} message={a} />)
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']")
     expect(subtitle).not.toBeNull()
-    expect(subtitle?.textContent).toContain("search")
+    expect(subtitle?.textContent).toBe("search")
     host.remove()
   })
 
-  test("shows structured args when no descriptive field exists", () => {
+  test("renders the remaining generic tool params as capped arg chips, not a concatenated blob", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "memory_manage", "c1", {
+      input: { command: "search", category: "experience", limit: 5, verbose: true },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+    const args = Array.from(host.querySelectorAll("[data-slot='chat-tool-arg']")).map((el) => el.textContent)
+    expect(args).toContain("category=experience")
+    expect(args).toContain("limit=5")
+    expect(args).toContain("verbose=true")
+    // The primary label stays separate and never swallows the params.
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("search")
+    host.remove()
+  })
+
+  test("caps generic tool arg chips to a bounded count for long inputs", () => {
+    const a = assistantMessage("a1", "u1")
+    const part = toolPart("t1", "a1", "some_mcp_tool", "c1", {
+      input: { a: "1", b: "2", c: "3", d: "4", e: "5", f: "6" },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+    const args = host.querySelectorAll("[data-slot='chat-tool-arg']")
+    expect(args.length).toBeLessThanOrEqual(3)
+    host.remove()
+  })
+
+  test("shows structured arg chips when no descriptive field exists", () => {
     const a = assistantMessage("a1", "u1")
     const part = toolPart("t1", "a1", "some_mcp_tool", "c1", {
       input: { limit: 5, verbose: true },
     })
     const host = mount(() => <GenericToolBlock part={part} message={a} />)
-    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']")
-    expect(subtitle?.textContent).toContain("limit=5")
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")).toBeNull()
+    const args = Array.from(host.querySelectorAll("[data-slot='chat-tool-arg']")).map((el) => el.textContent)
+    expect(args).toContain("limit=5")
+    expect(args).toContain("verbose=true")
+    host.remove()
+  })
+
+  test("expands a completed generic tool when the tool-call-results default is on", () => {
+    const a = assistantMessage("a-gen-default", "u1")
+    const part = toolPart("t-gen-default", "a-gen-default", "some_mcp_tool", "c-gen-default", {
+      input: { query: "x" },
+      output: "done",
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} defaultOpen={true} />)
+    expect(host.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("true")
     host.remove()
   })
 })

@@ -531,7 +531,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} сообщение в очереди",
   "session.followupDock.summary.other": "{{count}} сообщений в очереди",
   "session.followupDock.sendNow": "Отправить сейчас",
-  "session.followupDock.edit": "Редактировать",
+  "session.followupDock.withdraw": "Отозвать",
   "session.followupDock.collapse": "Свернуть сообщения в очереди",
   "session.followupDock.expand": "Развернуть сообщения в очереди",
   "session.revertDock.summary.one": "{{count}} сообщение возвращено",
@@ -654,12 +654,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
+  "settings.general.row.shellToolPartsExpanded.title": "Разворачивать результаты вызовов инструментов",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",
-  "settings.general.row.editToolPartsExpanded.title": "Разворачивать элементы инструмента edit",
+    "Показывать результаты вызовов инструментов в ленте развернутыми по умолчанию",
+  "settings.general.row.editToolPartsExpanded.title": "Разворачивать результаты инструмента редактирования",
   "settings.general.row.editToolPartsExpanded.description":
-    "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
+    "Показывать результаты инструментов edit, write и patch в ленте развернутыми по умолчанию",
   "settings.general.row.showSessionProgressBar.title": "Показывать индикатор прогресса сессии",
   "settings.general.row.showSessionProgressBar.description":
     "Показывать анимированный индикатор прогресса вверху сессии, когда агент работает",
@@ -936,5 +936,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Не удалось создать постоянные метаданные проекта",
   "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
+  "workbench.chat.question": "Вопрос: ",
+  "workbench.chat.answer": "Ответ: ",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
 }

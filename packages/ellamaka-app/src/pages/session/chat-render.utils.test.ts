@@ -9,6 +9,7 @@ import {
   formatTurnDuration,
   isRenderablePart,
   partTitle,
+  relativizeProjectPath,
   type PartClassification,
 } from "./chat-render.utils"
 
@@ -287,5 +288,33 @@ describe("formatTurnDuration", () => {
   test("rejects negative or non-finite durations", () => {
     expect(formatTurnDuration(-1)).toBe("")
     expect(formatTurnDuration(Number.NaN)).toBe("")
+  })
+})
+
+describe("relativizeProjectPath", () => {
+  test("strips the session directory prefix and leading separator for files inside it", () => {
+    expect(relativizeProjectPath("/repo/src/a.ts", "/repo")).toBe("src/a.ts")
+    expect(relativizeProjectPath("/repo/a.ts", "/repo")).toBe("a.ts")
+  })
+
+  test("keeps the full absolute path for files outside the session directory", () => {
+    expect(relativizeProjectPath("/outside/a.ts", "/repo")).toBe("/outside/a.ts")
+  })
+
+  test("handles a trailing separator on the directory", () => {
+    expect(relativizeProjectPath("/repo/src/a.ts", "/repo/")).toBe("src/a.ts")
+  })
+
+  test("returns the input unchanged when no directory is provided", () => {
+    expect(relativizeProjectPath("/repo/src/a.ts", undefined)).toBe("/repo/src/a.ts")
+  })
+
+  test("returns the directory as empty when the path equals the directory", () => {
+    expect(relativizeProjectPath("/repo", "/repo")).toBe("")
+  })
+
+  test("handles Windows-style separators", () => {
+    expect(relativizeProjectPath("C:\\repo\\src\\a.ts", "C:\\repo")).toBe("src\\a.ts")
+    expect(relativizeProjectPath("D:\\outside\\a.ts", "C:\\repo")).toBe("D:\\outside\\a.ts")
   })
 })

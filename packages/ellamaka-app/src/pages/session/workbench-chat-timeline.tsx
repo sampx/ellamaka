@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Component } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show, type Accessor, type Component } from "solid-js"
 import type { AssistantMessage, Part, SessionStatus, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -44,6 +44,8 @@ export type MessageTimelineScrollPort = {
 export type WorkbenchChatTimelineProps = {
   sessionID: string
   userMessages: UserMessage[]
+  /** Session working directory, used to relativize displayed file paths. */
+  directory?: string
   historyShift: boolean
   historyMore: boolean
   historyLoading: boolean
@@ -157,6 +159,7 @@ function ToolPartBlock(props: {
   message: AssistantMessage
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   onSyncChild?: (childID: string) => void
 }) {
@@ -174,7 +177,7 @@ function ToolPartBlock(props: {
                 <Show
                   when={kind() === "subagent"}
                   fallback={
-                    <Show when={kind() === "interaction"} fallback={<GenericToolBlock part={props.part} message={props.message} />}>
+                    <Show when={kind() === "interaction"} fallback={<GenericToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} />}>
                       <InteractionBlock part={props.part} message={props.message} />
                     </Show>
                   }
@@ -187,6 +190,7 @@ function ToolPartBlock(props: {
                 part={props.part}
                 message={props.message}
                 defaultOpen={props.editToolPartsExpanded}
+                directory={props.directory}
                 editRenderer={props.editRenderer}
               />
             </Show>
@@ -200,7 +204,7 @@ function ToolPartBlock(props: {
         </Show>
       }
     >
-      <ContextToolBlock part={props.part} message={props.message} />
+      <ContextToolBlock part={props.part} message={props.message} defaultOpen={props.shellToolPartsExpanded} directory={props.directory} />
     </Show>
   )
 }
@@ -209,6 +213,7 @@ function AssistantPartBlock(props: {
   part: Part
   message: AssistantMessage
   showMeta?: boolean
+  showReasoningSummaries?: boolean
   modelName?: (providerID: string, modelID: string) => string | undefined
 }) {
   const kind = createMemo(() => classifyPart(props.part, props.message).kind)
@@ -241,7 +246,7 @@ function AssistantPartBlock(props: {
             </Show>
           }
         >
-          <ReasoningBlock part={props.part} message={props.message} />
+          <ReasoningBlock part={props.part} message={props.message} defaultOpen={props.showReasoningSummaries} />
         </Show>
       }
     >
@@ -256,27 +261,44 @@ function AssistantPartBlock(props: {
  * rows render their summaries. All rows share the ChatTurnFrame boundary.
  */
 function TranscriptRowView(props: {
-  row: TranscriptRow
+  row: TranscriptRow | Accessor<TranscriptRow>
   getParts: (id: string) => Part[]
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
-  const row = () => props.row
+  const row = () => {
+    const value = props.row
+    return typeof value === "function" ? value() : value
+  }
   const activeUserMessageID = () => {
     const active = props.activeUserMessageID
     return typeof active === "object" ? active.current() : active
   }
-  const metaPartID = createMemo(() => {
+  const userRow = () => {
     const r = row()
-    if (r.type !== "assistant") return undefined
-    return (r as Extract<TranscriptRow, { type: "assistant" }>).metaPartID
-  })
+    return r.type === "user" ? r : undefined
+  }
+  const assistantRow = () => {
+    const r = row()
+    return r.type === "assistant" ? r : undefined
+  }
+  const diffRow = () => {
+    const r = row()
+    return r.type === "diff" ? r : undefined
+  }
+  const errorRow = () => {
+    const r = row()
+    return r.type === "error" ? r : undefined
+  }
+  const metaPartID = createMemo(() => assistantRow()?.metaPartID)
   return (
     <ChatTurnFrame turnID={row().turnID}>
       <div
@@ -285,35 +307,53 @@ function TranscriptRowView(props: {
         data-turn-id={row().turnID}
         data-active={row().turnID === activeUserMessageID()}
       >
-        <Show when={row().type === "user"}>
-          <UserMessageBlock
-            message={row().message as UserMessage}
-            parts={(row() as Extract<TranscriptRow, { type: "user" }>).parts}
-            actions={props.actions}
-            actionLabels={props.actionLabels}
-          />
+        <Show when={userRow()}>
+          {(current) => (
+            <UserMessageBlock
+              message={current().message}
+              parts={current().parts}
+              actions={props.actions}
+              actionLabels={props.actionLabels}
+            />
+          )}
         </Show>
-        <Show when={row().type === "assistant"}>
-          <For each={(row() as Extract<TranscriptRow, { type: "assistant" }>).parts}>
-            {(part) => (
-              <Show when={part.type === "tool"} fallback={<AssistantPartBlock part={part} message={row().message as AssistantMessage} showMeta={part.id === metaPartID()} modelName={props.modelName} />}>
-                <ToolPartBlock
-                  part={part as ToolPart}
-                  message={row().message as AssistantMessage}
-                  shellToolPartsExpanded={props.shellToolPartsExpanded}
-                  editToolPartsExpanded={props.editToolPartsExpanded}
-                  editRenderer={props.editRenderer}
-                  onSyncChild={props.onSyncChild}
-                />
-              </Show>
-            )}
-          </For>
+        <Show when={assistantRow()}>
+          {(current) => (
+            <Index each={current().parts}>
+              {(part) => {
+                const toolPart = () => {
+                  const value = part()
+                  return value.type === "tool" ? value : undefined
+                }
+                return (
+                  <Show when={part().id} keyed>
+                    <Show
+                      when={toolPart()}
+                      fallback={<AssistantPartBlock part={part()} message={current().message} showMeta={part().id === metaPartID()} showReasoningSummaries={props.showReasoningSummaries} modelName={props.modelName} />}
+                    >
+                      {(tool) => (
+                        <ToolPartBlock
+                          part={tool()}
+                          message={current().message}
+                          shellToolPartsExpanded={props.shellToolPartsExpanded}
+                          editToolPartsExpanded={props.editToolPartsExpanded}
+                          directory={props.directory}
+                          editRenderer={props.editRenderer}
+                          onSyncChild={props.onSyncChild}
+                        />
+                      )}
+                    </Show>
+                  </Show>
+                )
+              }}
+            </Index>
+          )}
         </Show>
-        <Show when={row().type === "diff"}>
-          <TurnChangeSummary message={row().message as UserMessage} />
+        <Show when={diffRow()}>
+          {(current) => <TurnChangeSummary message={current().message} />}
         </Show>
-        <Show when={row().type === "error"}>
-          <TurnOutcome message={row().message as AssistantMessage} />
+        <Show when={errorRow()}>
+          {(current) => <TurnOutcome message={current().message} />}
         </Show>
       </div>
     </ChatTurnFrame>
@@ -335,11 +375,13 @@ function VirtualHistory(props: {
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
   if (props.virtualize === false) {
     // Provide a stub handle so the seam is testable without a real Virtualizer.
@@ -356,11 +398,13 @@ function VirtualHistory(props: {
               activeUserMessageID={props.activeUserMessageID}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}
               onSyncChild={props.onSyncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           )}
         </For>
@@ -383,11 +427,13 @@ function VirtualHistory(props: {
             activeUserMessageID={props.activeUserMessageID}
             shellToolPartsExpanded={props.shellToolPartsExpanded}
             editToolPartsExpanded={props.editToolPartsExpanded}
+            directory={props.directory}
             editRenderer={props.editRenderer}
             actions={props.actions}
             actionLabels={props.actionLabels}
             onSyncChild={props.onSyncChild}
             modelName={props.modelName}
+            showReasoningSummaries={props.showReasoningSummaries}
           />
         )}
       </Virtualizer>
@@ -401,35 +447,41 @@ function VirtualHistory(props: {
  * measurement jumps.
  */
 function LiveTranscriptTail(props: {
-  rows: TranscriptRow[]
+  rows: Accessor<TranscriptRow[]>
   getParts: (id: string) => Part[]
   activeUserMessageID?: string | { current: () => string | undefined }
   shellToolPartsExpanded: boolean
   editToolPartsExpanded: boolean
+  directory?: string
   editRenderer?: Component<OpenCodeEditRendererProps>
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
   onSyncChild?: (childID: string) => void
   modelName?: (providerID: string, modelID: string) => string | undefined
+  showReasoningSummaries: boolean
 }) {
   return (
     <div data-component="chat-live-tail">
-        <For each={props.rows}>
+      <Index each={props.rows()}>
         {(row) => (
-          <TranscriptRowView
-            row={row}
-            getParts={props.getParts}
-            activeUserMessageID={props.activeUserMessageID}
-            shellToolPartsExpanded={props.shellToolPartsExpanded}
-            editToolPartsExpanded={props.editToolPartsExpanded}
-            editRenderer={props.editRenderer}
-            actions={props.actions}
-            actionLabels={props.actionLabels}
-            onSyncChild={props.onSyncChild}
-            modelName={props.modelName}
-          />
+          <Show when={row().key} keyed>
+            <TranscriptRowView
+              row={row}
+              getParts={props.getParts}
+              activeUserMessageID={props.activeUserMessageID}
+              shellToolPartsExpanded={props.shellToolPartsExpanded}
+              editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
+              editRenderer={props.editRenderer}
+              actions={props.actions}
+              actionLabels={props.actionLabels}
+              onSyncChild={props.onSyncChild}
+              modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
+            />
+          </Show>
         )}
-      </For>
+      </Index>
     </div>
   )
 }
@@ -623,6 +675,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               activeUserMessageID={{ current: activeUserMessageID }}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}
@@ -632,20 +685,23 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
               }}
               onSyncChild={syncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           </Show>
           <Show when={directRows().length > 0}>
             <LiveTranscriptTail
-              rows={directRows()}
+              rows={directRows}
               getParts={getParts}
               activeUserMessageID={{ current: activeUserMessageID }}
               shellToolPartsExpanded={props.shellToolPartsExpanded}
               editToolPartsExpanded={props.editToolPartsExpanded}
+              directory={props.directory}
               editRenderer={props.editRenderer}
               actions={props.actions}
               actionLabels={props.actionLabels}
               onSyncChild={syncChild}
               modelName={props.modelName}
+              showReasoningSummaries={props.showReasoningSummaries}
             />
           </Show>
           <div data-component="chat-live-activity-slot">

@@ -533,7 +533,7 @@ export const dict = {
   "session.followupDock.summary.one": "{{count}} poruka na čekanju",
   "session.followupDock.summary.other": "{{count}} poruka na čekanju",
   "session.followupDock.sendNow": "Pošalji sada",
-  "session.followupDock.edit": "Uredi",
+  "session.followupDock.withdraw": "Povuci",
   "session.followupDock.collapse": "Sažmi poruke na čekanju",
   "session.followupDock.expand": "Proširi poruke na čekanju",
   "session.revertDock.summary.one": "{{count}} vraćena poruka",
@@ -653,12 +653,12 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
-  "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
+  "settings.general.row.shellToolPartsExpanded.title": "Proširi rezultate poziva alata",
   "settings.general.row.shellToolPartsExpanded.description":
-    "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",
-  "settings.general.row.editToolPartsExpanded.title": "Proširi dijelove alata za uređivanje",
+    "Prikaži rezultate poziva alata podrazumijevano proširene na vremenskoj traci",
+  "settings.general.row.editToolPartsExpanded.title": "Proširi rezultate alata za uređivanje",
   "settings.general.row.editToolPartsExpanded.description":
-    "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
+    "Prikaži rezultate alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
   "settings.general.row.showSessionProgressBar.title": "Prikaži traku napretka sesije",
   "settings.general.row.showSessionProgressBar.description":
     "Prikaži animiranu traku napretka na vrhu sesije kada agent radi",
@@ -933,5 +933,7 @@ export const dict = {
   "error.childStore.persistedProjectMetadataCreateFailed": "Nije uspjelo kreiranje trajnih metapodataka projekta",
   "error.childStore.persistedProjectIconCreateFailed": "Nije uspjelo kreiranje trajne ikone projekta",
   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
+  "workbench.chat.question": "Pitanje: ",
+  "workbench.chat.answer": "Odgovor: ",
   "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
 }

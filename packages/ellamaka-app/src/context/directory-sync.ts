@@ -1,4 +1,4 @@
-import { batch, createMemo } from "solid-js"
+import { batch, createMemo, onCleanup } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { retry } from "@opencode-ai/core/util/retry"
@@ -78,6 +78,35 @@ type MessagePage = {
 const hasParts = (parts: Part[] | undefined, want: Part[]) => {
   if (!parts) return want.length === 0
   return want.every((part) => Binary.search(parts, part.id, (item) => item.id).found)
+}
+
+/**
+ * SSE reconnect reconciliation. Events emitted while the transport was down are
+ * lost; on resync probe the newest server-side message id for each active
+ * session and force a full message reload only when the cached tail is stale.
+ */
+export function reconcileActiveSessions(input: {
+  store: { message: Record<string, Message[] | undefined> }
+  loading: Record<string, boolean | undefined>
+  keyFor: (directory: string, sessionID: string) => string
+  directory: string
+  fetchLatest: (sessionID: string) => Promise<string | undefined>
+  sync: (sessionID: string, opts: { force: true }) => Promise<unknown> | unknown
+}) {
+  for (const sessionID of Object.keys(input.store.message)) {
+    const cached = input.store.message[sessionID] ?? []
+    if (cached.length === 0) continue
+    const newestCached = cached[cached.length - 1]!
+    const key = input.keyFor(input.directory, sessionID)
+    if (input.loading[key]) continue
+    void input
+      .fetchLatest(sessionID)
+      .then((latest) => {
+        if (!latest || latest === newestCached.id) return
+        return input.sync(sessionID, { force: true })
+      })
+      .catch(() => {})
+  }
 }
 
 const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
@@ -384,7 +413,7 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
       })
   }
 
-  return {
+  const context = {
     get data() {
       return current()[0]
     },
@@ -460,6 +489,7 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
         }
 
         return runInflight(inflight, key, async () => {
+          if (opts?.force) setMeta("loading", key, true)
           const pending = getSessionPrefetchPromise(directory, sessionID)
           if (pending) {
             await pending
@@ -624,4 +654,19 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
       return current()[0].path.directory
     },
   }
+
+  const unsubResync = serverSDK.event.onResync(() =>
+    reconcileActiveSessions({
+      store: current()[0],
+      loading: meta.loading,
+      keyFor,
+      directory,
+      fetchLatest: (sessionID) =>
+        client.session.messages({ sessionID, limit: 1 }).then((res) => res.data?.[0]?.info?.id),
+      sync: context.session.sync,
+    }),
+  )
+  onCleanup(unsubResync)
+
+  return context
 }
