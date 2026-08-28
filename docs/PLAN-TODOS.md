@@ -34,8 +34,8 @@
 | P1 | 双引擎容器宿主 + 日志桥接 | 核心 | 无 | ✅ 完成 | 接线 + 日志桥接 |
 | P2 | 工具利用：fs-search（grep/glob）落地 | 核心 | P1 | ✅ 落地 | adapter 机制 + grep/glob |
 | P3 | **阶段 A：tool-fs / str_replace / tool-bash 沙箱内运行** | 核心 | P2 | 🔶 P3.5 收尾 | 中 |
-| P4 | **DSH Web 单端口统一：4097 同源挂载 `/dsh/*`** | 核心 | P1；执行排在 P3.5 后 | 📋 正式 Plan reviewing | 大 |
-| P5 | **阶段 B：escalation 审批桥接（待定）** | 核心 | P3.5；排在 P4 后 | ⏸ 待定 | 后期细化 |
+| P3.5+ | **DSH home 收口**：物化到 `$WOPAL_HOME/dsh` 唯一 home（P4 Plan Task 0） | 基础 | 无 | 📋 随 P4 Plan 审阅 | 小 |
+| P4 | **DSH Web 单端口统一：同源挂载 `/dsh/*`** | 核心 | P1；执行排在 Task 0 后 | 📋 正式 Plan reviewing | 大 |
 | P6 | 配置动态化实证整理：patch 覆盖与生命周期 | 吸收轨 | P4 | ⬜ | 小 |
 | P7 | 插件规范化实证整理：Loader、dual-face、卸载 | 吸收轨 | P4 | ⬜ | 小 |
 | P8 | 界面演进：同源 iframe → 原生（远期） | 外围 | P4 + P5 决策 | ⬜ | 按需 |
@@ -43,9 +43,9 @@
 
 ### 推荐实施顺序
 
-`P3.5 → P4 → P3.6 → P5 → P6/P7 → P8 → P9`
+`Task 0（home 收口）→ P4 → P3.6 → P5 → P6/P7 → P8 → P9`
 
-1. **P3.5 先收口**：修正 `enabled:false`，完成每轮动态工具装配。它仍是当前工具链的已知语义缺口。
+1. **Task 0 先行**：DSH home 收口是单端口挂载链路的前置基础，随 P4 Plan 一起审阅，审批后 Wave 0 实施。
 2. **P4 随后实施**：单端口统一与 P3.5 技术上独立，但共享长期 PoC 工作树。顺序执行可避免 dsh 装配文件并发修改。
 3. **P3.6 延后到 P4 之后**：skill 目录模型输入属于独立缓存优化，不阻塞单端口目标。
 4. **P5 保持暂停**：escalation 需要独立产品决策。P4 不引入权限体系变化。
@@ -179,8 +179,8 @@
 ## P4 DSH Web 单端口统一 📋
 
 > **目标**：Ellamaka 与 DSH Web 共用进程和公开端口。Ellamaka 保持现有 `/api/*` 与 `/workbench`；DSH 统一挂载 `/dsh/*`，Workbench iframe 使用同源 `/dsh/`。
-> **设计**：`VirtualWebServer` 保存官方 DSH 插件注册的 node:http 路由。Ellamaka Server 提供受控 Node 路由挂载点并剥离 `/dsh`。官方 connection、client-hmr、modules、web-runtime 与 UI 插件保持原版。iframe index 注入浏览器传输前缀适配，并重写 DSH 静态资源根路径。详见 `DESIGN-dsh-poc.md` §4.12。
-> **执行依赖**：技术依赖 P1。实施排在 P3.5 后，复用当前长期 PoC 工作树；P3.6 延后到本批次之后。
+> **设计**：`VirtualWebServer` 保存官方 DSH 插件注册的 node:http 路由与 upgrade socket，实现含 `renderIndex` 结构化注入在内的官方 WebServer 接口。Ellamaka Server 提供受控 Node 路由挂载点并剥离 `/dsh`。官方 connection、client-hmr、modules、web-runtime 与 UI 插件保持原版；`web-runtime` 的根路径 URL 输出与注入被关闭。iframe index 注入浏览器传输前缀适配，并重写 DSH 静态资源根路径。详见 `DESIGN-dsh-poc.md` §2.1。
+> **执行依赖**：技术依赖 P1。前置 Task 0（DSH home 收口）随本 Plan 实施，复用当前长期 PoC 工作树；P3.6 延后到本批次之后。
 > **验收故事**：`http://127.0.0.1:4097/dsh/` 加载完整 DSH 界面；DSH API/WS/HMR/插件资源全部走 `/dsh/*`；Ellamaka `/api/*` 不受影响；dev 与 Desktop 不再监听或传递第二个 dshPort。
 > **正式 Plan**：`.wopal-space/plans/ellamaka/feature-dsh-unify-web-services-on-one-port.md`（reviewing）
 
@@ -192,14 +192,13 @@
 
 ### P4.2 VirtualWebServer 与 iframe 前缀适配
 
-- [ ] 4.2.1 实现官方 WebServer 接口与 exact / longest-prefix / fallback / exact-upgrade 语义
+- [ ] 4.2.1 实现官方 WebServer 接口（含 `collectIndexInjections`/`renderIndex` 结构化注入）与 exact / longest-prefix / fallback / exact-upgrade 语义
 - [ ] 4.2.2 index 变换添加 `/dsh` 静态资源前缀并移除 iframe 不需要的 PWA manifest
 - [ ] 4.2.3 index 最前注入 fetch / WebSocket / EventSource 前缀适配；外部 URL 与已带 `/dsh` URL 保持不变
-
-### P4.3 DSH Web profile 虚拟挂载
+- [ ] 4.2.4 upgrade socket 由 VirtualWebServer 跟踪并在 dispose 时销毁
 
 - [ ] 4.3.1 Loader 挂载前提供 VirtualWebServer，只禁用官方真实 `webserver` 行
-- [ ] 4.3.2 保留 `web-startup`、connection、client-hmr、modules、web-runtime 与全部 UI 插件
+- [ ] 4.3.2 保留 `web-startup`、connection、client-hmr、modules、web-runtime 与全部 UI 插件；`web-runtime` 的根路径 URL 打印与 shell/prompt 注入被关闭
 - [ ] 4.3.3 Web host handle 暴露 VirtualWebServer 与 dispose；工具容器 API 保持独立
 
 ### P4.4 CLI serve 单端口接线
@@ -270,9 +269,8 @@
 
 > **目标**：PoC 设计决定完成后，让打包版 Desktop 自动物化 dsh 闭包并验证单端口运行。P4 先移除 dshPort 协议，P9 再处理安装与发布。
 
-- [ ] onboarding npm 安装（`npm install --omit=dev` 物化到 dsh 数据目录，幂等）
-- [ ] 安装位置调整：`data/dsh/` → `$WOPAL_HOME/ellamaka/cache/dsh/`（更贴合缓存语义）
-- [ ] `.js` 构建产物：`@wopal/ellamaka-cordis` 需要 dist 构建产物才能被 Node 直接 import
+- [ ] onboarding 安装（复用 Task 0 物化脚本语义物化到 `$DSH_HOME`，缺省 `$WOPAL_HOME/dsh`，幂等）
+- [ ] `.js` 构建产物：`@wopal/ellamaka-cordis` 需要 dist 构建产物才能被 Node 直接 import（届时同步移除 sidecar loader 的 `.ts` 解析覆盖）
 - [ ] 完整端到端验证：desktop 启动后点 DSH 按钮看到完整 SPA（闭包已物化时）
 
 ---
@@ -296,3 +294,4 @@
 | 2026-08-27 | P4 | 单端口目标定案：保留官方 connection/HMR/modules/UI 插件；VirtualWebServer + `/dsh` Node mount + iframe 前缀适配；后续批次重排为 P5–P9 |
 | 2026-08-27 | P3.5 | **动态装配收尾完成**：Plugin SDK 新增 `tool.provider` hook，`ToolRegistry.tools()` 每轮合并动态工具（dsh 同名赢、新 id 稳定排序，未变集合字节稳定）；adapter 改动态投影、不再启动时冻结；`enabled:false` 修正为注入 `danger-full-access` 关闭沙箱（不切换本地后端）。真实容器实证 danger-full-access 放行工作区外写入、workspace-write 拒写不回归；registry 单测 19 项 + adapter 单测 18 项全绿 |
 | 2026-08-28 | — | **工具结果契约映射设计定案**（`DESIGN-dsh-poc.md` §4.13）：adapter 一处补齐两处契约断裂（`file_path`→`filePath` 参数映射、`meta.diffs`→`filediff` 透传），前端零改动；实施待 dev-flow Plan |
+| 2026-08-28 | P4 | **P4 Plan 修订**：按审查结论补齐 VirtualWebServer 的 `renderIndex`/结构化 index 注入契约（D-11）、upgrade socket 生命周期（D-12）、`web-runtime` 根路径 URL 输出关闭（D-05 修订）；物化脚本路径定为 `packages/opencode/script/materialize-dsh.ts` 且验证含 Node strip-types 导入冒烟；DSH home 收口并入 P4 Plan Task 0，批次表新增 P3.5+ 行 |
