@@ -1,0 +1,310 @@
+/**
+ * VirtualWebServer — a Cordis `webServer` service that saves route tables and
+ * upgrade sockets instead of binding a real socket.
+ *
+ * The DSH single-port scheme (DESIGN-dsh-poc §2.1) mounts the official dsh
+ * web plugins onto the Ellamaka listener. Those plugins register their routes
+ * against the `webServer` service; this implementation provides that service
+ * without creating a second listening socket. It implements the official
+ * `@deepseek-ai/dsh-host-webserver` surface (`register`, `registerUpgrade`,
+ * `registerFallback`, `tapIndex`, `collectIndexInjections`, `renderIndex`,
+ * `applyIndexTaps`, `host`, `port`) so the official plugins compose unchanged.
+ *
+ * HTTP dispatch is exact → longest-prefix → fallback; upgrade dispatch is
+ * exact-path only. `renderIndex` renders the Cordis `webserver/index-inject`
+ * table first, then the raw taps in registration order. The iframe adaptation
+ * rewrites DSH static asset URLs to `/dsh/*` and injects a browser script that
+ * maps same-origin `fetch`/`WebSocket`/`EventSource` to `/dsh/*` (external and
+ * already-prefixed URLs stay unchanged). Upgrade sockets dispatched through
+ * this server are tracked and closed on dispose, so Node `closeAllConnections()`
+ * does not strand raw WebSockets.
+ *
+ * @module @wopal/ellamaka-cordis/dsh-virtual-webserver
+ */
+import { Service, type Context } from "@deepseek-ai/cordis"
+import { renderIndexInjections, type IndexInjection } from "@deepseek-ai/dsh-host-webserver"
+import type { IncomingMessage, Server, ServerResponse } from "node:http"
+import type { Duplex } from "node:stream"
+
+/** The prefix under which the DSH surface is mounted on the Ellamaka listener. */
+export const DSH_MOUNT_PREFIX = "/dsh"
+
+/** Route match kind: 'exact' matches the pathname verbatim; 'prefix' matches p and p/<anything>. */
+export type WebRouteKind = "exact" | "prefix"
+
+/** One named route registration. */
+export interface WebRoute {
+  kind: WebRouteKind
+  /** Absolute pathname, no trailing slash. */
+  path: string
+  /** Owns the full response lifecycle. */
+  handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+}
+
+/** One exact-path HTTP upgrade registration. */
+export interface WebUpgradeRoute {
+  /** Absolute pathname, no trailing slash. */
+  path: string
+  /** Owns protocol negotiation and the upgraded socket after dispatch. */
+  handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
+}
+
+/** VirtualWebServer options (mirrors the official Config shape). */
+export interface VirtualWebServerOptions {
+  /** The bind host the virtual server reports. */
+  host: "127.0.0.1" | "0.0.0.0"
+  /** The port the virtual server reports (the Ellamaka public port). */
+  port: number
+}
+
+/** Extract the pathname from a raw request target, defaulting to `/`. */
+function pathnameOf(url: string | undefined): string {
+  if (!url) return "/"
+  const qIndex = url.indexOf("?")
+  return qIndex === -1 ? url : url.slice(0, qIndex)
+}
+
+/**
+ * VirtualWebServer — a Cordis `webServer` service that saves route tables and
+ * upgrade sockets instead of binding a real socket.
+ */
+export class VirtualWebServer extends Service {
+  private readonly exact = new Map<string, WebRoute>()
+  private readonly prefixes = new Map<string, WebRoute>()
+  private readonly upgrades = new Map<string, WebUpgradeRoute>()
+  private readonly upgradedSockets = new Set<Duplex>()
+  private readonly indexTaps: ((html: string) => string)[] = []
+  private fallback: WebRoute["handler"] | undefined
+  private server: Server | undefined
+  private readonly config: VirtualWebServerOptions
+
+  constructor(ctx: Context, config: VirtualWebServerOptions) {
+    super(ctx, "webServer")
+    this.config = config
+  }
+
+  /** The reported port (the Ellamaka public port). */
+  get port(): number {
+    return this.config.port
+  }
+
+  /** The reported bind host. */
+  get host(): "127.0.0.1" | "0.0.0.0" {
+    return this.config.host
+  }
+
+  /**
+   * Register a named route. Duplicate (kind, path) throws — route patterns are
+   * a composition-level contract, so a collision is a misconfiguration.
+   */
+  register(route: WebRoute): () => void {
+    const table = route.kind === "exact" ? this.exact : this.prefixes
+    if (table.has(route.path)) throw new Error(`webserver: duplicate ${route.kind} route "${route.path}"`)
+    table.set(route.path, route)
+    return () => {
+      table.delete(route.path)
+    }
+  }
+
+  /**
+   * Register an exact-path HTTP upgrade route. Duplicate paths throw because
+   * one socket can have only one protocol owner.
+   */
+  registerUpgrade(route: WebUpgradeRoute): () => void {
+    if (this.upgrades.has(route.path)) throw new Error(`webserver: duplicate upgrade route "${route.path}"`)
+    this.upgrades.set(route.path, route)
+    return () => {
+      this.upgrades.delete(route.path)
+    }
+  }
+
+  /**
+   * Claim the fallback seat. One owner only — a second registration throws.
+   */
+  registerFallback(handler: WebRoute["handler"]): () => void {
+    if (this.fallback !== undefined) throw new Error("webserver: fallback already registered")
+    this.fallback = handler
+    return () => {
+      this.fallback = undefined
+    }
+  }
+
+  /**
+   * Register a raw-HTML index transform. `renderIndex` applies taps in
+   * registration order after rendering the structured rows.
+   */
+  tapIndex(transform: (html: string) => string): () => void {
+    this.indexTaps.push(transform)
+    return () => {
+      const at = this.indexTaps.indexOf(transform)
+      if (at !== -1) this.indexTaps.splice(at, 1)
+    }
+  }
+
+  /** Longest-prefix-wins over the prefix table after an exact-table miss. */
+  private match(pathname: string): WebRoute | undefined {
+    const exact = this.exact.get(pathname)
+    if (exact !== undefined) return exact
+    let best: WebRoute | undefined
+    for (const [prefix, route] of this.prefixes) {
+      if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) continue
+      if (best === undefined || prefix.length > best.path.length) best = route
+    }
+    return best
+  }
+
+  /**
+   * Run an index.html body through the registered taps in registration order.
+   */
+  applyIndexTaps(html: string): string {
+    let out = html
+    for (const transform of this.indexTaps) out = transform(out)
+    return out
+  }
+
+  /**
+   * Gather the structured injection table: one `webserver/index-inject` emit,
+   * every subscriber pushes its current rows.
+   */
+  collectIndexInjections(): IndexInjection[] {
+    const table: IndexInjection[] = []
+    this.ctx.emit("webserver/index-inject", table)
+    return table
+  }
+
+  /**
+   * Render one index.html body: the structured injection table first, then the
+   * raw `tapIndex` transforms over the result.
+   */
+  renderIndex(html: string): string {
+    return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()))
+  }
+
+  /**
+   * Rewrite DSH static asset URLs to the `/dsh` mount and drop the PWA
+   * manifest link (the iframe does not need it). External URLs and already
+   * `/dsh`-prefixed URLs stay unchanged.
+   */
+  rewriteIndex(html: string): string {
+    const prefix = DSH_MOUNT_PREFIX
+    const rewrite = (url: string): string => {
+      if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("//")) return url
+      if (url.startsWith(prefix)) return url
+      return prefix + url
+    }
+    // Drop the PWA manifest link.
+    let out = html.replace(/<link[^>]*rel=["']manifest["'][^>]*>/gi, "")
+    // Rewrite href/src attributes that reference root-relative DSH assets.
+    out = out.replace(/(href|src)=(["'])(\/[^"']*)\2/gi, (match, attr, quote, url) => {
+      return `${attr}=${quote}${rewrite(url)}${quote}`
+    })
+    return out
+  }
+
+  /**
+   * The browser iframe prefix-adaptation script. Maps same-origin
+   * `fetch`/`WebSocket`/`EventSource` to `/dsh/*`; external URLs and already
+   * `/dsh`-prefixed URLs stay unchanged.
+   */
+  iframeAdapterScript(): string {
+    const prefix = DSH_MOUNT_PREFIX
+    return `(() => {
+  const prefix = ${JSON.stringify(prefix)};
+  const adapt = (url) => {
+    if (typeof url !== "string") return url;
+    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("ws://") || url.startsWith("wss://") || url.startsWith("//")) return url;
+    if (url.startsWith(prefix)) return url;
+    return prefix + url;
+  };
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    if (typeof input === "string") input = adapt(input);
+    else if (input && typeof input.url === "string") input = new Request(adapt(input.url), input);
+    return origFetch(input, init);
+  };
+  const OrigWS = globalThis.WebSocket;
+  globalThis.WebSocket = class extends OrigWS {
+    constructor(url, protocols) { super(adapt(url), protocols); }
+  };
+  const OrigES = globalThis.EventSource;
+  globalThis.EventSource = class extends OrigES {
+    constructor(url, options) { super(adapt(url), options); }
+  };
+})();`
+  }
+
+  /**
+   * Attach the virtual server to a raw `node:http.Server`. Installs the
+   * request/upgrade dispatchers that route matched paths to the registered
+   * handlers and 404/fallback everything else.
+   */
+  attach(server: Server): void {
+    this.server = server
+    server.on("request", (req, res) => {
+      const path = pathnameOf(req.url)
+      const route = this.match(path)
+      if (route !== undefined) {
+        this.run(route.handler(req, res), req, res)
+        return
+      }
+      const fallback = this.fallback
+      if (fallback === undefined) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
+      this.run(fallback(req, res), req, res)
+    })
+    server.on("upgrade", (req, socket, head) => {
+      const path = pathnameOf(req.url)
+      const route = this.upgrades.get(path)
+      if (route === undefined) {
+        socket.destroy()
+        return
+      }
+      this.upgradedSockets.add(socket)
+      socket.once("close", () => {
+        this.upgradedSockets.delete(socket)
+      })
+      this.runUpgrade(route.handler(req, socket, head), socket)
+    })
+  }
+
+  /** Run a request handler, terminating safely on rejection/throw. */
+  private run(result: void | Promise<void>, req: IncomingMessage, res: ServerResponse): void {
+    const onError = (error: unknown) => {
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      if (res.headersSent) {
+        res.destroy()
+        return
+      }
+      res.writeHead(400)
+      res.end()
+    }
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      ;(result as Promise<void>).catch(onError)
+    }
+  }
+
+  /** Run an upgrade handler, destroying the socket on rejection/throw. */
+  private runUpgrade(result: void | Promise<void>, socket: Duplex): void {
+    const onError = (error: unknown) => {
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      socket.destroy()
+    }
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      ;(result as Promise<void>).catch(onError)
+    }
+  }
+
+  /**
+   * Close every upgrade socket dispatched through this server. Called on host
+   * dispose so Node `closeAllConnections()` does not strand raw WebSockets.
+   */
+  dispose(): void {
+    for (const socket of this.upgradedSockets) {
+      socket.destroy()
+    }
+    this.upgradedSockets.clear()
+  }
+}
