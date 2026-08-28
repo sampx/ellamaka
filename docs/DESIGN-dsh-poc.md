@@ -32,6 +32,15 @@ ellamaka 对 dsh 的了解仍处于皮毛阶段，无法准确评估复刻的成
 
 本实验通过**单一真相源**（本文档）+ **单一实施计划**（`PLAN-TODOS.md`）降低负担：明确思路，不再徘徊。
 
+### 1.5 演进模式：独立分支长期并行（不合并 main）
+
+本实验是**独立分支演进（dev-flow 模式 C）**项目，规则如下：
+
+- **永远在 worktree 内验证**：所有实施、测试与验证都在 PoC worktree（`poc-ellamaka-cordis` 分支）内完成，不在 main 上实施。
+- **验证通过后不合并到 main**：PoC 与 main 长期并行演进。收尾使用 `verify --confirm --keep-worktree` 与 `archive --keep-worktree`，保留 worktree 与 feature 分支供后续 Plan 持续演进。
+- **合并条件**：仅当 PoC 实现了 ellamaka 与 dsh 的**完美融合**且设计方案**稳定可靠**时，才考虑合并到 main。在此之前，任何 agent 都不得执行 merge 操作。
+- **归属声明**：此规则由用户明确设定（2026-08-28），是 PoC 的长期演进契约。agent 不得自行决定走标准 merge 流程，不得在未满足合并条件时把 feature 分支并入 main。
+
 ## 2. 终局架构（目标状态）
 
 ### 2.1 单进程、单端口、双容器
