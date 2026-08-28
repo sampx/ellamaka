@@ -438,8 +438,8 @@ Ellamaka node:http.Server（唯一监听端口）
 3. **DSH 服务端插件保持官方原版**。主服务器剥离 `/dsh` 后，VirtualWebServer 看到的仍是官方 `/api`、`/plugins` 与 `/plugins/events`。`connection`、`client-hmr`、`modules`、`web-runtime` 与所有 UI 插件继续使用官方实现。Profile 只禁用真实 `webserver` 行，并在 Loader 挂载前提供 VirtualWebServer。
 4. **`web-startup` 保持启用**。它继续提供 `webStartup`，满足 `web-runtime` 的注入关系。VirtualWebServer 的 `host`/`port` 返回 Ellamaka 的公开地址，保证 DSH runtime URL、shell 环境与提示词仍指向真实入口。
 5. **浏览器前缀适配属于 DSH iframe 文档**。VirtualWebServer 在 index tap 链末尾注入启动脚本。脚本仅作用于隔离 iframe，负责把同源 `fetch('/api/*')`、WebSocket `/api/events.*` 与 EventSource `/plugins/events` 映射到 `/dsh/*`。外部 URL和已经带 `/dsh` 的 URL保持不变。
-6. **静态资源路径由 index 变换拥有**。DSH rc.6 frontend 使用根路径 `/assets/*`、`/favicon.svg` 与 boot manifest 的 `/plugins/*`。index 变换统一添加 `/dsh` 前缀，并移除 iframe 不需要的 PWA manifest link。VirtualWebServer fallback 接收剥离后的路径并继续使用官方 frontend-static。
-7. **DSH 上游发布包保持只读**。rc.6 包声明 `./src/*` 但发布物没有 `src/`，且 connection 运行时代码合并在 `lib/index.js`/`lib/client.js`。方案不 import 内部源文件、不派生官方 bundle，也不新增 dual-face 定制包。
+6. **静态资源路径由 index 变换拥有**。DSH 前端使用根路径 `/assets/*`、`/favicon.svg` 与 boot manifest 的 `/plugins/*`。index 变换统一添加 `/dsh` 前缀，并移除 iframe 不需要的 PWA manifest link。VirtualWebServer fallback 接收剥离后的路径并继续使用官方 frontend-static。
+7. **DSH 上游发布包保持只读**。dsh 包声明 `./src/*` 但发布物没有 `src/`，且 connection 运行时代码合并在 `lib/index.js`/`lib/client.js`。方案不 import 内部源文件、不派生官方 bundle，也不新增 dual-face 定制包。
 8. **HMR 路径沿用官方 `client-hmr`**。`hmr` 是 base 层 `@deepseek-ai/cordis-plugin-hmr`，Web overlay 已禁用；`client-hmr` 才拥有 `/plugins/events`。浏览器前缀适配覆盖其 EventSource，服务端路由保持原样。
 
 **范围衔接**：单端口统一不改变工具容器、沙箱、escalation 或原生 UI 决策。它为后续 patch/dual-face 机制观察提供实证，并为 iframe → 原生 UI 保留稳定的同源基线。
@@ -451,6 +451,7 @@ Ellamaka node:http.Server（唯一监听端口）
 > PoC 场景**不设红线**：一切边界都可讨论、可变更。以下为当前生效的约定，任何一项的调整都需经用户与 Wopal 双方确认后生效。
 
 1. **cordis import 边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）。
+2. **dsh 依赖显式声明**：`ellamaka-cordis` 只显式声明源码真实 import 的 7 个 dsh 依赖（`dsh`、`cordis`、`cordis-plugin-loader`、`dsh-app-boot`、`dsh-cmdline`、`dsh-home-paths`、`dsh-launch-environment`），不声明凑数依赖。版本统一 `0.1.1-rc.2`，依赖锁定交给 `bun.lock`；root overrides 不再锁 `@deepseek-ai/*`（2026-08-27 起移除，曾锁 53 个）。`dsh-credentials-local` 属 `dsh-base` 传递依赖，其 rc.2 解析器支持 `version: 1 + refs:` 新版 credentials 格式（`~/.dsh/.credentials.yaml`）。
 2. **dsh 深耦合包暂缓使用**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，暂不被主线代码 import、不在运行时加载、不作为插件挂载（深耦合原因见 §4.1；能力获取走自研复刻路径）。required peer 进入 node_modules/bun.lock 仅供类型解析。运行时加载探针（`packages/ellamaka-cordis/test/forbidden-load.test.ts`）作为当前状态的观测手段保留。
 3. **session 所有权**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
 4. **对外契约稳定**：SSE 事件、HttpApi、SDK 在实验中保持稳定。

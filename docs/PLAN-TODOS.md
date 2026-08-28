@@ -64,7 +64,7 @@
 
 - [x] 1.1 单容器重放 boot：`mountDshWeb(ctx, opts)` 在宿主 ctx 重放 dsh boot 序列，不创建第二个容器
 - [x] 1.2 单包：dsh 装配并入 `ellamaka-cordis`（原独立 `ellamaka-dsh-host` 已删除）
-- [x] 1.3 版本统一 0.1.0-rc.6（root overrides 锁 58 个 `@deepseek-ai/dsh-*`）
+- [x] 1.3 版本统一 0.1.1-rc.2（依赖锁定交给 `bun.lock`；root overrides 中的 dsh 锁已于 2026-08-27 移除，`ellamaka-cordis` 只显式声明源码真实 import 的 7 个 dsh 依赖）
 - [x] 1.4 `ELLAMAKA_DSH=1` 开关保留：开启挂载到进程级 CordisHub；关闭零 dsh 挂载
 - [x] 1.5 修复 desktop 崩溃：`index.ts` 拆出 dsh-web 顶层导出（改子路径）+ `serve.ts` 动态 import；`dist/node/node.js` Node LOAD OK
 - [x] 1.6 `installAnchor` 支持（`DshHostOptions.installAnchor`）
