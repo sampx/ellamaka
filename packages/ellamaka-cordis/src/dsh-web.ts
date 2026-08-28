@@ -317,7 +317,9 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     DSH_LAUNCH_ENVIRONMENT_KEY,
     createLaunchEnvironmentSnapshot([{ source: "process", values: process.env as Record<string, string> }]),
   )
-  provideCmdline(ctx, { args: ["--port", String(port)], exit: () => {} })
+  // `--no-open` keeps the dsh web UI from launching the default browser: the
+  // Workbench embeds the dsh surface in an iframe, so an external tab is noise.
+  provideCmdline(ctx, { args: ["--port", String(port), "--no-open"], exit: () => {} })
   await prepare?.(ctx)
   const includeEntry = await mountRootInclude(ctx, rootConfig, patches)
   await ctx.get("loader")?.await()
