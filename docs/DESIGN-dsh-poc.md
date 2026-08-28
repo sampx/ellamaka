@@ -92,7 +92,7 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 | `profiles/ellamaka-tools/` | 模板：`package.json`（bundles: dsh-base）+ `cordis.yml` + 空 patch 层。补丁禁用清单由挂载代码在首次挂载时播种（§2.3） |
 | `profiles/node_modules/` | 快捷方式目录，`healProfilesModuleFallback(installAnchor, home)` 挂载时自动重建 |
 
-**物化脚本**：`packages/opencode/script/materialize-dsh.ts`。生成 package.json → bun install → 预置两个 profile 模板 → 验证锚点与 Node strip-types 按 sidecar 同一 resolver 导入 dsh-web。脚本幂等：已存在的 profile 与补丁不覆盖。
+**物化脚本**：`packages/opencode/script/materialize-dsh.ts`。生成 package.json → `bun install --production`（跳过 `@wopal/ellamaka-cordis` 的 `catalog:` devDependencies，独立闭包无法解析 workspace 目录引用）→ 预置两个 profile 模板 → 验证锚点与 Node strip-types 按 sidecar 同一 resolver（含 `.js`→`.ts` loader 覆盖）导入 dsh-web。脚本幂等：已存在的 profile 与补丁不覆盖。
 
 **依赖解析（installAnchor）**：`installAnchor` 决定 dsh 软件包从哪解析。
 

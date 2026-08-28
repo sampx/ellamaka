@@ -49,6 +49,7 @@ export const ServeCommand = effectCmd({
       // port via its own sidecar wiring in a later phase).
       const dsh = yield* Effect.promise(() =>
         mountDshWeb(webHub.ctx, {
+          home: join(Global.Path.wopalHome, "dsh"),
           port: 4098,
           logFile: join(Global.Path.log, "dsh-plugins.log"),
         }),
@@ -65,6 +66,7 @@ export const ServeCommand = effectCmd({
       // adoption allow-list.
       const tools = yield* Effect.promise(() =>
         mountDshTools(toolsHub.ctx, {
+          home: join(Global.Path.wopalHome, "dsh"),
           port: 0,
           logFile: join(Global.Path.log, "dsh-plugins.log"),
         }),

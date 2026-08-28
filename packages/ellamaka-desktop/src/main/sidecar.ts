@@ -129,12 +129,13 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    // Optional dsh web engine (single-process dual-port, PoC §7.14).
-    // The dsh closure lives at $DSH_HOME (default $WOPAL_HOME/ellamaka/data/dsh),
-    // materialised by onboarding `npm install` (scheme B). The sidecar mounts it
-    // onto a process-level cordis hub bound to a random loopback port. When the
-    // closure is absent (not yet installed), dsh is skipped and the sidecar runs
-    // normally — the same kill-switch semantics as ELLAMAKA_DSH=0.
+    // Optional dsh web engine (single-process dual-port, DESIGN-dsh-poc §2.1).
+    // The dsh closure lives at $DSH_HOME (default $WOPAL_HOME/dsh), materialised
+    // by `packages/opencode/script/materialize-dsh.ts` (DESIGN-dsh-poc §2.2).
+    // The sidecar mounts it onto a process-level cordis hub bound to a random
+    // loopback port. When the closure is absent (not yet installed), dsh is
+    // skipped and the sidecar runs normally — the same kill-switch semantics as
+    // ELLAMAKA_DSH=0.
     const dshPort = await mountDshIfPresent()
     // The tool container (ellamaka-tools profile) feeds the dsh-adapter so
     // Workbench sessions can adopt container tools. It has no webserver; the
@@ -150,15 +151,14 @@ async function start(command: StartCommand) {
 /**
  * Mount the dsh web engine when its closure is present under $DSH_HOME.
  *
- * Resolves the closure home as `$DSH_HOME` (fallback `$WOPAL_HOME/ellamaka/data/dsh`).
+ * Resolves the closure home as `$DSH_HOME` (fallback `$WOPAL_HOME/dsh`).
  * If the `@deepseek-ai/dsh` package is not materialised there yet, returns
  * `undefined` and the sidecar continues without dsh. A successful mount returns
  * the bound dsh port for the ready message; the host handle is retained for
  * clean unmount on stop.
  */
 async function mountDshIfPresent(): Promise<number | undefined> {
-  const dshHome =
-    process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "ellamaka", "data", "dsh")
+  const dshHome = process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
   if (!existsSync(anchor)) {
     // Closure not materialised yet — skip dsh without error (onboarding not done).
@@ -193,8 +193,7 @@ async function mountDshIfPresent(): Promise<number | undefined> {
  * projected tools; ellamaka builtins keep serving).
  */
 async function mountDshToolsIfPresent(): Promise<void> {
-  const dshHome =
-    process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "ellamaka", "data", "dsh")
+  const dshHome = process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
   if (!existsSync(anchor)) {
     return undefined

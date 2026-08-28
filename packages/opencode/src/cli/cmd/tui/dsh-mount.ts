@@ -6,7 +6,7 @@ import { join } from "node:path"
 const CONTAINER_KEY = "__ellamakaDshContainer"
 
 export interface DshMountOptions {
-  /** The dsh home directory (`$DSH_HOME`). Defaults to the user's `~/.dsh`. */
+  /** The dsh home directory (`$DSH_HOME`). Defaults to `$WOPAL_HOME/dsh`. */
   home?: string
   /** Path to the dedicated dsh-plugins log file. */
   logFile?: string
@@ -32,9 +32,9 @@ export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<Dsh
   const { mountDshTools } = await import("@wopal/ellamaka-cordis/dsh-web")
   const hub = new CordisHub(null)
   const host = await mountDshTools(hub.ctx, {
+    home: opts.home ?? join(Global.Path.wopalHome, "dsh"),
     port: 0,
     logFile: opts.logFile ?? join(Global.Path.log, "dsh-plugins.log"),
-    ...(opts.home ? { home: opts.home } : {}),
   })
   ;(globalThis as Record<string, unknown>)[CONTAINER_KEY] = hub.ctx
   return {

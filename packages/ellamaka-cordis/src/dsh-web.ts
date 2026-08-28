@@ -176,7 +176,7 @@ export interface DshHost {
 }
 
 export interface DshHostOptions {
-  /** The dsh home directory (`$DSH_HOME`). Defaults to the user's `~/.dsh`. */
+  /** The dsh home directory (`$DSH_HOME`). Defaults to `$WOPAL_HOME/dsh`. */
   home?: string
   /** The loopback port for the dsh webserver; `0` asks the OS for a free one. */
   port: number
