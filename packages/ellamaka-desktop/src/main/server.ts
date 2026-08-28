@@ -14,7 +14,7 @@ export type HealthCheck = { wait: Promise<void> }
 
 type SidecarMessage =
   | { type: "sqlite"; progress: SqliteMigrationProgress }
-  | { type: "ready"; dshPort?: number }
+  | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 
@@ -28,7 +28,6 @@ export type SidecarListener = {
 export type SpawnedServer = {
   listener: SidecarListener
   health: { wait: Promise<void> }
-  dshPort: number | undefined
 }
 
 const SIDECAR_SERVICE_NAME = "ellamaka server"
@@ -97,7 +96,6 @@ export async function spawnLocalServer(
     execArgv: ["--experimental-strip-types"],
   })
   let exited = false
-  let dshPort: number | undefined
   const exit = defer<number>()
 
   const onProcessGone = (_event: unknown, details: Details) => {
@@ -144,7 +142,6 @@ export async function spawnLocalServer(
       if (message.type === "ready") {
         if (done) return
         done = true
-        dshPort = message.dshPort
         cleanup()
         resolve()
         return
@@ -219,7 +216,6 @@ export async function spawnLocalServer(
       },
     },
     health: { wait },
-    dshPort,
   }
 }
 

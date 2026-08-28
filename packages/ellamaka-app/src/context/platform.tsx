@@ -75,9 +75,6 @@ export type Platform = {
   /** Set the default server URL to use on app startup (platform-specific) */
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
-  /** Get the dsh web engine loopback port (desktop only, undefined when not mounted) */
-  getDshPort?(): Promise<number | undefined> | number | undefined
-
   /** Get the configured WSL integration (desktop only) */
   getWslEnabled?(): Promise<boolean>
 

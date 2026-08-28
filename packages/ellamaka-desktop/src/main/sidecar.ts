@@ -56,7 +56,7 @@ type SidecarCommand = StartCommand | StopCommand | SetLogLevelCommand
 
 type SidecarMessage =
   | { type: "sqlite"; progress: { type: "InProgress"; value: number } | { type: "Done" } }
-  | { type: "ready"; dshPort?: number }
+  | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
 

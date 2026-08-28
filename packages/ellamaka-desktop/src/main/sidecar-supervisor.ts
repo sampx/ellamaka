@@ -7,7 +7,7 @@ export type SidecarLogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 export type SidecarRuntimeState = {
   generation: number
   status: SidecarRuntimeStatus
-  connection?: { url: string; username: string; password: string; dshPort?: number }
+  connection?: { url: string; username: string; password: string }
   attempt: number
   nextRetryAt?: number
   errorCode?: string
@@ -16,7 +16,6 @@ export type SidecarRuntimeState = {
 export type SidecarSpawnResult = {
   listener: { stop: () => Promise<void>; setLogLevel: (level: SidecarLogLevel) => void }
   health: { wait: Promise<void> }
-  dshPort?: number
 }
 
 export type SidecarSpawnOptions = {
@@ -323,7 +322,6 @@ export class SidecarSupervisor {
           url: `http://${hostname}:${port}`,
           username: "ellamaka",
           password,
-          ...(result.dshPort !== undefined ? { dshPort: result.dshPort } : {}),
         },
       })
 
