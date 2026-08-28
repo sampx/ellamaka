@@ -295,3 +295,4 @@
 | 2026-08-26 | P3.4.4 | settings.jsonc 沙箱模式配置接入：adapter 解析 `ellamaka.dsh.sandbox`，enabled 注入 sandbox/mode 事件、mode 限 read-only/workspace-write，enabled:false 不注入；单测 16 项全绿 |
 | 2026-08-27 | P4 | 单端口目标定案：保留官方 connection/HMR/modules/UI 插件；VirtualWebServer + `/dsh` Node mount + iframe 前缀适配；后续批次重排为 P5–P9 |
 | 2026-08-27 | P3.5 | **动态装配收尾完成**：Plugin SDK 新增 `tool.provider` hook，`ToolRegistry.tools()` 每轮合并动态工具（dsh 同名赢、新 id 稳定排序，未变集合字节稳定）；adapter 改动态投影、不再启动时冻结；`enabled:false` 修正为注入 `danger-full-access` 关闭沙箱（不切换本地后端）。真实容器实证 danger-full-access 放行工作区外写入、workspace-write 拒写不回归；registry 单测 19 项 + adapter 单测 18 项全绿 |
+| 2026-08-28 | — | **工具结果契约映射设计定案**（`DESIGN-dsh-poc.md` §4.13）：adapter 一处补齐两处契约断裂（`file_path`→`filePath` 参数映射、`meta.diffs`→`filediff` 透传），前端零改动；实施待 dev-flow Plan |

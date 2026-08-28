@@ -446,6 +446,56 @@ Ellamaka node:http.Server（唯一监听端口）
 
 > 结论：该目标可实施。正式实施与验收由 P4 dev-flow Plan 承载。
 
+### 4.13 工具结果契约映射（2026-08-28）
+
+dsh 工具经 adapter 投影进 ellamaka 后，Workbench 的工具调用工具条与结果 block 需要正常显示。当前存在两处契约断裂，本设计在 **adapter 一处**补齐，前端零改动。
+
+#### 4.13.1 现状：两处契约断裂
+
+**断裂一：参数名（蛇形 vs 驼峰）**
+
+dsh 生态工具参数为蛇形命名，ellamaka 内建工具为驼峰命名：
+
+| 工具 | dsh 参数 | ellamaka 内建参数 |
+|------|---------|------------------|
+| read | `file_path` | `filePath` |
+| edit | `file_path` | `filePath` |
+| write | `file_path` | `filePath` |
+
+Workbench 的 `ContextToolBlock`/`FileChangeBlock` 从 `part.state.input` 读 `filePath`，dsh 工具实际传入 `file_path`，导致工具条文件路径显示为空。
+
+**断裂二：diff 数据被 adapter 丢弃**
+
+ellamaka 内建 edit/write 通过 `ctx.metadata()` 注入结构化 `filediff`（`file`/`patch`/`additions`/`deletions`），Workbench 的 `FileChangeBlock` 靠它渲染 diff 视图与 `+N/-N` 徽标。
+
+dsh 的 edit/write 把 diff 放在 `meta.diffs`（`presentationMeta` 投影，结构 `[{path, oldText, newText}]`）。但 adapter 的 `tools.execute` 返回类型只声明 `{isError, content, error}`，**丢弃了 `meta`**。数据在 dsh 侧存在，是 adapter 未透传。
+
+#### 4.13.2 目标状态
+
+- **adapter 是唯一契约映射点**：dsh 工具结果经 adapter 投影后，与 ellamaka 内建工具在 Workbench 渲染层表现一致。
+- **前端零改动**：`chat-tool-blocks.tsx`、`message-part.tsx` 等渲染层不感知 dsh 与内建工具的差异。
+- **同名工具复用现有 block**：grep/glob/read/edit/write/bash/str_replace_editor 走现有渲染路径。
+- **dsh 新增工具走通用兜底**：不在现有 block 类型内的 dsh 工具落到 `GenericToolBlock`；如需专属渲染，属后续前端工作，不在本设计范围。
+
+#### 4.13.3 职责与边界
+
+- **adapter 负责**：透传 dsh 的 `meta`，把 `meta.diffs` 映射为 ellamaka 的 `filediff`；把 `file_path` 参数重命名为 `filePath`（投影时重命名，execute 时转回）。
+- **渲染层负责**：按现有契约消费 `filediff` 与 `filePath`，不感知来源。
+- **diff 算法归属 adapter**：`patch` 由 `oldText`/`newText` 生成，算法在 adapter 内自持（不 import dsh 包，遵守 cordis import 边界），与 dsh 的 `computeHunkDiffs` 语义对齐。
+
+#### 4.13.4 映射对照
+
+| dsh 侧 | ellamaka 侧 | 映射 |
+|--------|------------|------|
+| `meta.diffs[].path` | `filediff.file` | 直接 |
+| `meta.diffs[].oldText`/`newText` | `filediff.patch` | 由 oldText/newText 生成 hunk diff |
+| — | `filediff.additions`/`deletions` | 统计 oldText/newText 行差 |
+| 参数 `file_path` | 参数 `filePath` | 投影时重命名，execute 时转回 |
+
+#### 4.13.5 范围衔接
+
+本设计不改变工具容器、沙箱、escalation 或原生 UI 决策。它只补齐 adapter 的结果契约映射，使已采用的 dsh 工具在 Workbench 正常显示。实施与验收由后续 dev-flow Plan 承载。
+
 ## 5. 当前约定（双人确认制，无红线）
 
 > PoC 场景**不设红线**：一切边界都可讨论、可变更。以下为当前生效的约定，任何一项的调整都需经用户与 Wopal 双方确认后生效。
