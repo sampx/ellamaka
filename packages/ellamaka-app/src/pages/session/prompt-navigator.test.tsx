@@ -122,6 +122,29 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
+  test("uses outside click instead of header navigation controls", async () => {
+    const u1 = userMessage("u1", "hello")
+    const host = mount(() => <PromptNavigator {...baseProps({ userMessages: [u1] })} />)
+    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
+
+    expect(host.querySelector("[data-slot='chat-prompt-prev']")).toBeNull()
+    expect(host.querySelector("[data-slot='chat-prompt-next']")).toBeNull()
+    expect(host.querySelector("[data-slot='chat-prompt-close']")).toBeNull()
+
+    openDirectory(host)
+    await tick()
+    expect(popover.getAttribute("data-open")).toBe("true")
+
+    const outside = document.createElement("button")
+    document.body.appendChild(outside)
+    outside.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }))
+    await tick()
+
+    expect(popover.getAttribute("data-open")).toBe("false")
+    outside.remove()
+    host.remove()
+  })
+
   test("keeps the left rail for preview and opens the directory from the right edge", async () => {
     const u1 = userMessage("u1", "hello")
     const host = mount(() => <PromptNavigator {...baseProps({ userMessages: [u1] })} />)
@@ -162,7 +185,7 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
-  test("jumps to a prompt via onJump when a directory item is clicked", async () => {
+  test("jumps to a prompt and keeps the directory open when an item is clicked", async () => {
     let jumped: string | undefined
     const u1 = userMessage("u1", "hello")
     const host = mount(() => (
@@ -176,6 +199,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
+    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
     openDirectory(host)
     await tick()
     const item = host.querySelector("[data-slot='chat-prompt-item']") as HTMLElement
@@ -183,33 +207,7 @@ describe("PromptNavigator", () => {
     await tick()
 
     expect(jumped).toBe("u1")
-    host.remove()
-  })
-
-  test("supports keyboard navigation with ArrowUp/ArrowDown/Enter/Escape", async () => {
-    const u1 = userMessage("u1", "hello")
-    const u2 = userMessage("u2", "world")
-    let jumped: string | undefined
-    const host = mount(() => (
-      <PromptNavigator
-        {...baseProps({
-          userMessages: [u1, u2],
-          onJump: (id: string) => {
-            jumped = id
-          },
-        })}
-      />
-    ))
-
-    openDirectory(host)
-    await tick()
-
-    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
-    popover.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
-    popover.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-    await tick()
-
-    expect(jumped).toBe("u2")
+    expect(popover.getAttribute("data-open")).toBe("true")
     host.remove()
   })
 
@@ -234,33 +232,6 @@ describe("PromptNavigator", () => {
     // loadOlder is useSessionHistoryLoader.loadAndReveal, which owns the serial
     // page loop; the navigator triggers it once on open.
     expect(calls).toBe(1)
-    host.remove()
-  })
-
-  test("renders previous and next buttons that jump by offset", async () => {
-    const u1 = userMessage("u1", "hello")
-    const u2 = userMessage("u2", "world")
-    let jumped: string | undefined
-    const host = mount(() => (
-      <PromptNavigator
-        {...baseProps({
-          userMessages: [u1, u2],
-          activeUserMessageID: "u1",
-          onJump: (id: string) => {
-            jumped = id
-          },
-        })}
-      />
-    ))
-
-    openDirectory(host)
-    await tick()
-
-    const next = host.querySelector("[data-slot='chat-prompt-next']") as HTMLElement
-    next.dispatchEvent(new MouseEvent("click", { bubbles: true }))
-    await tick()
-
-    expect(jumped).toBe("u2")
     host.remove()
   })
 
@@ -296,11 +267,11 @@ describe("PromptNavigator", () => {
     ))
 
     const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
     openDirectory(host)
     await tick()
 
-    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
-    popover.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
     await tick()
 
     expect(popover.getAttribute("data-open")).toBe("false")
@@ -516,6 +487,8 @@ describe("PromptNavigator", () => {
     expect(triggerStyle.cursor).toBe("pointer")
     expect(popoverStyle.position).toBe("absolute")
     expect(popoverStyle.right).toBe("32px")
+    expect(popoverStyle.top).toBe("12px")
+    expect(popoverStyle.bottom).toBe("12px")
     expect(popoverStyle.width).toBe("calc(100% - 44px)")
     expect(popoverStyle.maxWidth).toBe("360px")
     host.remove()

@@ -1,7 +1,5 @@
-import { createEffect, createMemo, createSignal, For } from "solid-js"
-import type { JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
-import { Icon } from "@opencode-ai/ui/icon"
 import { cleanSummary, extractPromptSummary } from "./chat-render.utils"
 
 export type PromptNavigatorProps = {
@@ -28,8 +26,6 @@ export type PromptNavigatorProps = {
  */
 export function PromptNavigator(props: PromptNavigatorProps) {
   const [open, setOpen] = createSignal(false)
-  const [focusIndex, setFocusIndex] = createSignal(0)
-  let navigatorRef: HTMLDivElement | undefined
   let popoverRef: HTMLDivElement | undefined
   let directoryTriggerRef: HTMLButtonElement | undefined
 
@@ -59,15 +55,8 @@ export function PromptNavigator(props: PromptNavigatorProps) {
     }),
   )
 
-  const activeIndex = () => {
-    const active = navigatorRef?.querySelector<HTMLElement>("[data-slot='chat-prompt-tick'][data-active='true']")?.dataset.messageId ?? activeUserMessageID()
-    if (!active) return -1
-    return entries().findIndex((e) => e.userMessageID === active)
-  }
-
   const openDirectory = () => {
     setOpen(true)
-    setFocusIndex(Math.max(0, activeIndex()))
     // `loadOlder` is `useSessionHistoryLoader.loadAndReveal`, which already
     // serially hydrates pages until historyMore is false or no growth occurs.
     if (props.historyMore && !props.historyLoading) {
@@ -77,11 +66,8 @@ export function PromptNavigator(props: PromptNavigatorProps) {
   }
 
   const jump = (id: string) => {
-    const directoryWasOpen = open()
-    props.onJump(id)
-    setOpen(false)
     setPreview(undefined)
-    if (directoryWasOpen) directoryTriggerRef?.focus()
+    props.onJump(id)
   }
 
   const [preview, setPreview] = createSignal<{ id: string; top: number }>()
@@ -97,46 +83,29 @@ export function PromptNavigator(props: PromptNavigatorProps) {
     return entries().find((e) => e.userMessageID === current.id)
   })
 
-  const jumpByOffset = (offset: number) => {
-    const list = entries()
-    const current = activeIndex()
-    const target = current === -1 ? (offset > 0 ? 0 : list.length - 1) : current + offset
-    if (target >= 0 && target < list.length) jump(list[target].userMessageID)
-  }
-
-  const handleKeydown = (event: KeyboardEvent) => {
-    const list = entries()
-    if (list.length === 0) return
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault()
-        setFocusIndex((i) => Math.min(i + 1, list.length - 1))
-        break
-      case "ArrowUp":
-        event.preventDefault()
-        setFocusIndex((i) => Math.max(i - 1, 0))
-        break
-      case "Home":
-        event.preventDefault()
-        setFocusIndex(0)
-        break
-      case "End":
-        event.preventDefault()
-        setFocusIndex(list.length - 1)
-        break
-      case "Enter": {
-        event.preventDefault()
-        const item = list[focusIndex()]
-        if (item) jump(item.userMessageID)
-        break
-      }
-      case "Escape":
-        event.preventDefault()
-        setOpen(false)
-        directoryTriggerRef?.focus()
-        break
+  onMount(() => {
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      if (!open()) return
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (popoverRef?.contains(target) || directoryTriggerRef?.contains(target)) return
+      setOpen(false)
     }
-  }
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (!open() || event.key !== "Escape") return
+      event.preventDefault()
+      setOpen(false)
+      directoryTriggerRef?.focus()
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown)
+    document.addEventListener("keydown", closeOnEscape)
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown)
+      document.removeEventListener("keydown", closeOnEscape)
+    })
+  })
 
   // happy-dom does not flush `Show` conditionals; toggle visibility via a
   // data attribute driven by createEffect so tests can observe the open state.
@@ -146,12 +115,7 @@ export function PromptNavigator(props: PromptNavigatorProps) {
   })
 
   return (
-    <div
-      data-component="chat-prompt-navigator"
-      ref={(el) => {
-        navigatorRef = el
-      }}
-    >
+    <div data-component="chat-prompt-navigator">
       <div
         data-component="chat-prompt-rail"
         data-open={open()}
@@ -188,35 +152,22 @@ export function PromptNavigator(props: PromptNavigatorProps) {
           popoverRef = el
         }}
         data-open={open()}
-        on:keydown={handleKeydown}
         role="dialog"
         aria-label="提示词导航"
       >
         <div data-slot="chat-prompt-header">
           <span>提示词导航</span>
-          <div data-slot="chat-prompt-nav-buttons">
-            <button data-slot="chat-prompt-prev" on:click={() => jumpByOffset(-1)} aria-label="上一条">
-              <Icon name="chevron-left" size="small" />
-            </button>
-            <button data-slot="chat-prompt-next" on:click={() => jumpByOffset(1)} aria-label="下一条">
-              <Icon name="chevron-right" size="small" />
-            </button>
-            <button data-slot="chat-prompt-close" on:click={() => setOpen(false)} aria-label="关闭">
-              <Icon name="close" size="small" />
-            </button>
-          </div>
         </div>
         <div data-slot="chat-prompt-loading" data-loading={props.historyLoading}>
           {props.historyLoading ? "正在加载更早消息…" : ""}
         </div>
         <div data-slot="chat-prompt-list">
           <For each={entries()}>
-            {(entry, index) => (
+            {(entry) => (
               <button
                 data-slot="chat-prompt-item"
                 data-message-id={entry.userMessageID}
                 data-active={entry.userMessageID === activeUserMessageID()}
-                data-focused={index() === focusIndex()}
                 on:click={() => jump(entry.userMessageID)}
               >
                 <div data-slot="chat-prompt-user">{entry.userSummary || "（空回复）"}</div>
