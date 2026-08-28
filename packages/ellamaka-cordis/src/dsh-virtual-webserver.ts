@@ -234,40 +234,55 @@ export class VirtualWebServer extends Service {
   }
 
   /**
+   * Dispatch a request through the virtual route tables. Matched paths go to
+   * the registered handler; everything else falls back or 404s. Usable as a
+   * `NodeRouteMount.request` so the Ellamaka listener can mount this server
+   * under `/dsh`.
+   */
+  request(req: IncomingMessage, res: ServerResponse): void {
+    const path = pathnameOf(req.url)
+    const route = this.match(path)
+    if (route !== undefined) {
+      this.run(route.handler(req, res), req, res)
+      return
+    }
+    const fallback = this.fallback
+    if (fallback === undefined) {
+      res.writeHead(404)
+      res.end()
+      return
+    }
+    this.run(fallback(req, res), req, res)
+  }
+
+  /**
+   * Dispatch an upgrade through the virtual upgrade table (exact-path only).
+   * Usable as a `NodeRouteMount.upgrade` so the Ellamaka listener can mount
+   * this server under `/dsh`.
+   */
+  upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const path = pathnameOf(req.url)
+    const route = this.upgrades.get(path)
+    if (route === undefined) {
+      socket.destroy()
+      return
+    }
+    this.upgradedSockets.add(socket)
+    socket.once("close", () => {
+      this.upgradedSockets.delete(socket)
+    })
+    this.runUpgrade(route.handler(req, socket, head), socket)
+  }
+
+  /**
    * Attach the virtual server to a raw `node:http.Server`. Installs the
    * request/upgrade dispatchers that route matched paths to the registered
    * handlers and 404/fallback everything else.
    */
   attach(server: Server): void {
     this.server = server
-    server.on("request", (req, res) => {
-      const path = pathnameOf(req.url)
-      const route = this.match(path)
-      if (route !== undefined) {
-        this.run(route.handler(req, res), req, res)
-        return
-      }
-      const fallback = this.fallback
-      if (fallback === undefined) {
-        res.writeHead(404)
-        res.end()
-        return
-      }
-      this.run(fallback(req, res), req, res)
-    })
-    server.on("upgrade", (req, socket, head) => {
-      const path = pathnameOf(req.url)
-      const route = this.upgrades.get(path)
-      if (route === undefined) {
-        socket.destroy()
-        return
-      }
-      this.upgradedSockets.add(socket)
-      socket.once("close", () => {
-        this.upgradedSockets.delete(socket)
-      })
-      this.runUpgrade(route.handler(req, socket, head), socket)
-    })
+    server.on("request", (req, res) => this.request(req, res))
+    server.on("upgrade", (req, socket, head) => this.upgrade(req, socket, head))
   }
 
   /** Run a request handler, terminating safely on rejection/throw. */

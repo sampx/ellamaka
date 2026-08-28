@@ -66,7 +66,13 @@ type ParentPort = {
 }
 
 type Listener = {
+  port: number
   stop(close?: boolean): void | Promise<void>
+  mountNodeRoute(mount: {
+    prefix: string
+    request(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void
+    upgrade?(req: import("node:http").IncomingMessage, socket: import("node:stream").Duplex, head: Buffer): void
+  }): () => void
 }
 
 const parentPort = getParentPort()
@@ -129,19 +135,19 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    // Optional dsh web engine (single-process dual-port, DESIGN-dsh-poc §2.1).
+    // Optional dsh web engine (single-process, DESIGN-dsh-poc §2.1).
     // The dsh closure lives at $DSH_HOME (default $WOPAL_HOME/dsh), materialised
     // by `packages/opencode/script/materialize-dsh.ts` (DESIGN-dsh-poc §2.2).
-    // The sidecar mounts it onto a process-level cordis hub bound to a random
-    // loopback port. When the closure is absent (not yet installed), dsh is
-    // skipped and the sidecar runs normally — the same kill-switch semantics as
+    // The sidecar mounts the VirtualWebServer onto the Ellamaka listener under
+    // /dsh. When the closure is absent (not yet installed), dsh is skipped and
+    // the sidecar runs normally — the same kill-switch semantics as
     // ELLAMAKA_DSH=0.
-    const dshPort = await mountDshIfPresent()
+    await mountDshIfPresent()
     // The tool container (ellamaka-tools profile) feeds the dsh-adapter so
     // Workbench sessions can adopt container tools. It has no webserver; the
     // container is exposed through globalThis like the CLI serve path.
     await mountDshToolsIfPresent()
-    parentPort.postMessage({ type: "ready", dshPort })
+    parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
@@ -153,16 +159,16 @@ async function start(command: StartCommand) {
  *
  * Resolves the closure home as `$DSH_HOME` (fallback `$WOPAL_HOME/dsh`).
  * If the `@deepseek-ai/dsh` package is not materialised there yet, returns
- * `undefined` and the sidecar continues without dsh. A successful mount returns
- * the bound dsh port for the ready message; the host handle is retained for
- * clean unmount on stop.
+ * and the sidecar continues without dsh. A successful mount registers the
+ * VirtualWebServer onto the Ellamaka listener under `/dsh`; the host handle is
+ * retained for clean unmount on stop.
  */
-async function mountDshIfPresent(): Promise<number | undefined> {
+async function mountDshIfPresent(): Promise<void> {
   const dshHome = process.env.DSH_HOME ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
   if (!existsSync(anchor)) {
     // Closure not materialised yet — skip dsh without error (onboarding not done).
-    return undefined
+    return
   }
   // Resolve @wopal/ellamaka-cordis/dsh-web from the closure's node_modules
   // (it is a dependency of the materialised closure). The sidecar bundle
@@ -176,12 +182,22 @@ async function mountDshIfPresent(): Promise<number | undefined> {
   const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const host = await bootDshWeb({
     home: dshHome,
-    port: 0,
+    port: listener?.port ?? 0,
     installAnchor: anchor,
     logFile: join(wopalHome, "logs", "dsh-plugins.log"),
   })
-  dshHost = { dispose: () => host.dispose() }
-  return host.port
+  // Mount the VirtualWebServer under /dsh on the Ellamaka listener.
+  const unmount = listener?.mountNodeRoute({
+    prefix: host.mountPath,
+    request: (req, res) => host.webServer.request(req, res),
+    upgrade: (req, socket, head) => host.webServer.upgrade(req, socket, head),
+  })
+  dshHost = {
+    dispose: async () => {
+      unmount?.()
+      await host.dispose()
+    },
+  }
 }
 
 /**

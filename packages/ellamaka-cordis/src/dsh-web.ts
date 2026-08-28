@@ -39,6 +39,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
+import { VirtualWebServer, DSH_MOUNT_PREFIX } from "./dsh-virtual-webserver.js"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
 const WEB_PROFILE_NAME = "web"
@@ -175,6 +176,16 @@ export interface DshHost {
   dispose(): Promise<void>
 }
 
+/** A handle to a virtually-mounted dsh web engine. */
+export interface DshWebHost {
+  /** The mount path under which the DSH surface is served on the Ellamaka listener. */
+  readonly mountPath: "/dsh"
+  /** The VirtualWebServer the official web profile registered its routes on. */
+  readonly webServer: VirtualWebServer
+  /** Unmount the dsh plugin tree; the host context stays alive. */
+  dispose(): Promise<void>
+}
+
 export interface DshHostOptions {
   /** The dsh home directory (`$DSH_HOME`). Defaults to `$WOPAL_HOME/dsh`. */
   home?: string
@@ -219,6 +230,8 @@ type MountProfileOptions = DshHostOptions & {
   extraPatches: Record<string, unknown>[]
   /** Whether the mounted profile must provide a webserver service. */
   requireWebServer: boolean
+  /** When set, provide this VirtualWebServer instead of binding a real socket. */
+  virtualWebServer?: VirtualWebServer
 }
 
 /**
@@ -235,7 +248,7 @@ type MountProfileOptions = DshHostOptions & {
  * @returns a {@link DshHost} handle.
  */
 async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<DshHost> {
-  const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer } = opts
+  const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer, virtualWebServer } = opts
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -320,6 +333,10 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // `--no-open` keeps the dsh web UI from launching the default browser: the
   // Workbench embeds the dsh surface in an iframe, so an external tab is noise.
   provideCmdline(ctx, { args: ["--port", String(port), "--no-open"], exit: () => {} })
+  // In virtual mode, the VirtualWebServer is constructed before the Loader
+  // mounts (its Service constructor registers it as `webServer`), so the
+  // official web plugins register their routes against it instead of a real
+  // socket. The official `webserver` entry is disabled via extraPatches.
   await prepare?.(ctx)
   const includeEntry = await mountRootInclude(ctx, rootConfig, patches)
   await ctx.get("loader")?.await()
@@ -351,20 +368,27 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
 }
 
 /**
- * Mount the dsh web engine onto an existing cordis context.
+ * Mount the dsh web engine virtually onto an existing cordis context.
  *
- * Loads the `web` profile (dsh-base + dsh-web-app) and binds the dsh
- * webserver to a second loopback port.
+ * Loads the `web` profile (dsh-base + dsh-web-app) and provides a
+ * {@link VirtualWebServer} so the official web plugins register their routes
+ * against it instead of a second listening socket. The official `webserver`
+ * entry is disabled; `web-runtime`'s root-path URL printing and shell/prompt
+ * injection are closed (the iframe serves under `/dsh`, so a root-path URL
+ * would be a wrong entry point). `web-startup` and `provideCmdline` stay so
+ * the port and trust judgement keep reading the Ellamaka public listener.
  *
  * @param ctx - the host cordis context (e.g. a CordisHub's ctx).
  * @param options - home, port, and optional prepare hook.
- * @returns a {@link DshHost} handle.
+ * @returns a {@link DshWebHost} handle.
  */
-export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
-  return mountProfile(ctx, {
+export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshWebHost> {
+  const virtualWebServer = new VirtualWebServer(ctx, { host: "127.0.0.1", port: opts.port })
+  const host = await mountProfile(ctx, {
     ...opts,
     profileName: WEB_PROFILE_NAME,
     requireWebServer: true,
+    virtualWebServer,
     extraPatches: [
       // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
       // the dsh CLI's composeProfile does — loadProfile alone does not inject
@@ -374,9 +398,32 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
       // which the bun dev runtime lacks. It is a code-execution capability, not
       // part of the web UI chat surface, so disable it to boot under bun.
       { id: "code-runtime", disabled: true },
+      // The official webserver binds a real socket; the virtual profile
+      // provides VirtualWebServer instead, so disable the real one.
+      { id: "webserver", disabled: true },
+      // The iframe serves under /dsh; a root-path URL would be a wrong entry
+      // point, so close web-runtime's URL printing and shell/prompt injection.
+      // Full config replacement preserves the connection-trust fields.
+      {
+        id: "web-runtime",
+        config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] },
+      },
       ...(opts.extraPatches ?? []),
     ],
   })
+  // Register the DSH iframe prefix adaptation as the last index tap: rewrite
+  // static asset URLs to /dsh and inject the browser fetch/WebSocket/
+  // EventSource adapter. frontend-static renders the index through
+  // applyIndexTaps, so this runs after the official taps.
+  virtualWebServer.tapIndex((html) => {
+    const rewritten = virtualWebServer.rewriteIndex(html)
+    return rewritten.replace("</head>", `${virtualWebServer.iframeAdapterScript()}</head>`)
+  })
+  return {
+    mountPath: DSH_MOUNT_PREFIX,
+    webServer: virtualWebServer,
+    dispose: host.dispose,
+  }
 }
 
 /**
@@ -413,13 +460,13 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
  * Convenience wrapper around {@link mountDshWeb} that owns the container:
  * dispose tears the whole context down.
  */
-export async function bootDshWeb(opts: DshHostOptions): Promise<DshHost> {
+export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
   const { Context } = await import("@deepseek-ai/cordis")
   const ctx = new Context()
   const host = await mountDshWeb(ctx, opts)
   return {
-    port: host.port,
-    url: host.url,
+    mountPath: host.mountPath,
+    webServer: host.webServer,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()

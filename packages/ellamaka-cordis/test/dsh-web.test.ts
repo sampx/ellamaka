@@ -2,41 +2,65 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
+import { createServer, type Server } from "node:http"
+import { once } from "node:events"
 import { Context } from "@deepseek-ai/cordis"
 import { bootDshWeb, mountDshWeb, mountDshTools } from "../src/dsh-web"
 
+/** Attach a VirtualWebServer to a raw server and return its base URL. */
+async function attachAndListen(webServer: { attach(server: Server): void }) {
+  const server = createServer()
+  webServer.attach(server)
+  server.listen(0, "127.0.0.1")
+  await once(server, "listening")
+  const address = server.address()
+  const port = typeof address === "object" && address ? address.port : 0
+  return { server, baseUrl: `http://127.0.0.1:${port}` }
+}
+
 /**
- * Mount the dsh web engine on a second loopback port (final scheme, PoC §7.11).
- * Uses a temp DSH_HOME so the test never touches the user's ~/.dsh.
+ * Mount the dsh web engine virtually: the official web profile registers its
+ * routes on a VirtualWebServer instead of a second listening socket (final
+ * scheme, DESIGN-dsh-poc §2.1). Uses a temp DSH_HOME so the test never touches
+ * the user's ~/.dsh.
  */
 describe("dsh web engine", () => {
-  test("mountDshWeb mounts onto an existing context and disposes cleanly", async () => {
+  test("mountDshWeb activates the web profile without creating a listening socket", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
     const ctx = new Context()
-    const host = await mountDshWeb(ctx, { home, port: 0 })
+    const host = await mountDshWeb(ctx, { home, port: 4097 })
 
     try {
-      // The dsh native webserver reports the OS-assigned port.
-      expect(host.port).toBeGreaterThan(0)
-      expect(host.url).toBe(`http://127.0.0.1:${host.port}`)
+      // The virtual host reports the Ellamaka public address and mount path.
+      expect(host.mountPath).toBe("/dsh")
+      expect(host.webServer.host).toBe("127.0.0.1")
+      expect(host.webServer.port).toBe(4097)
 
-      // The web UI is served (dsh index fallback + boot manifest).
-      const root = await fetch(host.url)
-      expect(root.status).toBe(200)
-      const html = await root.text()
-      expect(html).toContain("__DSH_BOOT__")
+      // The official web profile registered its routes on the VirtualWebServer.
+      const { server, baseUrl } = await attachAndListen(host.webServer)
+      try {
+        // Index dispatch: 200, __DSH_BOOT__ present, static URLs carry /dsh.
+        const root = await fetch(baseUrl + "/")
+        expect(root.status).toBe(200)
+        const html = await root.text()
+        expect(html).toContain("__DSH_BOOT__")
+        expect(html).toContain("/dsh/assets/")
+        expect(html).toContain("/dsh/favicon.svg")
+        expect(html).not.toContain("manifest.webmanifest")
 
-      // The /api RPC channel is alive.
-      const rpc = await fetch(`${host.url}/api/host.describe`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(rpc.status).toBe(200)
+        // The /api RPC channel is alive through the virtual server.
+        const rpc = await fetch(baseUrl + "/api/host.describe", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        })
+        expect(rpc.status).toBe(200)
+      } finally {
+        server.close()
+      }
 
       // The SHIPPED agent-preset root is assembled, so the default `standard`
-      // preset is discoverable (without it the roster is empty and sessions
-      // cannot start).
+      // preset is discoverable.
       const presets = await ctx.agentPresets.list()
       expect(presets.map((p) => p.id)).toContain("standard")
     } finally {
@@ -47,12 +71,17 @@ describe("dsh web engine", () => {
 
   test("bootDshWeb owns a fresh context and disposes it", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
-    const host = await bootDshWeb({ home, port: 0 })
+    const host = await bootDshWeb({ home, port: 4097 })
 
     try {
-      expect(host.port).toBeGreaterThan(0)
-      const root = await fetch(host.url)
-      expect(root.status).toBe(200)
+      expect(host.mountPath).toBe("/dsh")
+      const { server, baseUrl } = await attachAndListen(host.webServer)
+      try {
+        const root = await fetch(baseUrl + "/")
+        expect(root.status).toBe(200)
+      } finally {
+        server.close()
+      }
     } finally {
       await host.dispose()
     }
@@ -62,13 +91,18 @@ describe("dsh web engine", () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-host-"))
     const logFile = join(home, "dsh-plugins.log")
     const ctx = new Context()
-    const host = await mountDshWeb(ctx, { home, port: 0, logFile })
+    const host = await mountDshWeb(ctx, { home, port: 4097, logFile })
 
     try {
       // The dsh engine boots a webServer service; its startup logs should
       // land in the dedicated file via the registered Exporter.
-      const root = await fetch(host.url)
-      expect(root.status).toBe(200)
+      const { server, baseUrl } = await attachAndListen(host.webServer)
+      try {
+        const root = await fetch(baseUrl + "/")
+        expect(root.status).toBe(200)
+      } finally {
+        server.close()
+      }
       // Emit a log through the host context's logger — the Exporter routes it
       // to the dedicated file (dsh plugins log via the same ctx.logger path).
       ctx.logger("dsh-web-test").info("exporter probe")

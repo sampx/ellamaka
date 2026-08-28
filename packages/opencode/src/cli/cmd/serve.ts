@@ -50,11 +50,19 @@ export const ServeCommand = effectCmd({
       const dsh = yield* Effect.promise(() =>
         mountDshWeb(webHub.ctx, {
           home: join(Global.Path.wopalHome, "dsh"),
-          port: 4098,
+          port: server.port,
           logFile: join(Global.Path.log, "dsh-plugins.log"),
         }),
       )
-      console.log(`dsh web engine listening on ${dsh.url}`)
+      // Mount the VirtualWebServer under /dsh on the Ellamaka listener. The
+      // mount strips the prefix and passes the stripped URL to the virtual
+      // server's request/upgrade dispatch.
+      const unmountDsh = server.mountNodeRoute({
+        prefix: dsh.mountPath,
+        request: (req, res) => dsh.webServer.request(req, res),
+        upgrade: (req, socket, head) => dsh.webServer.upgrade(req, socket, head),
+      })
+      console.log(`dsh web engine mounted at ${dsh.mountPath}`)
       // Probe the dsh-plugins log Exporter so the bridge is observable even
       // when the dsh engine boots silently (no plugin logs yet).
       webHub.ctx.logger("dsh-web").info("dsh engine mounted")
@@ -77,6 +85,7 @@ export const ServeCommand = effectCmd({
       yield* Effect.never.pipe(
         Effect.ensuring(
           Effect.promise(async () => {
+            unmountDsh()
             await webHub.dispose()
             await toolsHub.dispose()
           }),
