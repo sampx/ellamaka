@@ -266,6 +266,109 @@ describe("WorkbenchChatTimeline", () => {
     host.remove()
   })
 
+  test("keeps a collapsed live tool DOM node mounted across status updates", async () => {
+    const u1 = userMessage("u-tool-stream")
+    const a1 = assistantMessage("a-tool-stream", "u-tool-stream", { time: { created: 2000 } })
+    const pending = toolPart("t-tool-stream", "a-tool-stream", {
+      status: "pending",
+      input: { command: "printf probe", description: "Stream probe output" },
+      raw: "",
+    })
+    const [data, setData] = createStore({
+      message: { ses_1: [u1, a1] as Message[] },
+      part: { ses_1: [] as Part[], "a-tool-stream": [pending] as Part[] } as Record<string, Part[]>,
+      session_status: { ses_1: { type: "busy" } as const },
+    })
+    mock.module("@/context/sync", () => ({
+      useSync: () => ({
+        data,
+        session: {
+          sync: async () => {},
+          history: { more: () => false, loading: () => false, loadMore: async () => {} },
+        },
+      }),
+    }))
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({ userMessages: [u1], virtualize: false, shellToolPartsExpanded: false })}
+      />
+    ))
+    const before = host.querySelector("[data-call-id='t-tool-stream-call']")
+    expect(before).not.toBeNull()
+    expect(before?.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")).toBe("false")
+
+    setData("part", "a-tool-stream", 0, (part) => {
+      if (part.type !== "tool") return part
+      return {
+        ...part,
+        state: {
+          status: "running" as const,
+          input: { command: "printf probe", description: "Stream probe output" },
+          metadata: { output: "probe-1\nprobe-2" },
+          time: { start: 1 },
+        },
+      }
+    })
+    await Promise.resolve()
+
+    const after = host.querySelector("[data-call-id='t-tool-stream-call']")
+    const sameNode = after === before
+    const status = after?.querySelector("[data-slot='chat-tool-status']")?.getAttribute("data-status")
+    const expanded = after?.querySelector("[data-slot='chat-tool-trigger']")?.getAttribute("aria-expanded")
+    host.remove()
+
+    expect(sameNode).toBe(true)
+    expect(status).toBe("running")
+    expect(expanded).toBe("false")
+  })
+
+  test("updates a pending read path from streamed raw input without replacing its info bar", async () => {
+    const u1 = userMessage("u-read-stream")
+    const a1 = assistantMessage("a-read-stream", "u-read-stream", { time: { created: 2000 } })
+    const pending = toolPart(
+      "t-read-stream",
+      "a-read-stream",
+      { status: "pending", input: {}, raw: '{"filePath":"/repo/src/first.ts"' },
+      "read",
+    )
+    const [data, setData] = createStore({
+      message: { ses_1: [u1, a1] as Message[] },
+      part: { ses_1: [] as Part[], "a-read-stream": [pending] as Part[] } as Record<string, Part[]>,
+      session_status: { ses_1: { type: "busy" } as const },
+    })
+    mock.module("@/context/sync", () => ({
+      useSync: () => ({
+        data,
+        session: {
+          sync: async () => {},
+          history: { more: () => false, loading: () => false, loadMore: async () => {} },
+        },
+      }),
+    }))
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({ userMessages: [u1], directory: "/repo", virtualize: false })}
+      />
+    ))
+    const before = host.querySelector("[data-call-id='t-read-stream-call']")
+    expect(before?.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("src/first.ts")
+
+    setData("part", "a-read-stream", 0, (part) => {
+      if (part.type !== "tool" || part.state.status !== "pending") return part
+      return { ...part, state: { ...part.state, raw: '{"filePath":"/repo/src/second.ts"' } }
+    })
+    await Promise.resolve()
+
+    const after = host.querySelector("[data-call-id='t-read-stream-call']")
+    const subtitle = after?.querySelector("[data-slot='chat-tool-subtitle']")
+    host.remove()
+
+    expect(after).toBe(before)
+    expect(subtitle?.textContent).toBe("src/second.ts")
+  })
+
   test("shows the assistant meta line only under the final narrative part", () => {
     const u1 = userMessage("u-meta")
     const a1 = assistantMessage("a-meta", "u-meta", { agent: "fae" })

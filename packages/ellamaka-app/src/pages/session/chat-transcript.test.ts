@@ -257,6 +257,45 @@ describe("projectTranscript", () => {
     expect(secondRow).not.toBe(firstRow)
   })
 
+  test("stabilizer refreshes a pending read row when its streamed raw input grows", () => {
+    const u1 = userMessage("u-read-stream")
+    const a1 = assistantMessage("a-read-stream", "u-read-stream", { time: { created: 2000 } })
+    const stabilize = createRowStabilizer()
+    const firstPart = {
+      id: "t-read-stream",
+      sessionID: "ses_1",
+      messageID: "a-read-stream",
+      type: "tool" as const,
+      callID: "c-read-stream",
+      tool: "read",
+      state: { status: "pending" as const, input: {}, raw: '{"filePath":"/repo/src/early.ts"' },
+    } satisfies Part
+    const secondPart = {
+      ...firstPart,
+      state: { ...firstPart.state, raw: '{"filePath":"/repo/src/early.ts","line_end":20}' },
+    } satisfies Part
+
+    const first = projectTranscript({
+      messages: [u1, a1],
+      getParts: partsByID([firstPart]),
+      status: { type: "busy" },
+      stabilize,
+    })
+    const second = projectTranscript({
+      messages: [u1, a1],
+      getParts: partsByID([secondPart]),
+      status: { type: "busy" },
+      stabilize,
+    })
+    const firstRow = first.partition.direct.find((row) => row.type === "assistant")
+    const secondRow = second.partition.direct.find((row) => row.type === "assistant")
+
+    expect(firstRow).toBeDefined()
+    expect(secondRow).toBeDefined()
+    expect(secondRow).not.toBe(firstRow)
+    expect((secondRow as Extract<TranscriptRow, { type: "assistant" }>).parts[0]).toBe(secondPart)
+  })
+
   test("emits a diff row from the user message summary", () => {
     const diffs: SnapshotFileDiff[] = [{ file: "a.ts", additions: 2, deletions: 1, status: "modified" }]
     const u1 = userMessage("u1", { summary: { diffs } })
@@ -329,6 +368,19 @@ describe("projectTranscript", () => {
 
     expect(partition.direct.map((r) => r.type)).toEqual(["user", "assistant"])
     expect(partition.virtual).toHaveLength(0)
+  })
+
+  test("keeps a submitted busy turn direct before the assistant message arrives", () => {
+    const u1 = userMessage("u-awaiting-assistant")
+
+    const beforeAssistant = projectTranscript({
+      messages: [u1],
+      getParts: partsByID([textPart("p-awaiting-assistant", "u-awaiting-assistant", "run tools")]),
+      status: { type: "busy" },
+    })
+
+    expect(beforeAssistant.partition.virtual).toHaveLength(0)
+    expect(beforeAssistant.partition.direct.map((row) => row.key)).toEqual(["user:u-awaiting-assistant"])
   })
 
   test("moves completed turns into virtual history", () => {

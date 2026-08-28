@@ -392,18 +392,43 @@ describe("ReasoningBlock", () => {
     remountedHost.remove()
   })
 
-  test("renders the thinking text as a natural-height block", () => {
+  test("follows streamed reasoning inside its capped scroll region until the user scrolls away", async () => {
     const running = assistantMessage("a-natural", "u-natural", { time: { created: 2000 } })
     const [part, setPart] = createStore(reasoningPart("r-natural", "a-natural", "line 1") as Extract<Part, { type: "reasoning" }>)
     const host = mount(() => <ReasoningBlock part={part} message={running} />)
     const content = host.querySelector("[data-slot='chat-reasoning-content']") as HTMLDivElement
     expect(content).not.toBeNull()
-    // Streaming preview is no longer its own nested scroll region — it grows
-    // naturally with the content and the outer chat auto-follow owns scrolling.
-    expect(content.hasAttribute("data-scrollable")).toBe(false)
-    expect(content.textContent).toContain("line 1")
+    let scrollTop = 0
+    let scrollHeight = 400
+    Object.defineProperties(content, {
+      clientHeight: { configurable: true, get: () => 100 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value
+        },
+      },
+    })
+
     setPart("text", "line 1\nline 2\nline 3")
-    expect(content.textContent).toContain("line 3")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(400)
+
+    scrollTop = 120
+    content.dispatchEvent(new Event("scroll"))
+    scrollHeight = 600
+    setPart("text", "line 1\nline 2\nline 3\nline 4")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(120)
+
+    scrollTop = 500
+    content.dispatchEvent(new Event("scroll"))
+    scrollHeight = 800
+    setPart("text", "line 1\nline 2\nline 3\nline 4\nline 5")
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
+    expect(scrollTop).toBe(800)
     host.remove()
   })
 })
@@ -558,6 +583,21 @@ describe("ContextToolBlock", () => {
     expect(subtitle).not.toBeNull()
     expect(subtitle.textContent).toBe("deep/nested/big.ts")
     expect(subtitle.getAttribute("title")).toBe("/repo/deep/nested/big.ts")
+    host.remove()
+  })
+
+  test("shows a read path as soon as its streamed raw input closes the filePath string", () => {
+    const a = assistantMessage("a-read-stream", "u1", { time: { created: 2000 } })
+    const part = toolPart("t-read-stream", "a-read-stream", "read", "c-read-stream", {
+      status: "pending",
+      input: {},
+      raw: '{"filePath":"/repo/src/early.ts","line',
+    })
+    const host = mount(() => <ContextToolBlock part={part} message={a} directory="/repo" />)
+    const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
+    expect(subtitle).not.toBeNull()
+    expect(subtitle.textContent).toBe("src/early.ts")
+    expect(subtitle.getAttribute("title")).toBe("/repo/src/early.ts")
     host.remove()
   })
 

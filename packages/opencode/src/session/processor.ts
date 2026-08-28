@@ -354,10 +354,19 @@ export const layer = Layer.effect(
             yield* ensureToolCall(value)
             return
 
-          case "tool-input-delta":
-            // AI SDK emits a final `tool-call` with the parsed `input`; accumulating
-            // delta fragments into `state.raw` is redundant work for no current consumer.
+          case "tool-input-delta": {
+            const toolCall = yield* ensureToolCall(value)
+            // The read info bar can display `filePath` before the SDK emits the
+            // final parsed tool-call. Retain just this lightweight input stream;
+            // collecting raw deltas for every tool would reintroduce needless
+            // high-frequency part updates for collapsed tool output.
+            if (toolCall.part.tool !== "read" || value.text.length === 0) return
+            yield* updateToolCall(value.id, (part) => {
+              if (part.state.status !== "pending") return part
+              return { ...part, state: { ...part.state, raw: part.state.raw + value.text } }
+            })
             return
+          }
 
           case "tool-input-end": {
             const toolCall = yield* ensureToolCall(value)

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -285,11 +285,38 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
   const running = () => typeof props.message.time.completed !== "number"
   const stored = () => chatExpansionState.get(props.part.sessionID, "reasoning", props.part.id)
   const [selected, setSelected] = createSignal(stored())
+  const [followStream, setFollowStream] = createSignal(true)
   const open = () => selected() ?? (props.defaultOpen ?? running())
+  const reasoningText = () => (props.part.type === "reasoning" ? props.part.text : "")
+  let content: HTMLDivElement | undefined
+  let frame: number | undefined
   const setOpen = (next: boolean) => {
     setSelected(next)
     chatExpansionState.set(props.part.sessionID, "reasoning", props.part.id, next)
   }
+
+  const updateFollowStream = (event: Event) => {
+    const element = event.currentTarget as HTMLDivElement
+    setFollowStream(element.scrollHeight - element.clientHeight - element.scrollTop <= 2)
+  }
+
+  // Reasoning is capped to a scrollable region. Keep that nested viewport at
+  // the newest tokens while it is streaming, but stop as soon as the user
+  // scrolls away so inspecting an earlier thought is never overridden.
+  createEffect(() => {
+    reasoningText()
+    if (!running() || !open() || !followStream() || !content) return
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    const element = content
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      if (!running() || !open() || !followStream() || content !== element) return
+      element.scrollTop = element.scrollHeight
+    })
+  })
+  onCleanup(() => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+  })
 
   // Always a bounded trailing window of the latest reasoning text: the newest
   // tokens are what the user wants to see, and they stay pinned at the tail.
@@ -317,7 +344,11 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
             </div>
           </Show>
         </Collapsible.Trigger>
-        <Collapsible.Content data-slot="chat-reasoning-content">
+        <Collapsible.Content
+          data-slot="chat-reasoning-content"
+          ref={content}
+          on:scroll={updateFollowStream}
+        >
           <div data-slot="chat-reasoning-text">{props.part.text}</div>
         </Collapsible.Content>
       </Collapsible>

@@ -99,6 +99,22 @@ function isToolRunning(part: ToolPart) {
   return part.state.status === "running" || part.state.status === "pending"
 }
 
+/**
+ * Reads a completed JSON string value from an otherwise partial tool-input
+ * payload. `filePath` is enough for the compact read row, even when later
+ * arguments are still streaming and the full object cannot be JSON-parsed.
+ */
+function filePathFromRawToolInput(raw: string): string | undefined {
+  const match = /"filePath"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(raw)
+  if (!match) return
+  try {
+    const value = JSON.parse(`"${match[1]}"`)
+    return typeof value === "string" ? value : undefined
+  } catch {
+    return
+  }
+}
+
 function useToolOpen(
   part: ToolPart,
   defaultOpen = () => isToolRunning(part) || part.state.status === "error",
@@ -133,12 +149,17 @@ export function ContextToolBlock(props: {
   directory?: string
 }) {
   const input = () => props.part.state.input
+  const rawInput = () => (props.part.state.status === "pending" ? props.part.state.raw : "")
+  const readPath = createMemo(() => {
+    const filePath = input().filePath
+    if (typeof filePath === "string") return filePath
+    return filePathFromRawToolInput(rawInput())
+  })
   const subtitle = createMemo(() => {
     const i = input()
-    const filePath = typeof i.filePath === "string" ? i.filePath : undefined
     const pattern = typeof i.pattern === "string" ? i.pattern : undefined
     const path = typeof i.path === "string" ? i.path : undefined
-    return filePath ?? pattern ?? path
+    return readPath() ?? pattern ?? path
   })
   const output = createMemo(() => {
     const s = props.part.state
@@ -147,9 +168,11 @@ export function ContextToolBlock(props: {
   })
 
   if (props.part.tool === "read") {
-    const i = input() as Record<string, unknown>
-    const rawPath = typeof i.filePath === "string" ? i.filePath : undefined
-    const displayPath = rawPath ? relativizeProjectPath(rawPath, props.directory) : subtitle()
+    const rawPath = () => readPath()
+    const displayPath = () => {
+      const path = rawPath()
+      return path ? relativizeProjectPath(path, props.directory) : subtitle()
+    }
     return (
       <div data-component="chat-context-tool" data-tool="read" data-call-id={props.part.callID}>
         <div data-slot="chat-context-info-bar">
@@ -158,7 +181,7 @@ export function ContextToolBlock(props: {
           </span>
           <span data-slot="chat-tool-title">read</span>
           <Show when={subtitle()}>
-            <span data-slot="chat-tool-subtitle" title={rawPath}>{displayPath}</span>
+            <span data-slot="chat-tool-subtitle" title={rawPath()}>{displayPath()}</span>
           </Show>
           <span data-slot="chat-tool-status" data-status={props.part.state.status}>
             {toolStatusLabel(props.part.state.status)}
