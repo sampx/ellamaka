@@ -1480,7 +1480,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   gap: 2px;
   padding: 12px 0;
   overflow: hidden;
-  cursor: pointer;
+  cursor: default;
   opacity: 0;
   z-index: 2;
   transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1532,11 +1532,56 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   background: var(--icon-strong-base);
 }
 
-/* The popover's containing block is the timeline container (not the 20px
-   rail), so it overlays the message content without reflowing the layout. */
+/* The right edge is the explicit entry point for the full conversation
+   directory; the left rail remains dedicated to turn previews and jumps. */
+[data-component="chat-prompt-directory-trigger"] {
+  --chat-prompt-directory-trigger-width: 16px;
+
+  position: absolute;
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  width: var(--chat-prompt-directory-trigger-width);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-component="chat-prompt-directory-trigger"]::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 6px);
+  right: 2px;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--icon-base);
+  box-shadow: 0 5px var(--icon-base), 0 10px var(--icon-base);
+  transition: width 200ms ease, background-color 200ms ease;
+}
+
+[data-component="chat-prompt-directory-trigger"]:hover,
+[data-component="chat-prompt-directory-trigger"]:focus-visible,
+[data-component="chat-prompt-directory-trigger"][data-open="true"] {
+  opacity: 1;
+}
+
+[data-component="chat-prompt-directory-trigger"]:hover::after,
+[data-component="chat-prompt-directory-trigger"]:focus-visible::after {
+  width: 12px;
+  background: var(--icon-strong-base);
+  box-shadow: 0 5px var(--icon-strong-base), 0 10px var(--icon-strong-base);
+}
+
+/* The popover opens from the right edge of the timeline and overlays message
+   content without reflowing the layout. */
 [data-component="chat-prompt-popover"] {
   position: absolute;
-  left: 32px;
+  right: 32px;
   top: 12px;
   width: calc(100% - 44px);
   max-width: 360px;

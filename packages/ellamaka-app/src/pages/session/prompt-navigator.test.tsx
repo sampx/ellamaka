@@ -62,6 +62,11 @@ function baseProps(overrides: Partial<PromptNavigatorProps> = {}): PromptNavigat
   }
 }
 
+function openDirectory(host: HTMLElement) {
+  const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+  trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+}
+
 describe("PromptNavigator", () => {
   test("renders a tick rail with one tick per loaded user message", () => {
     const u1 = userMessage("u1", "hello")
@@ -106,8 +111,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
@@ -115,6 +119,24 @@ describe("PromptNavigator", () => {
     expect(host.textContent).toContain("hello")
     expect(host.textContent).toContain("reply with code")
     expect(host.textContent).not.toContain("**reply**")
+    host.remove()
+  })
+
+  test("keeps the left rail for preview and opens the directory from the right edge", async () => {
+    const u1 = userMessage("u1", "hello")
+    const host = mount(() => <PromptNavigator {...baseProps({ userMessages: [u1] })} />)
+
+    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
+    const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
+    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await tick()
+    expect(popover.getAttribute("data-open")).toBe("false")
+
+    const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+    expect(trigger).not.toBeNull()
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await tick()
+    expect(popover.getAttribute("data-open")).toBe("true")
     host.remove()
   })
 
@@ -133,8 +155,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     expect(loaded).toBeGreaterThan(0)
@@ -155,8 +176,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
     const item = host.querySelector("[data-slot='chat-prompt-item']") as HTMLElement
     item.dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -181,8 +201,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
@@ -209,8 +228,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     // loadOlder is useSessionHistoryLoader.loadAndReveal, which owns the serial
@@ -235,8 +253,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const next = host.querySelector("[data-slot='chat-prompt-next']") as HTMLElement
@@ -259,8 +276,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const active = host.querySelector("[data-slot='chat-prompt-item'][data-active='true']") as HTMLElement
@@ -269,7 +285,7 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
-  test("Escape closes the popover and returns focus to the rail", async () => {
+  test("Escape closes the popover and returns focus to the right directory trigger", async () => {
     const u1 = userMessage("u1", "hello")
     const host = mount(() => (
       <PromptNavigator
@@ -279,8 +295,8 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+    openDirectory(host)
     await tick()
 
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
@@ -288,7 +304,7 @@ describe("PromptNavigator", () => {
     await tick()
 
     expect(popover.getAttribute("data-open")).toBe("false")
-    expect(document.activeElement).toBe(rail)
+    expect(document.activeElement).toBe(trigger)
     host.remove()
   })
 
@@ -408,8 +424,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const tickEl = host.querySelector("[data-slot='chat-prompt-tick']") as HTMLElement
@@ -421,7 +436,7 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
-  test("keeps the click-opened popover open after the pointer leaves the rail", async () => {
+  test("keeps the click-opened popover open after the pointer leaves the right trigger", async () => {
     const u1 = userMessage("u1", "hello")
     const host = mount(() => (
       <PromptNavigator
@@ -431,12 +446,12 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
+    const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
-    rail.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }))
+    trigger.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }))
     popover.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }))
     await wait(160)
 
@@ -454,8 +469,7 @@ describe("PromptNavigator", () => {
       />
     ))
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    openDirectory(host)
     await tick()
 
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
@@ -485,18 +499,23 @@ describe("PromptNavigator", () => {
 
     const navigator = host.querySelector("[data-component='chat-prompt-navigator']") as HTMLElement
     const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
+    const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
     const popover = host.querySelector("[data-component='chat-prompt-popover']") as HTMLElement
     const timelineStyle = getComputedStyle(timeline)
     const navigatorStyle = getComputedStyle(navigator)
     const railStyle = getComputedStyle(rail)
+    const triggerStyle = getComputedStyle(trigger)
     const popoverStyle = getComputedStyle(popover)
 
     expect(timelineStyle.position).toBe("relative")
     expect(timelineStyle.width).toBe("300px")
     expect(navigatorStyle.position).toBe("static")
     expect(railStyle.position).toBe("absolute")
+    expect(triggerStyle.position).toBe("absolute")
+    expect(triggerStyle.right).toBe("8px")
+    expect(triggerStyle.cursor).toBe("pointer")
     expect(popoverStyle.position).toBe("absolute")
-    expect(popoverStyle.left).toBe("32px")
+    expect(popoverStyle.right).toBe("32px")
     expect(popoverStyle.width).toBe("calc(100% - 44px)")
     expect(popoverStyle.maxWidth).toBe("360px")
     host.remove()

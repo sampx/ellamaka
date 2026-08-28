@@ -31,7 +31,7 @@ export function PromptNavigator(props: PromptNavigatorProps) {
   const [focusIndex, setFocusIndex] = createSignal(0)
   let navigatorRef: HTMLDivElement | undefined
   let popoverRef: HTMLDivElement | undefined
-  let railRef: HTMLDivElement | undefined
+  let directoryTriggerRef: HTMLButtonElement | undefined
 
   const getParts = (id: string) => props.getParts?.(id) ?? []
   const assistantFor = (id: string) => props.assistantByParent?.[id] ?? []
@@ -77,10 +77,11 @@ export function PromptNavigator(props: PromptNavigatorProps) {
   }
 
   const jump = (id: string) => {
+    const directoryWasOpen = open()
     props.onJump(id)
     setOpen(false)
     setPreview(undefined)
-    railRef?.focus()
+    if (directoryWasOpen) directoryTriggerRef?.focus()
   }
 
   const [preview, setPreview] = createSignal<{ id: string; top: number }>()
@@ -132,7 +133,7 @@ export function PromptNavigator(props: PromptNavigatorProps) {
       case "Escape":
         event.preventDefault()
         setOpen(false)
-        railRef?.focus()
+        directoryTriggerRef?.focus()
         break
     }
   }
@@ -153,14 +154,7 @@ export function PromptNavigator(props: PromptNavigatorProps) {
     >
       <div
         data-component="chat-prompt-rail"
-        ref={(el) => {
-          railRef = el
-        }}
         data-open={open()}
-        on:click={openDirectory}
-        role="button"
-        aria-label="提示词导航"
-        tabindex={0}
       >
         <For each={entries()}>
           {(entry) => (
@@ -178,6 +172,16 @@ export function PromptNavigator(props: PromptNavigatorProps) {
           )}
         </For>
       </div>
+      <button
+        type="button"
+        data-component="chat-prompt-directory-trigger"
+        ref={(el) => {
+          directoryTriggerRef = el
+        }}
+        data-open={open()}
+        on:click={openDirectory}
+        aria-label="打开提示词导航"
+      />
       <div
         data-component="chat-prompt-popover"
         ref={(el) => {
