@@ -1,4 +1,29 @@
 import { describe, expect, test } from "bun:test"
+import { activateSpaceTab } from "./space-tab-activation"
+
+describe("activateSpaceTab", () => {
+  test("exits DSH view and activates the tab when DSH is visible", () => {
+    const calls: string[] = []
+    const wb = {
+      dshVisible: true,
+      setDshVisible: (v: boolean) => calls.push(`dsh:${v}`),
+      setActive: (path: string) => calls.push(`active:${path}`),
+    }
+    activateSpaceTab(wb as never, "/space-a")
+    expect(calls).toEqual(["dsh:false", "active:/space-a"])
+  })
+
+  test("activates the tab without touching DSH state when DSH is hidden", () => {
+    const calls: string[] = []
+    const wb = {
+      dshVisible: false,
+      setDshVisible: (v: boolean) => calls.push(`dsh:${v}`),
+      setActive: (path: string) => calls.push(`active:${path}`),
+    }
+    activateSpaceTab(wb as never, "/space-b")
+    expect(calls).toEqual(["active:/space-b"])
+  })
+})
 
 describe("Space Tab Activity Calculation", () => {
   test("returns true when any bound session in the space is working via sync or serverSync", () => {

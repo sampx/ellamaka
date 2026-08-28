@@ -15,6 +15,7 @@ import { pathKey } from "@/utils/path-key"
 import { SpaceIcon } from "./session-tree-space"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { createFlyoutController } from "./sidebar-flyout"
+import { activateSpaceTab } from "./space-tab-activation"
 
 function PinIcon(props: { class?: string }) {
   return (
@@ -243,11 +244,11 @@ export function WorkbenchTitlebar() {
                     "text-v2-text-text-muted hover:text-v2-text-text-base font-medium": !isActive(),
                   }}
                   style={{ "-webkit-app-region": "no-drag" }}
-                  onClick={() => wb.setActive(tab.path)}
+                  onClick={() => activateSpaceTab(wb, tab.path)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault()
-                      wb.setActive(tab.path)
+                      activateSpaceTab(wb, tab.path)
                     }
                   }}
                   onContextMenu={(e: MouseEvent) => {
@@ -302,6 +303,10 @@ export function WorkbenchTitlebar() {
               class="h-7 px-2.5 text-11-medium text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
+                // 从 DSH 全屏视图切回空间视图：DSH 视图独占 SpaceRail，点空间菜单应先退出
+                if (wb.dshVisible) {
+                  wb.setDshVisible(false)
+                }
                 if (showSpaceMenu()) {
                   spaceMenuFlyout.close()
                 } else {
