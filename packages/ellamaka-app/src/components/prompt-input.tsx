@@ -1541,7 +1541,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     contenteditable="true"
                     autocapitalize={store.mode === "normal" ? "sentences" : "off"}
                     autocorrect={store.mode === "normal" ? "on" : "off"}
-                    spellcheck={store.mode === "normal"}
+                    spellcheck={false}
                     inputMode="text"
                     // @ts-expect-error
                     autocomplete="off"
@@ -1710,7 +1710,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   contenteditable="true"
                   autocapitalize={store.mode === "normal" ? "sentences" : "off"}
                   autocorrect={store.mode === "normal" ? "on" : "off"}
-                  spellcheck={store.mode === "normal"}
+                  spellcheck={false}
                   inputMode="text"
                   // @ts-expect-error
                   autocomplete="off"
