@@ -91,6 +91,31 @@ describe("dsh runtime isolation", () => {
     }
   }, 30_000)
 
+  test("omitted home falls back to $WOPAL_HOME/dsh for state and profile paths (W-01)", async () => {
+    // When `home` is omitted, mountProfile must use the standard $WOPAL_HOME/dsh
+    // consistently across stateDir AND the profile pathing (healProfilesModule
+    // fallback / loadProfile), never ~/.dsh.
+    const prevWopalHome = process.env.WOPAL_HOME
+    const wopalHome = mkdtempSync(join(tmpdir(), "dsh-iso-omitted-home-"))
+    process.env.WOPAL_HOME = wopalHome
+    const ctx = new Context()
+    let host: { dispose(): Promise<void> }
+    try {
+      host = await mountDshWeb(ctx, { port: 4097, disableCodeRuntime: true })
+      const injected = ctx.get("dshHomePath") as ((...s: string[]) => string) | undefined
+      expect(injected).toBeDefined()
+      expect(injected!("sessions")).toBe(join(wopalHome, "dsh", "state", "sessions"))
+
+      // Profiles were seeded under the resolved home, not ~/.dsh.
+      expect(existsSync(join(wopalHome, "dsh", "profiles", "web", "package.json"))).toBe(true)
+    } finally {
+      if (prevWopalHome === undefined) delete process.env.WOPAL_HOME
+      else process.env.WOPAL_HOME = prevWopalHome
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
   test("llm-deepseek is disabled so its ~/.dsh writes cannot happen (B-02)", async () => {
     // The llm-deepseek plugin resolves the anonymous-user-id and the upload
     // index via `resolveDshHome()` with no config seam, falling back to

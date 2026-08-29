@@ -328,14 +328,14 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // Link the profiles/node_modules fallback in the (possibly temp) home so the
   // profile's plugin rows resolve against this installation's dependency
   // closure (matches how the dsh launcher boots a profile).
-  healProfilesModuleFallback(installAnchor, home)
+  healProfilesModuleFallback(installAnchor, resolvedHome)
 
   // The tool-container profile seeds its default patch layer (disable the
   // agent-loop-only plugins) on first mount. The file is user-owned: once the
   // user edits it (anything beyond initProfile's empty template), it is never
   // overwritten.
   if (profileName === TOOLS_PROFILE_NAME) {
-    const dir = resolveProfileDir(profileName, home)
+    const dir = resolveProfileDir(profileName, resolvedHome)
     initProfile(dir, DEFAULT_PROFILE_BUNDLES)
     const patchPath = join(dir, PROFILE_PATCH_FILENAME)
     try {
@@ -354,7 +354,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
 
   // Load the profile (bundle layers + user patch layer).
-  const profile = loadProfile("ellamaka", profileName, installAnchor, home)
+  const profile = loadProfile("ellamaka", profileName, installAnchor, resolvedHome)
   // Compose the effective patch list: bundle layers + profile layer + extras.
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
