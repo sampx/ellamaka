@@ -1,39 +1,53 @@
 import { describe, expect, test } from "bun:test"
-import { shouldResumeChatOnEnd } from "./panel-chat-resume-scroll"
+import { chatTranscriptNavigation, shouldResumeChatOnEnd } from "./panel-chat-resume-scroll"
 
 function dispatchKeydown(target: HTMLElement, init: KeyboardEventInit = {}) {
-  let result = false
+  let result: ReturnType<typeof chatTranscriptNavigation>
   target.addEventListener("keydown", (event) => {
-    result = shouldResumeChatOnEnd(event)
+    result = chatTranscriptNavigation(event)
   }, { once: true })
   target.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true, ...init }))
   return result
 }
 
-describe("shouldResumeChatOnEnd", () => {
-  test("handles an unmodified End key pressed in the transcript", () => {
-    expect(dispatchKeydown(document.createElement("div"))).toBe(true)
+describe("chatTranscriptNavigation", () => {
+  test("maps unmodified transcript navigation keys", () => {
+    const target = document.createElement("div")
+    expect(dispatchKeydown(target)).toBe("latest")
+    expect(dispatchKeydown(target, { key: "Home" })).toBe("first")
+    expect(dispatchKeydown(target, { key: "PageUp" })).toBe("previous")
+    expect(dispatchKeydown(target, { key: "PageDown" })).toBe("next")
   })
 
-  test("preserves End for editable and interactive controls", () => {
-    expect(dispatchKeydown(document.createElement("textarea"))).toBe(false)
-    expect(dispatchKeydown(document.createElement("button"))).toBe(false)
+  test("preserves navigation keys for editable and interactive controls", () => {
+    expect(dispatchKeydown(document.createElement("textarea"))).toBeUndefined()
+    expect(dispatchKeydown(document.createElement("button"))).toBeUndefined()
   })
 
-  test("uses End from an empty chat prompt but preserves a drafted prompt", () => {
+  test("uses navigation from an empty chat prompt but preserves a drafted prompt", () => {
     const prompt = document.createElement("div")
     prompt.dataset.component = "prompt-input"
     prompt.contentEditable = "true"
-    expect(dispatchKeydown(prompt)).toBe(true)
+    expect(dispatchKeydown(prompt)).toBe("latest")
 
     prompt.textContent = "draft"
-    expect(dispatchKeydown(prompt)).toBe(false)
+    expect(dispatchKeydown(prompt)).toBeUndefined()
   })
 
   test("preserves selection and platform shortcut variants", () => {
-    expect(dispatchKeydown(document.createElement("div"), { shiftKey: true })).toBe(false)
-    expect(dispatchKeydown(document.createElement("div"), { ctrlKey: true })).toBe(false)
-    expect(dispatchKeydown(document.createElement("div"), { metaKey: true })).toBe(false)
-    expect(dispatchKeydown(document.createElement("div"), { altKey: true })).toBe(false)
+    expect(dispatchKeydown(document.createElement("div"), { shiftKey: true })).toBeUndefined()
+    expect(dispatchKeydown(document.createElement("div"), { ctrlKey: true })).toBeUndefined()
+    expect(dispatchKeydown(document.createElement("div"), { metaKey: true })).toBeUndefined()
+    expect(dispatchKeydown(document.createElement("div"), { altKey: true })).toBeUndefined()
+  })
+
+  test("keeps the End helper aligned with the generic navigation guard", () => {
+    const target = document.createElement("div")
+    let result = false
+    target.addEventListener("keydown", (event) => {
+      result = shouldResumeChatOnEnd(event)
+    }, { once: true })
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }))
+    expect(result).toBe(true)
   })
 })

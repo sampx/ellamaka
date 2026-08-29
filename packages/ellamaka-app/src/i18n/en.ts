@@ -567,6 +567,7 @@ export const dict = {
   "session.messages.loadingEarlier": "Loading earlier messages...",
   "session.messages.loadEarlier": "Load earlier messages",
   "session.messages.loading": "Loading messages...",
+  "session.messages.jumpToFirst": "Jump to first user message",
   "session.messages.jumpToLatest": "Jump to latest",
 
   "session.context.addToContext": "Add {{selection}} to context",

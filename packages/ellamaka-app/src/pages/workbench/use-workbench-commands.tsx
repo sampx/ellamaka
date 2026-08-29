@@ -66,7 +66,6 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.session.undo"),
       description: language.t("command.session.undo.description"),
       slash: "undo",
-      keybind: "mod+z",
       ...proxyAction("session.undo"),
     }),
     sessionCommand({
@@ -74,7 +73,6 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.session.redo"),
       description: language.t("command.session.redo.description"),
       slash: "redo",
-      keybind: "mod+shift+z",
       ...proxyAction("session.redo"),
     }),
     sessionCommand({
@@ -122,7 +120,6 @@ export const useWorkbenchCommands = () => {
     fileCommand({
       id: "tab.close",
       title: language.t("command.tab.close"),
-      keybind: "mod+w",
       onSelect: () => {
         if (actions.canExecuteActivePanelAction("tab.close")) {
           actions.executeActivePanelAction("tab.close")
@@ -183,7 +180,6 @@ export const useWorkbenchCommands = () => {
       id: "context.addSelection",
       title: language.t("command.context.addSelection"),
       description: language.t("command.context.addSelection.description"),
-      keybind: "mod+shift+l",
       ...proxyAction("context.addSelection"),
     }),
   ]
@@ -198,7 +194,7 @@ export const useWorkbenchCommands = () => {
     viewCommand({
       id: "settings.open",
       title: language.t("command.settings.open"),
-      keybind: "mod+,",
+      keybind: "ctrl+comma",
       onSelect: () => {
         void import("@/components/dialog-settings").then((x) => dialog.show(() => <x.DialogSettings />))
       },
@@ -206,7 +202,6 @@ export const useWorkbenchCommands = () => {
     viewCommand({
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),
-      keybind: "ctrl+`",
       slash: "terminal",
       ...proxyAction("terminal.toggle"),
     }),
@@ -228,7 +223,6 @@ export const useWorkbenchCommands = () => {
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
-      keybind: "ctrl+l",
       ...proxyAction("input.focus"),
     }),
   ]
@@ -238,7 +232,6 @@ export const useWorkbenchCommands = () => {
       id: "terminal.new",
       title: language.t("command.terminal.new"),
       description: language.t("command.terminal.new.description"),
-      keybind: "ctrl+alt+t",
       ...proxyAction("terminal.new"),
     }),
   ]
@@ -248,14 +241,12 @@ export const useWorkbenchCommands = () => {
       id: "message.previous",
       title: language.t("command.message.previous"),
       description: language.t("command.message.previous.description"),
-      keybind: "mod+alt+[",
       ...proxyAction("message.previous"),
     }),
     sessionCommand({
       id: "message.next",
       title: language.t("command.message.next"),
       description: language.t("command.message.next.description"),
-      keybind: "mod+alt+]",
       ...proxyAction("message.next"),
     }),
   ]
@@ -273,7 +264,6 @@ export const useWorkbenchCommands = () => {
       id: "model.variant.cycle",
       title: language.t("command.model.variant.cycle"),
       description: language.t("command.model.variant.cycle.description"),
-      keybind: "shift+mod+d",
       ...proxyAction("model.variant.cycle"),
     }),
   ]
@@ -283,7 +273,6 @@ export const useWorkbenchCommands = () => {
       id: "mcp.toggle",
       title: language.t("command.mcp.toggle"),
       description: language.t("command.mcp.toggle.description"),
-      keybind: "mod+;",
       slash: "mcp",
       ...proxyAction("mcp.toggle"),
     }),
@@ -294,7 +283,6 @@ export const useWorkbenchCommands = () => {
       id: "agent.cycle",
       title: language.t("command.agent.cycle"),
       description: language.t("command.agent.cycle.description"),
-      keybind: "mod+.",
       slash: "agent",
       ...proxyAction("agent.cycle"),
     }),
@@ -302,7 +290,6 @@ export const useWorkbenchCommands = () => {
       id: "agent.cycle.reverse",
       title: language.t("command.agent.cycle.reverse"),
       description: language.t("command.agent.cycle.reverse.description"),
-      keybind: "shift+mod+.",
       ...proxyAction("agent.cycle.reverse"),
     }),
   ]
@@ -311,7 +298,6 @@ export const useWorkbenchCommands = () => {
     permissionsCommand({
       id: "permissions.autoaccept",
       title: language.t("command.permissions.autoaccept.enable"),
-      keybind: "mod+shift+a",
       ...proxyAction("permissions.autoaccept"),
     }),
   ]

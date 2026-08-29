@@ -41,6 +41,9 @@ export type MessageTimelineScrollPort = {
   jump: boolean
 }
 
+export type UserMessageNavigation = "first" | "previous" | "next"
+export type UserMessageNavigator = (direction: UserMessageNavigation) => boolean
+
 export type WorkbenchChatTimelineProps = {
   sessionID: string
   userMessages: UserMessage[]
@@ -64,6 +67,8 @@ export type WorkbenchChatTimelineProps = {
   onVirtualizer?: (handle: VirtualizerHandle | undefined) => void
   /** Test seam: override the active turn derivation (e.g. for scroll tests). */
   activeUserMessageIDOverride?: string
+  /** Exposes the timeline-aware user-message navigator to the owning panel. */
+  onUserMessageNavigator?: (navigator: UserMessageNavigator | undefined) => void
   /** Scroll port callbacks (mirrors the official MessageTimeline contract). */
   setScrollRef?: (el: HTMLDivElement | undefined) => void
   setContentRef?: (el: HTMLDivElement) => void
@@ -621,6 +626,62 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     const anchor = document.querySelector(`[data-turn-id="${userMessageID}"]`)
     anchor?.scrollIntoView({ block: "start" })
   }
+
+  let loadingFirstUserMessage = false
+  const jumpToFirstUserMessage = async () => {
+    if (loadingFirstUserMessage) return
+    loadingFirstUserMessage = true
+    try {
+      let firstID = visibleUserMessages()[0]?.id
+      // History is paged in from newest to oldest. Home has a global meaning,
+      // so keep loading until there is no earlier page before making the final
+      // jump instead of stopping at the first currently mounted row.
+      try {
+        while (props.historyMore) {
+          await props.loadOlder()
+          const nextID = visibleUserMessages()[0]?.id
+          if (!nextID || nextID === firstID) break
+          firstID = nextID
+        }
+      } catch {
+        // Preserve the best available target if history retrieval fails.
+      }
+      if (firstID) jumpToPrompt(firstID)
+    } finally {
+      loadingFirstUserMessage = false
+    }
+  }
+
+  const navigateUserMessage: UserMessageNavigator = (direction) => {
+    const messages = visibleUserMessages()
+    if (messages.length === 0) return false
+
+    if (direction === "first" && props.historyMore) {
+      void jumpToFirstUserMessage()
+      return true
+    }
+
+    const currentIndex = messages.findIndex((message) => message.id === activeUserMessageID())
+    const targetIndex =
+      direction === "first"
+        ? 0
+        : direction === "previous"
+          ? currentIndex - 1
+          : currentIndex + 1
+
+    if (targetIndex < 0 || targetIndex >= messages.length) return false
+    const target = messages[targetIndex]
+    if (!target) return false
+    jumpToPrompt(target.id)
+    return true
+  }
+
+  createEffect(() => {
+    const register = props.onUserMessageNavigator
+    if (!register) return
+    register(navigateUserMessage)
+    onCleanup(() => register(undefined))
+  })
 
   const syncChild = (childID: string) => {
     void sync.session.sync(childID)

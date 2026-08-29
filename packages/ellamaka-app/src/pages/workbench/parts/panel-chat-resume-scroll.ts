@@ -16,13 +16,22 @@ const INTERACTIVE_END_TARGETS = [
   '[data-component="prompt-input"]',
 ].join(", ")
 
+export type ChatTranscriptNavigation = "first" | "previous" | "next" | "latest"
+
 /**
- * Keeps End's native editing, selection and platform-shortcut meanings intact.
- * Only an unmodified End from the transcript can request the chat's live tail.
+ * Keeps native editing, selection and platform-shortcut meanings intact. Only
+ * unmodified navigation keys from the transcript may control the chat timeline.
  */
-export function shouldResumeChatOnEnd(event: KeyboardEvent): boolean {
+export function chatTranscriptNavigation(event: KeyboardEvent): ChatTranscriptNavigation | undefined {
+  const navigation: Record<string, ChatTranscriptNavigation> = {
+    Home: "first",
+    PageUp: "previous",
+    PageDown: "next",
+    End: "latest",
+  }
+  const action = navigation[event.key]
   if (
-    event.key !== "End" ||
+    !action ||
     event.defaultPrevented ||
     event.isComposing ||
     event.altKey ||
@@ -30,18 +39,24 @@ export function shouldResumeChatOnEnd(event: KeyboardEvent): boolean {
     event.metaKey ||
     event.shiftKey
   ) {
-    return false
+    return undefined
   }
 
   const target = event.target
   const prompt = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-component="prompt-input"]') : undefined
   // The active Workbench chat normally restores focus to an empty composer.
-  // With no draft to navigate, End is more useful as the transcript shortcut;
-  // any text or attachment keeps the editor's native caret behavior.
-  if (prompt) return !prompt.textContent?.trim()
+  // With no draft to navigate, transcript navigation is more useful than a
+  // browser caret/page shortcut; any text or attachment keeps the editor's
+  // native behavior.
+  if (prompt) return prompt.textContent?.trim() ? undefined : action
 
-  if (target instanceof HTMLElement && target.closest(INTERACTIVE_END_TARGETS)) return false
+  if (target instanceof HTMLElement && target.closest(INTERACTIVE_END_TARGETS)) return undefined
 
   const selection = document.getSelection()
-  return !selection || selection.isCollapsed
+  return !selection || selection.isCollapsed ? action : undefined
+}
+
+/** Compatibility helper for the existing End-specific unit coverage. */
+export function shouldResumeChatOnEnd(event: KeyboardEvent): boolean {
+  return chatTranscriptNavigation(event) === "latest"
 }

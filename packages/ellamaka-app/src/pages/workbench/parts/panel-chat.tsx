@@ -23,7 +23,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
-import { WorkbenchChatTimeline } from "@/pages/session/workbench-chat-timeline"
+import { WorkbenchChatTimeline, type UserMessageNavigation, type UserMessageNavigator } from "@/pages/session/workbench-chat-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -40,7 +40,7 @@ import { panelChatRoute } from "./panel-chat-route"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { Identifier } from "@/utils/id"
 import { nextFollowupToSend } from "./panel-chat-followup"
-import { shouldResumeChatOnEnd } from "./panel-chat-resume-scroll"
+import { chatTranscriptNavigation } from "./panel-chat-resume-scroll"
 
 import { reportWorkbenchError } from "../workbench-error"
 
@@ -80,6 +80,7 @@ function PanelChatInner(props: {
 
   const composer = createSessionComposerState()
   const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
+  let navigateUserMessage: UserMessageNavigator | undefined
 
   // Followups are transient Panel UI state. The server owns delivered
   // messages; drafts must not be persisted as a second domain copy.
@@ -100,8 +101,9 @@ function PanelChatInner(props: {
 
   useLocalPanelActions({
     sessionID: () => props.session.id,
-    navigateMessageByOffset: (_offset) => {
-      // Not fully implemented here, stub
+    navigateMessageByOffset: (offset) => {
+      const direction: UserMessageNavigation | undefined = offset < 0 ? "previous" : offset > 0 ? "next" : undefined
+      if (direction) navigateUserMessage?.(direction)
     },
     setActiveMessage: (_message) => {
       // Stub
@@ -165,12 +167,20 @@ function PanelChatInner(props: {
     if (typeof window === "undefined") return
     const onKeyDown = (event: KeyboardEvent) => {
       // The handler belongs only to the active Workbench chat panel. Editing,
-      // selection and shortcut variants keep the browser's normal End behavior.
+      // selection and shortcut variants keep browser-native behavior.
       if (!props.canRestorePromptFocus?.()) return
-      if (!ui.scroll.overflow || ui.scroll.bottom) return
-      if (!shouldResumeChatOnEnd(event)) return
+      const navigation = chatTranscriptNavigation(event)
+      if (!navigation) return
+
+      if (navigation === "latest") {
+        if (!ui.scroll.overflow || ui.scroll.bottom) return
+        event.preventDefault()
+        resumeScroll()
+        return
+      }
+
+      if (!navigateUserMessage?.(navigation)) return
       event.preventDefault()
-      resumeScroll()
     }
     window.addEventListener("keydown", onKeyDown, true)
     onCleanup(() => window.removeEventListener("keydown", onKeyDown, true))
@@ -549,6 +559,9 @@ function PanelChatInner(props: {
             showSessionProgressBar={settings.general.showSessionProgressBar()}
             editRenderer={OpenCodeMessagePart}
             revert={revertMessageID()}
+            onUserMessageNavigator={(navigator) => {
+              navigateUserMessage = navigator
+            }}
             setScrollRef={setScrollRef}
             setContentRef={setContentRef}
             onScheduleScrollState={scheduleScrollState}

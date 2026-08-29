@@ -176,49 +176,53 @@ export function formatKeybind(config: string, t?: (key: KeyLabel) => string): st
   const keybinds = parseKeybind(config)
   if (keybinds.length === 0) return ""
 
-  const kb = keybinds[0]
-  const parts: string[] = []
+  return keybinds
+    .map((kb) => {
+      const parts: string[] = []
 
-  if (kb.ctrl) parts.push(IS_MAC ? "⌃" : keyText("common.key.ctrl", t))
-  if (kb.alt) parts.push(IS_MAC ? "⌥" : keyText("common.key.alt", t))
-  if (kb.shift) parts.push(IS_MAC ? "⇧" : keyText("common.key.shift", t))
-  if (kb.meta) parts.push(IS_MAC ? "⌘" : keyText("common.key.meta", t))
+      if (kb.ctrl) parts.push(IS_MAC ? "⌃" : keyText("common.key.ctrl", t))
+      if (kb.alt) parts.push(IS_MAC ? "⌥" : keyText("common.key.alt", t))
+      if (kb.shift) parts.push(IS_MAC ? "⇧" : keyText("common.key.shift", t))
+      if (kb.meta) parts.push(IS_MAC ? "⌘" : keyText("common.key.meta", t))
 
-  if (kb.key) {
-    const keys: Record<string, string> = {
-      arrowup: "↑",
-      arrowdown: "↓",
-      arrowleft: "←",
-      arrowright: "→",
-      comma: ",",
-      plus: "+",
-    }
-    const named: Record<string, KeyLabel> = {
-      backspace: "common.key.backspace",
-      delete: "common.key.delete",
-      end: "common.key.end",
-      enter: "common.key.enter",
-      esc: "common.key.esc",
-      escape: "common.key.esc",
-      home: "common.key.home",
-      insert: "common.key.insert",
-      pagedown: "common.key.pageDown",
-      pageup: "common.key.pageUp",
-      space: "common.key.space",
-      tab: "common.key.tab",
-    }
-    const key = kb.key.toLowerCase()
-    const displayKey =
-      keys[key] ??
-      (named[key]
-        ? keyText(named[key], t)
-        : key.length === 1
-          ? key.toUpperCase()
-          : key.charAt(0).toUpperCase() + key.slice(1))
-    parts.push(displayKey)
-  }
+      if (kb.key) {
+        const keys: Record<string, string> = {
+          arrowup: "↑",
+          arrowdown: "↓",
+          arrowleft: "←",
+          arrowright: "→",
+          comma: ",",
+          plus: "+",
+        }
+        const named: Record<string, KeyLabel> = {
+          backspace: "common.key.backspace",
+          delete: "common.key.delete",
+          end: "common.key.end",
+          enter: "common.key.enter",
+          esc: "common.key.esc",
+          escape: "common.key.esc",
+          home: "common.key.home",
+          insert: "common.key.insert",
+          pagedown: "common.key.pageDown",
+          pageup: "common.key.pageUp",
+          space: "common.key.space",
+          tab: "common.key.tab",
+        }
+        const key = kb.key.toLowerCase()
+        const displayKey =
+          keys[key] ??
+          (named[key]
+            ? keyText(named[key], t)
+            : key.length === 1
+              ? key.toUpperCase()
+              : key.charAt(0).toUpperCase() + key.slice(1))
+        parts.push(displayKey)
+      }
 
-  return IS_MAC ? parts.join("") : parts.join("+")
+      return IS_MAC ? parts.join("") : parts.join("+")
+    })
+    .filter(Boolean)
+    .join(" / ")
 }
 
 function isEditableTarget(target: EventTarget | null) {
