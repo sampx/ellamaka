@@ -118,6 +118,22 @@ Main 将步骤进度广播给 Renderer，并记录到 `$WOPAL_HOME/logs/onboardi
 
 执行型 operation 使用显式 runtime impact：`externalCli` 与 `desktopSidecar` 分开报告，`stopRunning` 是调用方授权输入，不是 operation 自动推导的成功结果。替换外部 Bun CLI 不得停止 Desktop sidecar；只有确需重启内嵌 sidecar 的 operation 才能在 UI 明确说明活跃 Session/PTY 会终止并确认后执行。
 
+### 5.3 依赖预装编排
+
+Onboarding 在安装配置阶段**提前物化三层依赖**，让首次启动 Workbench / 创建会话时依赖已就位，避免懒加载时安装造成的等待。每类依赖有其固定时机与触发方：
+
+| 依赖 | 提前路径（onboarding 步骤） | 运行时兜底 | 触发方 |
+| ---- | --------------------------- | ---------- | ------ |
+| 用户级插件依赖 | `prepare-runtime`（`ontology-setup` 成功后） | ellamaka 首次使用即装 | wopal-cli machine operation |
+| 空间级插件依赖 | `initialize-space`（`create-space` 内，空间创建完成后） | ellamaka per-directory 兜底 | wopal-cli machine operation |
+| dsh 依赖物化 | `prepare-runtime`（`ontology-setup` 成功后，与用户级插件并列） | ellamaka 装配 dsh 前兜底 | wopal-cli machine operation |
+
+**幂等**：三层依赖都写 fingerprint，预装后指纹匹配即跳过；依赖版本变更才重装。onboarding 重复执行不重复安装。
+
+**进度展示**：`prepare-runtime` 与 `create-space` 的机器 operation 通过 `onProgress` 上报物化/安装进度，onboarding 的 LogDrawer 与步骤结果面板呈现，用户可见反馈。
+
+**兜底不可移除**：onboarding 可能被跳过（用户已完成后重装、纯终端 setup、外部安装）。运行时兜底保证依赖仍可用——用户级插件与 dsh 依赖在首次使用时安装，空间级插件在 per-directory 加载时安装。兜底机制见 `../../../projects/wopal-cli/docs/DESIGN.md` §6.3 与 `DESIGN-dsh-poc.md` §3.4。
+
 ## 6. 关键文件
 
 | 文件                                                 | 职责                                                                                   |

@@ -64,9 +64,10 @@ ellamaka 进程（唯一监听端口）
 |------|------|------|
 | `VirtualWebServer` | `@wopal/ellamaka-cordis` | 实现 dsh 官方 WebServer 接口，提供路由/upgrade 分发，不创建监听 socket |
 | 受控路由挂载点 | `Listener.mountNodeRoute` | 按前缀分发 HTTP/upgrade 到已注册 handler，保留 Effect listener 生命周期 |
-| dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 重放 dsh boot 序列，构造两个容器 |
+| dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 重放 dsh boot 序列，构造两个容器；覆盖 `ctx.dshHomePath` 与插件 `dshHome` 配置注入，落地运行时隔离（§3.4） |
 | dsh-adapter | `.wopal/plugins/dsh-adapter` | 把工具容器中的工具投影进 ellamaka ToolRegistry |
-| DSH home | `$WOPAL_HOME/dsh` | 依赖闭包与 profile 的唯一物化位置 |
+| DSH home | `$WOPAL_HOME/dsh` | 依赖闭包、profile 定义与运行时 state 的唯一物化位置 |
+| 物化脚本 | `packages/opencode/script/materialize-dsh.ts` | ellamaka 侧物化参考实现（依赖清单 + arborist 安装 + profile 预置）；onboarding 提前物化由 wopal-cli setup 承载 |
 
 ---
 
@@ -100,28 +101,49 @@ DSH 前端在隔离 iframe 内加载。`VirtualWebServer` 在 index tap 链末�
 
 `DshIframe` 的 src 从活跃 server 的 `http.url` 派生为 `<url>/dsh/`，不写死相对路径。原因：ellamaka-app 的 dev 模式由 Vite 服务前端（默认 3000），后端 serve 独立监听（默认 4097）；相对 `/dsh/` 在 `:3000/workbench` 页面会解析到前端 origin。派生后 dev 下指向 `http://127.0.0.1:4097/dsh/`、Desktop 下指向 sidecar 本地地址，两侧都命中后端 `/dsh` 挂载点。
 
-### 3.4 DSH home 与依赖物化
+### 3.4 DSH home、运行时隔离与依赖物化
 
-**唯一 home**：`$WOPAL_HOME/dsh`。dev（serve/TUI）与 Desktop sidecar 读取同一位置。ellamaka 集成只用 `$WOPAL_HOME`，不用 `$DSH_HOME`；`~/.dsh` 归 dsh 官方 CLI 专用。
+**唯一 home**：`$WOPAL_HOME/dsh`。dev（serve/TUI）、Web 与 Desktop sidecar 读取同一位置。ellamaka 集成只用 `$WOPAL_HOME`，**永不使用 `$DSH_HOME`，永不设置 `DSH_HOME` 环境变量**；`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内读写。
 
 ```text
 $WOPAL_HOME/dsh/
 ├── package.json          ← 声明 7 个 dsh 依赖 + @wopal/ellamaka-cordis
 ├── node_modules/         ← 完整依赖树，顶层扁平安装
-└── profiles/
-    ├── web/              ← Web 容器 profile（dsh-base + dsh-web-app）
-    ├── ellamaka-tools/   ← 工具容器 profile（dsh-base + 禁用补丁）
-    └── node_modules/     ← 快捷方式目录（挂载时自动重建）
+├── profiles/             ← profile 定义（web / ellamaka-tools）
+│   ├── web/
+│   ├── ellamaka-tools/
+│   └── node_modules/     ← 快捷方式目录（挂载时自动重建）
+└── state/                ← dsh 引擎运行时数据（settings/sessions/storages/...）
 ```
 
-**物化脚本** `packages/opencode/script/materialize-dsh.ts`：生成 package.json → `bun install --production` → 预置 profile 模板 → 验证锚点与 Node strip-types 导入 dsh-web。幂等：已存在的 profile 与补丁不覆盖。
+**运行时隔离**：dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessions、storages、home patch）与依赖闭包、profile 定义三者同根但分目录，全部落在 `$WOPAL_HOME/dsh` 下。运行时数据归 `state/`，与官方 dsh CLI 完全隔离。
+
+隔离采用**纯配置注入，零环境变量**。dsh 引擎解析 home 有两条机制，ellamaka 分别覆盖：
+
+| 机制 | 说明 | 隔离方式 |
+|------|------|---------|
+| `ctx` 注入的 `dshHomePath` | profile 配置 `!!js dshHomePath(...)` 表达式经 `with(ctx){eval}` 求值，覆盖 storages/sessions | 装配时 `ctx.provide("dshHomePath", (...s) => join(stateDir, ...s))` |
+| 插件直接 `import { resolveDshHome }` | settings/credentials/agent-instructions/shell-env/skill-fs/attachment 等读 `config.dshHome` | 在 profile patch 层给各插件传 `dshHome: $WOPAL_HOME/dsh/state` |
+| 无配置注入的例外 | `llm-deepseek` 上传索引、`anonymous-user-id` | 装配时用显式 `path` / `options.env` 参数传入 |
+
+两种机制殊途同归，最终都落在 `$WOPAL_HOME/dsh/state`，**不依赖 `DSH_HOME` env**。官方 dsh CLI 无论同进程还是独立进程，都感知不到任何污染。
+
+**启用开关（统一语义）**：`ELLAMAKA_DSH` 是**禁用开关（kill switch）**，默认开启。CLI（serve/web/TUI）与 Desktop sidecar 统一遵循：
+
+- 未设置或 `ELLAMAKA_DSH != 0` → 启用 dsh（物化缺失时由各入口自行物化或引导）
+- `ELLAMAKA_DSH=0` → 完全禁用 dsh，回到无 dsh 基线
+
+**物化机制**：生成 `package.json`（7 个 `@deepseek-ai/*` 依赖 + `@wopal/ellamaka-cordis`）→ 安装依赖树 → 预置 profile 模板 → 验证锚点与 Node strip-types 导入 dsh-web。幂等：已存在的 profile 与补丁不覆盖。安装引擎为 `@npmcli/arborist`（纯 JS，无外部包管理器依赖），不依赖系统 bun。dsh 依赖清单、profile 模板与安装编排由 `packages/opencode/script/materialize-dsh.ts` 承载，作为 ellamaka 侧的物化参考实现。
+
+**物化触发分两条路径**：
+
+- **提前物化（向导路径）**：`wopal setup` / Desktop onboarding 在安装配置阶段完成物化，让首次启动 Workbench 时依赖已就位。编排见 `DESKTOP-ONBOARDING.md` §5.3 与 `../../../projects/wopal-cli/docs/DESIGN.md` §6.3。
+- **运行时兜底（ellamaka 路径）**：`ELLAMAKA_DSH` 启用时，dev（CLI serve/web/TUI）与 Desktop sidecar 装配 dsh 前检查闭包锚点；缺失则物化后挂载，失败则降级为无 dsh 运行并提示。兜底保证 onboarding 被跳过时 dsh 仍可用，与插件依赖安装的运行时兜底语义一致（$WOPAL_HOME/plugins 首次使用即装；dsh 闭包首次装配即物化）。
 
 **依赖解析（installAnchor）**：
 
 - dev 模式：`require.resolve("@deepseek-ai/dsh/package.json")` 解析到 workspace 的 node_modules
 - Desktop sidecar：bundle 不携带 dsh 包，installAnchor 显式指向 `$WOPAL_HOME/dsh/node_modules/@deepseek-ai/dsh/package.json`
-
-**可用性门控**：sidecar 检查锚点存在才挂载 dsh；闭包缺失时跳过 dsh，sidecar 正常运行（等价于 `ELLAMAKA_DSH=0`）。
 
 ### 3.5 Profile 机制
 
@@ -312,7 +334,9 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 7. **wopal-plugin 原生边界**：wopal-plugin 继续作为 ellamaka 原生插件运行。只采用独立 dsh 能力，不拆分或迁移 wopal-plugin。
 8. **工具容器边界**：工具调用走专用工具容器（ellamaka-tools profile），容器内不创建任何 dsh session；adapter 只传递工具实测消费的最小 per-call context。web 容器保持完整 profile，不复用为工具后端。禁用清单是 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 9. **空间隔离**：容器装配是进程级共享能力池，空间差异在投影层解决。
-10. **DSH home 唯一**：依赖闭包与 profile 只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`；`~/.dsh` 归 dsh 官方 CLI 专用。禁止引入第二份闭包或第二处 profile 位置。
+10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`，**永不设置 `DSH_HOME` env**。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
+11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。CLI 与 Desktop 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
+12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。隔离不依赖 `DSH_HOME` env。
 
 ---
 
@@ -344,3 +368,9 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 ### A.5 未采用的候选能力：web 搜索
 
 dsh 的 `web_search` 工具（DeepSeek provider）经评估后未采用。原因：唯一随闭包发布的 provider 依赖 DeepSeek Anthropic 兼容 Messages API，每次搜索是一次完整模型调用（非纯检索端点，需付费）。用户已有更低成本的等价路径（Exa MCP / skill），无需桥接。此决策不影响架构；`ctx.web` 的 provider 注册表 + 执行时选择 + 结构化错误码设计仍可作为原生 web 能力实现的参考。
+
+### A.6 运行时隔离：拒绝 `DSH_HOME` env，采用纯配置注入
+
+PoC 前期 dsh 引擎运行时数据落在 `~/.dsh`（settings/credentials/sessions/storages），与闭包 `$WOPAL_HOME/dsh` 分离。初拟方案为在装配时设 `process.env.DSH_HOME = $WOPAL_HOME/dsh/state` 重定向——只需设一个 env 即可覆盖全部路径。
+
+经评估否决：`DSH_HOME` 是 dsh 官方 CLI 的保留环境变量，ellamaka 复用它带来语义混淆与继承污染（从 ellamaka 进程 fork 官方 CLI 时子进程继承 `DSH_HOME` 会写入错误位置）。改为**纯配置注入**：`ctx.provide("dshHomePath", ...)` 覆盖 `!!js` 表达式路径 + profile patch 层给插件传 `dshHome` 配置 + 两个例外用显式参数。完全不设 env，官方 CLI 无感知。dsh 官方本身将 `resolveDshHome(configured, ...)` 的显式配置作为最高优先级，此方案利用官方原生支持、不改依赖。

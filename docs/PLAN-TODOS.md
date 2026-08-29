@@ -76,14 +76,19 @@
 - 打包二进制下 DSH 可用（`$WOPAL_HOME/dsh` 锚点解析 + loader polyfill）
 - CLI 命令 SIGINT/SIGTERM 优雅退出
 
+### 进行中的 Plan
+
+| Plan | 项目 | 状态 | 说明 |
+|------|------|------|------|
+| `feature-dsh-onboarding-dependency-preinstall-orchestration-and-dsh-runtime-isolation` | ellamaka | 🔶 planning | onboarding 依赖预装编排 + dsh 运行时隔离 + 开关语义 + 运行时兜底（本 Plan） |
+| `feature-setup-preinstall-plugin-deps-and-materialise-dsh-closure-in-setup-operations` | wopal-cli | 🔶 planning | wopal-cli 预装用户级/空间级插件依赖 + 物化 dsh 闭包（前置依赖） |
+
 ### 待定事项（未排期，待讨论）
 
 | 事项 | 状态 | 说明 |
 |------|------|------|
 | 阶段 B：escalation 审批桥接 | ⏸ 待定 | 需独立产品决策；候选方案见 DESIGN §3.2.5 |
 | 界面演进（iframe → 原生） | ⏸ 待定 | 依赖阶段 B 设计决定 |
-| desktop 闭包自动安装 | ⏸ 待定 | 交付阶段事项，依赖打包发布决定 |
-| 后续实验方向 | ⬜ 待讨论 | 旧 P6/P7/P8 批次定义已清除，待重新规划 |
 
 ---
 
@@ -101,3 +106,4 @@
 | 2026-08-28 | P4 完成：单端口统一全链路落地；工具结果契约映射完成（`.wopal/plugins/dsh-adapter`，提交 93164701） |
 | 2026-08-29 | 用户验收 P4：打包 CLI + desktop 构建验证成功；合并 main 全部修复进 poc 分支 |
 | 2026-08-29 | **文档清理重写**：已完成项写清（含此前遗漏的契约映射完成记录），未开始的后续 Plan（P6/P7/P8/P9 批次定义）全部清除，待重新讨论 |
+| 2026-08-30 | **设计定案**：dsh 运行时隔离（纯配置注入、零 env、`~/.dsh` 归官方 CLI 不做处理）、`ELLAMAKA_DSH` 改禁用开关（默认开启）、三层依赖 onboarding 预装 + 运行时兜底；设计文档归位（DESIGN-dsh-poc / DESKTOP-ONBOARDING / wopal-cli DESIGN / 产品级 DESIGN-onboarding）。登记两个 Plan：ellamaka（onboarding 编排 + 隔离）与 wopal-cli（预装能力，前置依赖） |
