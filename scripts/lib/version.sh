@@ -6,30 +6,40 @@
 # resolve_build_version <product> <suffix> [project_root]
 #
 # Resolves the local/dev build version as <next>-<suffix>.<timestamp>: the next
-# patch version after the highest SemVer tag of the product (stable preferred
-# over prerelease, e.g. latest ellamaka-cli-v2.0.1 → 2.0.2), suffixed with the
-# channel ("main" for CLI, the channel for Desktop), then a local timestamp.
-# Local builds are always identifiable by this suffix — release versions come
-# from release.sh/CI inputs and never pass through this function.
+# release version of the product (stable preferred over prerelease, e.g. latest
+# ellamaka-cli-v2.0.1 → 2.0.2), suffixed with the channel ("main" for CLI, the
+# channel for Desktop), then a local timestamp. When the highest beta base is
+# ahead of the highest stable base, the beta base itself is the next version
+# (e.g. ellamaka-desktop-v2.0.4-beta.1 with highest stable v2.0.3 → 2.0.4, not
+# 2.0.5 — the unreleased patch slot must not be skipped). Local builds are
+# always identifiable by this suffix — release versions come from
+# release.sh/CI inputs and never pass through this function.
 function resolve_build_version() {
   local product="$1" suffix="$2" project_root="${3:-$PROJECT_ROOT}"
   local version_tag timestamp
   local product_filter="${product}-v*"
 
-  # Highest SemVer tag for this product (stable beats prerelease at the same
-  # X.Y.Z), then the next patch version. git's own --sort=v:refname does not
-  # follow SemVer prerelease precedence, so selection happens in node.
+  # Next release version for this product, mirroring suggest_release_version's
+  # stable branch: next patch after the highest stable tag, or the beta base
+  # itself when the highest beta base is ahead. git's own --sort=v:refname does
+  # not follow SemVer prerelease precedence, so selection happens in node.
   version_tag=$(git -C "$project_root" tag -l "$product_filter" 2>/dev/null | node -e "
-    let best = null
+    const cmp3 = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2]
+    let stable = null, beta = null
     for (const raw of require('fs').readFileSync(0, 'utf8').split('\n')) {
       const m = raw.trim().match(/(\d+)\.(\d+)\.(\d+)(?:-(.+))?\$/)
       if (!m) continue
-      const key = [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? 0 : 1]
-      const cmp = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2] || a[3]-b[3]
-      if (!best || cmp(key, best) > 0) best = key
+      const key = [Number(m[1]), Number(m[2]), Number(m[3])]
+      if (m[4] === undefined) {
+        if (!stable || cmp3(key, stable) > 0) stable = key
+      } else {
+        if (!beta || cmp3(key, beta) > 0) beta = key
+      }
     }
-    if (!best) { console.log(''); process.exit(0) }
-    console.log([best[0], best[1], best[2] + 1].join('.'))
+    if (!stable && !beta) { console.log(''); process.exit(0) }
+    const betaAhead = beta && (!stable || cmp3(beta, stable) > 0)
+    const base = betaAhead ? beta : (stable || beta)
+    console.log([base[0], base[1], base[2] + (betaAhead ? 0 : 1)].join('.'))
   ")
 
   if [[ -n "$version_tag" ]]; then
