@@ -81,6 +81,22 @@ const hasParts = (parts: Part[] | undefined, want: Part[]) => {
 }
 
 /**
+ * Decides whether `sync` must fetch message pages from the server.
+ *
+ * `loadMessages` bails out on its `meta.loading` re-entrancy guard. Prefetch
+ * seeding can flip that flag between the check here and the call, and a
+ * forced reload must run regardless of any leftover `loading` state — an
+ * early skip in that path leaves the flag stuck and the session's messages
+ * never load (the stale-history-after-fork bug). So when `force` is set the
+ * delegation answer is always true and the loading flag is owned entirely by
+ * `loadMessages`.
+ */
+export function shouldDelegateMessageLoad(input: { force?: boolean; cached: boolean; hasSession: boolean }) {
+  if (input.force) return true
+  return !(input.cached && input.hasSession)
+}
+
+/**
  * SSE reconnect reconciliation. Events emitted while the transport was down are
  * lost; on resync probe the newest server-side message id for each active
  * session and force a full message reload only when the cached tail is stale.
@@ -363,9 +379,10 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
     limit: number
     before?: string
     mode?: "replace" | "prepend"
+    force?: boolean
   }) => {
     const key = keyFor(input.directory, input.sessionID)
-    if (meta.loading[key]) return
+    if (meta.loading[key] && !input.force) return
 
     setMeta("loading", key, true)
     await fetchMessages(input)
@@ -506,7 +523,7 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
 
           const hasSession = Binary.search(store.session, sessionID, (s) => s.id).found
           const cached = store.message[sessionID] !== undefined && meta.limit[key] !== undefined
-          if (cached && hasSession && !opts?.force) return
+          if (!shouldDelegateMessageLoad({ force: opts?.force, cached, hasSession })) return
 
           const limit = meta.limit[key] ?? initialMessagePageSize
           const sessionReq =
@@ -534,16 +551,14 @@ export const createDirSyncContext = (directory: string, serverSync: ReturnType<t
                     throw error
                   })
 
-          const messagesReq =
-            cached && !opts?.force
-              ? Promise.resolve()
-              : loadMessages({
-                  directory,
-                  client,
-                  setStore,
-                  sessionID,
-                  limit,
-                })
+          const messagesReq = loadMessages({
+            directory,
+            client,
+            setStore,
+            sessionID,
+            limit,
+            force: opts?.force,
+          })
 
           await Promise.all([sessionReq, messagesReq])
         })

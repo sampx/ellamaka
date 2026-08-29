@@ -60,10 +60,11 @@ describe("command keybind helpers", () => {
     expect(formatKeybind("none")).toBe("")
   })
 
-  test("formatKeybind prefers the first combo", () => {
+  test("formatKeybind displays every alternative combo", () => {
     const display = formatKeybind("mod+k,mod+p")
 
     expect(display.includes("K") || display.includes("k")).toBe(true)
-    expect(display.includes("P") || display.includes("p")).toBe(false)
+    expect(display.includes("P") || display.includes("p")).toBe(true)
+    expect(display).toContain("/")
   })
 })

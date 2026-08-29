@@ -960,6 +960,56 @@ describe("WorkbenchChatTimeline", () => {
     host.remove()
   })
 
+  test("exposes first, previous and next user-message navigation through the timeline", () => {
+    const u1 = userMessage("u1")
+    const a1 = assistantMessage("a1", "u1")
+    const u2 = userMessage("u2")
+    const a2 = assistantMessage("a2", "u2")
+    const u3 = userMessage("u3")
+    const a3 = assistantMessage("a3", "u3")
+    const messages: Message[] = [u1, a1, u2, a2, u3, a3]
+    const parts = [
+      textPart("p1", "u1", "first"),
+      textPart("p2", "a1", "reply"),
+      textPart("p3", "u2", "second"),
+      textPart("p4", "a2", "reply"),
+      textPart("p5", "u3", "third"),
+      textPart("p6", "a3", "reply"),
+    ]
+    withSync(messages, parts, { type: "idle" })
+
+    let captured: { scrollToIndex: (index: number, options?: unknown) => void } | undefined
+    let navigate: ((direction: "first" | "previous" | "next") => boolean) | undefined
+    const calls: Array<{ index: number; options: unknown }> = []
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: [u1, u2, u3],
+          virtualize: false,
+          activeUserMessageIDOverride: "u2",
+          onVirtualizer: (handle) => {
+            captured = handle as unknown as { scrollToIndex: (index: number, options?: unknown) => void }
+          },
+          onUserMessageNavigator: (navigator) => {
+            navigate = navigator
+          },
+        })}
+      />
+    ))
+
+    expect(captured).not.toBeUndefined()
+    captured!.scrollToIndex = (index, options) => calls.push({ index, options })
+    expect(navigate?.("first")).toBe(true)
+    expect(navigate?.("previous")).toBe(true)
+    expect(navigate?.("next")).toBe(true)
+    expect(calls).toEqual([
+      { index: 0, options: { align: "start" } },
+      { index: 0, options: { align: "start" } },
+      { index: 4, options: { align: "start" } },
+    ])
+    host.remove()
+  })
+
   test("updates rail and transcript highlight after scrolling to a new viewport anchor", () => {
     const u1 = userMessage("u1")
     const a1 = assistantMessage("a1", "u1")

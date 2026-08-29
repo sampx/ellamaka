@@ -254,7 +254,7 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 [data-component="chat-resume-scroll"] {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  bottom: 20px;
   z-index: 60;
   transform: translateX(-50%);
 }
@@ -263,21 +263,50 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border: 1px solid var(--border-weaker-base);
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 72%, transparent);
+  border-radius: 50%;
   color: var(--icon-base);
-  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 80%, transparent);
-  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
-  backdrop-filter: blur(0.75px);
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 72%, transparent);
+  box-shadow:
+    0 10px 26px rgb(0 0 0 / 22%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 22%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
   cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
 }
 
 [data-action="chat-resume-scroll"]:hover {
-  border-color: var(--border-weak-base);
+  transform: translateY(-2px) scale(1.05);
+  border-color: color-mix(in srgb, var(--border-base) 82%, transparent);
   color: var(--icon-hover);
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 88%, transparent);
+  box-shadow:
+    0 14px 32px rgb(0 0 0 / 28%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 30%, transparent);
+}
+
+[data-action="chat-resume-scroll"]:active {
+  transform: translateY(0) scale(0.96);
+}
+
+[data-action="chat-resume-scroll"]:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-action="chat-resume-scroll"] {
+    transition: none;
+  }
 }
 
 [data-component="chat-turn-frame"] {
@@ -546,14 +575,15 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="workbench-markdown-content"] :where(p, li, td, th, blockquote) > code,
 [data-slot="workbench-markdown-content"] a.external-link > code {
-  padding: 1px 4px;
-  border: 1px solid var(--border-weaker-base);
-  border-radius: 4px;
-  background: var(--surface-weak);
-  color: var(--text-base);
+  /* Inline source terms should read as part of the sentence, rather than a
+     sequence of disconnected chips. Code blocks retain their full surface. */
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-strong);
   font-family: var(--font-family-mono);
   font-size: 0.92em;
-  line-height: 1.45;
 }
 
 [data-slot="workbench-markdown-content"] table {

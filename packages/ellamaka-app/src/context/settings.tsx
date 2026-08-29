@@ -151,6 +151,28 @@ const defaultSettings: Settings = {
   },
 }
 
+/**
+ * Chrome reserves Cmd+, before page JavaScript can receive the event. Move
+ * existing settings shortcuts to the browser-safe Ctrl+, binding as well as
+ * changing the command defaults, so an older stored override cannot revive
+ * the reserved shortcut.
+ */
+export function migrateSettings(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+
+  const current = value as Partial<Settings>
+  const keybind = current.keybinds?.["settings.open"]
+  if (keybind !== "mod+comma" && keybind !== "mod+,") return value
+
+  return {
+    ...current,
+    keybinds: {
+      ...current.keybinds,
+      "settings.open": "ctrl+comma",
+    },
+  }
+}
+
 function withFallback<T>(read: () => T | undefined, fallback: T) {
   return createMemo(() => read() ?? fallback)
 }
@@ -158,7 +180,10 @@ function withFallback<T>(read: () => T | undefined, fallback: T) {
 export const { use: useSettings, provider: SettingsProvider } = createSimpleContext({
   name: "Settings",
   init: () => {
-    const [store, setStore, _, ready] = persisted("settings.v3", createStore<Settings>(defaultSettings))
+    const [store, setStore, _, ready] = persisted(
+      { key: "settings.v3", migrate: migrateSettings },
+      createStore<Settings>(defaultSettings),
+    )
 
     createEffect(() => {
       if (typeof document === "undefined") return

@@ -437,7 +437,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
     fileCommand({
       id: "tab.close",
       title: language.t("command.tab.close"),
-      keybind: "mod+w",
       disabled: !closableTab(),
       onSelect: closeTab,
     }),
@@ -448,7 +447,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "context.addSelection",
       title: language.t("command.context.addSelection"),
       description: language.t("command.context.addSelection.description"),
-      keybind: "mod+shift+l",
       disabled: !canAddSelectionContext(),
       onSelect: addSelection,
     }),
@@ -458,7 +456,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
     viewCommand({
       id: "terminal.toggle",
       title: language.t("command.terminal.toggle"),
-      keybind: "ctrl+`",
       slash: "terminal",
       onSelect: () => view().terminal.toggle(),
     }),
@@ -480,7 +477,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),
-      keybind: "ctrl+l",
       onSelect: focusInput,
     }),
   ]
@@ -490,7 +486,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "terminal.new",
       title: language.t("command.terminal.new"),
       description: language.t("command.terminal.new.description"),
-      keybind: "ctrl+alt+t",
       onSelect: openTerminal,
     }),
   ]
@@ -500,7 +495,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "message.previous",
       title: language.t("command.message.previous"),
       description: language.t("command.message.previous.description"),
-      keybind: "mod+alt+[",
       disabled: !getSessionID(),
       onSelect: () => navigateMessageByOffset(-1),
     }),
@@ -508,7 +502,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "message.next",
       title: language.t("command.message.next"),
       description: language.t("command.message.next.description"),
-      keybind: "mod+alt+]",
       disabled: !getSessionID(),
       onSelect: () => navigateMessageByOffset(1),
     }),
@@ -527,7 +520,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "model.variant.cycle",
       title: language.t("command.model.variant.cycle"),
       description: language.t("command.model.variant.cycle.description"),
-      keybind: "shift+mod+d",
       onSelect: () => local.model.variant.cycle(),
     }),
   ]
@@ -537,7 +529,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "mcp.toggle",
       title: language.t("command.mcp.toggle"),
       description: language.t("command.mcp.toggle.description"),
-      keybind: "mod+;",
       slash: "mcp",
       onSelect: chooseMcp,
     }),
@@ -548,7 +539,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "agent.cycle",
       title: language.t("command.agent.cycle"),
       description: language.t("command.agent.cycle.description"),
-      keybind: "mod+.",
       slash: "agent",
       onSelect: () => local.agent.move(1),
     }),
@@ -556,7 +546,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       id: "agent.cycle.reverse",
       title: language.t("command.agent.cycle.reverse"),
       description: language.t("command.agent.cycle.reverse.description"),
-      keybind: "shift+mod+.",
       onSelect: () => local.agent.move(-1),
     }),
   ]
@@ -567,7 +556,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
       title: isAutoAcceptActive()
         ? language.t("command.permissions.autoaccept.disable")
         : language.t("command.permissions.autoaccept.enable"),
-      keybind: "mod+shift+a",
       disabled: false,
       onSelect: toggleAutoAccept,
     }),
