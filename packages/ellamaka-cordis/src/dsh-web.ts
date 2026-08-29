@@ -53,12 +53,18 @@ const require = createRequire(import.meta.url)
  * own config (`config/agent-presets/`). Carries the built-in `standard` preset
  * (and friends) the web UI defaults to. Mirrors how the dsh CLI's
  * `composeProfile` assembles the SHIPPED root — `loadProfile` alone does not.
+ *
+ * Resolved lazily from the given install anchor (or, when omitted, this
+ * module's own closure): the root must track the anchor the mount actually
+ * resolves the dsh packages from — a bundled host (packaged CLI, Desktop
+ * sidecar) passes the materialised closure copy under `$WOPAL_HOME/dsh`
+ * (DESIGN-dsh-poc §2.2), and a module-load-time constant would silently
+ * point at the wrong closure or crash the whole module on resolve.
  */
-const SHIPPED_PRESET_ROOT = join(
-  dirname(require.resolve("@deepseek-ai/dsh/package.json")),
-  "config",
-  "agent-presets",
-)
+export function shippedPresetRoot(installAnchor?: string): string {
+  const anchor = installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
+  return join(dirname(anchor), "config", "agent-presets")
+}
 
 /**
  * Default patch layer for the `ellamaka-tools` profile. Written on first
@@ -332,6 +338,23 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   ctx.baseUrl = pathToFileURL(dirname(rootConfig)).href + "/"
   ctx.provide("dshHomePath", dshHomePath)
   const loaderFiber = await ctx.registry.plugin(Loader)
+  // Packaged-host bare-module bridge: bun-compiled binaries (CLI) and the
+  // Desktop sidecar bundle carry no dsh packages, and bun SEA lacks Node's
+  // internal ESM loader (cordis-plugin-loader's ModuleLoader.fromInternal()
+  // returns undefined), so bare plugin names in the patch layers would fall
+  // back to the host bundle and fail. Anchor a CJS require at the install
+  // anchor instead: from a real disk path, require() resolves the whole
+  // materialised closure regardless of cwd. The Loader normalises
+  // ESM/CJS/default shapes before applying a plugin, so the exports object
+  // is consumed identically. From source the internal loader exists and this
+  // polyfill never engages.
+  const loader = ctx.get("loader")
+  if (loader !== undefined && loader.internal === undefined) {
+    const closureRequire = createRequire(installAnchor)
+    loader.internal = {
+      import: async (name: string) => closureRequire(name),
+    }
+  }
   // Intrinsic host setup: the launch environment snapshot and the cmdline
   // service (--port) that the web-startup plugin reads to bind the webserver.
   ctx.provide(
@@ -346,7 +369,16 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // official web plugins register their routes against it instead of a real
   // socket. The official `webserver` entry is disabled via extraPatches.
   await prepare?.(ctx)
-  const includeEntry = await mountRootInclude(ctx, rootConfig, patches)
+  // Bare package names in the patch layers (e.g. `@deepseek-ai/dsh-web-app`)
+  // must resolve against the closure the install anchor lives in, not the
+  // host module graph: a bundled host (packaged CLI bunfs, Desktop sidecar)
+  // carries no dsh packages, so the Node internal loader resolves them via
+  // this parent URL — the dsh home root, whose `node_modules/` ancestry holds
+  // the materialised closure (DESIGN-dsh-poc §2.2). From source the same
+  // closure is materialised too (the kill switch guards its absence), so
+  // passing the base unconditionally is mode-independent.
+  const bareModuleBaseUrl = pathToFileURL(join(installAnchor, "..", "..", "..")).href + "/"
+  const includeEntry = await mountRootInclude(ctx, rootConfig, patches, bareModuleBaseUrl)
   await ctx.get("loader")?.await()
   if (ctx.get("loader") === undefined || includeEntry === undefined) {
     throw new Error("ellamaka-cordis: dsh boot did not provide a loader service")
@@ -401,7 +433,12 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
       // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
       // the dsh CLI's composeProfile does — loadProfile alone does not inject
       // it, so without this the roster is empty and sessions cannot start.
-      { id: "agent-presets", config: { default: "standard", roots: [{ path: SHIPPED_PRESET_ROOT, trust: "system" }] } },
+      // Derived from the same install anchor the profile resolves packages
+      // from, so a bundled host reads the materialised closure's presets.
+      {
+        id: "agent-presets",
+        config: { default: "standard", roots: [{ path: shippedPresetRoot(opts.installAnchor), trust: "system" }] },
+      },
       // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
       // which the bun dev runtime lacks. It is a code-execution capability, not
       // part of the web UI chat surface. The CLI serve path (bun) disables it

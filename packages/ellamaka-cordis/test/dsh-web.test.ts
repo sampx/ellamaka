@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { createRequire } from "node:module"
 import { createServer, type Server } from "node:http"
 import { once } from "node:events"
 import { connect } from "node:net"
 import { Context } from "@deepseek-ai/cordis"
-import { bootDshWeb, mountDshWeb, mountDshTools } from "../src/dsh-web"
+import { bootDshWeb, mountDshWeb, mountDshTools, shippedPresetRoot } from "../src/dsh-web"
 
 /** Attach a VirtualWebServer to a raw server and return its base URL. */
 async function attachAndListen(webServer: { attach(server: Server): void }) {
@@ -88,6 +89,46 @@ describe("dsh web engine", () => {
       // preset is discoverable.
       const presets = await ctx.agentPresets.list()
       expect(presets.map((p) => p.id)).toContain("standard")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  describe("shippedPresetRoot", () => {
+    test("derives the agent-preset root from an explicit install anchor", () => {
+      // A fake anchor in a temp closure: the root must resolve beside it,
+      // not beside the module's own node_modules closure.
+      const anchorDir = mkdtempSync(join(tmpdir(), "dsh-anchor-"))
+      const anchor = join(anchorDir, "package.json")
+      writeFileSync(anchor, JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0-test" }))
+
+      expect(shippedPresetRoot(anchor)).toBe(join(anchorDir, "config", "agent-presets"))
+    })
+
+    test("omitting the anchor resolves beside this module's dsh closure", () => {
+      const req = createRequire(import.meta.url)
+      const workspaceAnchor = req.resolve("@deepseek-ai/dsh/package.json")
+      expect(shippedPresetRoot()).toBe(join(dirname(workspaceAnchor), "config", "agent-presets"))
+    })
+  })
+
+  test("mountDshWeb with an explicit installAnchor discovers presets from that closure", async () => {
+    // Packaged-CLI scheme: the anchor lives in the materialised closure under
+    // the dsh home, not in the module graph (DESIGN-dsh-poc §2.2). The preset
+    // roster must come from that closure.
+    const home = mkdtempSync(join(tmpdir(), "dsh-host-anchor-"))
+    const req = createRequire(import.meta.url)
+    const anchor = req.resolve("@deepseek-ai/dsh/package.json")
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 4097, installAnchor: anchor, disableCodeRuntime: true })
+
+    try {
+      const presets = await ctx.agentPresets.list()
+      const standard = presets.find((p) => p.id === "standard")
+      expect(standard).toBeDefined()
+      // The discovered preset file must live under the anchor's preset root.
+      expect(standard!.path.startsWith(join(dirname(anchor), "config", "agent-presets"))).toBe(true)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
