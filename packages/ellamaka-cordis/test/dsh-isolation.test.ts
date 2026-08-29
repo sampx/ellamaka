@@ -139,4 +139,24 @@ describe("dsh runtime isolation", () => {
       await ctx.fiber.dispose()
     }
   }, 30_000)
+
+  test("session-telemetry-otel is disabled even with DSH_TELEMETRY_MODE=FULL (B-02)", async () => {
+    // The telemetry plugin calls getOrCreateAnonymousUserId() with no home seam
+    // when enabled, writing ~/.dsh/.anonymous-user-id. It can be turned on by an
+    // inherited DSH_TELEMETRY_MODE env, so it must be disabled regardless.
+    const prevMode = process.env.DSH_TELEMETRY_MODE
+    process.env.DSH_TELEMETRY_MODE = "FULL"
+    const home = mkdtempSync(join(tmpdir(), "dsh-isolate-telemetry-"))
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
+    try {
+      // With session-telemetry-otel disabled, the `telemetry` service is absent.
+      expect(ctx.get("telemetry")).toBeUndefined()
+    } finally {
+      if (prevMode === undefined) delete process.env.DSH_TELEMETRY_MODE
+      else process.env.DSH_TELEMETRY_MODE = prevMode
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
 })

@@ -89,6 +89,27 @@ describe("materializeDshClosure", () => {
     expect(existsSync(join(dir, "src"))).toBe(true)
   })
 
+  test("resolveCordisDir honours process.resourcesPath packaged layout (W-01)", () => {
+    // Simulate the packaged app layout: extraResources places dsh-materialize at
+    // process.resourcesPath/dsh-materialize/cordis (Contents/Resources), NOT
+    // inside app.asar. resolveCordisDir must prefer that path over the source
+    // tree when process.resourcesPath is set.
+    const resourcesPath = mkdtempSync(join(tmpdir(), "dsh-resources-"))
+    const cordisDir = join(resourcesPath, "dsh-materialize", "cordis")
+    mkdirSync(join(cordisDir, "src"), { recursive: true })
+    writeFileSync(join(cordisDir, "package.json"), JSON.stringify({ name: "@wopal/ellamaka-cordis" }))
+    writeFileSync(join(cordisDir, "src", "dsh-web.ts"), "export {}")
+
+    const prev = (process as { resourcesPath?: string }).resourcesPath
+    ;(process as { resourcesPath?: string }).resourcesPath = resourcesPath
+    try {
+      expect(resolveCordisDir()).toBe(cordisDir)
+    } finally {
+      if (prev === undefined) delete (process as { resourcesPath?: string }).resourcesPath
+      else (process as { resourcesPath?: string }).resourcesPath = prev
+    }
+  })
+
   test("ELLAMAKA_DSH=0 disables dsh so the sidecar never materialises (W-02)", () => {
     // The sidecar mount functions gate on `if (!isDshEnabled()) return` BEFORE
     // reaching materializeDshClosure. When the kill switch is set, the guard

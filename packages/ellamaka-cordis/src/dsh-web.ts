@@ -275,17 +275,20 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // These rows REPLACE each plugin's whole config, so any non-home fields the
   // base bundle sets (e.g. agent-instructions `maxBytes`) are restated here.
   //
-  // llm-deepseek is a genuine exception (B-02): its adapter resolves the
-  // anonymous-user-id (`getOrCreateAnonymousUserId()` at
-  // `~/.dsh/.anonymous-user-id`) and the upload index
-  // (`~/.dsh/llm-deepseek/files-v3.json`) via `resolveDshHome()` with NO
-  // configurable home seam and no schema-exposed path (verified against the
-  // plugin source). `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME`
-  // is unset, and we must NOT set `process.env.DSH_HOME` (constraint #10,
-  // AC#4). Since there is no injection seam, the feature is DISABLED — the
-  // same degrade the tools profile already applies — so neither write ever
-  // touches the user's default `~/.dsh`. Re-enable only once dsh exposes a
-  // home seam or publishes the adapter with a configurable home.
+  // Two plugins are genuine exceptions (B-02) that resolve the anonymous-user-id
+  // and/or the upload index via `resolveDshHome()` with NO configurable home
+  // seam and no schema-exposed path (verified against the plugin source):
+  //   - llm-deepseek: `getOrCreateAnonymousUserId()` + `~/.dsh/llm-deepseek/files-v3.json`
+  //   - session-telemetry-otel: `getOrCreateAnonymousUserId()` at
+  //     `~/.dsh/.anonymous-user-id` when telemetry is enabled (it can be turned
+  //     on by an inherited `DSH_TELEMETRY_MODE` env, not just the default
+  //     DISABLED).
+  // `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME` is unset, and we
+  // must NOT set `process.env.DSH_HOME` (constraint #10, AC#4). Since there is
+  // no injection seam, both features are DISABLED — the same degrade the tools
+  // profile already applies — so neither write ever touches the user's default
+  // `~/.dsh`. Re-enable only once dsh exposes a home seam or publishes the
+  // adapters with a configurable home.
   const stateHomePatches: Record<string, unknown>[] = [
     { id: "settings", config: { dshHome: stateDir } },
     { id: "credentials", config: { dshHome: stateDir } },
@@ -294,6 +297,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
     { id: "skill-filesystem", config: { dshHome: stateDir } },
     { id: "llm-deepseek", disabled: true },
+    { id: "session-telemetry-otel", disabled: true },
   ]
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
