@@ -40,6 +40,7 @@ import { panelChatRoute } from "./panel-chat-route"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { Identifier } from "@/utils/id"
 import { nextFollowupToSend } from "./panel-chat-followup"
+import { shouldResumeChatOnEnd } from "./panel-chat-resume-scroll"
 
 import { reportWorkbenchError } from "../workbench-error"
 
@@ -159,6 +160,21 @@ function PanelChatInner(props: {
     const el = scroller
     if (el) scheduleScrollState(el)
   }
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    const onKeyDown = (event: KeyboardEvent) => {
+      // The handler belongs only to the active Workbench chat panel. Editing,
+      // selection and shortcut variants keep the browser's normal End behavior.
+      if (!props.canRestorePromptFocus?.()) return
+      if (!ui.scroll.overflow || ui.scroll.bottom) return
+      if (!shouldResumeChatOnEnd(event)) return
+      event.preventDefault()
+      resumeScroll()
+    }
+    window.addEventListener("keydown", onKeyDown, true)
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown, true))
+  })
 
   const setScrollRef = (el: HTMLDivElement | undefined) => {
     scroller = el
