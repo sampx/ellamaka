@@ -1,6 +1,13 @@
 import { describe, expect, mock, test } from "bun:test"
+import DOMPurify from "dompurify"
 import { streamBlocks } from "./workbench-markdown-stream"
-import { deferredHighlight, fnv1a, syncMarked } from "./markdown-highlight"
+import {
+  deferredHighlight,
+  fnv1a,
+  preserveStreamingHighlight,
+  renderMathExpressions,
+  syncMarked,
+} from "./markdown-highlight"
 
 const parsed = mock((src: string) => `<p>${src}</p>`)
 
@@ -47,8 +54,17 @@ describe("WorkbenchMarkdown streaming pipeline", () => {
     expect(stableAfter.map((block) => block.src)).toEqual(stableBefore.map((block) => block.src))
   })
 
-  test("non-streaming text renders as a single full block", () => {
+  test("a single completed block remains a single full block", () => {
     expect(streamBlocks("# Done", false)).toEqual([{ raw: "# Done", src: "# Done", mode: "full" }])
+  })
+
+  test("completed text keeps the streaming block partition so settlement can retain its DOM", () => {
+    const text = ["# Done", "", "First paragraph.", "", "```ts", "const value = 1", "```"].join("\n")
+    const blocks = streamBlocks(text, false)
+
+    expect(blocks.map((block) => block.mode)).toEqual(["full", "full", "full"])
+    expect(blocks.map((block) => block.src).join("")).toBe(text)
+    expect(blocks.map((block) => String(syncMarked.parse(block.src))).join("")).toBe(String(syncMarked.parse(text)))
   })
 
   test("a closed fenced code block at the tail renders as a full block", () => {
@@ -83,6 +99,7 @@ describe("WorkbenchMarkdown highlight pipeline", () => {
     const pre = container.querySelector("pre")
     expect(pre?.classList.contains("shiki")).toBe(true)
     expect(pre?.getAttribute("data-source-hash")).toBe(fnv1a("const value = 1"))
+    expect(pre?.querySelector("code")?.getAttribute("data-highlighted")).toBe("true")
     // The markdown-code wrapper and its copy button survive the upgrade.
     expect(container.querySelector('[data-component="markdown-code"]')).not.toBeNull()
     expect(container.querySelector('[data-slot="markdown-copy-button"]')).not.toBeNull()
@@ -98,5 +115,35 @@ describe("WorkbenchMarkdown highlight pipeline", () => {
 
     expect(container.querySelector("pre")?.classList.contains("shiki")).toBe(false)
     container.remove()
+  })
+
+  test("stream settlement keeps an equal highlighted code block instead of returning to plain code", () => {
+    const container = document.createElement("div")
+    container.innerHTML =
+      '<pre class="shiki" data-source-hash="same"><code data-highlighted="true">const value = 1</code></pre>'
+    const incoming = document.createElement("pre")
+    incoming.innerHTML = '<code data-lang="js">const value = 1</code>'
+
+    expect(preserveStreamingHighlight(container.querySelector("pre")!, incoming, false)).toBe(true)
+  })
+})
+
+describe("WorkbenchMarkdown math pipeline", () => {
+  test("renders complete inline and display formulas while leaving code untouched", () => {
+    const html = renderMathExpressions(
+      '<p>Mass energy: $E = mc^2$.</p><p>$$\\frac{a}{b}$$</p><pre><code data-lang="text">$not_math$</code></pre>',
+    )
+
+    expect(html).toContain('class="katex"')
+    expect(html).toContain('class="katex-display"')
+    expect(html).toContain("$not_math$")
+    expect(DOMPurify.sanitize(html, { USE_PROFILES: { html: true, mathMl: true } })).toContain('class="katex"')
+  })
+
+  test("keeps an unclosed streaming formula as ordinary text", () => {
+    const html = renderMathExpressions("<p>Still composing $E = mc</p>")
+
+    expect(html).toContain("$E = mc")
+    expect(html).not.toContain('class="katex"')
   })
 })

@@ -951,8 +951,8 @@ describe("WorkbenchChatTimeline", () => {
       calls.push({ index, options })
     }
 
-    const rail = host.querySelector("[data-component='chat-prompt-rail']") as HTMLElement
-    rail.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    const directoryTrigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+    directoryTrigger.dispatchEvent(new MouseEvent("click", { bubbles: true }))
     const target = host.querySelector("[data-slot='chat-prompt-item'][data-message-id='u2']") as HTMLElement
     target.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 

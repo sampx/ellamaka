@@ -34,7 +34,18 @@ function heal(text: string) {
  * fenced block. Ported from kilocode `markdown-stream`.
  */
 export function streamBlocks(text: string, live: boolean): StreamBlock[] {
-  if (!live) return [{ raw: text, src: text, mode: "full" }]
+  if (!live) {
+    // Keep the top-level partition used while streaming when the reply
+    // settles. Collapsing a multi-block stream into one final block forces the
+    // renderer to tear down its comment-bounded DOM and is the source of the
+    // visible completion jump. Reference definitions can affect a preceding
+    // block, so they intentionally retain the conservative whole-document
+    // parse path.
+    if (refs(text)) return [{ raw: text, src: text, mode: "full" }]
+    const blocks = stableBlocks(marked.lexer(text), (raw) => raw)
+    if (blocks) return blocks.map((block) => ({ ...block, mode: "full" as const }))
+    return [{ raw: text, src: text, mode: "full" }]
+  }
   const src = heal(text)
   if (refs(text)) return [{ raw: text, src, mode: "live" }]
   const tokens = marked.lexer(text)
@@ -45,9 +56,7 @@ export function streamBlocks(text: string, live: boolean): StreamBlock[] {
     // not change unless new content opens a fresh block, so render it as a
     // full markdown block instead of treating it as a growing plain-text tail.
     if (candidate?.type === "code" && !open(candidate.raw)) {
-      return blocks.map((block, index) =>
-        index === blocks.length - 1 ? { ...block, mode: "full" as const } : block,
-      )
+      return blocks.map((block, index) => (index === blocks.length - 1 ? { ...block, mode: "full" as const } : block))
     }
     return blocks
   }

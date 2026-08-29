@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePlatform } from "@/context/platform"
+import { appVersion } from "@/context/app-version"
 import { useSettings } from "@/context/settings"
 import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
@@ -159,9 +160,10 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
       timer = undefined
     }
 
-    const markSeen = () => {
-      if (!platform.version) return
-      setStore("version", platform.version)
+    const markSeen = (version?: string) => {
+      const resolved = version ?? platform.version
+      if (!resolved) return
+      setStore("version", resolved)
     }
 
     const start = (previous: string) => {
@@ -170,6 +172,9 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
         return
       }
 
+      // Snapshot the resolved version so the async fetch and markSeen use the
+      // same version even if the active server changes mid-flight.
+      const current = platform.version
       const fetcher = platform.fetch ?? fetch
       const controller = new AbortController()
       onCleanup(() => {
@@ -184,17 +189,17 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
         .then((response) => (response.ok ? (response.json() as Promise<unknown>) : undefined))
         .then((json) => {
           if (!json) return
-          const highlights = loadReleaseHighlights(json, platform.version, previous)
+          const highlights = loadReleaseHighlights(json, current, previous)
           if (controller.signal.aborted) return
 
           if (highlights.length === 0) {
-            markSeen()
+            markSeen(current)
             return
           }
 
           timer = setTimeout(() => {
             timer = undefined
-            markSeen()
+            markSeen(current)
             dialog.show(() => <DialogReleaseNotes highlights={highlights} />)
           }, 500)
         })
@@ -205,6 +210,11 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
       if (state.started) return
       if (!ready()) return
       if (!settings.ready()) return
+      // On web, wait for the resolved runtime version (not the package
+      // fallback) so release-highlight comparison uses the real CLI version.
+      // On desktop, platform.version is the Electron release version and is
+      // available immediately.
+      if (platform.platform === "web" && !appVersion()) return
       if (!platform.version) return
       state.started = true
 

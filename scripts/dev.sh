@@ -74,6 +74,7 @@ $self serve [options]
   --app-port <port> Workbench port (default: 3000)
   --debug [mods]    Debug mode
   --backend-only    Start only the backend server (skip Workbench)
+  --cdp-debug       Launch Chrome with CDP debugging (port 9222) and open the Workbench
 
 $self restart [target]
   backend           Restart only the backend server (keep Workbench alive)
@@ -90,6 +91,7 @@ $self stop [target]
 $self desktop [options]
   --debug [mods]    Debug mode (modules: task,rules; default: all)
   --rebuild         Rebuild sidecar bundle and re-copy icons before launch
+  --cdp-debug       Enable Chrome DevTools Protocol debugging (port 9222)
   Desktop runs in background. Close the Electron window or use 'stop desktop'.
   By default sidecar build is skipped (assumes dist/node/node.js is current).
   Sidecar log: $SIDECAR_LOG
@@ -563,7 +565,7 @@ cmd_tui() {
 }
 
 cmd_serve() {
-  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" backend_only=false passthrough=()
+  local PORT=4096 APP_PORT=3000 debug=false debug_modules="all" backend_only=false cdp_debug=false passthrough=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --) shift; passthrough+=("$@"); break ;;
@@ -574,6 +576,7 @@ cmd_serve() {
         [[ $# -gt 1 && ! "$2" =~ ^- ]] && { debug_modules="$2"; shift 2; } || { debug_modules="all"; shift; }
         ;;
       --backend-only) backend_only=true; shift ;;
+      --cdp-debug) cdp_debug=true; shift ;;
       -h|--help) usage ;;
       *) passthrough+=("$1"); shift ;;
     esac
@@ -611,6 +614,15 @@ cmd_serve() {
   echo "  pidfile $PIDFILE"
   echo "  logs    $BACKEND_LOG / $FRONTEND_LOG"
   echo "  → http://127.0.0.1:$APP_PORT/workbench"
+
+  if $cdp_debug; then
+    if is_running 9222; then
+      echo "  ⚠  --cdp-debug: port 9222 already in use; skipping browser launch"
+    else
+      echo "  --cdp-debug: launching Chrome with CDP on 9222..."
+      "$root/../../scripts/chrome_remote" "http://127.0.0.1:$APP_PORT/workbench" || echo "  ⚠  failed to launch Chrome"
+    fi
+  fi
 }
 
 cmd_restart() {
@@ -675,7 +687,7 @@ EOF
 }
 
 cmd_desktop() {
-  local CHANNEL="local" debug=false debug_modules="all" rebuild=false
+  local CHANNEL="local" debug=false debug_modules="all" rebuild=false cdp_debug=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --debug)
@@ -683,6 +695,7 @@ cmd_desktop() {
         [[ $# -gt 1 && ! "$2" =~ ^- ]] && { debug_modules="$2"; shift 2; } || { debug_modules="all"; shift; }
         ;;
       --rebuild) rebuild=true; shift ;;
+      --cdp-debug) cdp_debug=true; shift ;;
       -h|--help) usage ;;
       *) echo "Unknown option: $1"; usage ;;
     esac
@@ -690,7 +703,12 @@ cmd_desktop() {
 
   local DESKTOP_DIR="$root/packages/ellamaka-desktop"
   require_stopped desktop || return 1
-  require_free_ports 5173 9222 || return 1
+  # 5173 (electron-vite) always required; 9222 (CDP) only when --cdp-debug.
+  if $cdp_debug; then
+    require_free_ports 5173 9222 || return 1
+  else
+    require_free_ports 5173 || return 1
+  fi
   export OPENCODE_CHANNEL="$CHANNEL"
   # Keep the schema dependency floor in lockstep with .ci/versions.json
   # before resolving MIN_WOPAL_CLI_VERSION (idempotent no-op when aligned).
@@ -714,6 +732,9 @@ cmd_desktop() {
   mkdir -p "$LOGDIR"
   local plugin_modules=""
   local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
+  if $cdp_debug; then
+    desktop_env+=(ELAMAKA_DESKTOP_CDP=1)
+  fi
   if [ -n "$WOPAL_HOME" ]; then
     desktop_env+=(WOPAL_HOME="$WOPAL_HOME")
     echo "📌 Using Custom WOPAL_HOME: ${WOPAL_HOME}"
@@ -766,10 +787,12 @@ cmd_desktop() {
   if [[ ! "$sidecar_port" =~ ^[1-9][0-9]*$ ]]; then
     sidecar_port="5173"
   fi
-  write_record desktop "$sidecar_port,5173,9222" "$desktop_pid" "$RECORD_PGID"
+  write_record desktop "$sidecar_port,5173" "$desktop_pid" "$RECORD_PGID"
   record_listener desktop-sidecar "$sidecar_port" || true
   record_listener desktop-vite 5173 || true
-  record_listener desktop-devtools 9222 || true
+  if $cdp_debug; then
+    record_listener desktop-devtools 9222 || true
+  fi
   record_crashpads
 
   echo "  Electron ready (${elapsed}s)"

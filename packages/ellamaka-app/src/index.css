@@ -1,5 +1,6 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
+@import "katex/dist/katex.min.css";
 
 @keyframes workbench-spinner-rotate {
   to {
@@ -35,29 +36,29 @@
 /* 显式允许的垂直/水平精致滚动条 */
 .has-scrollbar::-webkit-scrollbar,
 .session-tree-scroll::-webkit-scrollbar {
-  display: block !important;
-  width: 6px !important;
-  height: 6px !important;
+  display: block;
+  width: 6px;
+  height: 6px;
 }
 
 .has-scrollbar::-webkit-scrollbar-track,
 .session-tree-scroll::-webkit-scrollbar-track {
-  background: transparent !important;
+  background: transparent;
 }
 
 .has-scrollbar::-webkit-scrollbar-thumb,
 .session-tree-scroll::-webkit-scrollbar-thumb {
-  background: rgb(140 140 160 / 35%) !important;
-  border-radius: 4px !important;
+  background: rgb(140 140 160 / 35%);
+  border-radius: 4px;
 }
 
 .has-scrollbar::-webkit-scrollbar-thumb:hover,
 .session-tree-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(140 140 160 / 65%) !important;
+  background: rgb(140 140 160 / 65%);
 }
 
 html, body, #root {
-  overflow: hidden !important;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
@@ -66,11 +67,11 @@ html, body, #root {
 
 /* 锁定设置弹窗使用标准静态字号，不受主 UI 动态 fontSize 调控干预 */
 .settings-dialog {
-  --ui-font-size-base: 14px !important;
-  --font-size-base: 14px !important;
-  --font-size-small: 13px !important;
-  --font-size-large: 16px !important;
-  --font-size-x-large: 19px !important;
+  --ui-font-size-base: 14px;
+  --font-size-base: 14px;
+  --font-size-small: 13px;
+  --font-size-large: 16px;
+  --font-size-x-large: 19px;
 }
 
 @layer components {
@@ -213,12 +214,8 @@ html, body, #root {
 /* 自适应主题反相与透明遮罩，对接项目的 data-theme 主题机制 */
 .ellamaka-logo-invert {
   mask-image: url("/ellamaka-text-logo.png?v=2");
-  mask-image: url("/ellamaka-text-logo.png?v=2");
-  mask-size: contain;
   mask-size: contain;
   mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  mask-position: center;
   mask-position: center;
   filter: invert(0);
 }
@@ -443,10 +440,159 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-component="chat-narrative"] {
   font-size: var(--font-size-base);
-  line-height: 1.5;
+  line-height: 1.65;
   color: var(--text-strong);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Workbench owns its Markdown rather than inheriting the compact shared
+   transcript defaults. Keep a calm reading rhythm: semantic spacing makes
+   headings, lists and code scan as a document while every value remains on
+   the existing theme/font tokens. This scope deliberately excludes the
+   official Session page. */
+[data-slot="workbench-markdown-content"] {
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+[data-slot="workbench-markdown-content"] > :first-child {
+  margin-top: 0;
+}
+
+[data-slot="workbench-markdown-content"] > :last-child {
+  margin-bottom: 0;
+}
+
+[data-slot="workbench-markdown-content"] p {
+  margin: 0 0 12px;
+}
+
+[data-slot="workbench-markdown-content"] h1,
+[data-slot="workbench-markdown-content"] h2,
+[data-slot="workbench-markdown-content"] h3,
+[data-slot="workbench-markdown-content"] h4 {
+  margin: 20px 0 10px;
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+[data-slot="workbench-markdown-content"] h1 {
+  font-size: var(--font-size-large);
+}
+
+[data-slot="workbench-markdown-content"] h2 {
+  font-size: calc(var(--font-size-base) + 1px);
+}
+
+[data-slot="workbench-markdown-content"] h3,
+[data-slot="workbench-markdown-content"] h4 {
+  font-size: var(--font-size-base);
+}
+
+[data-slot="workbench-markdown-content"] ul,
+[data-slot="workbench-markdown-content"] ol {
+  margin: 0 0 12px;
+  padding-inline-start: 1.55em;
+}
+
+[data-slot="workbench-markdown-content"] li + li {
+  margin-top: 4px;
+}
+
+[data-slot="workbench-markdown-content"] li > ul,
+[data-slot="workbench-markdown-content"] li > ol {
+  margin: 4px 0 0;
+}
+
+[data-slot="workbench-markdown-content"] hr {
+  height: 0;
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--border-weaker-base);
+}
+
+[data-slot="workbench-markdown-content"] blockquote {
+  margin: 0 0 12px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--border-weak-base);
+  color: var(--text-base);
+}
+
+[data-slot="workbench-markdown-content"] a {
+  color: var(--text-interactive-base);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentcolor 36%, transparent);
+  text-underline-offset: 2px;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease;
+}
+
+[data-slot="workbench-markdown-content"] a:hover {
+  color: color-mix(in srgb, var(--text-interactive-base) 78%, var(--text-strong));
+  text-decoration-color: currentcolor;
+}
+
+[data-slot="workbench-markdown-content"] a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 2px;
+}
+
+[data-slot="workbench-markdown-content"] :where(p, li, td, th, blockquote) > code,
+[data-slot="workbench-markdown-content"] a.external-link > code {
+  padding: 1px 4px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 4px;
+  background: var(--surface-weak);
+  color: var(--text-base);
+  font-family: var(--font-family-mono);
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+
+[data-slot="workbench-markdown-content"] table {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  border-collapse: collapse;
+  font-size: var(--font-size-small);
+}
+
+[data-slot="workbench-markdown-content"] th,
+[data-slot="workbench-markdown-content"] td {
+  padding: 6px 8px;
+  border: 1px solid var(--border-weaker-base);
+  text-align: left;
+  vertical-align: top;
+}
+
+[data-slot="workbench-markdown-content"] th {
+  background: var(--surface-weak);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* KaTeX supplies semantic MathML alongside its visual HTML. Keep both the
+   inline and display forms on the same reading rhythm as Workbench Markdown;
+   wide equations scroll inside themselves instead of widening or reflowing
+   the chat timeline. */
+[data-slot="workbench-markdown-content"] .katex {
+  color: inherit;
+  font-size: 1em;
+}
+
+[data-slot="workbench-markdown-content"] .katex-display {
+  max-width: 100%;
+  margin: 14px 0;
+  padding-block: 2px;
+  overflow: auto hidden;
+  scrollbar-width: thin;
 }
 
 /* Assistant narrative metadata footer. Rendered under the turn's final text
@@ -496,6 +642,10 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 [data-slot="chat-narrative-meta-duration"] {
   color: var(--text-weaker);
 }
+
+/* stylelint-disable declaration-no-important -- Shiki serializes these code
+   block values inline, and the upstream copy-button variant needs an explicit
+   local surface to remain legible in both color schemes. */
 
 /* Workbench chat code blocks: match the tool block surfaces and the chat
    composer radius so the block follows the theme instead of the hardcoded
@@ -562,6 +712,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] [data-slot="markdown-copy-button"]:hover {
   box-shadow: none;
 }
+
+/* stylelint-enable declaration-no-important */
 
 
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre:hover {
@@ -960,6 +1112,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   flex: 1 1 auto;
 }
 
+/* stylelint-disable declaration-no-important -- File-change blocks embed
+   upstream message-part markup whose component stylesheet loads separately;
+   these narrow overrides intentionally own its chrome and geometry. */
+
 /* When FileChangeBlock embeds OpenCodeMessagePart inside its Collapsible.Content,
    hide the redundant upstream trigger/header and per-file accordion header */
 [data-component="chat-file-change-wrapper"] [data-slot="basic-tool-trigger"],
@@ -990,30 +1146,6 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 /* Remove the extra border-top on edit-content/write-content */
 [data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
   border-top: none !important;
-}
-
-/* Strip ALL upstream card chrome from the embedded accordion: no gray background,
-   no border, no border-radius — the content renders bare under our unified header */
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded],
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"],
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
-  border: none !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-}
-
-/* Remove the extra border-top on edit-content/write-content */
-[data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
-  border-top: none !important;
-}
-
-/* Strip the upstream accordion card chrome: no gray background, border, or
-   rounded corners around file-change content. The content renders bare under
-   our unified header, matching shell/context/generic blocks. */
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
-  border: none !important;
-  background: transparent !important;
-  border-radius: 0 !important;
 }
 
 [data-component="chat-file-change-wrapper"] [data-slot="accordion-item"] {
@@ -1236,6 +1368,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-component="chat-file-change-wrapper"] [data-component="sticky-accordion-header"] {
   position: static !important;
 }
+
+/* stylelint-enable declaration-no-important */
 
 /* Override the upstream toast surface to match Ellamaka theme surfaces */
 [data-component="toast-region"] [data-component="toast"] {
@@ -1480,7 +1614,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   gap: 2px;
   padding: 12px 0;
   overflow: hidden;
-  cursor: pointer;
+  cursor: default;
   opacity: 0;
   z-index: 2;
   transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -1532,16 +1666,61 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   background: var(--icon-strong-base);
 }
 
-/* The popover's containing block is the timeline container (not the 20px
-   rail), so it overlays the message content without reflowing the layout. */
+/* The right edge is the explicit entry point for the full conversation
+   directory; the left rail remains dedicated to turn previews and jumps. */
+[data-component="chat-prompt-directory-trigger"] {
+  --chat-prompt-directory-trigger-width: 16px;
+
+  position: absolute;
+  top: 0;
+  right: 8px;
+  bottom: 0;
+  width: var(--chat-prompt-directory-trigger-width);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-component="chat-prompt-directory-trigger"]::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 6px);
+  right: 2px;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--icon-base);
+  box-shadow: 0 5px var(--icon-base), 0 10px var(--icon-base);
+  transition: width 200ms ease, background-color 200ms ease;
+}
+
+[data-component="chat-prompt-directory-trigger"]:hover,
+[data-component="chat-prompt-directory-trigger"]:focus-visible,
+[data-component="chat-prompt-directory-trigger"][data-open="true"] {
+  opacity: 1;
+}
+
+[data-component="chat-prompt-directory-trigger"]:hover::after,
+[data-component="chat-prompt-directory-trigger"]:focus-visible::after {
+  width: 12px;
+  background: var(--icon-strong-base);
+  box-shadow: 0 5px var(--icon-strong-base), 0 10px var(--icon-strong-base);
+}
+
+/* The popover opens from the right edge of the timeline and overlays message
+   content without reflowing the layout. */
 [data-component="chat-prompt-popover"] {
   position: absolute;
-  left: 32px;
+  right: 32px;
   top: 12px;
+  bottom: 12px;
   width: calc(100% - 44px);
   max-width: 360px;
-  max-height: 70vh;
-  overflow: auto;
+  overflow: hidden;
   background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 84%, transparent);
   border: 0;
   border-radius: 12px;
@@ -1553,7 +1732,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 [data-component="chat-prompt-popover"][data-open="true"] {
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
 
 [data-slot="chat-prompt-header"] {
@@ -1566,34 +1746,25 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   padding: 4px 4px 8px;
 }
 
-[data-slot="chat-prompt-nav-buttons"] {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-[data-slot="chat-prompt-prev"],
-[data-slot="chat-prompt-next"],
-[data-slot="chat-prompt-close"] {
-  display: inline-flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-weak);
-  padding: 2px;
-}
-
 [data-slot="chat-prompt-loading"] {
   font-size: 13px;
   color: var(--text-weak);
   padding: 4px;
 }
 
+[data-slot="chat-prompt-loading"][data-loading="false"] {
+  display: none;
+}
+
 [data-slot="chat-prompt-list"] {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
+  justify-content: safe center;
   gap: 4px;
+  overflow-y: auto;
+  padding: 4px 0;
 }
 
 [data-slot="chat-prompt-item"] {
@@ -1608,7 +1779,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   text-align: left;
 }
 
-[data-slot="chat-prompt-item"][data-focused="true"],
+[data-slot="chat-prompt-item"][data-active="true"],
 [data-slot="chat-prompt-item"]:hover {
   background: var(--surface-raised-base);
 }

@@ -26,7 +26,12 @@ describe("incremental markdown DOM", () => {
     const container = mount()
     const incremental = createIncrementalMarkdown(decorate)
 
-    const handled = incremental.render(true, container, [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live")], labels)
+    const handled = incremental.render(
+      true,
+      container,
+      [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live")],
+      labels,
+    )
 
     expect(handled).toBe(true)
     expect(container.querySelectorAll("p")).toHaveLength(2)
@@ -50,13 +55,33 @@ describe("incremental markdown DOM", () => {
     container.remove()
   })
 
-  test("refuses non-streaming or single-block renders", () => {
+  test("settles compatible blocks without replacing the stable DOM", () => {
     const container = mount()
     const incremental = createIncrementalMarkdown(decorate)
 
-    expect(incremental.render(false, container, [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live")], labels)).toBe(false)
+    expect(
+      incremental.render(false, container, [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live")], labels),
+    ).toBe(false)
     expect(incremental.render(true, container, [block("a", "<p>one</p>", "live")], labels)).toBe(false)
-    expect(incremental.render(true, container, [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live", "h")], labels)).toBe(true)
+    expect(
+      incremental.render(
+        true,
+        container,
+        [block("a", "<p>one</p>"), block("b", "<p>two</p>", "live", "h:live")],
+        labels,
+      ),
+    ).toBe(true)
+    const stable = container.querySelector("p")!
+
+    expect(
+      incremental.render(
+        false,
+        container,
+        [block("a", "<p>one</p>"), block("b", "<p>two</p>", "full", "h:full")],
+        labels,
+      ),
+    ).toBe(true)
+    expect(container.querySelector("p")).toBe(stable)
     container.remove()
   })
 
@@ -110,6 +135,32 @@ describe("incremental markdown DOM", () => {
 
     // The preserve hook was consulted and the original highlighted <pre>
     // survived — no plain/highlight flip.
+    expect(preserved).toHaveLength(1)
+    expect(container.querySelector("pre.shiki")).toBe(before)
+    container.remove()
+  })
+
+  test("keeps an unchanged highlighted code block while the stream settles", () => {
+    const container = mount()
+    const preserved: Array<[Element, Element]> = []
+    const incremental = createIncrementalMarkdown(decorate, {
+      cancel: () => {},
+      ready: () => {},
+      preserve: (from, to) => {
+        preserved.push([from, to])
+        return true
+      },
+    })
+
+    const highlighted = '<div data-component="markdown-code"><pre class="shiki"><code>const a = 1</code></pre></div>'
+    incremental.render(true, container, [block("a", "<p>intro</p>"), block("b", highlighted, "live", "h1")], labels)
+    const before = container.querySelector("pre.shiki")!
+
+    const complete = '<pre><code data-lang="js">const a = 1</code></pre>'
+    expect(
+      incremental.render(false, container, [block("a", "<p>intro</p>"), block("b", complete, "full", "h2")], labels),
+    ).toBe(true)
+
     expect(preserved).toHaveLength(1)
     expect(container.querySelector("pre.shiki")).toBe(before)
     container.remove()
