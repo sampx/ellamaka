@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@opencode-ai/sdk/v2/client"
-import { reconcileActiveSessions } from "./directory-sync"
+import { reconcileActiveSessions, shouldDelegateMessageLoad } from "./directory-sync"
 
 const message = (id: string, sessionID: string): Message =>
   ({
@@ -73,5 +73,51 @@ describe("reconcileActiveSessions", () => {
     })
     await Promise.resolve()
     expect(synced).toEqual([])
+  })
+})
+
+describe("shouldDelegateMessageLoad", () => {
+  test("delegates load when nothing is cached", () => {
+    expect(
+      shouldDelegateMessageLoad({
+        force: false,
+        cached: false,
+        hasSession: false,
+      }),
+    ).toBe(true)
+  })
+
+  test("skips cached load, then force re-loads even though loading flag is on", () => {
+    // The loading flag is only observable through delegation: when force is
+    // set, loadMessages must run even if a (stale or self-set) loading flag
+    // would tell it to bail, otherwise the flag leaks forever and the
+    // session's messages never load.
+    expect(
+      shouldDelegateMessageLoad({
+        force: true,
+        cached: true,
+        hasSession: true,
+      }),
+    ).toBe(true)
+  })
+
+  test("skips load for a cached session without force", () => {
+    expect(
+      shouldDelegateMessageLoad({
+        force: false,
+        cached: true,
+        hasSession: true,
+      }),
+    ).toBe(false)
+  })
+
+  test("loads an uncached session even when it is listed", () => {
+    expect(
+      shouldDelegateMessageLoad({
+        force: false,
+        cached: false,
+        hasSession: true,
+      }),
+    ).toBe(true)
   })
 })

@@ -653,7 +653,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
       <Show when={props.scroll.overflow && props.scroll.jump}>
         <div data-component="chat-resume-scroll">
           <button type="button" data-action="chat-resume-scroll" aria-label="Scroll to bottom" on:click={() => props.onResumeScroll?.()}>
-            <Icon name="arrow-down-to-line" size="small" />
+            <Icon name="arrow-down-to-line" size="normal" />
           </button>
         </div>
       </Show>
