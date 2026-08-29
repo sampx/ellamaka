@@ -510,7 +510,7 @@ messages:
 - 改为 dsh 模式：固定 `skill` schema + 历史尾部持久 skill catalog + digest 变化时完整替换目录 + 空 tombstone + source metadata。
 - 这独立于 dsh 工具收尾，可单独排期（P3.6，P4 后处理）。
 
-## 6. 设计专题：工具结果契约映射（已定稿，待实施）
+## 6. 设计专题：工具结果契约映射（已实施，2026-08-28）
 
 dsh 工具经 adapter 投影进 ellamaka 后，Workbench 的工具调用工具条与结果 block 需要正常显示。当前存在两处契约断裂，本设计在 **adapter 一处**补齐，前端零改动。
 
@@ -558,7 +558,7 @@ dsh 的 edit/write 把 diff 放在 `meta.diffs`（`presentationMeta` 投影，�
 
 ### 6.5 范围衔接
 
-本设计不改变工具容器、沙箱、escalation 或原生 UI 决策。它只补齐 adapter 的结果契约映射，使已采用的 dsh 工具在 Workbench 正常显示。实施与验收由后续 dev-flow Plan 承载。
+本设计不改变工具容器、沙箱、escalation 或原生 UI 决策。它只补齐 adapter 的结果契约映射，使已采用的 dsh 工具在 Workbench 正常显示。**已实施（2026-08-28，`.wopal/plugins/dsh-adapter`，提交 93164701）：`file_path`→`filePath` 重命名 + `meta.diffs`→`filediff` 透传，300 行测试覆盖。**
 
 ## 7. 当前约定（双人确认制，无红线）
 
