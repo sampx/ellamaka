@@ -23,10 +23,11 @@ type Hooks<Context> = {
   cancel: () => void
   ready: (container: HTMLDivElement, labels: Labels, context: Context) => void
   /**
-   * Streaming code highlight preservation. When the live block's existing DOM
-   * is a single highlighted <pre> and the incoming block is a single plain
-   * <pre> whose source continues the old one, the hook keeps the old block and
-   * queues an in-place re-highlight. Returns true to skip the replacement.
+   * Code highlight preservation. When a block's existing DOM is a single
+   * highlighted <pre> and the incoming block is a single plain <pre>, the hook
+   * may keep the old block and queue an in-place re-highlight. This applies to
+   * both a growing live block and its final, unchanged stream-settlement DOM.
+   * Returns true to skip the replacement.
    */
   preserve?: (from: Element, to: Element) => boolean
 }
@@ -77,22 +78,18 @@ export function createIncrementalMarkdown<Context = never>(decorate: Decorate, h
     // block and let the preserve hook re-highlight in place. A wholesale
     // replace would flip the block between plain and highlighted per token.
     const current = record.start.nextSibling
-    if (
-      block.mode === "live" &&
-      hooks?.preserve &&
-      current &&
-      current !== record.end &&
-      current.nextSibling === record.end
-    ) {
-      const candidate = current instanceof HTMLElement && current.getAttribute("data-component") === "markdown-code"
-        ? current.querySelector("pre")
-        : current
+    if (hooks?.preserve && current && current !== record.end && current.nextSibling === record.end) {
+      const candidate =
+        current instanceof HTMLElement && current.getAttribute("data-component") === "markdown-code"
+          ? current.querySelector("pre")
+          : current
       const incoming = document.createElement("div")
       incoming.innerHTML = block.html
       const to = incoming.children.length === 1 ? incoming.firstElementChild : null
-      const toPre = to instanceof HTMLElement && to.getAttribute("data-component") === "markdown-code"
-        ? to.querySelector("pre")
-        : to
+      const toPre =
+        to instanceof HTMLElement && to.getAttribute("data-component") === "markdown-code"
+          ? to.querySelector("pre")
+          : to
       if (candidate instanceof HTMLPreElement && toPre instanceof HTMLPreElement) {
         if (hooks.preserve(candidate, toPre)) {
           record.hash = block.hash
@@ -123,13 +120,19 @@ export function createIncrementalMarkdown<Context = never>(decorate: Decorate, h
     records.push({ key: block.key, hash: block.hash, start, end })
   }
 
-  const update = (container: HTMLDivElement, blocks: MarkdownBlock[], labels: Labels) => {
-    if (blocks.length < 2) return false
-    if (blocks.slice(0, -1).some((block) => block.mode !== "full")) return false
+  const update = (container: HTMLDivElement, blocks: MarkdownBlock[], labels: Labels, streaming: boolean) => {
+    if (blocks.length === 0) return false
+    if (streaming && (blocks.length < 2 || blocks.slice(0, -1).some((block) => block.mode !== "full"))) return false
+    if (!streaming && (records.length === 0 || blocks.some((block) => block.mode !== "full"))) return false
 
     if (records.some((record) => !record.start.isConnected || !record.end.isConnected)) reset()
+    if (!streaming && records.length === 0) return false
     const shared = Math.min(records.length, blocks.length)
     if (records.slice(0, shared).some((record, index) => record.key !== blocks[index]?.key)) {
+      // The final document cannot be safely reconciled through a shifted block
+      // boundary. Let the renderer fall back to morphdom, which patches in
+      // place without clearing the transcript container.
+      if (!streaming) return false
       reset()
       container.replaceChildren()
     }
@@ -165,7 +168,7 @@ export function createIncrementalMarkdown<Context = never>(decorate: Decorate, h
     labels: Labels,
     context?: Context,
   ) => {
-    if (!streaming || !update(container, blocks, labels)) return false
+    if (!update(container, blocks, labels, streaming)) return false
     hooks?.cancel()
     hooks?.ready(container, labels, context as Context)
     return true

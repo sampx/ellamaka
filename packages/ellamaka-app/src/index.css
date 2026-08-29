@@ -1,5 +1,6 @@
 @import "@opencode-ai/ui/styles/tailwind";
 @import "@opencode-ai/ui/v2/styles/tailwind.css";
+@import "katex/dist/katex.min.css";
 
 @keyframes workbench-spinner-rotate {
   to {
@@ -443,10 +444,144 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-component="chat-narrative"] {
   font-size: var(--font-size-base);
-  line-height: 1.5;
+  line-height: 1.65;
   color: var(--text-strong);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Workbench owns its Markdown rather than inheriting the compact shared
+   transcript defaults. Keep a calm reading rhythm: semantic spacing makes
+   headings, lists and code scan as a document while every value remains on
+   the existing theme/font tokens. This scope deliberately excludes the
+   official Session page. */
+[data-slot="workbench-markdown-content"] {
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+[data-slot="workbench-markdown-content"] > :first-child {
+  margin-top: 0;
+}
+
+[data-slot="workbench-markdown-content"] > :last-child {
+  margin-bottom: 0;
+}
+
+[data-slot="workbench-markdown-content"] p {
+  margin: 0 0 12px;
+}
+
+[data-slot="workbench-markdown-content"] h1,
+[data-slot="workbench-markdown-content"] h2,
+[data-slot="workbench-markdown-content"] h3,
+[data-slot="workbench-markdown-content"] h4 {
+  margin: 20px 0 10px;
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+[data-slot="workbench-markdown-content"] h1 {
+  font-size: var(--font-size-large);
+}
+
+[data-slot="workbench-markdown-content"] h2 {
+  font-size: calc(var(--font-size-base) + 1px);
+}
+
+[data-slot="workbench-markdown-content"] h3,
+[data-slot="workbench-markdown-content"] h4 {
+  font-size: var(--font-size-base);
+}
+
+[data-slot="workbench-markdown-content"] ul,
+[data-slot="workbench-markdown-content"] ol {
+  margin: 0 0 12px;
+  padding-inline-start: 1.55em;
+}
+
+[data-slot="workbench-markdown-content"] li + li {
+  margin-top: 4px;
+}
+
+[data-slot="workbench-markdown-content"] li > ul,
+[data-slot="workbench-markdown-content"] li > ol {
+  margin: 4px 0 0;
+}
+
+[data-slot="workbench-markdown-content"] hr {
+  height: 0;
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--border-weaker-base);
+}
+
+[data-slot="workbench-markdown-content"] blockquote {
+  margin: 0 0 12px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--border-weak-base);
+  color: var(--text-base);
+}
+
+[data-slot="workbench-markdown-content"] a {
+  color: var(--text-interactive-base);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentcolor 36%, transparent);
+  text-underline-offset: 2px;
+}
+
+[data-slot="workbench-markdown-content"] :where(p, li, td, th, blockquote) > code,
+[data-slot="workbench-markdown-content"] a.external-link > code {
+  padding: 1px 4px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 4px;
+  background: var(--surface-weak);
+  color: var(--text-base);
+  font-family: var(--font-family-mono);
+  font-size: 0.92em;
+  line-height: 1.45;
+}
+
+[data-slot="workbench-markdown-content"] table {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 14px;
+  border-collapse: collapse;
+  font-size: var(--font-size-small);
+}
+
+[data-slot="workbench-markdown-content"] th,
+[data-slot="workbench-markdown-content"] td {
+  padding: 6px 8px;
+  border: 1px solid var(--border-weaker-base);
+  text-align: left;
+  vertical-align: top;
+}
+
+[data-slot="workbench-markdown-content"] th {
+  background: var(--surface-weak);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* KaTeX supplies semantic MathML alongside its visual HTML. Keep both the
+   inline and display forms on the same reading rhythm as Workbench Markdown;
+   wide equations scroll inside themselves instead of widening or reflowing
+   the chat timeline. */
+[data-slot="workbench-markdown-content"] .katex {
+  color: inherit;
+  font-size: 1em;
+}
+
+[data-slot="workbench-markdown-content"] .katex-display {
+  max-width: 100%;
+  margin: 14px 0;
+  padding-block: 2px;
+  overflow: auto hidden;
+  scrollbar-width: thin;
 }
 
 /* Assistant narrative metadata footer. Rendered under the turn's final text

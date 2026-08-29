@@ -1,4 +1,5 @@
 import { Marked } from "marked"
+import katex from "katex"
 import { bundledLanguages, codeToHtml } from "shiki"
 
 /**
@@ -42,6 +43,66 @@ export function fnv1a(s: string): string {
   return (h >>> 0).toString(36)
 }
 
+function renderMath(text: string, displayMode: boolean, fallback: string) {
+  try {
+    return katex.renderToString(text, {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+    })
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Replaces completed $...$ and $$...$$ expressions in parsed Markdown HTML.
+ * It works on text nodes only, so source examples in pre/code/kbd elements
+ * remain literal. An unmatched delimiter is intentionally left alone: during
+ * streaming that means a formula only upgrades after its closing delimiter
+ * arrives, rather than changing geometry on every delta.
+ */
+export function renderMathExpressions(html: string): string {
+  if (!html.includes("$") || typeof document === "undefined") return html
+
+  const root = document.createElement("div")
+  root.innerHTML = html
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node instanceof Text && !node.parentElement?.closest("pre, code, kbd, script, style")) nodes.push(node)
+  }
+
+  const pattern = /\$\$([\s\S]+?)\$\$|(?<![\\$])\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g
+  for (const node of nodes) {
+    const source = node.data
+    let cursor = 0
+    let changed = false
+    let output = ""
+
+    for (const match of source.matchAll(pattern)) {
+      const index = match.index ?? 0
+      const raw = match[0]
+      const display = match[1] !== undefined
+      const expression = match[1] ?? match[2] ?? ""
+      if (!expression.trim()) continue
+      output += source.slice(cursor, index)
+      output += renderMath(expression, display, raw)
+      cursor = index + raw.length
+      changed = true
+    }
+
+    if (!changed) continue
+    output += source.slice(cursor)
+    const template = document.createElement("template")
+    template.innerHTML = output
+    node.replaceWith(template.content)
+  }
+
+  return root.innerHTML
+}
+
 const cache = new Map<string, string>()
 const CACHE_LIMIT = 500
 
@@ -65,6 +126,7 @@ function replaceWithHighlighted(block: Element, html: string, sourceHash: string
   // source has not changed, so streaming re-renders never revert them to
   // plain code.
   highlighted.setAttribute("data-source-hash", sourceHash)
+  highlighted.querySelector("code")?.setAttribute("data-highlighted", "true")
   const wrapper = pre.parentElement
   if (wrapper?.getAttribute("data-component") === "markdown-code") {
     wrapper.replaceChild(highlighted, pre)
@@ -161,6 +223,7 @@ function update(pre: HTMLPreElement, html: string, code: string) {
   }
   pre.setAttribute("data-source-hash", fnv1a(code))
   pre.replaceChildren(...Array.from(next.childNodes))
+  pre.querySelector("code")?.setAttribute("data-highlighted", "true")
   pre.scrollLeft = x
 }
 
@@ -214,12 +277,16 @@ function queue(pre: HTMLPreElement, code: string, lang: string) {
  * Returns true when the caller should skip replacing the block.
  */
 export function preserveStreamingHighlight(from: Element, to: Element, streaming: boolean) {
-  if (!streaming) return false
   if (!(from instanceof HTMLPreElement) || !(to instanceof HTMLPreElement)) return false
   if (!from.classList.contains("shiki") || to.classList.contains("shiki")) return false
   const before = from.querySelector("code")?.textContent ?? ""
   const after = to.querySelector("code")?.textContent ?? ""
   const lang = to.querySelector("code")?.getAttribute("data-lang") || "text"
+  // The final render has the same source as the existing Shiki block. Keep
+  // that DOM node rather than briefly replacing it with a plain <pre> and
+  // waiting for a second asynchronous highlight pass.
+  if (before === after && !!after) return true
+  if (!streaming) return false
   if (!after || !continues(before, after)) return false
   queue(from, after, lang)
   return true

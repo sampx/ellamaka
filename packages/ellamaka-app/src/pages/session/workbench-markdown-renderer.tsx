@@ -7,7 +7,13 @@ import { isServer } from "solid-js/web"
 import { streamBlocks } from "./workbench-markdown-stream"
 import { createIncrementalMarkdown } from "./markdown-incremental-dom"
 import { tryFastRender } from "./markdown-fast-path"
-import { deferredHighlight, fnv1a, preserveStreamingHighlight, syncMarked } from "./markdown-highlight"
+import {
+  deferredHighlight,
+  fnv1a,
+  preserveStreamingHighlight,
+  renderMathExpressions,
+  syncMarked,
+} from "./markdown-highlight"
 
 type Entry = {
   hash: string
@@ -277,7 +283,11 @@ export function WorkbenchMarkdown(
         // real table from the first row and grows row by row; the block hash
         // guards unchanged stable blocks against re-parsing.
         const blocks = streamBlocks(src.text, src.streaming).map((block, index) => {
-          const hash = checksum(block.raw) ?? ""
+          // A tail can retain identical source bytes while moving from the
+          // healed live parse to the canonical completed parse. Include the
+          // mode so settlement revisits that one block when its semantics may
+          // differ, while every already-full stable block keeps its DOM.
+          const hash = `${checksum(block.raw) ?? ""}:${block.mode}`
           const key = `${base}:${index}`
           const cacheKey = `${key}:${block.mode}`
           const cached = cache.get(cacheKey)
@@ -286,7 +296,7 @@ export function WorkbenchMarkdown(
             return { key, hash, html: cached.html, mode: block.mode }
           }
 
-          const next = String(syncMarked.parse(block.src))
+          const next = renderMathExpressions(String(syncMarked.parse(block.src)))
           const safe = sanitize(next)
           touch(cacheKey, { hash, html: safe })
           return { key, hash, html: safe, mode: block.mode }
