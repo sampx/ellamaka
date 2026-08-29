@@ -10,7 +10,8 @@
  *      `@wopal/ellamaka-cordis` as a `file:` dependency pointing at the
  *      workspace (dev period; P9 removes the link once the package is
  *      published to npm).
- *   2. runs `bun install` to materialise the top-level flat dependency tree.
+ *   2. reifies the top-level flat dependency tree with `@npmcli/arborist` (no
+ *      dependence on a system `bun install`).
  *   3. pre-seeds the `profiles/web` and `profiles/ellamaka-tools` profile
  *      templates (manifest + empty patch layer). The patch layer stays empty
  *      here — the mount code seeds the tool-container disable list on first
@@ -20,8 +21,8 @@
  *      through the same resolver the desktop sidecar uses.
  *
  * The script is idempotent: re-running never overwrites an existing profile
- * manifest or patch layer, and `bun install` is a no-op when the tree is
- * already materialised.
+ * manifest or patch layer, and install skips when the closure anchor is
+ * already present (Arborist reify is a no-op on an up-to-date tree).
  *
  * Usage:
  *   bun script/materialize-dsh.ts            # materialise
@@ -100,22 +101,43 @@ function writeManifest(home: string): void {
 }
 
 /**
- * Run `bun install` in the closure home to materialise the flat tree.
- *
- * `--production` skips the `@wopal/ellamaka-cordis` devDependencies, whose
- * `catalog:` version references only resolve inside the workspace root — a
- * standalone closure cannot resolve them. The closure only needs the runtime
- * dependency tree, so production mode is the correct install.
+ * Minimal structural types for `@npmcli/arborist`, which is a dependency of
+ * `@opencode-ai/core` (isolated by the bun workspace) rather than of this
+ * package — we resolve it at runtime via `createRequire` and type only the
+ * surface we use, avoiding a static import that TS cannot resolve here.
  */
-async function install(home: string): Promise<void> {
-  const proc = Bun.spawn(["bun", "install", "--production"], {
-    cwd: home,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: Bun.env,
+type ArboristInstance = {
+  reify(opts?: Record<string, unknown>): Promise<unknown>
+}
+type ArboristCtor = new (opts: Record<string, unknown>) => ArboristInstance
+
+/**
+ * Materialise the closure dependency tree with `@npmcli/arborist`, replacing
+ * the old `bun install` so the script no longer depends on a system bun.
+ *
+ * Arborist reifies only the `dependencies` in the closure manifest (the
+ * manifest never declares dev/peer/optional deps, so production-only is
+ * automatic). `@npmcli/arborist` is a direct dependency of `@opencode-ai/core`
+ * and is isolated by the bun workspace, so we anchor `createRequire` at the
+ * core package to resolve it — the same engine `Npm.install` uses
+ * (packages/core/src/npm.ts). The dsh closure has no install scripts, so
+ * `ignoreScripts` is safe and matches the Npm service convention.
+ */
+export async function install(home: string): Promise<void> {
+  const coreDir = join(resolveWorkspaceRoot(), "packages", "core")
+  const coreRequire = createRequire(join(coreDir, "package.json"))
+  const Arborist = (await coreRequire("@npmcli/arborist")).Arborist as ArboristCtor
+  const arborist = new Arborist({
+    path: home,
+    binLinks: false,
+    progress: false,
+    ignoreScripts: true,
+    savePrefix: "",
   })
-  const code = await proc.exited
-  if (code !== 0) throw new Error(`bun install failed in ${home} (exit ${code})`)
+  await arborist.reify({
+    save: false,
+    saveType: "prod",
+  })
 }
 
 /** Pre-seed a profile template (manifest + empty patch layer). */
@@ -209,13 +231,24 @@ register("data:text/javascript;base64," + Buffer.from(loaderCode).toString("base
   if (code !== 0) throw new Error(`Node strip-types import of dsh-web failed (exit ${code})`)
 }
 
+/**
+ * Whether the closure still needs an install: the `@deepseek-ai/dsh` anchor
+ * is absent. Drives the idempotency decision in `main` (skip install when the
+ * tree is already materialised).
+ */
+export function needsInstall(home: string): boolean {
+  return !existsSync(join(home, "node_modules", "@deepseek-ai", "dsh", "package.json"))
+}
+
 async function main(): Promise<void> {
   const home = resolveDshHome()
   const verifyOnly = process.argv.includes("--verify")
 
   if (!verifyOnly) {
     writeManifest(home)
-    await install(home)
+    if (needsInstall(home)) {
+      await install(home)
+    }
     for (const name of PROFILES) seedProfile(home, name)
   }
 
@@ -223,7 +256,9 @@ async function main(): Promise<void> {
   console.log("materialization ok")
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}
