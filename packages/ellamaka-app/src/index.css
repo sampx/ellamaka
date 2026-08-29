@@ -36,29 +36,29 @@
 /* 显式允许的垂直/水平精致滚动条 */
 .has-scrollbar::-webkit-scrollbar,
 .session-tree-scroll::-webkit-scrollbar {
-  display: block !important;
-  width: 6px !important;
-  height: 6px !important;
+  display: block;
+  width: 6px;
+  height: 6px;
 }
 
 .has-scrollbar::-webkit-scrollbar-track,
 .session-tree-scroll::-webkit-scrollbar-track {
-  background: transparent !important;
+  background: transparent;
 }
 
 .has-scrollbar::-webkit-scrollbar-thumb,
 .session-tree-scroll::-webkit-scrollbar-thumb {
-  background: rgb(140 140 160 / 35%) !important;
-  border-radius: 4px !important;
+  background: rgb(140 140 160 / 35%);
+  border-radius: 4px;
 }
 
 .has-scrollbar::-webkit-scrollbar-thumb:hover,
 .session-tree-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(140 140 160 / 65%) !important;
+  background: rgb(140 140 160 / 65%);
 }
 
 html, body, #root {
-  overflow: hidden !important;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
@@ -67,11 +67,11 @@ html, body, #root {
 
 /* 锁定设置弹窗使用标准静态字号，不受主 UI 动态 fontSize 调控干预 */
 .settings-dialog {
-  --ui-font-size-base: 14px !important;
-  --font-size-base: 14px !important;
-  --font-size-small: 13px !important;
-  --font-size-large: 16px !important;
-  --font-size-x-large: 19px !important;
+  --ui-font-size-base: 14px;
+  --font-size-base: 14px;
+  --font-size-small: 13px;
+  --font-size-large: 16px;
+  --font-size-x-large: 19px;
 }
 
 @layer components {
@@ -214,12 +214,8 @@ html, body, #root {
 /* 自适应主题反相与透明遮罩，对接项目的 data-theme 主题机制 */
 .ellamaka-logo-invert {
   mask-image: url("/ellamaka-text-logo.png?v=2");
-  mask-image: url("/ellamaka-text-logo.png?v=2");
-  mask-size: contain;
   mask-size: contain;
   mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  mask-position: center;
   mask-position: center;
   filter: invert(0);
 }
@@ -528,9 +524,24 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="workbench-markdown-content"] a {
   color: var(--text-interactive-base);
+  cursor: pointer;
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentcolor 36%, transparent);
   text-underline-offset: 2px;
+  transition:
+    color 120ms ease,
+    text-decoration-color 120ms ease;
+}
+
+[data-slot="workbench-markdown-content"] a:hover {
+  color: color-mix(in srgb, var(--text-interactive-base) 78%, var(--text-strong));
+  text-decoration-color: currentcolor;
+}
+
+[data-slot="workbench-markdown-content"] a:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 2px;
 }
 
 [data-slot="workbench-markdown-content"] :where(p, li, td, th, blockquote) > code,
@@ -632,6 +643,10 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   color: var(--text-weaker);
 }
 
+/* stylelint-disable declaration-no-important -- Shiki serializes these code
+   block values inline, and the upstream copy-button variant needs an explicit
+   local surface to remain legible in both color schemes. */
+
 /* Workbench chat code blocks: match the tool block surfaces and the chat
    composer radius so the block follows the theme instead of the hardcoded
    shiki "OpenCode" background. shiki inlines the theme background on the
@@ -697,6 +712,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] [data-slot="markdown-copy-button"]:hover {
   box-shadow: none;
 }
+
+/* stylelint-enable declaration-no-important */
 
 
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre:hover {
@@ -1095,6 +1112,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   flex: 1 1 auto;
 }
 
+/* stylelint-disable declaration-no-important -- File-change blocks embed
+   upstream message-part markup whose component stylesheet loads separately;
+   these narrow overrides intentionally own its chrome and geometry. */
+
 /* When FileChangeBlock embeds OpenCodeMessagePart inside its Collapsible.Content,
    hide the redundant upstream trigger/header and per-file accordion header */
 [data-component="chat-file-change-wrapper"] [data-slot="basic-tool-trigger"],
@@ -1125,30 +1146,6 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 /* Remove the extra border-top on edit-content/write-content */
 [data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
   border-top: none !important;
-}
-
-/* Strip ALL upstream card chrome from the embedded accordion: no gray background,
-   no border, no border-radius — the content renders bare under our unified header */
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded],
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-item"][data-expanded] [data-slot="accordion-content"],
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
-  border: none !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-}
-
-/* Remove the extra border-top on edit-content/write-content */
-[data-component="chat-file-change-wrapper"] :is([data-component="edit-content"], [data-component="write-content"]) {
-  border-top: none !important;
-}
-
-/* Strip the upstream accordion card chrome: no gray background, border, or
-   rounded corners around file-change content. The content renders bare under
-   our unified header, matching shell/context/generic blocks. */
-[data-component="chat-file-change-wrapper"] [data-slot="accordion-content"] {
-  border: none !important;
-  background: transparent !important;
-  border-radius: 0 !important;
 }
 
 [data-component="chat-file-change-wrapper"] [data-slot="accordion-item"] {
@@ -1371,6 +1368,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 [data-component="chat-file-change-wrapper"] [data-component="sticky-accordion-header"] {
   position: static !important;
 }
+
+/* stylelint-enable declaration-no-important */
 
 /* Override the upstream toast surface to match Ellamaka theme surfaces */
 [data-component="toast-region"] [data-component="toast"] {
