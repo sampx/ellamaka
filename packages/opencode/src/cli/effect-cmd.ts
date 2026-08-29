@@ -1,5 +1,5 @@
 import type { Argv } from "yargs"
-import { Effect, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import { AppRuntime, type AppServices } from "@/effect/app-runtime"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -67,6 +67,41 @@ interface EffectCmdOpts<Args, A> {
  * `effectCmd`, swapping the underlying `cmd()` factory for effect/cli's
  * `Command.make(...)` won't touch any handler bodies.
  */
+/**
+ * Run an Effect on AppRuntime with a process signal bridge.
+ *
+ * Unlike a bare `runPromise`, SIGINT/SIGTERM interrupt the running fiber, so
+ * long-lived commands (serve, web) unwind through their `Effect.ensuring`
+ * finalizers (server close, container dispose) and the process exits promptly
+ * on the first Ctrl-C. Signal listeners are removed when the fiber settles,
+ * so short-lived commands keep their default signal behaviour.
+ *
+ * Interrupted runs resolve with the received signal name instead of throwing,
+ * matching how CLI shutdown is a normal exit path rather than a failure.
+ */
+async function runWithSignalBridge<A, E>(
+  effect: Effect.Effect<A, E, AppServices | InstanceStore.Service>,
+): Promise<A | E | "SIGINT" | "SIGTERM"> {
+  return await new Promise((resolve, reject) => {
+    const fiber = AppRuntime.runFork(effect)
+    const signals = ["SIGINT", "SIGTERM"] as const
+    const onSignal = (signal: NodeJS.Signals) => {
+      // Fire the interrupt only; the observer below resolves once the fiber
+      // has fully unwound (finalizers included), so callers never exit while
+      // dispose work is still in flight.
+      fiber.interruptUnsafe()
+      void signal
+    }
+    for (const signal of signals) process.on(signal, onSignal)
+    fiber.addObserver((exit) => {
+      for (const signal of signals) process.off(signal, onSignal)
+      if (exit._tag === "Success") resolve(exit.value)
+      else if (Cause.hasInterruptsOnly(exit.cause)) resolve("SIGINT")
+      else reject(Cause.squash(exit.cause))
+    })
+  })
+}
+
 export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
   cmd<{}, Args>({
     command: opts.command,
@@ -78,7 +113,7 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
       const args = rawArgs as unknown as WithDoubleDash<Args>
       const useInstance = typeof opts.instance === "function" ? opts.instance(args) : opts.instance !== false
       if (!useInstance) {
-        await AppRuntime.runPromise(opts.handler(args))
+        await runWithSignalBridge(opts.handler(args))
         return
       }
       const directory = opts.directory?.(args) ?? process.cwd()
@@ -86,7 +121,7 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
         InstanceStore.Service.use((store) => store.load({ directory }).pipe(Effect.map((ctx) => ({ store, ctx })))),
       )
       try {
-        await AppRuntime.runPromise(opts.handler(args).pipe(Effect.provideService(InstanceRef, ctx)))
+        await runWithSignalBridge(opts.handler(args).pipe(Effect.provideService(InstanceRef, ctx)))
       } finally {
         await AppRuntime.runPromise(store.dispose(ctx))
       }
