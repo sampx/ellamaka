@@ -9,6 +9,13 @@ import { pathToFileURL } from "node:url"
 import { isDshEnabled, dshPaths, materializeDshClosure } from "./dsh-switch"
 
 if (typeof register === "function") {
+  // Register the dsh closure `.js`→`.ts` loader hook. The hook is self-contained
+  // (a data: URL) so it works in the bundled sidecar; the same logic is exported
+  // from dsh-ts-loader.ts for unit testing. It maps relative `.js` imports to
+  // `.ts` for the @wopal/ellamaka-cordis package wherever it lives: the
+  // workspace source, the materialised node_modules copy, or the bundled
+  // resource `dsh-materialize/cordis` (arborist symlinks the external `file:`
+  // dependency to the real resource path).
   const loaderCode = `
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,7 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.endsWith(".js") && (specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("file://"))) {
     const parentURL = context.parentURL;
-    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/") || parentURL.includes("packages/ellamaka-cordis") || parentURL.includes("node_modules/@wopal/ellamaka-cordis"))) {
+    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/") || parentURL.includes("packages/ellamaka-cordis") || parentURL.includes("node_modules/@wopal/ellamaka-cordis") || parentURL.includes("dsh-materialize/cordis"))) {
       let candidateURL = specifier.startsWith("file://") ? specifier : new URL(specifier, parentURL).href;
       const candidatePath = fileURLToPath(candidateURL);
       if (!existsSync(candidatePath)) {
