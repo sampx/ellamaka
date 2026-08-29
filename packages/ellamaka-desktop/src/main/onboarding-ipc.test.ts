@@ -1230,4 +1230,65 @@ console.log(JSON.stringify({ capability: "setup.operation", apiVersion: 1, ok: t
     expect(result.status).toBe("completed")
     expect(existsSync(join(testHome, "logs", "onboarding.log"))).toBe(false)
   })
+
+  test("ontology-setup forwards prepare-runtime preinstall progress to the LogDrawer", async () => {
+    // The ontology-setup step runs prepare-ontology then prepare-runtime (which
+    // pre-installs user-level plugin deps + materialises the dsh closure). The
+    // prepare-runtime machine operation's progress lines must reach
+    // broadcastProgress so the LogDrawer shows the preinstall phase.
+    const events: Array<{ step?: string; phase?: string; message?: string }> = []
+    const operations: string[] = []
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      operations.push(opts.operation)
+      if (opts.operation === "prepare-runtime") {
+        // Emit a non-JSON progress line exactly as the wopal-cli machine
+        // operation does (setup-machine-client forwards these to onProgress).
+        opts.onProgress?.({ phase: "prepare-runtime", message: "installing plugin deps (plugin: 2/5)" })
+        opts.onProgress?.({ phase: "prepare-runtime", message: "materialising dsh closure…" })
+      }
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({
+        homePath: testHome,
+        broadcastProgress: (event) => events.push(event),
+      })
+      const result = await handlers["onboarding-execute-step"]({}, "ontology-setup", { mode: "clone" })
+      expect(result.status).toBe("completed")
+    } finally {
+      spy.mockRestore()
+    }
+
+    // Both operations ran.
+    expect(operations).toEqual(["prepare-ontology", "prepare-runtime"])
+    // The preinstall progress reached the renderer LogDrawer.
+    expect(events.some((e) => e.step === "ontology-setup" && e.phase === "prepare-runtime" && e.message?.includes("plugin deps"))).toBe(true)
+    expect(events.some((e) => e.step === "ontology-setup" && e.phase === "prepare-runtime" && e.message?.includes("dsh closure"))).toBe(true)
+  })
+
+  test("create-space forwards initialize-space preinstall progress to the LogDrawer", async () => {
+    // create-space runs initialize-space (which pre-installs space-level plugin
+    // deps). Its machine-operation progress lines must reach broadcastProgress.
+    const events: Array<{ step?: string; phase?: string; message?: string }> = []
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      if (opts.operation === "initialize-space") {
+        opts.onProgress?.({ phase: "initialize-space", message: "pre-installing space plugin deps (3/5)" })
+      }
+      return { status: "completed" as const, result: { spaceName: "space1", spacePath: join(testHome, "space1") } } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({
+        homePath: testHome,
+        broadcastProgress: (event) => events.push(event),
+      })
+      const result = await handlers["onboarding-execute-step"]({}, "create-space", { path: join(testHome, "ws") })
+      expect(result.status).toBe("completed")
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(events.some((e) => e.step === "create-space" && e.phase === "initialize-space" && e.message?.includes("space plugin deps"))).toBe(true)
+  })
 })

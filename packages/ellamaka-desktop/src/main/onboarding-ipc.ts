@@ -785,7 +785,7 @@ const STEP_OPERATION_LABELS: Record<string, string> = {
   "install-cli": "安装与配置基础组件",
   "github-auth": "配置 GitHub 认证",
   "ai-provider": "配置 AI Provider",
-  "ontology-setup": "准备能力本体",
+  "ontology-setup": "准备能力本体并预装插件与 dsh 依赖",
   "create-space": "创建或复用工作空间",
   "memory-config": "配置记忆系统",
   "done": "完成空间设置",
