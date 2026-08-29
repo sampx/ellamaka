@@ -194,7 +194,7 @@
 
 - [x] 4.2.1 实现官方 WebServer 接口（含 `collectIndexInjections`/`renderIndex` 结构化注入）与 exact / longest-prefix / fallback / exact-upgrade 语义
 - [x] 4.2.2 index 变换添加 `/dsh` 静态资源前缀并移除 iframe 不需要的 PWA manifest
-- [x] 4.2.3 index 最前注入 fetch / WebSocket / EventSource 前缀适配；外部 URL 与已带 `/dsh` URL 保持不变
+- [x] 4.2.3 index 最前注入 fetch / WebSocket / EventSource / `createElement("script")` 前缀适配；覆盖相对路径与同源绝对 URL；外部 URL 与已带 `/dsh` URL 保持不变
 - [x] 4.2.4 upgrade socket 由 VirtualWebServer 跟踪并在 dispose 时销毁
 
 - [x] 4.3.1 Loader 挂载前提供 VirtualWebServer，只禁用官方真实 `webserver` 行
@@ -211,7 +211,7 @@
 
 - [x] 4.5.1 Desktop sidecar 在本地 Ellamaka Listener 上挂载 DSH，不再启动随机第二端口
 - [x] 4.5.2 删除 ready → supervisor → preload → renderer → Platform 的 `dshPort/getDshPort` 透传链
-- [x] 4.5.3 Workbench iframe 固定使用 `/dsh/`；无 DSH 闭包时继续自然降级
+- [x] 4.5.3 Workbench iframe 从活跃 server URL 派生出 `<url>/dsh/`（dev 双服务器下命中后端 origin）；无 DSH 闭包时继续自然降级
 
 ### P4.6 回归、端到端与文档收口
 
@@ -220,7 +220,9 @@
 - [x] 4.6.3 CLI、Workbench、Desktop 三包 typecheck/test/build 通过
 - [x] 4.6.4 实施完成后将 DESIGN §2 双端口现状更新为单端口现实，并记录 P6/P7 的后续实证输入
 
-> **P4 验证结果（2026-08-28）**：单端口方案全链路落地。`VirtualWebServer`（`packages/ellamaka-cordis/src/dsh-virtual-webserver.ts`）实现官方 `webServer` 服务；`Listener.mountNodeRoute`（`packages/opencode/src/server/node-route-mount.ts`）提供受控挂载点；serve.ts 与 desktop sidecar 把 DSH 挂到 Ellamaka 主 listener 的 `/dsh`。`dshPort` 协议全链路移除，Workbench iframe 恒 `/dsh/`。验证：cordis 18 项、opencode server 10 项、app 915 项、desktop 31 项测试全绿；四包 typecheck + desktop build 通过；生产代码无 `dshPort`/`getDshPort`/`127.0.0.1:4098` 残留。P6/P7 的实证输入见下。
+> **P4 验证结果（2026-08-28 实施，2026-08-29 用户验收修复）**：单端口方案全链路落地。`VirtualWebServer`（`packages/ellamaka-cordis/src/dsh-virtual-webserver.ts`）实现官方 `webServer` 服务；`Listener.mountNodeRoute`（`packages/opencode/src/server/node-route-mount.ts`）提供受控挂载点；serve.ts 与 desktop sidecar 把 DSH 挂到 Ellamaka 主 listener 的 `/dsh`。`dshPort` 协议全链路移除。验证：cordis 23 项、opencode server 10 项、app 918 项、desktop 31 项测试全绿；四包 typecheck + desktop build 通过；生产代码无 `dshPort`/`getDshPort`/`127.0.0.1:4098` 残留。
+>
+> **2026-08-29 用户验收修复（dev 双服务器拓扑）**：用户验收发现 dev 下后端由 serve（4097）托管、前端由 Vite（3000）独立服务，DSH 界面无法打开。三处修复——① `DshIframe` 的 iframe src 从写死相对 `/dsh/` 改为从活跃 server `http.url` 派生 `<url>/dsh/`，避免相对路径落到前端 origin；② `iframeAdapterScript` 的 `createElement("script")` 补丁此前用数据属性覆盖 `HTMLScriptElement.src`，破坏了原生 accessor 的脚本加载机制导致插件 bundle 全部不加载，改为包装原型 accessor 转发 `adapt()`；③ 适配覆盖范围从相对路径扩展为「相对 + 同源绝对 URL」（官方 DSH 的 host RPC/WS 用 `new URL(..., location.origin)` 构造绝对 URL），并在 fetch 分支识别 `URL` 对象输入。修复后 `/dsh/api/*` RPC、事件流、HMR 与插件 bundle 全部 200，DSH 界面在 Workbench iframe 内完整显示、会话可创建。P6/P7 的实证输入见下。
 
 ---
 

@@ -210,15 +210,31 @@ export class VirtualWebServer extends Service {
     const prefix = DSH_MOUNT_PREFIX
     return `(() => {
   const prefix = ${JSON.stringify(prefix)};
+  const ownOrigin = typeof location !== "undefined" ? location.origin : null;
+  const adaptAbsolute = (url) => {
+    try {
+      const target = new URL(url);
+      if (!ownOrigin) return url;
+      const origin = new URL(ownOrigin);
+      if (target.host !== origin.host) return url;
+      if (target.pathname.startsWith(prefix)) return url;
+      return target.protocol + "//" + target.host + prefix + target.pathname + target.search;
+    } catch (e) { return url; }
+  };
   const adapt = (url) => {
-    if (typeof url !== "string") return url;
-    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("ws://") || url.startsWith("wss://") || url.startsWith("//")) return url;
+    if (typeof URL !== "undefined" && url instanceof URL) url = url.href;
+    if (typeof url !== "string" || url === "") return url;
+    if (url.startsWith("//")) return url;
+    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("ws://") || url.startsWith("wss://")) {
+      return adaptAbsolute(url);
+    }
     if (url.startsWith(prefix)) return url;
     return prefix + url;
   };
   const origFetch = globalThis.fetch;
   globalThis.fetch = (input, init) => {
-    if (typeof input === "string") input = adapt(input);
+    if (typeof URL !== "undefined" && input instanceof URL) input = new URL(adapt(input.href));
+    else if (typeof input === "string") input = adapt(input);
     else if (input && typeof input.url === "string") input = new Request(adapt(input.url), input);
     return origFetch(input, init);
   };
@@ -230,6 +246,24 @@ export class VirtualWebServer extends Service {
   globalThis.EventSource = class extends OrigES {
     constructor(url, options) { super(adapt(url), options); }
   };
+  if (typeof document !== "undefined" && document.createElement) {
+    const origCreateElement = document.createElement.bind(document);
+    document.createElement = (tag, options) => {
+      const el = origCreateElement(tag, options);
+      if (tag !== "script") return el;
+      const desc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, "src");
+      if (desc && desc.set) {
+        const nativeSet = desc.set;
+        const nativeGet = desc.get;
+        Object.defineProperty(el, "src", {
+          get() { return nativeGet ? nativeGet.call(this) : undefined; },
+          set(v) { nativeSet.call(this, adapt(v)); },
+          configurable: true,
+        });
+      }
+      return el;
+    };
+  }
 })();`
   }
 

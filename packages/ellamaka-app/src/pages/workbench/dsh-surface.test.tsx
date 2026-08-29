@@ -2,22 +2,40 @@
 import { describe, expect, test } from "bun:test"
 import { render } from "solid-js/web"
 import h from "solid-js/h"
-import { DshIframe } from "./dsh-surface"
+import { DshIframe, dshIframeSrc } from "./dsh-surface"
 
 /**
- * The DSH iframe embeds the DSH web UI under the same-origin `/dsh/` path
- * (single-port scheme, DESIGN-dsh-poc §2.1). The iframe src is always `/dsh/`,
- * never a second-port URL.
+ * The DSH iframe embeds the DSH web UI under the backend origin's `/dsh/` path
+ * (single-port scheme, DESIGN-dsh-poc §2.1). The iframe src is derived from the
+ * active server URL so it points at the backend origin, not the frontend origin
+ * (which differs in the dev two-server topology: Vite serves the app, the
+ * backend serves /dsh).
  */
+describe("dshIframeSrc", () => {
+  test("derives the backend /dsh/ URL from a server URL", () => {
+    expect(dshIframeSrc("http://localhost:4097")).toBe("http://localhost:4097/dsh/")
+    expect(dshIframeSrc("http://127.0.0.1:4097")).toBe("http://127.0.0.1:4097/dsh/")
+  })
+
+  test("preserves an existing path on the server URL", () => {
+    expect(dshIframeSrc("http://localhost:4097/base")).toBe("http://localhost:4097/dsh/")
+  })
+
+  test("returns undefined for an empty server URL", () => {
+    expect(dshIframeSrc("")).toBeUndefined()
+    expect(dshIframeSrc(undefined)).toBeUndefined()
+  })
+})
+
 describe("DshIframe", () => {
-  test("renders the DSH iframe at /dsh/", () => {
+  test("renders the DSH iframe at the given src", () => {
     const host = document.createElement("div")
     document.body.appendChild(host)
-    render(() => <DshIframe />, host)
+    render(() => <DshIframe src="http://localhost:4097/dsh/" />, host)
 
     const iframe = host.querySelector<HTMLIFrameElement>('iframe[title="DSH"]')
     expect(iframe).not.toBeNull()
-    expect(iframe!.getAttribute("src")).toBe("/dsh/")
+    expect(iframe!.getAttribute("src")).toBe("http://localhost:4097/dsh/")
 
     host.remove()
   })

@@ -178,6 +178,108 @@ describe("VirtualWebServer iframe prefix adaptation", () => {
     expect(calls.ws[0][0]).toBe("wss://example.com/ws")
     expect(calls.es[0][0]).toBe("/dsh/plugins/events")
   })
+
+  test("same-origin absolute URLs (RPC + WebSocket) are adapted to the /dsh prefix", () => {
+    const ctx = makeCtx()
+    const vws = new VirtualWebServer(ctx, { host: "127.0.0.1", port: 0 })
+    const script = vws.iframeAdapterScript()
+    const calls = { fetch: [], ws: [], es: [] }
+    const sandbox = {
+      location: { origin: "http://localhost:4097" },
+      URL,
+      fetch: (...args: unknown[]) => { calls.fetch.push(args); return Promise.resolve({ ok: true }) },
+      WebSocket: class { constructor(...args: unknown[]) { calls.ws.push(args) } },
+      EventSource: class { constructor(...args: unknown[]) { calls.es.push(args) } },
+      console,
+    }
+    const vm = require("node:vm")
+    vm.runInNewContext(
+      script +
+        `;fetch("http://localhost:4097/api/host.describe", { method: "POST" }); new WebSocket("ws://localhost:4097/api/events.mux"); new WebSocket("ws://localhost:4097/dsh/api/events.mux"); fetch(new URL("/api/events.mux", "http://localhost:4097"));`,
+      sandbox,
+    )
+    expect(calls.fetch[0][0]).toBe("http://localhost:4097/dsh/api/host.describe")
+    expect(calls.ws[0][0]).toBe("ws://localhost:4097/dsh/api/events.mux")
+    expect(calls.ws[1][0]).toBe("ws://localhost:4097/dsh/api/events.mux")
+    expect(String(calls.fetch[1][0])).toBe("http://localhost:4097/dsh/api/events.mux")
+  })
+
+  test("dynamically loaded plugin script bundles are adapted to /dsh", () => {
+    const ctx = makeCtx()
+    const vws = new VirtualWebServer(ctx, { host: "127.0.0.1", port: 0 })
+    const script = vws.iframeAdapterScript()
+    const created: Array<Record<string, unknown>> = []
+    // Model an HTMLScriptElement prototype carrying a native src accessor.
+    const scriptProto = {}
+    Object.defineProperty(scriptProto, "src", {
+      get() { return this.__src },
+      set(v) { this.__src = v },
+      configurable: true,
+    })
+    function makeEl() {
+      const el = { addEventListener: () => {}, remove: () => {}, async: false } as Record<string, unknown>
+      Object.setPrototypeOf(el, scriptProto)
+      created.push(el)
+      return el
+    }
+    const documentStub = {
+      createElement: () => makeEl(),
+      head: { append: () => {} },
+      prototype: 0,
+    }
+    // Simulate HTMLScriptElement.prototype in the sandbox.
+    const sandbox = {
+      document: documentStub,
+      HTMLScriptElement: {
+        prototype: scriptProto,
+      },
+      console,
+      Request: class Request { url: string; constructor(url: string, _init?: unknown) { this.url = url } },
+      WebSocket: class {},
+      EventSource: class {},
+    }
+    const vm = require("node:vm")
+    vm.runInNewContext(
+      script +
+        `;const s = document.createElement("script"); s.src = "/plugins/@deepseek-ai/dsh-session-log-export/client.js?rev=abc"; s.src = "https://example.com/x.js";`,
+      sandbox,
+    )
+    expect(created).toHaveLength(1)
+    expect(created[0].src).toBe("https://example.com/x.js")
+  })
+
+  test("script bundle without an existing /dsh prefix is prefixed", () => {
+    const ctx = makeCtx()
+    const vws = new VirtualWebServer(ctx, { host: "127.0.0.1", port: 0 })
+    const script = vws.iframeAdapterScript()
+    const scriptProto = {}
+    Object.defineProperty(scriptProto, "src", {
+      get() { return this.__src },
+      set(v) { this.__src = v },
+      configurable: true,
+    })
+    const el = { addEventListener: () => {}, remove: () => {}, async: false } as Record<string, unknown>
+    Object.setPrototypeOf(el, scriptProto)
+    const documentStub = {
+      createElement: () => el,
+      head: { append: () => {} },
+    }
+    const sandbox = {
+      document: documentStub,
+      HTMLScriptElement: { prototype: scriptProto },
+      console,
+      Request: class Request { url: string; constructor(url: string, _init?: unknown) { this.url = url } },
+      WebSocket: class {},
+      EventSource: class {},
+    }
+    const vm = require("node:vm")
+    vm.runInNewContext(
+      script +
+        `;const s = document.createElement("script"); s.src = "/plugins/@deepseek-ai/dsh-client-hmr/client.js?rev=123";`,
+      sandbox,
+    )
+    expect(el.src).toBe("/dsh/plugins/@deepseek-ai/dsh-client-hmr/client.js?rev=123")
+  })
 })
 
 describe("VirtualWebServer upgrade socket cleanup", () => {

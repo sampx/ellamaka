@@ -50,6 +50,8 @@ ellamaka 对 dsh 的了解仍处于皮毛阶段，无法准确评估复刻的成
 - **web 容器**（web profile，插件零改动）：装配 VirtualWebServer，由 ellamaka 主 Server 在 `/dsh/*` 前缀下分发，Workbench iframe 使用同源 `/dsh/`。用户在其中使用完整 dsh 功能（会话、账本、checkpoint 全部照常）。
 - **工具容器**（ellamaka-tools profile）：无 webserver 的纯工具后端。serve/TUI/desktop 启动时挂载，容器经 `globalThis.__ellamakaDshContainer` 暴露，`dsh-adapter` 将其中的工具投影进 ellamaka ToolRegistry。TUI 无 iframe 需求，只挂工具容器。
 
+**dev 双服务器拓扑下的 iframe 地址**：`ellamaka-app` 的 dev 模式由 Vite 服务前端（默认端口 3000），后端 serve 独立监听（默认 4097）。iframe src 不能写死相对 `/dsh/`，否则在 `:3000/workbench` 页面会解析到前端 origin（Vite SPA fallback 返回原始 app）。`DshIframe` 从活跃 server 的 `http.url` 派生为 `<url>/dsh/`，因此 dev 下指向 `http://127.0.0.1:4097/dsh/`、Desktop 下指向 sidecar 本地地址，两侧都能命中后端 `/dsh` 挂载点。
+
 ```text
 ellamaka 进程（唯一监听端口）
 ├── ellamaka 引擎 + Effect HttpApi    → /api/*、/workbench 等原生资源
@@ -70,7 +72,7 @@ ellamaka 进程（唯一监听端口）
 2. **Ellamaka Server 提供受控 Node 路由挂载点**。挂载点保存前缀与 HTTP/upgrade handler，保留 Effect 已注册 listener 的顺序与生命周期。调用方获得 register/dispose 能力，不获得原始 `node:http.Server`。`serve.ts` 与 Desktop sidecar 共用这一入口。
 3. **DSH 服务端插件保持官方原版**。主服务器剥离 `/dsh` 后，VirtualWebServer 看到的仍是官方 `/api`、`/plugins` 与 `/plugins/events`。`connection`、`client-hmr`、`modules`、`web-runtime` 与所有 UI 插件继续使用官方实现。Profile 只禁用真实 `webserver` 行，并在 Loader 挂载前提供 VirtualWebServer。
 4. **`web-startup` 保持启用**。它继续提供 `webStartup`，满足 `web-runtime` 的注入关系。VirtualWebServer 的 `host`/`port` 返回 Ellamaka 的公开地址，供端口与信任判定读取。上游 `web-runtime` 只会生成根路径 URL，因此虚拟 profile 关闭它的 URL 打印与 shell/prompt URL 注入。
-5. **浏览器前缀适配属于 DSH iframe 文档**。VirtualWebServer 在 index tap 链末尾注入启动脚本。脚本仅作用于隔离 iframe，负责把同源 `fetch('/api/*')`、WebSocket `/api/events.*` 与 EventSource `/plugins/events` 映射到 `/dsh/*`。外部 URL 和已经带 `/dsh` 的 URL 保持不变。
+5. **浏览器前缀适配属于 DSH iframe 文档**。VirtualWebServer 在 index tap 链末尾注入启动脚本。脚本仅作用于隔离 iframe，负责把 DSH 的浏览器传输全部映射到 `/dsh/*`：`fetch`（字符串、`Request` 与 `URL` 对象）、`WebSocket`、`EventSource`、以及 `document.createElement("script")` 动态加载的插件 bundle。适配覆盖相对路径与同源绝对 URL（`http(s)://`/`ws(s)://`，基于 host 判定同源），外部 URL 和已经带 `/dsh` 的 URL 保持不变。这样官方 DSH 的 host RPC、事件流、HMR 与 client-modules 动态脚本在 iframe 内全部命中 `/dsh` 挂载点。
 6. **静态资源路径由 index 变换拥有**。DSH 前端使用根路径 `/assets/*`、`/favicon.svg` 与 boot manifest 的 `/plugins/*`。index 变换统一添加 `/dsh` 前缀，并移除 iframe 不需要的 PWA manifest link。VirtualWebServer fallback 接收剥离后的路径并继续使用官方 frontend-static。
 7. **DSH 上游发布包保持只读**。dsh 包声明 `./src/*` 但发布物没有 `src/`，且 connection 运行时代码合并在 `lib/index.js`/`lib/client.js`。方案不 import 内部源文件、不派生官方 bundle，也不新增 dual-face 定制包。
 8. **HMR 路径沿用官方 `client-hmr`**。`hmr` 是 base 层 `@deepseek-ai/cordis-plugin-hmr`，Web overlay 已禁用；`client-hmr` 才拥有 `/plugins/events`。浏览器前缀适配覆盖其 EventSource，服务端路由保持原样。
@@ -169,7 +171,7 @@ $WOPAL_HOME/dsh/                          ← 唯一 DSH home
 | 文件 | 作用 |
 | :--- | :--- |
 | `packages/opencode/script/materialize-dsh.ts` | DSH home 物化脚本（生成 package.json、bun install、预置 profile 模板、锚点与 Node 导入验证） |
-| `packages/ellamaka-app/src/pages/workbench/dsh-surface.tsx` | DSH 视图（`DshSurface`/`DshIframe`，iframe 恒 `/dsh/`） |
+| `packages/ellamaka-app/src/pages/workbench/dsh-surface.tsx` | DSH 视图（`DshSurface`/`DshIframe`，iframe src 从活跃 server URL 派生为 `<url>/dsh/`） |
 | `packages/ellamaka-app/src/pages/workbench/parts/top-bar.tsx` | 顶栏 DSH 按钮（toggle dshVisible） |
 | `packages/ellamaka-app/src/pages/workbench/view-store.tsx` | `dshVisible` + `setDshVisible` |
 | `packages/ellamaka-cordis/src/dsh-virtual-webserver.ts` | VirtualWebServer（官方 webServer 服务，route/tap/index 注入/upgrade socket 管理） |
