@@ -90,4 +90,28 @@ describe("dsh runtime isolation", () => {
       await ctx.fiber.dispose()
     }
   }, 30_000)
+
+  test("llm-deepseek is disabled so its ~/.dsh writes cannot happen (B-02)", async () => {
+    // The llm-deepseek plugin resolves the anonymous-user-id and the upload
+    // index via `resolveDshHome()` with no config seam, falling back to
+    // `~/.dsh` when DSH_HOME is unset. Since we must not set DSH_HOME, the
+    // adapter is disabled — so no DeepSeek model call or image upload can
+    // write to the user's default ~/.dsh.
+    const home = mkdtempSync(join(tmpdir(), "dsh-isolate-llm-deepseek-"))
+    const ctx = new Context()
+    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
+    try {
+      // Deterministic proof: with llm-deepseek disabled, its provider route is
+      // not registered, so neither the anonymous-user-id resolution (runs on
+      // every DeepSeek model call) nor the upload-index store (created on image
+      // upload) can execute.
+      const llm = ctx.get("llm") as { listProviders(): { id: string }[] } | undefined
+      expect(llm).toBeDefined()
+      const providerIds = llm!.listProviders().map((p) => p.id)
+      expect(providerIds).not.toContain("deepseek-official")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
 })

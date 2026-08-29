@@ -275,15 +275,17 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // These rows REPLACE each plugin's whole config, so any non-home fields the
   // base bundle sets (e.g. agent-instructions `maxBytes`) are restated here.
   //
-  // Known exceptions (DESIGN-dsh-poc §3.4) that cannot be redirected via
-  // config injection without modifying the dsh dependency: the llm-deepseek
-  // upload index (`~/.dsh/llm-deepseek/files-v3.json`) and the anonymous-user-id
-  // (`.anonymous-user-id`) are resolved inside the llm-deepseek plugin via
-  // `resolveDshHome()` / `getOrCreateAnonymousUserId()` with no configurable
-  // home seam and no schema-exposed path. Both are edge-case writes: the
-  // anonymous id only on DeepSeek model use (telemetry upload is DISABLED by
-  // default), the files index only on DeepSeek image upload. They are
-  // documented, not silently redirected; `process.env.DSH_HOME` is never set.
+  // llm-deepseek is a genuine exception (B-02): its adapter resolves the
+  // anonymous-user-id (`getOrCreateAnonymousUserId()` at
+  // `~/.dsh/.anonymous-user-id`) and the upload index
+  // (`~/.dsh/llm-deepseek/files-v3.json`) via `resolveDshHome()` with NO
+  // configurable home seam and no schema-exposed path (verified against the
+  // plugin source). `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME`
+  // is unset, and we must NOT set `process.env.DSH_HOME` (constraint #10,
+  // AC#4). Since there is no injection seam, the feature is DISABLED — the
+  // same degrade the tools profile already applies — so neither write ever
+  // touches the user's default `~/.dsh`. Re-enable only once dsh exposes a
+  // home seam or publishes the adapter with a configurable home.
   const stateHomePatches: Record<string, unknown>[] = [
     { id: "settings", config: { dshHome: stateDir } },
     { id: "credentials", config: { dshHome: stateDir } },
@@ -291,6 +293,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     { id: "shell-env", config: { dshHome: stateDir } },
     { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
     { id: "skill-filesystem", config: { dshHome: stateDir } },
+    { id: "llm-deepseek", disabled: true },
   ]
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
