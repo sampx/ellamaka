@@ -31,10 +31,10 @@ import {
   createLaunchEnvironmentSnapshot,
   DSH_LAUNCH_ENVIRONMENT_KEY,
 } from "@deepseek-ai/dsh-launch-environment"
-import { dshHomePath } from "@deepseek-ai/dsh-home-paths"
 import Loader from "@deepseek-ai/cordis-plugin-loader"
 import type { Context } from "@deepseek-ai/cordis"
 import { dirname, join } from "node:path"
+import { homedir } from "node:os"
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
@@ -263,6 +263,35 @@ type MountProfileOptions = DshHostOptions & {
  */
 async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<DshHost> {
   const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer, virtualWebServer } = opts
+  // dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
+  // (settings/sessions/storages/credentials/.../home-patch) lands under
+  // `$WOPAL_HOME/dsh/state`, NOT `~/.dsh`. Done via pure config injection —
+  // zero env, never `process.env.DSH_HOME`. When the caller omits `home`, fall
+  // back to the standard `$WOPAL_HOME/dsh` so isolation still holds.
+  const resolvedHome = home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  const stateDir = join(resolvedHome, "state")
+  // Profile patch rows that give the dsh plugins that read `config.dshHome`
+  // (via `resolveDshHome(config.dshHome)`) an explicit home rooted at state.
+  // These rows REPLACE each plugin's whole config, so any non-home fields the
+  // base bundle sets (e.g. agent-instructions `maxBytes`) are restated here.
+  //
+  // Known exceptions (DESIGN-dsh-poc §3.4) that cannot be redirected via
+  // config injection without modifying the dsh dependency: the llm-deepseek
+  // upload index (`~/.dsh/llm-deepseek/files-v3.json`) and the anonymous-user-id
+  // (`.anonymous-user-id`) are resolved inside the llm-deepseek plugin via
+  // `resolveDshHome()` / `getOrCreateAnonymousUserId()` with no configurable
+  // home seam and no schema-exposed path. Both are edge-case writes: the
+  // anonymous id only on DeepSeek model use (telemetry upload is DISABLED by
+  // default), the files index only on DeepSeek image upload. They are
+  // documented, not silently redirected; `process.env.DSH_HOME` is never set.
+  const stateHomePatches: Record<string, unknown>[] = [
+    { id: "settings", config: { dshHome: stateDir } },
+    { id: "credentials", config: { dshHome: stateDir } },
+    { id: "attachment-local", config: { dshHome: stateDir } },
+    { id: "shell-env", config: { dshHome: stateDir } },
+    { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
+    { id: "skill-filesystem", config: { dshHome: stateDir } },
+  ]
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -328,6 +357,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     ...profile.layers.flatMap((layer) => layer.patches),
     ...profile.patches,
     ...extraPatches,
+    ...stateHomePatches,
   ]
   const rootConfig = join(profile.dir, "cordis.yml")
   // The root config is the host-owned include: an empty entry list. The
@@ -336,7 +366,10 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
 
   // Replay the dsh boot() sequence on the host context (single container).
   ctx.baseUrl = pathToFileURL(dirname(rootConfig)).href + "/"
-  ctx.provide("dshHomePath", dshHomePath)
+  // Override the ctx-injected `dshHomePath` so `!!js dshHomePath('sessions')`
+  // (etc.) expressions in the bundle patch layers resolve under state/ — the
+  // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type).
+  ctx.provide("dshHomePath", (...segments: string[]) => join(stateDir, ...segments))
   const loaderFiber = await ctx.registry.plugin(Loader)
   // Packaged-host bare-module bridge: bun-compiled binaries (CLI) and the
   // Desktop sidecar bundle carry no dsh packages, and bun SEA lacks Node's
