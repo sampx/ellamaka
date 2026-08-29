@@ -986,6 +986,41 @@ console.log(JSON.stringify({ capability: "setup.operation", apiVersion: 1, ok: t
     expect(state?.currentStep).toBe("ontology-setup")
   })
 
+  test("ontology-setup fails (not completes) when prepare-runtime reports a CLI failure", async () => {
+    // B-03 regression: a failed prepare-runtime (dependency pre-install) must
+    // fail the step rather than being swallowed, so onboarding cannot declare
+    // runtime ready.
+    const spy = spyOn(setupMachineClient, "runSetupOperation").mockImplementation(async (opts: any) => {
+      if (opts.operation === "prepare-ontology") {
+        return { status: "completed" as const, result: { mode: "clone" } } as any
+      }
+      if (opts.operation === "prepare-runtime") {
+        return {
+          status: "failed" as const,
+          error: {
+            code: "SETUP_OPERATION_FAILED",
+            message: "plugin dep pre-install failed",
+            details: "Operation: prepare-runtime\nExit code: 1",
+          },
+        } as any
+      }
+      return { status: "completed" as const, result: {} } as any
+    })
+
+    try {
+      const handlers = createOnboardingIpcHandlers({ homePath: testHome })
+      const result = await handlers["onboarding-execute-step"]({}, "ontology-setup", { mode: "clone" })
+      expect(result.status).toBe("failed")
+      expect(result.error?.code).toBe("SETUP_OPERATION_FAILED")
+      expect(result.error?.details).toContain("prepare-runtime")
+    } finally {
+      spy.mockRestore()
+    }
+
+    const state = readOnboardingState(testHome)
+    expect(state?.steps["ontology-setup"]).toBe("failed")
+  })
+
   test("onboardingExecuteStep create-space success marks step done without premature navigation", async () => {
     const executor = async () => ({ status: "completed" as const, result: {} })
     const handlers = createOnboardingIpcHandlers({ homePath: testHome, executeStep: executor })

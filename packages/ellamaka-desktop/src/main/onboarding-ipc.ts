@@ -857,8 +857,11 @@ export function createOnboardingIpcHandlers(deps: OnboardingIpcDeps = {}) {
       }
       case "ontology-setup": {
         // prepare-ontology result: ontologyPath/mode/availableTypes.
-        // prepare-runtime runs right after it in the same execute call, so
-        // settings + capabilities are materialised too → runtime.ready.
+        // prepare-runtime runs right after it in the same execute call and, on
+        // success, pre-installs plugin deps + materialises the dsh closure, so
+        // settings + capabilities are materialised too → runtime.ready. A
+        // prepare-runtime failure returns early from the step, so this snapshot
+        // update only runs when both succeeded.
         if (data.mode) {
           snap.ontologyInstalled = true
           snap.ontologyMode = data.mode
@@ -1148,15 +1151,40 @@ switch (step as string) {
             abortSignal,
           }))
           if (ontRes.status === "completed" || ontRes.status === "reused") {
+            // prepare-runtime pre-installs user-level plugin deps + materialises
+            // the dsh closure. A CLI failure is reported via the result (not a
+            // throw), so inspect it and surface the failure — the step must not
+            // report success (and the completion gate must not trust
+            // runtime.ready) when dependency pre-installation failed.
+            let runtimeRes: OnboardingStepResult
             try {
-              await runSetupOperation({
+              runtimeRes = normalizeSetupResult(await runSetupOperation({
                 binaryPath: binPath,
                 operation: "prepare-runtime",
                 input: {},
                 onProgress,
                 abortSignal,
-              })
-            } catch {}
+              }))
+            } catch (err) {
+              // Spawn-level failure: log it (never an empty catch) and fail loud.
+              const msg = err instanceof Error ? err.message : String(err)
+              logger.log(`[ontology-setup] prepare-runtime threw: ${msg}`)
+              return {
+                status: "failed",
+                error: { code: "PREPARE_RUNTIME_FAILED", message: `依赖预装失败：${msg}` },
+              }
+            }
+            if (runtimeRes.status === "failed") {
+              return {
+                status: "failed",
+                error: {
+                  code: runtimeRes.error?.code ?? "PREPARE_RUNTIME_FAILED",
+                  message: runtimeRes.error?.message ?? "依赖预装失败",
+                  suggestion: runtimeRes.error?.suggestion,
+                  details: runtimeRes.error?.details,
+                },
+              }
+            }
           }
           return ontRes
         }
