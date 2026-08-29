@@ -51,6 +51,14 @@ const getBase = (): Configuration => ({
       from: "resources/release-identity.json",
       to: "release-identity.json",
     },
+    {
+      // The dsh runtime fallback's bundled @wopal/ellamaka-cordis must live at
+      // process.resourcesPath/dsh-materialize (Contents/Resources), NOT inside
+      // app.asar — the sidecar resolves it via process.resourcesPath. The
+      // prebuild copies cordis into resources/dsh-materialize/cordis.
+      from: "resources/dsh-materialize",
+      to: "dsh-materialize",
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

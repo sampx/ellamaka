@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export async function resolve(specifier, context, nextResolve) {
   if (specifier.endsWith(".js") && (specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("file://"))) {
     const parentURL = context.parentURL;
-    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/") || parentURL.includes("packages/ellamaka-cordis"))) {
+    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/") || parentURL.includes("packages/ellamaka-cordis") || parentURL.includes("node_modules/@wopal/ellamaka-cordis"))) {
       let candidateURL = specifier.startsWith("file://") ? specifier : new URL(specifier, parentURL).href;
       const candidatePath = fileURLToPath(candidateURL);
       if (!existsSync(candidatePath)) {
