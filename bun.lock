@@ -344,6 +344,7 @@
       "name": "@opencode-ai/ellamaka-desktop",
       "version": "1.15.13",
       "dependencies": {
+        "@npmcli/arborist": "9.4.0",
         "@zip.js/zip.js": "2.7.62",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",

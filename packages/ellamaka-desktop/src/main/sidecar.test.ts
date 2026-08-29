@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isDshEnabled, dshPaths, materializeDshClosure, defaultMaterializeScriptPath } from "./dsh-switch"
+import { isDshEnabled, dshPaths, materializeDshClosure } from "./dsh-switch"
+import { resolveCordisDir } from "./dsh-materializer"
 
 // ELLAMAKA_DSH kill-switch gating on the sidecar must mirror Flag.ELLAMAKA_DSH
 // in @opencode-ai/core (DESIGN-dsh-poc §3.4, constraint #11): default ON,
@@ -37,60 +38,54 @@ describe("dshPaths", () => {
 })
 
 // Runtime fallback (DESIGN-dsh-poc §3.4): the sidecar self-materialises the
-// dsh closure when onboarding was skipped. `materializeDshClosure` runs the
-// Task 3 arborist materialise script as a `bun` subprocess and reports whether
-// the install anchor now exists.
+// dsh closure when onboarding was skipped. The materialiser runs in-process
+// with arborist (B-01) — no source-tree path, no system bun — so the packaged
+// desktop can fall back to dsh even with an empty $WOPAL_HOME.
 describe("materializeDshClosure", () => {
-  test("returns true without spawning when the anchor already exists", async () => {
+  test("returns true without installing when the anchor already exists (idempotent)", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-mat-present-"))
     const { dshHome, anchor } = dshPaths(home)
     mkdirSync(join(dshHome, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
     writeFileSync(anchor, JSON.stringify({ name: "@deepseek-ai/dsh" }))
 
-    // A script path that would fail if invoked proves no spawn happens.
-    expect(await materializeDshClosure(home, { scriptPath: join(home, "nonexistent.ts") })).toBe(true)
+    expect(await materializeDshClosure(home)).toBe(true)
   })
 
-  test("returns false when the materialise script is unavailable", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-mat-noscript-"))
-    expect(await materializeDshClosure(home, { scriptPath: join(home, "missing.ts") })).toBe(false)
-  })
-
-  test("materialises the closure on a successful script run", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-mat-success-"))
-    const { dshHome, anchor } = dshPaths(home)
-    // A tiny script that writes the install anchor — stands in for the real
-    // arborist materialise script's anchor-creating side effect.
-    const script = join(home, "materialize.ts")
-    writeFileSync(
-      script,
-      [
-        `import { mkdirSync, writeFileSync } from "node:fs"`,
-        `import { join } from "node:path"`,
-        `import { env } from "node:process"`,
-        `const dir = join(env.WOPAL_HOME!, "dsh", "node_modules", "@deepseek-ai", "dsh")`,
-        `mkdirSync(dir, { recursive: true })`,
-        `writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh" }))`,
-      ].join("\n"),
-    )
-
-    expect(await materializeDshClosure(home, { scriptPath: script })).toBe(true)
-    expect(existsSync(anchor)).toBe(true)
-  })
-
-  test("returns false and leaves the closure absent when the script fails", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-mat-fail-"))
+  test("degrades to false when the arborist install fails", async () => {
+    // Inject a failing install to prove the materialiser degrades to false
+    // (caller skips dsh and warns) instead of throwing.
+    const home = mkdtempSync(join(tmpdir(), "dsh-mat-degrade-"))
     const { anchor } = dshPaths(home)
-    const script = join(home, "fail.ts")
-    writeFileSync(script, `process.exit(1)\n`)
-
-    expect(await materializeDshClosure(home, { scriptPath: script })).toBe(false)
+    const res = await materializeDshClosure(home, {
+      install: async () => {
+        throw new Error("simulated install failure")
+      },
+    })
+    expect(res).toBe(false)
     expect(existsSync(anchor)).toBe(false)
   })
 
-  test("default script path resolves to the opencode materialise script", () => {
-    const p = defaultMaterializeScriptPath()
-    expect(p.endsWith(join("opencode", "script", "materialize-dsh.ts"))).toBe(true)
-    expect(existsSync(p)).toBe(true)
+  test("materialises the closure on a successful install (anchor appears)", async () => {
+    // Inject a fake install that creates the anchor, standing in for the real
+    // arborist install's anchor-creating side effect.
+    const home = mkdtempSync(join(tmpdir(), "dsh-mat-success-"))
+    const { dshHome, anchor } = dshPaths(home)
+    const res = await materializeDshClosure(home, {
+      install: async () => {
+        mkdirSync(join(dshHome, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
+        writeFileSync(anchor, JSON.stringify({ name: "@deepseek-ai/dsh" }))
+      },
+    })
+    expect(res).toBe(true)
+    expect(existsSync(anchor)).toBe(true)
+  })
+
+  test("bundled cordis resource is available for the packaged fallback", () => {
+    // The prebuild copies @wopal/ellamaka-cordis into resources/dsh-materialize/
+    // cordis (shipped via electron-builder files). resolveCordisDir must locate
+    // a directory with the package.json + src the closure manifest references.
+    const dir = resolveCordisDir()
+    expect(existsSync(join(dir, "package.json"))).toBe(true)
+    expect(existsSync(join(dir, "src"))).toBe(true)
   })
 })

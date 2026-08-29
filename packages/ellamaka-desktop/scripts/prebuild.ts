@@ -9,6 +9,7 @@ import { resolve } from "node:path"
 const channel = resolveChannel()
 await $`bun ./scripts/copy-icons.ts ${channel}`
 await $`bun ./scripts/copy-metainfo.ts ${channel}`
+await $`bun ./scripts/copy-dsh-materialize.ts`
 
 await $`cd ../opencode && bun script/build-node.ts`
 
