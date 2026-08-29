@@ -47,6 +47,22 @@ export const WebCommand = effectCmd({
     UI.println(UI.logo("  "))
     UI.empty()
 
+    // Optional dsh engine, same assembly as `serve` (single-port scheme,
+    // DESIGN-dsh-poc §2.1/§2.2). Enabled via ELLAMAKA_DSH=1; anchored at the
+    // materialised closure under $WOPAL_HOME/dsh with a kill switch when the
+    // closure is absent. The dynamic import keeps the dsh closure out of the
+    // desktop sidecar bundle. Mount BEFORE opening the browser: this block
+    // must not suspend, the open() below and the final Effect.never own the
+    // command's lifetime.
+    let dshDispose: (() => Promise<void>) | undefined
+    if (Flag.ELLAMAKA_DSH) {
+      const { mountDshEngine } = yield* Effect.promise(() => import("./dsh-mount"))
+      const handle = yield* Effect.promise(() => mountDshEngine(server))
+      if (handle) {
+        dshDispose = () => handle.dispose()
+      }
+    }
+
     if (opts.hostname === "0.0.0.0") {
       // Show localhost for local access
       const localhostUrl = `http://localhost:${server.port}`
@@ -80,6 +96,12 @@ export const WebCommand = effectCmd({
       open(displayUrl).catch(() => {})
     }
 
-    yield* Effect.never
+    yield* Effect.never.pipe(
+      Effect.ensuring(
+        Effect.promise(async () => {
+          await dshDispose?.()
+        }),
+      ),
+    )
   }),
 })
