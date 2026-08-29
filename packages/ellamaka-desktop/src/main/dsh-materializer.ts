@@ -109,6 +109,13 @@ async function install(home: string): Promise<void> {
     progress: false,
     ignoreScripts: true,
     savePrefix: "",
+    // Keep the default installLinks:false so the external `file:` dependency
+    // (@wopal/ellamaka-cordis) is SYMLINKED to the bundled resource. The
+    // resource is self-contained (copy-dsh-materialize.ts ships its own
+    // node_modules with the @deepseek-ai/* deps), and Node resolves the symlink
+    // to the resource path — which is OUTSIDE node_modules, so
+    // --experimental-strip-types applies. A real copy under node_modules would
+    // hit ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING.
   })
   await arborist.reify({ save: false, saveType: "prod" })
 }
