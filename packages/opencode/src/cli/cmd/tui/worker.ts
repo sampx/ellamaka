@@ -47,8 +47,9 @@ GlobalBus.on("event", (event) => {
 
 let server: Awaited<ReturnType<typeof Server.listen>> | undefined
 
-// Optional dsh tool container (single-process, no webserver). Enabled via
-// ELLAMAKA_DSH=1; mounts the ellamaka-tools profile onto a process-level
+// Optional dsh tool container (single-process, no webserver). Kill switch
+// (default ON): `ELLAMAKA_DSH=0` disables; mounts the ellamaka-tools profile
+// onto a process-level
 // cordis hub and exposes the container so the dsh-adapter plugin can project
 // container tools into ellamaka's ToolRegistry. When disabled, nothing
 // dsh-related is mounted and the TUI runs untouched.

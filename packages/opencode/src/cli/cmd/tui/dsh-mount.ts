@@ -24,8 +24,8 @@ export interface DshMountHandle {
  * `globalThis.__ellamakaDshContainer` for the dsh-adapter plugin. Tools then
  * execute with a lightweight per-call context — no live dsh sessions.
  *
- * Enabled via ELLAMAKA_DSH=1. When disabled, nothing dsh-related is mounted
- * and the TUI runs untouched.
+ * Kill switch (default ON): `ELLAMAKA_DSH=0` disables. When disabled, nothing
+ * dsh-related is mounted and the TUI runs untouched.
  */
 export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<DshMountHandle | undefined> {
   if (!Flag.ELLAMAKA_DSH) return undefined

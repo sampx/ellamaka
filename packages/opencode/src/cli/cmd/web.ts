@@ -48,7 +48,8 @@ export const WebCommand = effectCmd({
     UI.empty()
 
     // Optional dsh engine, same assembly as `serve` (single-port scheme,
-    // DESIGN-dsh-poc §2.1/§2.2). Enabled via ELLAMAKA_DSH=1; anchored at the
+    // DESIGN-dsh-poc §2.1/§2.2). Kill switch (default ON): `ELLAMAKA_DSH=0`
+    // disables; anchored at the
     // materialised closure under $WOPAL_HOME/dsh with a kill switch when the
     // closure is absent. The dynamic import keeps the dsh closure out of the
     // desktop sidecar bundle. Mount BEFORE opening the browser: this block

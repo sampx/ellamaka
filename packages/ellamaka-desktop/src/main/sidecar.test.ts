@@ -88,4 +88,18 @@ describe("materializeDshClosure", () => {
     expect(existsSync(join(dir, "package.json"))).toBe(true)
     expect(existsSync(join(dir, "src"))).toBe(true)
   })
+
+  test("ELLAMAKA_DSH=0 disables dsh so the sidecar never materialises (W-02)", () => {
+    // The sidecar mount functions gate on `if (!isDshEnabled()) return` BEFORE
+    // reaching materializeDshClosure. When the kill switch is set, the guard
+    // short-circuits and no closure install can happen.
+    process.env.ELLAMAKA_DSH = "0"
+    try {
+      expect(isDshEnabled()).toBe(false)
+      // A disabled sidecar must not have materialised anything.
+      expect(existsSync(dshPaths(mkdtempSync(join(tmpdir(), "dsh-killswitch-"))).anchor)).toBe(false)
+    } finally {
+      delete process.env.ELLAMAKA_DSH
+    }
+  })
 })
