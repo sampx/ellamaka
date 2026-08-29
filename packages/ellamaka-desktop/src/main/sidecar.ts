@@ -6,6 +6,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 import { pathToFileURL } from "node:url"
+import { isDshEnabled, dshPaths } from "./dsh-switch"
 
 if (typeof register === "function") {
   const loaderCode = `
@@ -165,9 +166,9 @@ async function start(command: StartCommand) {
  * host handle is retained for clean unmount on stop.
  */
 async function mountDshIfPresent(): Promise<void> {
+  if (!isDshEnabled()) return
   const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
-  const dshHome = join(wopalHome, "dsh")
-  const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
+  const { dshHome, anchor } = dshPaths(wopalHome)
   if (!existsSync(anchor)) {
     // Closure not materialised yet — skip dsh without error (onboarding not done).
     return
@@ -210,9 +211,9 @@ async function mountDshIfPresent(): Promise<void> {
  * projected tools; ellamaka builtins keep serving).
  */
 async function mountDshToolsIfPresent(): Promise<void> {
+  if (!isDshEnabled()) return
   const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
-  const dshHome = join(wopalHome, "dsh")
-  const anchor = join(dshHome, "node_modules", "@deepseek-ai", "dsh", "package.json")
+  const { dshHome, anchor } = dshPaths(wopalHome)
   if (!existsSync(anchor)) {
     return undefined
   }

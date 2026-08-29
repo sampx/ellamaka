@@ -19,8 +19,8 @@ describe("tui dsh mount", () => {
     delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
   })
 
-  test("returns undefined when ELLAMAKA_DSH is disabled", async () => {
-    delete process.env.ELLAMAKA_DSH
+  test("returns undefined when ELLAMAKA_DSH is disabled (kill switch =0)", async () => {
+    process.env.ELLAMAKA_DSH = "0"
     const handle = await mountDshIfEnabled()
     expect(handle).toBeUndefined()
     expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
