@@ -6,7 +6,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 import { pathToFileURL } from "node:url"
-import { isDshEnabled, dshPaths } from "./dsh-switch"
+import { isDshEnabled, dshPaths, materializeDshClosure } from "./dsh-switch"
 
 if (typeof register === "function") {
   const loaderCode = `
@@ -160,18 +160,24 @@ async function start(command: StartCommand) {
  * Mount the dsh web engine when its closure is present under $WOPAL_HOME/dsh.
  *
  * Resolves the closure home as `$WOPAL_HOME/dsh` (ellamaka integration never
- * uses `$DSH_HOME`). If the `@deepseek-ai/dsh` package is not materialised
- * there yet, returns and the sidecar continues without dsh. A successful mount
- * registers the VirtualWebServer onto the Ellamaka listener under `/dsh`; the
- * host handle is retained for clean unmount on stop.
+ * uses `$DSH_HOME`). When `ELLAMAKA_DSH` is enabled but the closure is absent
+ * (onboarding skipped), self-materialise it first (DESIGN-dsh-poc §3.4 runtime
+ * fallback); if materialisation fails or is unavailable, degrade to no-dsh and
+ * warn. A successful mount registers the VirtualWebServer onto the Ellamaka
+ * listener under `/dsh`; the host handle is retained for clean unmount.
  */
 async function mountDshIfPresent(): Promise<void> {
   if (!isDshEnabled()) return
   const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const { dshHome, anchor } = dshPaths(wopalHome)
   if (!existsSync(anchor)) {
-    // Closure not materialised yet — skip dsh without error (onboarding not done).
-    return
+    // Runtime fallback: onboarding may have been skipped, so materialise the
+    // closure now (reusing the Task 3 arborist materialise logic), then mount.
+    const materialized = await materializeDshClosure(wopalHome)
+    if (!materialized || !existsSync(anchor)) {
+      console.warn("ellamaka sidecar: dsh closure missing and self-materialise failed; running without dsh")
+      return
+    }
   }
   // Resolve @wopal/ellamaka-cordis/dsh-web from the closure's node_modules
   // (it is a dependency of the materialised closure). The sidecar bundle
@@ -207,15 +213,21 @@ async function mountDshIfPresent(): Promise<void> {
  * is present, and expose it via `globalThis.__ellamakaDshContainer` so the
  * dsh-adapter plugin can project container tools into ellamaka's ToolRegistry.
  * The tool container has no webserver — it is a pure tool backend for
- * Workbench sessions. Absent closure skips silently (adapter degrades to no
- * projected tools; ellamaka builtins keep serving).
+ * Workbench sessions. Absent closure (after a self-materialise attempt) skips
+ * silently with a warning; the adapter degrades to no projected tools and
+ * ellamaka builtins keep serving.
  */
 async function mountDshToolsIfPresent(): Promise<void> {
   if (!isDshEnabled()) return
   const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
   const { dshHome, anchor } = dshPaths(wopalHome)
   if (!existsSync(anchor)) {
-    return undefined
+    // Runtime fallback, same as the web engine: materialise, then mount.
+    const materialized = await materializeDshClosure(wopalHome)
+    if (!materialized || !existsSync(anchor)) {
+      console.warn("ellamaka sidecar: dsh closure missing and self-materialise failed; running tools without dsh")
+      return undefined
+    }
   }
   const requireFromClosure = createRequire(join(dshHome, "package.json"))
   const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
