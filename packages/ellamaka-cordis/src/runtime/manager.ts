@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
 import {
@@ -31,26 +31,51 @@ export type { InstallAnchor } from "./status.js"
  * at startup. The manager:
  *   1. Gate    — `ELLAMAKA_DSH=0` → `disabled` with zero filesystem access.
  *   2. Resolve — compute the expected fingerprint and target closure directory.
- *   3. Inspect — verify an existing closure; complete → Load (no network).
+ *   3. Inspect — verify an existing closure's CONTENT; complete → Load (no
+ *                network). A tampered manifest/lock or a wrong dependency
+ *                version is treated as damaged and re-materialised (B-03).
  *   4. Lock    — otherwise acquire the cross-process `materialize.lock`;
  *                waiters re-inspect after the holder finishes.
  *   5. Stage   — write manifest+lock to `staging/` and reify with Arborist.
  *   6. Verify  — validate the staged tree (anchor + every direct dependency).
  *   7. Activate— atomically rename staging → `closures/<fingerprint>/`.
  *   8. Profile — create missing profile templates (never overwrite user edits).
- *   9. Load    — resolve the install anchor and report `ready`.
+ *   9. Load    — validate the closure loader and report `ready`.
  *
- * Single-flight: concurrent calls in one process share one in-flight promise,
- * so only one reify runs. Multi-process coordination is the file lock.
+ * Single-flight: concurrent calls in one process share one durable in-flight
+ * promise, so only one reify runs. Multi-process coordination is the file lock.
  * Failures degrade (never overwrite a working closure, no retry this launch).
+ *
+ * Timeout (B-05): the hard materialisation timeout is applied at the CALLER
+ * boundary, never inside the durable work. On timeout the caller returns
+ * `degraded` WITHOUT releasing the lock while the underlying reify keeps
+ * running — the durable work holds the lock and only releases it in its own
+ * completion handler, so no second process can clear the same `staging/` and
+ * reify concurrently. A concurrent call for the same fingerprint shares the
+ * in-flight durable promise (kept until the reify settles), so it neither
+ * touches staging nor steals the lock; after the abandoned reify settles, the
+ * shared promise resolves — a successful activation still counts as `ready`
+ * (idempotent).
  */
 
 /** The fetch signature the manager may use for a network probe (tests stub it). */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<unknown>
 
+/**
+ * The loader-resolution hook used to validate the closure before `ready`.
+ * Production defaults to a structural check on the `@deepseek-ai/dsh` anchor
+ * (B-06); tests inject a stub so the loader gate fires without a real closure.
+ */
+export type LoaderResolver = (installAnchor: string) => unknown
+
 export interface ManagerDeps {
   fetch?: FetchLike
   arborist?: ArboristFactory
+  /**
+   * Loader-resolution hook. When omitted, `finishReady` runs a structural
+   * loadability check on the closure's `@deepseek-ai/dsh` package.json.
+   */
+  resolveLoader?: LoaderResolver
 }
 
 export interface InitializeDshOptions {
@@ -80,6 +105,11 @@ interface ManagerContext {
   anchor: string
 }
 
+/**
+ * The durable in-flight work per `home::fingerprint`. It settles only when the
+ * underlying materialisation (reify) settles, so a timed-out caller never
+ * removes the entry while the abandoned reify is still running (B-05).
+ */
 const inFlight = new Map<string, Promise<DshRuntimeStatus>>()
 
 /**
@@ -88,22 +118,34 @@ const inFlight = new Map<string, Promise<DshRuntimeStatus>>()
  */
 export function initializeDshRuntime(options: InitializeDshOptions): Promise<DshRuntimeStatus> {
   const env = options.env ?? process.env
-  const log = createDshLogger({ logFile: options.logFile })
   const fingerprint = options.manifest.fingerprint ?? ""
 
-  // 1. Gate — disabled short-circuits before any filesystem access.
+  // 1. Gate — disabled short-circuits before ANY filesystem access and before
+  // any log output: the logger is constructed lazily, so `ELLAMAKA_DSH=0`
+  // creates no log file, no parent directory and writes nothing to stderr
+  // (B-02). Returning `"disabled"` silently keeps the binding "disabled → no
+  // file access, no dsh stage output" strict.
   if (!isDshEnabled(env)) {
-    log.info("dsh.init.disabled", { reason: "ELLAMAKA_DSH=0" })
     return Promise.resolve("disabled")
   }
+
+  // The logger is only constructed after the gate passes, so the enabled paths
+  // keep their structured diagnosis while the disabled path stays silent.
+  const log = createDshLogger({ logFile: options.logFile })
   if (!fingerprint) {
     log.error("dsh.init.degraded", { reason: "manifest has no fingerprint" })
     return Promise.resolve("degraded")
   }
 
   const key = `${options.wopalHome}::${fingerprint}`
+  const timeoutMs = options.timeoutMs ?? MATERIALIZE_TIMEOUT_MS
   const existing = inFlight.get(key)
-  if (existing) return existing
+  if (existing) {
+    // Concurrent caller shares the durable work (single-flight). Apply this
+    // caller's own timeout so a slow reify degrades this caller without ever
+    // touching staging or stealing the lock (B-05).
+    return raceTimeout(existing, timeoutMs, log)
+  }
 
   const ctx: ManagerContext = {
     options,
@@ -121,14 +163,40 @@ export function initializeDshRuntime(options: InitializeDshOptions): Promise<Dsh
     ),
   }
 
-  const promise = run(ctx).catch((error) => {
+  // The durable work settles only when the reify settles; it owns the lock and
+  // its release. Single-flight reuses it across concurrent calls, keeping the
+  // entry until settle (B-05).
+  const work = run(ctx).catch((error) => {
     // Never crash the host: any unhandled failure degrades.
     ctx.log.error("dsh.init.degraded", { error })
     return "degraded" as DshRuntimeStatus
   })
-  inFlight.set(key, promise)
-  void promise.finally(() => inFlight.delete(key))
-  return promise
+  inFlight.set(key, work)
+  void work.finally(() => inFlight.delete(key))
+  return raceTimeout(work, timeoutMs, log)
+}
+
+/**
+ * Race the durable work with the hard materialisation timeout. On timeout the
+ * caller degrades WITHOUT aborting or releasing anything — the in-flight work
+ * keeps running and releases the lock in its own completion handler (B-05).
+ */
+function raceTimeout(
+  work: Promise<DshRuntimeStatus>,
+  timeoutMs: number,
+  log: LogBridge,
+): Promise<DshRuntimeStatus> {
+  return withTimeout(
+    work,
+    timeoutMs,
+    `dsh materialisation timed out after ${Math.round(timeoutMs / 1000)}s`,
+  ).catch((error) => {
+    if (error instanceof Error && error.message.startsWith("dsh materialisation timed out")) {
+      log.error("dsh.stage.materialise.timeout", { error })
+      return "degraded" as DshRuntimeStatus
+    }
+    throw error
+  })
 }
 
 /** The 9-step state machine body. */
@@ -162,6 +230,7 @@ async function run(ctx: ManagerContext): Promise<DshRuntimeStatus> {
     log.error("dsh.stage.lock.timeout", { lockFile: layout.lockFile })
     return "degraded"
   }
+
   try {
     // Another process may have materialised while we waited for the lock.
     anchor = validateClosureOnDisk({ home: options.wopalHome, manifest: options.manifest, deps: options.deps })
@@ -171,39 +240,75 @@ async function run(ctx: ManagerContext): Promise<DshRuntimeStatus> {
       return finishReady(ctx)
     }
 
-    // 5+6+7 — Stage, Verify, Activate under one hard timeout.
+    // 5+6+7 — Stage, Verify, Activate. The caller's hard timeout (raceTimeout)
+    // never abandons this: on timeout the caller degrades while this promise
+    // keeps running and only releases the lock here, in its own completion
+    // handler, so no second process can clear the same staging/ (B-05).
     log.info("dsh.stage.stage", { stagingDir: layout.stagingDir })
-    const timeoutMs = options.timeoutMs ?? MATERIALIZE_TIMEOUT_MS
-    const result = await withTimeout(
-      materializeClosure({
-        home: options.wopalHome,
-        manifest: options.manifest,
-        deps: options.deps,
-        log,
-      }),
-      timeoutMs,
-      `dsh materialisation timed out after ${Math.round(timeoutMs / 1000)}s`,
-    )
+    const result = await materializeClosure({
+      home: options.wopalHome,
+      manifest: options.manifest,
+      deps: options.deps,
+      log,
+    })
     log.info("dsh.stage.verify", { status: "ok", packages: Object.keys(options.manifest.dependencies).length })
     log.info("dsh.stage.activate", { closureDir: result.closureDir })
     ctx.anchor = result.anchor
 
-    // 8. Profile — create missing templates; never overwrite user edits.
-    seedProfiles(layout.profileDir, log)
-
-    // 9. Load — the anchor is the installAnchor consumers mount from.
+    // 8+9 — Profile seeding and Load happen inside finishReady (idempotent).
     return finishReady(ctx)
   } catch (error) {
     log.error("dsh.stage.materialise.failed", { error })
     return "degraded"
   } finally {
+    // The lock is released only when the durable work settles (reify done,
+    // success or failure). A timed-out caller never reaches here — it returned
+    // `degraded` without releasing, so the in-flight reify stays single-writer
+    // on staging until it completes (B-05).
     await releaseMaterializeLock(layout.lockFile, token)
   }
 }
 
-/** Terminal transition to `ready`. */
+/**
+ * Default loader validation (B-06): the closure's primary export must be
+ * loadable before the manager reports `ready`. Parses the `@deepseek-ai/dsh`
+ * package.json and requires a resolvable entry point (`main`/`module`/
+ * `exports`/`bin`) — a corrupt, missing, or entry-less anchor throws and the
+ * closure degrades instead of leaking a crash at mount time. The full
+ * six-module closure resolution happens at the entry mount (B-01), which is
+ * itself wrapped in a degrade boundary.
+ */
+function defaultLoaderCheck(installAnchor: string): void {
+  const raw = JSON.parse(readFileSync(installAnchor, "utf8")) as {
+    main?: unknown
+    module?: unknown
+    exports?: unknown
+    bin?: unknown
+  }
+  if (!raw.main && !raw.module && !raw.exports && !raw.bin) {
+    throw new Error("dsh runtime: @deepseek-ai/dsh has no resolvable entry point")
+  }
+}
+
+/**
+ * Terminal transition to `ready`. Before reporting `ready` the manager
+ * validates the loader (B-06) and idempotently seeds the profile templates on
+ * the fast path (W-01) — the fresh-materialise path seeds them too, and
+ * `seedProfiles` never overwrites existing files.
+ */
 function finishReady(ctx: ManagerContext): DshRuntimeStatus {
+  const layout = resolveDshLayout(ctx.options.wopalHome)
+  try {
+    const loader = ctx.options.deps?.resolveLoader ?? defaultLoaderCheck
+    loader(ctx.anchor)
+  } catch (error) {
+    ctx.log.error("dsh.init.load.failed", { anchor: ctx.anchor, error })
+    return "degraded"
+  }
   ctx.log.info("dsh.stage.load", { anchor: ctx.anchor })
+  // Idempotent: creates missing profile templates (fast-path closure hit never
+  // seeded them before, DESIGN §3.4.5 step 8 / W-01).
+  seedProfiles(layout.profileDir, ctx.log)
   ctx.log.info("dsh.init.ready", { entry: ctx.options.entry })
   return "ready"
 }
