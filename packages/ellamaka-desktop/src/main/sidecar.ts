@@ -1,45 +1,8 @@
 import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
-import { register, createRequire } from "node:module"
-import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { pathToFileURL } from "node:url"
-import { isDshEnabled, dshPaths, materializeDshClosure } from "./dsh-switch"
-
-if (typeof register === "function") {
-  // Register the dsh closure `.js`→`.ts` loader hook. The hook is self-contained
-  // (a data: URL) so it works in the bundled sidecar; the same logic is exported
-  // from dsh-ts-loader.ts for unit testing. It maps relative `.js` imports to
-  // `.ts` for the @wopal/ellamaka-cordis package wherever it lives: the
-  // workspace source, the materialised node_modules copy, or the bundled
-  // resource `dsh-materialize/cordis` (arborist symlinks the external `file:`
-  // dependency to the real resource path).
-  const loaderCode = `
-import { existsSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-export async function resolve(specifier, context, nextResolve) {
-  if (specifier.endsWith(".js") && (specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("file://"))) {
-    const parentURL = context.parentURL;
-    if (parentURL && (parentURL.includes("/plugins/") || parentURL.includes("/skills/") || parentURL.includes("packages/ellamaka-cordis") || parentURL.includes("node_modules/@wopal/ellamaka-cordis") || parentURL.includes("dsh-materialize/cordis"))) {
-      let candidateURL = specifier.startsWith("file://") ? specifier : new URL(specifier, parentURL).href;
-      const candidatePath = fileURLToPath(candidateURL);
-      if (!existsSync(candidatePath)) {
-        const tsPath = candidatePath.slice(0, -3) + ".ts";
-        if (existsSync(tsPath)) {
-          // Pass the .ts URL to nextResolve so Node.js native --experimental-strip-types applies correctly!
-          return nextResolve(pathToFileURL(tsPath).href, context);
-        }
-      }
-    }
-  }
-  return nextResolve(specifier, context);
-}
-`;
-  register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString("base64")}`, import.meta.url)
-}
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -56,6 +19,10 @@ type StartCommand = {
   port: number
   password: string
   needsMigration: boolean
+  /** The wopal home the dsh runtime manager resolves closures under. */
+  wopalHome?: string
+  /** Path to the dedicated dsh-plugins log file. */
+  logFile?: string
 }
 
 type StopCommand = { type: "stop" }
@@ -143,19 +110,16 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    // Optional dsh web engine (single-process, DESIGN-dsh-poc §2.1).
-    // The dsh closure lives at $WOPAL_HOME/dsh, materialised by
-    // `packages/opencode/script/materialize-dsh.ts` (DESIGN-dsh-poc §2.2).
-    // Ellamaka integration always uses $WOPAL_HOME/dsh — never $DSH_HOME.
-    // The sidecar mounts the VirtualWebServer onto the Ellamaka listener under
-    // /dsh. When the closure is absent (not yet installed), dsh is skipped and
-    // the sidecar runs normally — the same kill-switch semantics as
-    // ELLAMAKA_DSH=0.
-    await mountDshIfPresent()
-    // The tool container (ellamaka-tools profile) feeds the dsh-adapter so
-    // Workbench sessions can adopt container tools. It has no webserver; the
-    // container is exposed through globalThis like the CLI serve path.
-    await mountDshToolsIfPresent()
+    // Optional dsh engine (single-process, DESIGN-dsh-poc §2.1/§3.4). The
+    // unified Runtime Manager (consumed via `virtual:opencode-server`, which
+    // the opencode sidecar bundle exports) gates on `ELLAMAKA_DSH` itself
+    // (`=0` → disabled with zero file access) and materialises the closure on
+    // demand; `disabled`/`degraded` never block the sidecar — the server runs
+    // untouched. The web VirtualWebServer mounts onto the Ellamaka listener
+    // under /dsh; the tool container (ellamaka-tools profile) feeds the
+    // dsh-adapter so Workbench sessions can adopt container tools.
+    await mountDshIfPresent(command)
+    await mountDshToolsIfPresent(command)
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -163,43 +127,38 @@ async function start(command: StartCommand) {
   }
 }
 
+/** Resolve the wopal home and dsh-plugins log file for this launch. */
+function dshLaunch(command: StartCommand) {
+  const wopalHome = command.wopalHome ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
+  const logFile = command.logFile ?? join(wopalHome, "logs", "dsh-plugins.log")
+  return { wopalHome, logFile, home: join(wopalHome, "dsh") }
+}
+
 /**
- * Mount the dsh web engine when its closure is present under $WOPAL_HOME/dsh.
+ * Mount the dsh web engine via the unified Runtime Manager.
  *
- * Resolves the closure home as `$WOPAL_HOME/dsh` (ellamaka integration never
- * uses `$DSH_HOME`). When `ELLAMAKA_DSH` is enabled but the closure is absent
- * (onboarding skipped), self-materialise it first (DESIGN-dsh-poc §3.4 runtime
- * fallback); if materialisation fails or is unavailable, degrade to no-dsh and
- * warn. A successful mount registers the VirtualWebServer onto the Ellamaka
- * listener under `/dsh`; the host handle is retained for clean unmount.
+ * Runs `initializeDshRuntime` (entry "tui" — the same manager gate every entry
+ * shares; the web container is assembled here at the server mount point).
+ * Only on `ready` does it resolve the install anchor, load the closure runtime
+ * and mount the VirtualWebServer onto the Ellamaka listener under `/dsh`.
+ * `disabled`/`degraded` return without mounting (no warn: the manager already
+ * logged the structured diagnosis).
  */
-async function mountDshIfPresent(): Promise<void> {
-  if (!isDshEnabled()) return
-  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
-  const { dshHome, anchor } = dshPaths(wopalHome)
-  if (!existsSync(anchor)) {
-    // Runtime fallback: onboarding may have been skipped, so materialise the
-    // closure now (reusing the Task 3 arborist materialise logic), then mount.
-    const materialized = await materializeDshClosure(wopalHome)
-    if (!materialized || !existsSync(anchor)) {
-      console.warn("ellamaka sidecar: dsh closure missing and self-materialise failed; running without dsh")
-      return
-    }
-  }
-  // Resolve @wopal/ellamaka-cordis/dsh-web from the closure's node_modules
-  // (it is a dependency of the materialised closure). The sidecar bundle
-  // itself does not carry dsh or cordis, so we anchor resolution at the
-  // closure. bootDshWeb is self-contained (creates its own cordis context),
-  // which sidesteps the @wopal/ellamaka-cordis index import chain that Node
-  // strip-types cannot resolve.
-  const requireFromClosure = createRequire(join(dshHome, "package.json"))
-  const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
-  const { bootDshWeb } = await import(pathToFileURL(dshWebEntry).href)
-  const host = await bootDshWeb({
-    home: dshHome,
+async function mountDshIfPresent(command: StartCommand): Promise<void> {
+  const { wopalHome, logFile, home } = dshLaunch(command)
+  const { Dsh } = await import("virtual:opencode-server")
+  const manifest = Dsh.DEFAULT_DSH_RUNTIME_MANIFEST
+  const status = await Dsh.initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
+  if (status !== "ready") return
+
+  const anchor = Dsh.resolveInstallAnchor(wopalHome, manifest)
+  const runtime = Dsh.createDshRuntimeApi(anchor.path)
+  const host = await Dsh.bootDshWeb({
+    home,
     port: listener?.port ?? 0,
-    installAnchor: anchor,
-    logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    installAnchor: anchor.path,
+    logFile,
+    runtime,
   })
   // Mount the VirtualWebServer under /dsh on the Ellamaka listener.
   const unmount = listener?.mountNodeRoute({
@@ -216,34 +175,28 @@ async function mountDshIfPresent(): Promise<void> {
 }
 
 /**
- * Mount the dsh tool container (ellamaka-tools profile) when the dsh closure
- * is present, and expose it via `globalThis.__ellamakaDshContainer` so the
- * dsh-adapter plugin can project container tools into ellamaka's ToolRegistry.
- * The tool container has no webserver — it is a pure tool backend for
- * Workbench sessions. Absent closure (after a self-materialise attempt) skips
- * silently with a warning; the adapter degrades to no projected tools and
- * ellamaka builtins keep serving.
+ * Mount the dsh tool container (ellamaka-tools profile) via the unified
+ * Runtime Manager, and expose it via `globalThis.__ellamakaDshContainer` so
+ * the dsh-adapter plugin can project container tools into ellamaka's
+ * ToolRegistry. Same manager call as the web engine (single-flight), only
+ * mounting on `ready`. `disabled`/`degraded` skip silently; the adapter
+ * degrades to no projected tools and ellamaka builtins keep serving.
  */
-async function mountDshToolsIfPresent(): Promise<void> {
-  if (!isDshEnabled()) return
-  const wopalHome = process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
-  const { dshHome, anchor } = dshPaths(wopalHome)
-  if (!existsSync(anchor)) {
-    // Runtime fallback, same as the web engine: materialise, then mount.
-    const materialized = await materializeDshClosure(wopalHome)
-    if (!materialized || !existsSync(anchor)) {
-      console.warn("ellamaka sidecar: dsh closure missing and self-materialise failed; running tools without dsh")
-      return undefined
-    }
-  }
-  const requireFromClosure = createRequire(join(dshHome, "package.json"))
-  const dshWebEntry = requireFromClosure.resolve("@wopal/ellamaka-cordis/dsh-web")
-  const { bootDshTools } = await import(pathToFileURL(dshWebEntry).href)
-  const host = await bootDshTools({
-    home: dshHome,
+async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
+  const { wopalHome, logFile, home } = dshLaunch(command)
+  const { Dsh } = await import("virtual:opencode-server")
+  const manifest = Dsh.DEFAULT_DSH_RUNTIME_MANIFEST
+  const status = await Dsh.initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
+  if (status !== "ready") return
+
+  const anchor = Dsh.resolveInstallAnchor(wopalHome, manifest)
+  const runtime = Dsh.createDshRuntimeApi(anchor.path)
+  const host = await Dsh.bootDshTools({
+    home,
     port: 0,
-    installAnchor: anchor,
-    logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    installAnchor: anchor.path,
+    logFile,
+    runtime,
   })
   dshToolsHost = { dispose: () => host.dispose() }
   ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
@@ -336,6 +289,8 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     port: command.port,
     password: command.password,
     needsMigration: command.needsMigration,
+    wopalHome: typeof command.wopalHome === "string" ? command.wopalHome : undefined,
+    logFile: typeof command.logFile === "string" ? command.logFile : undefined,
   }
 }
 

@@ -168,6 +168,12 @@ export async function spawnLocalServer(
       port,
       password,
       needsMigration: options.needsMigration,
+      // Pass the wopal home and dsh-plugins log path explicitly so the sidecar
+      // drives the unified DSH Runtime Manager from the same WOPAL_HOME the
+      // Electron main process resolved (probe + shell-merge in index.ts), not
+      // from a possibly-stale child env.
+      wopalHome: process.env.WOPAL_HOME,
+      logFile: process.env.WOPAL_HOME ? join(process.env.WOPAL_HOME, "logs", "dsh-plugins.log") : undefined,
     })
   }).catch((error) => {
     if (!exited) child.kill()
