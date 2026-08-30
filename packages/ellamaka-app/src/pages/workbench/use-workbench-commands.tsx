@@ -196,7 +196,16 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.settings.open"),
       keybind: "ctrl+comma",
       onSelect: () => {
-        void import("@/components/dialog-settings").then((x) => dialog.show(() => <x.DialogSettings />))
+        void import("@/components/dialog-settings").then((x) => (
+          dialog.show(() => (
+            <x.DialogSettings
+              fileTreeToggle={{
+                value: () => wb.display().showFileTree,
+                onChange: (checked) => wb.setDisplay("showFileTree", checked),
+              }}
+            />
+          ))
+        ))
       },
     }),
     viewCommand({
