@@ -21,8 +21,14 @@ describe("FileViewerPanel load-on-mount (B-01)", () => {
     // viewer permanent "empty" until the path changes, which never happens here.
     const idx = source.indexOf("void file.load(path())")
     expect(idx).toBeGreaterThan(-1)
-    const effectBlock = source.slice(Math.max(0, idx - 40), idx + 40)
-    expect(effectBlock.includes("defer")).toBe(false)
+    // Assert on the whole `createEffect(on(path, ...))` block, not a narrow
+    // window: `{ defer: true }` lives in the options argument and may sit far
+    // from `file.load` if the callback grows (formatting, comments, params).
+    const before = source.slice(0, idx)
+    const effectStart = before.lastIndexOf("createEffect(")
+    const effectBlock = source.slice(effectStart, idx + "void file.load(path())".length)
+    expect(effectBlock.startsWith("createEffect(")).toBe(true)
+    expect(effectBlock).not.toMatch(/defer\s*:/)
 
     // The loader is wired to the current file path (not a stale captured path).
     expect(source).toContain("void file.load(path())")
