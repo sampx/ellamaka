@@ -156,6 +156,21 @@ describe("desktop release repair", () => {
     expect(cli).toContain("--release-context-path release-context.json")
   })
 
+  test("gates both publish workflows on DSH runtime manifest freshness", async () => {
+    // Both real build jobs run the read-only manifest check (--check) before
+    // packaging, so a stale committed manifest fails the release closed.
+    const cli = await source(".github/workflows/publish-ellamaka-cli.yml")
+    const desktop = await source(".github/workflows/publish-ellamaka-desktop.yml")
+
+    expect(cli).toContain("generate-dsh-runtime-manifest.ts --check")
+    expect(desktop).toContain("generate-dsh-runtime-manifest.ts --check")
+    // Gate must precede the packaging step in both workflows.
+    expect(cli.indexOf("generate-dsh-runtime-manifest.ts --check")).toBeLessThan(cli.indexOf("- name: Build"))
+    expect(desktop.indexOf("generate-dsh-runtime-manifest.ts --check")).toBeLessThan(
+      desktop.indexOf("Build desktop (electron-vite)"),
+    )
+  })
+
   test("withdraw script requires exactly one product (cli or desktop)", async () => {
     const script = await source("scripts/withdraw-release.sh")
 

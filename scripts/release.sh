@@ -75,6 +75,10 @@ fi
 
 # ── 产品上下文 ────────────────────────────────────────────
 
+# DSH runtime manifest 新鲜度门禁在 CI 的真实 build job 中执行
+# （publish-ellamaka-{cli,desktop}.yml 的 `--check` 前置步骤）；本脚本仅
+# dispatch，不负责生成/校验 manifest。
+
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WITHDRAWN_FILE="$REPO_ROOT/release/withdrawn-versions.json"
