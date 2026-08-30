@@ -1,4 +1,5 @@
-import { Logger, type Exporter, type Message } from "@deepseek-ai/cordis"
+import type { Exporter, Message } from "@deepseek-ai/cordis"
+import { createPackageDshRuntimeApi } from "./runtime/loader.js"
 
 /**
  * ellamaka-side log level names, matching `@opencode-ai/core/util/log`.
@@ -62,6 +63,7 @@ export function createCordisLogExporter(deps: CordisLogExporterDeps): Exporter {
     export(message: Message) {
       const levelName = cordisTypeToLevel(message.type)
       if (ELLAMAKA_PRIORITY[levelName] < ELLAMAKA_PRIORITY[deps.minLevel]) return
+      const { Logger } = createPackageDshRuntimeApi().cordis
       const body = Logger.format(exporter, message)
       const ts = new Date(message.ts).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).replace(" ", "T")
       const line = `${ts} [${levelName}] [${message.name}] ${body}\n`

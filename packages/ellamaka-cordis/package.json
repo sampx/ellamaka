@@ -11,7 +11,8 @@
     ".": "./src/index.ts",
     "./hub": "./src/hub.ts",
     "./types": "./src/types.ts",
-    "./dsh-web": "./src/dsh-web.ts"
+    "./dsh-web": "./src/dsh-web.ts",
+    "./runtime": "./src/runtime/loader.ts"
   },
   "files": [
     "dist"

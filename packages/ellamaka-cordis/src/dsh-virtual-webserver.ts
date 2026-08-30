@@ -19,12 +19,18 @@
  * this server are tracked and closed on dispose, so Node `closeAllConnections()`
  * does not strand raw WebSockets.
  *
+ * No runtime `@deepseek-ai/*` value is statically imported here: the cordis
+ * `Service` registration is replicated via `ctx.reflect.provide`, and the dsh
+ * `renderIndexInjections` renderer is resolved lazily from the DSH runtime
+ * loader (DESIGN-dsh-poc §3.4.6).
+ *
  * @module @wopal/ellamaka-cordis/dsh-virtual-webserver
  */
-import { Service, type Context } from "@deepseek-ai/cordis"
-import { renderIndexInjections, type IndexInjection } from "@deepseek-ai/dsh-host-webserver"
+import type { Context } from "@deepseek-ai/cordis"
+import type { IndexInjection } from "@deepseek-ai/dsh-host-webserver"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import type { Duplex } from "node:stream"
+import { createPackageDshRuntimeApi } from "./runtime/loader.js"
 
 /** The prefix under which the DSH surface is mounted on the Ellamaka listener. */
 export const DSH_MOUNT_PREFIX = "/dsh"
@@ -68,7 +74,7 @@ function pathnameOf(url: string | undefined): string {
  * VirtualWebServer — a Cordis `webServer` service that saves route tables and
  * upgrade sockets instead of binding a real socket.
  */
-export class VirtualWebServer extends Service {
+export class VirtualWebServer {
   private readonly exact = new Map<string, WebRoute>()
   private readonly prefixes = new Map<string, WebRoute>()
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
@@ -77,10 +83,16 @@ export class VirtualWebServer extends Service {
   private fallback: WebRoute["handler"] | undefined
   private server: Server | undefined
   private readonly config: VirtualWebServerOptions
+  /** The cordis context this service is registered on. */
+  readonly ctx: Context
 
   constructor(ctx: Context, config: VirtualWebServerOptions) {
-    super(ctx, "webServer")
+    this.ctx = ctx
     this.config = config
+    // Register this instance as the `webServer` service without a runtime
+    // `Service` base-class import: mirror the cordis `Service` registration
+    // (name + instance) through the context's reflection layer.
+    ctx.reflect.provide("webServer", this)
   }
 
   /** The reported port (the Ellamaka public port). */
@@ -177,6 +189,7 @@ export class VirtualWebServer extends Service {
    * raw `tapIndex` transforms over the result.
    */
   renderIndex(html: string): string {
+    const { renderIndexInjections } = createPackageDshRuntimeApi().hostWebserver
     return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()))
   }
 

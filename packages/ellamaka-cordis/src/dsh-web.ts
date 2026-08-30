@@ -16,22 +16,6 @@
  *
  * @module @wopal/ellamaka-cordis/dsh-web
  */
-import {
-  assertEntriesActivated,
-  healProfilesModuleFallback,
-  initProfile,
-  loadProfile,
-  mountRootInclude,
-  resolveProfileDir,
-  DEFAULT_PROFILE_BUNDLES,
-  PROFILE_PATCH_FILENAME,
-} from "@deepseek-ai/dsh-app-boot"
-import { provideCmdline } from "@deepseek-ai/dsh-cmdline"
-import {
-  createLaunchEnvironmentSnapshot,
-  DSH_LAUNCH_ENVIRONMENT_KEY,
-} from "@deepseek-ai/dsh-launch-environment"
-import Loader from "@deepseek-ai/cordis-plugin-loader"
 import type { Context } from "@deepseek-ai/cordis"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
@@ -40,6 +24,10 @@ import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 import { VirtualWebServer, DSH_MOUNT_PREFIX } from "./dsh-virtual-webserver.js"
+import {
+  createPackageDshRuntimeApi,
+  type DshRuntimeApi,
+} from "./runtime/loader.js"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
 const WEB_PROFILE_NAME = "web"
@@ -235,6 +223,13 @@ export interface DshHostOptions {
    * `false` (enabled).
    */
   disableCodeRuntime?: boolean
+  /**
+   * The resolved DSH runtime module handle, loaded via
+   * `@wopal/ellamaka-cordis/runtime` from the materialised closure
+   * (DESIGN-dsh-poc §3.4.6). When omitted, the module falls back to the
+   * package closure (source/dev mode) — keeping existing callers unchanged.
+   */
+  runtime?: DshRuntimeApi
 }
 
 /** Internal mount options shared by the web and base entry points. */
@@ -263,6 +258,9 @@ type MountProfileOptions = DshHostOptions & {
  */
 async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<DshHost> {
   const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer, virtualWebServer } = opts
+  // The DSH runtime module handle: preferred from an injected runtime, else the
+  // package closure (source/dev mode) — the old module-top static imports.
+  const runtime = opts.runtime ?? createPackageDshRuntimeApi()
   // dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
   // (settings/sessions/storages/credentials/.../home-patch) lands under
   // `$WOPAL_HOME/dsh/state`, NOT `~/.dsh`. Done via pure config injection —
@@ -306,6 +304,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // reach the resource directory from the bundled sidecar.
   const installAnchor = opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
 
+  const { healProfilesModuleFallback, loadProfile, resolveProfileDir, initProfile } = runtime.appBoot
   // Register the dsh-plugins log Exporter before any plugin mounts, so every
   // dsh plugin's ctx.logger output lands in the dedicated file. The Exporter
   // is auto-disposed with the host fiber (zero manual cleanup).
@@ -340,8 +339,8 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // overwritten.
   if (profileName === TOOLS_PROFILE_NAME) {
     const dir = resolveProfileDir(profileName, resolvedHome)
-    initProfile(dir, DEFAULT_PROFILE_BUNDLES)
-    const patchPath = join(dir, PROFILE_PATCH_FILENAME)
+    initProfile(dir, runtime.appBoot.DEFAULT_PROFILE_BUNDLES)
+    const patchPath = join(dir, runtime.appBoot.PROFILE_PATCH_FILENAME)
     try {
       const current = readFileSync(patchPath, "utf-8")
       const stripped = current
@@ -377,7 +376,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // (etc.) expressions in the bundle patch layers resolve under state/ — the
   // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type).
   ctx.provide("dshHomePath", (...segments: string[]) => join(stateDir, ...segments))
-  const loaderFiber = await ctx.registry.plugin(Loader)
+  const loaderFiber = await ctx.registry.plugin(runtime.pluginLoader)
   // Packaged-host bare-module bridge: bun-compiled binaries (CLI) and the
   // Desktop sidecar bundle carry no dsh packages, and bun SEA lacks Node's
   // internal ESM loader (cordis-plugin-loader's ModuleLoader.fromInternal()
@@ -397,13 +396,14 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
   // Intrinsic host setup: the launch environment snapshot and the cmdline
   // service (--port) that the web-startup plugin reads to bind the webserver.
+  const { DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot } = runtime.launchEnv
   ctx.provide(
     DSH_LAUNCH_ENVIRONMENT_KEY,
     createLaunchEnvironmentSnapshot([{ source: "process", values: process.env as Record<string, string> }]),
   )
   // `--no-open` keeps the dsh web UI from launching the default browser: the
   // Workbench embeds the dsh surface in an iframe, so an external tab is noise.
-  provideCmdline(ctx, { args: ["--port", String(port), "--no-open"], exit: () => {} })
+  runtime.cmdline.provideCmdline(ctx, { args: ["--port", String(port), "--no-open"], exit: () => {} })
   // In virtual mode, the VirtualWebServer is constructed before the Loader
   // mounts (its Service constructor registers it as `webServer`), so the
   // official web plugins register their routes against it instead of a real
@@ -418,12 +418,12 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // closure is materialised too (the kill switch guards its absence), so
   // passing the base unconditionally is mode-independent.
   const bareModuleBaseUrl = pathToFileURL(join(installAnchor, "..", "..", "..")).href + "/"
-  const includeEntry = await mountRootInclude(ctx, rootConfig, patches, bareModuleBaseUrl)
+  const includeEntry = await runtime.appBoot.mountRootInclude(ctx, rootConfig, patches, bareModuleBaseUrl)
   await ctx.get("loader")?.await()
   if (ctx.get("loader") === undefined || includeEntry === undefined) {
     throw new Error("ellamaka-cordis: dsh boot did not provide a loader service")
   }
-  await assertEntriesActivated(ctx, "ellamaka")
+  await runtime.appBoot.assertEntriesActivated(ctx, "ellamaka")
 
   const dispose = async () => {
     const loader = ctx.get("loader")
@@ -555,8 +555,8 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
  * dispose tears the whole context down.
  */
 export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
-  const { Context } = await import("@deepseek-ai/cordis")
-  const ctx = new Context()
+  const runtime = opts.runtime ?? createPackageDshRuntimeApi()
+  const ctx = new runtime.cordis.Context()
   const host = await mountDshWeb(ctx, opts)
   return {
     mountPath: host.mountPath,
@@ -583,8 +583,8 @@ export interface DshToolsHost extends DshHost {
 }
 
 export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> {
-  const { Context } = await import("@deepseek-ai/cordis")
-  const ctx = new Context()
+  const runtime = opts.runtime ?? createPackageDshRuntimeApi()
+  const ctx = new runtime.cordis.Context()
   const host = await mountDshTools(ctx, opts)
   return {
     port: host.port,
