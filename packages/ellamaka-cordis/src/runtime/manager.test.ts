@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { initializeDshRuntime, type InitializeDshOptions, type ManagerDeps } from "./manager"
 import type { DshRuntimeManifestV1 } from "./manifest"
 import { closureNameForFingerprint, resolveDshLayout } from "./status"
+import { closureLockJson } from "./materializer"
 
 const dirs: string[] = []
 
@@ -46,7 +47,10 @@ const MANIFEST: DshRuntimeManifestV1 = {
 
 /** The closure package.json for a direct dependency; dsh carries a bin entry (real shape). */
 function depPkgJson(name: string): string {
-  const body: Record<string, string> = { name, version: "0.1.1-rc.2" }
+  // Write the manifest's PINNED version for each dep (B-02: the happy-path
+  // fixture must exercise real content verification, so versions must match
+  // the manifest pins rather than a hard-coded placeholder).
+  const body: Record<string, string> = { name, version: MANIFEST.dependencies[name] }
   if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
   return JSON.stringify(body)
 }
@@ -89,11 +93,13 @@ function seedClosureAt(home: string, manifest: DshRuntimeManifestV1): string {
   const closureDir = join(layout.closuresDir, closureNameForFingerprint(manifest.fingerprint!))
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
-  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.1.1-rc.2", main: "index.js" }))
-  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.1" }))
+  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: manifest.dependencies["@deepseek-ai/dsh"], bin: "lib/bin.js" }))
+  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: manifest.dependencies["@deepseek-ai/cordis"] }))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
-  writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
+  // The stored lock must be the canonical npm v3 lock derived from the manifest
+  // (B-03 binding), matching what the real materialiser writes.
+  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
 
@@ -254,6 +260,32 @@ describe("initializeDshRuntime state machine", () => {
     expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
   })
 
+  test("staged direct dep at the WRONG version -> degraded, staging preserved, no closure (B-02)", async () => {
+    const home = tmpHome()
+    // Fake arborist that writes a structurally-complete staging tree but with
+    // @deepseek-ai/cordis at the wrong version (manifest pins 4.0.1).
+    const wrongVersionReify: ManagerDeps["arborist"] = {
+      create: async () => ({
+        reify: async () => {
+          const staging = resolveDshLayout(home).stagingDir
+          for (const name of Object.keys(MANIFEST.dependencies)) {
+            const dir = join(staging, "node_modules", ...name.split("/"))
+            mkdirSync(dir, { recursive: true })
+            const version = name === "@deepseek-ai/cordis" ? "9.9.9" : MANIFEST.dependencies[name]
+            const body: Record<string, string> = { name, version }
+            if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+            writeFileSync(join(dir, "package.json"), JSON.stringify(body))
+          }
+        },
+      }),
+    }
+    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: wrongVersionReify } }))
+    expect(status).toBe("degraded")
+    // Staging preserved for diagnosis; no closure activated.
+    expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(true)
+    expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
+  })
+
   test("materialisation timeout -> degraded with no retry this launch", async () => {
     const home = tmpHome()
     // Fake arborist that hangs forever; the short injectable timeout must cut it off.
@@ -372,12 +404,12 @@ describe("B-06: loader failure degrades instead of crashing", () => {
       const closureDir = join(layout.closuresDir, closureNameForFingerprint(MANIFEST.fingerprint!))
       mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
       mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
-      // A dsh package.json with NO resolvable entry point.
-      writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.1.1-rc.2" }))
-      writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.1" }))
+      // A dsh package.json with NO resolvable entry point (B-06 loader gate).
+      writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: MANIFEST.dependencies["@deepseek-ai/dsh"] }))
+      writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: MANIFEST.dependencies["@deepseek-ai/cordis"] }))
       writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(MANIFEST))
       writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
-      writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
+      writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(MANIFEST))
     }
     seed()
     const status = await initializeDshRuntime(makeBaseOptions(home))

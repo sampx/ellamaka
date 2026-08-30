@@ -16,6 +16,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
   DEFAULT_DSH_RUNTIME_MANIFEST,
+  closureLockJson,
   resolveInstallAnchor,
 } from "@wopal/ellamaka-cordis/runtime"
 
@@ -41,7 +42,10 @@ export function seedDshClosure(wopalHome: string): string {
     join(closureDir, "package.json"),
     JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }),
   )
-  writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
+  // The stored lock must be the canonical npm v3 lock derived from the manifest
+  // (B-03 binding), matching what the real materialiser writes, so the fast
+  // path hits and no network reify is triggered.
+  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   return anchor.path
 }

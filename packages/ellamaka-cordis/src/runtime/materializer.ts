@@ -78,8 +78,11 @@ function closurePackageJson(manifest: DshRuntimeManifestV1): string {
  * and integrity carried straight from the embedded lock; no `latest`, no
  * registry re-resolution). The root `""` entry declares the direct
  * dependencies so Arborist knows the install target.
+ *
+ * The same function is used by {@link verifyClosureContent} to canonical-bind a
+ * stored closure lock to the manifest's packageLock (B-03).
  */
-function closureLockJson(manifest: DshRuntimeManifestV1): string {
+export function closureLockJson(manifest: DshRuntimeManifestV1): string {
   const packages: Record<string, unknown> = {
     "": { name: "ellamaka-dsh-closure", dependencies: manifest.dependencies },
   }
@@ -175,11 +178,18 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
   mkdirSync(layout.stagingDir, { recursive: true })
   writeFileSync(join(layout.stagingDir, "package.json"), closurePackageJson(options.manifest))
   writeFileSync(join(layout.stagingDir, "package-lock.json"), closureLockJson(options.manifest))
+  // Write the runtime-manifest into staging so content verification (B-02/B-03)
+  // can run against the staged tree before activation.
+  writeFileSync(join(layout.stagingDir, "runtime-manifest.json"), JSON.stringify(options.manifest))
   log?.info("materializer.reify", { fingerprint, cache: expandCacheDir() })
 
   await arborist.reify({ save: false, saveType: "prod" })
 
-  // Verify the staged tree before activation (anchor + every direct dep).
+  // Verify the staged tree CONTENT before activation (B-02). Existence alone is
+  // not enough: a staged direct dep installed at the wrong version must fail
+  // here, keep staging for diagnosis, and never activate. This runs the same
+  // full verifyClosureContent() used by the fast-path inspect (canonical
+  // runtime-manifest compare + pinned dep versions + lock binding).
   const stagedClosureDir = layout.stagingDir
   const missing = directDepsMissingOnDisk({
     closureDir: stagedClosureDir,
@@ -190,6 +200,13 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
     throw new Error(
       `dsh runtime: staged closure verification failed (missing ${[stagedAnchor, ...missing].filter(Boolean).join(", ")})`,
     )
+  }
+  try {
+    verifyClosureContent(stagedClosureDir, options.manifest)
+  } catch (error) {
+    // Keep staging for diagnosis; never activate a wrong-version tree (B-02).
+    log?.warn("materializer.verify.staged.failed", { error })
+    throw new Error(`dsh runtime: staged closure content verification failed: ${(error as Error).message}`)
   }
   log?.info("materializer.verify", { fingerprint, packages: Object.keys(options.manifest.dependencies).length })
 
@@ -250,15 +267,16 @@ function verifyClosureContent(closureDir: string, manifest: DshRuntimeManifestV1
   if (canonicalSerialize(stored) !== canonicalSerialize(manifest)) {
     throw new Error("dsh runtime: closure runtime-manifest.json does not match the embedded manifest")
   }
+  // Lock binding (B-03): the stored npm lockfile v3 document must canonical-equal
+  // the deterministic npm v3 lock derived from the manifest's packageLock
+  // (closureLockJson). This binds the whole tree — resolved tarball URLs,
+  // integrity, and every transitive entry — with no per-entry logic. A
+  // valid-shaped-but-different lock (empty packages map, altered integrity, an
+  // extra/different entry) fails and marks the closure damaged.
   const storedLock = JSON.parse(readFileSync(join(closureDir, "package-lock.json"), "utf8")) as unknown
-  if (
-    typeof storedLock !== "object" ||
-    storedLock === null ||
-    (storedLock as { lockfileVersion?: unknown }).lockfileVersion !== 3 ||
-    typeof (storedLock as { packages?: unknown }).packages !== "object" ||
-    (storedLock as { packages?: unknown }).packages === null
-  ) {
-    throw new Error("dsh runtime: closure package-lock.json is damaged (expected a lockfile v3 document)")
+  const expectedLock = JSON.parse(closureLockJson(manifest)) as unknown
+  if (canonicalSerialize(storedLock) !== canonicalSerialize(expectedLock)) {
+    throw new Error("dsh runtime: closure package-lock.json does not match the embedded manifest lock")
   }
   for (const name of Object.keys(manifest.dependencies)) {
     const pinned = manifest.dependencies[name]

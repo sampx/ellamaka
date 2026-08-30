@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import {
   checkClosureIntegrity,
+  closureLockJson,
   materializeClosure,
   validateClosureOnDisk,
   type MaterializeDeps,
@@ -60,7 +61,9 @@ function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps> 
           for (const name of Object.keys(MANIFEST.dependencies)) {
             const dir = join(staging, "node_modules", ...name.split("/"))
             mkdirSync(dir, { recursive: true })
-            writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version: "0.1.1-rc.2" }))
+            const body: Record<string, string> = { name, version: MANIFEST.dependencies[name] }
+            if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+            writeFileSync(join(dir, "package.json"), JSON.stringify(body))
           }
         },
       }),
@@ -74,11 +77,13 @@ function seedClosure(home: string, manifest = MANIFEST): string {
   const closureDir = join(layout.closuresDir, closureNameForFingerprint(manifest.fingerprint!))
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
-  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.1.1-rc.2" }))
-  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.1" }))
+  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: manifest.dependencies["@deepseek-ai/dsh"], bin: "lib/bin.js" }))
+  writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: manifest.dependencies["@deepseek-ai/cordis"] }))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
-  writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
+  // The stored lock must be the canonical npm v3 lock derived from the manifest
+  // (B-03 binding), matching what the real materialiser writes.
+  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
 
@@ -184,6 +189,32 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
     // Truncating the lock leaves a partial document; presence alone is not
     // enough — the closure must be treated as damaged and re-materialised.
     writeFileSync(join(closureRoot(anchor), "package-lock.json"), '{"lockfileVersion": 3, ')
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+  })
+
+  test("returns null when package-lock.json is valid-shaped but different content (B-03)", () => {
+    const home = tmpHome()
+    const anchor = seedClosure(home)
+    // A well-formed npm v3 lock whose packages map differs from the manifest's
+    // (here: empty packages map — the old shape-only check accepted this).
+    // The lock must canonical-bind to the manifest's packageLock, so any
+    // content difference marks the closure damaged.
+    writeFileSync(
+      join(closureRoot(anchor), "package-lock.json"),
+      JSON.stringify({ name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages: {} }),
+    )
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+  })
+
+  test("returns null when package-lock.json integrity string is altered (B-03)", () => {
+    const home = tmpHome()
+    const anchor = seedClosure(home)
+    // Alter the integrity of one lock entry — the resolved/integrity fields are
+    // part of the canonical lock binding and must match the manifest.
+    const lock = JSON.parse(readFileSync(join(closureRoot(anchor), "package-lock.json"), "utf8")) as Record<string, unknown>
+    const dshEntry = (lock.packages as Record<string, { integrity?: string }>)["node_modules/@deepseek-ai/dsh"]
+    dshEntry.integrity = "sha512-tampered"
+    writeFileSync(join(closureRoot(anchor), "package-lock.json"), JSON.stringify(lock))
     expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
   })
 

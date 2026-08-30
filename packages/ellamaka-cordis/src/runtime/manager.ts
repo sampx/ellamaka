@@ -22,6 +22,7 @@ import { DEFAULT_DSH_RUNTIME_MANIFEST } from "./embed-manifest.js"
 // in one place: the default manifest and the install-anchor resolver (Task 4).
 export { DEFAULT_DSH_RUNTIME_MANIFEST }
 export { resolveInstallAnchor } from "./status.js"
+export { closureLockJson } from "./materializer.js"
 export type { InstallAnchor } from "./status.js"
 
 /**
@@ -56,6 +57,14 @@ export type { InstallAnchor } from "./status.js"
  * touches staging nor steals the lock; after the abandoned reify settles, the
  * shared promise resolves — a successful activation still counts as `ready`
  * (idempotent).
+ *
+ * Hung reify / lock-holding (round-2 W-01 decision): a live-but-hung
+ * materialisation holds the lock until the process dies — there is no lease or
+ * GC (§3.4.7). This is an ACCEPTED self-healing limitation: when the hung
+ * process dies, the atomic reclaim protocol (lock.ts B-01) reaps its lock and
+ * the next launch retries; a live-but-hung process holding the lock is a
+ * pathological network case where `degraded` with a structured log is the
+ * designed behaviour (no child-process reify is implemented).
  */
 
 /** The fetch signature the manager may use for a network probe (tests stub it). */
