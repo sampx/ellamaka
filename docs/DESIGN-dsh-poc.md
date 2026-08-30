@@ -67,7 +67,7 @@ ellamaka 进程（唯一监听端口）
 | dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 重放 dsh boot 序列，构造两个容器；覆盖 `ctx.dshHomePath` 与插件 `dshHome` 配置注入，落地运行时隔离（§3.4） |
 | dsh-adapter | `.wopal/plugins/dsh-adapter` | 把工具容器中的工具投影进 ellamaka ToolRegistry |
 | DSH home | `$WOPAL_HOME/dsh` | 依赖闭包、profile 定义与运行时 state 的唯一物化位置 |
-| 物化脚本 | `packages/opencode/script/materialize-dsh.ts` | ellamaka 侧物化参考实现（依赖清单 + arborist 安装 + profile 预置）；onboarding 提前物化由 wopal-cli setup 承载 |
+| 物化脚本 | `packages/opencode/script/materialize-dsh.ts` | ellamaka 侧物化参考实现（依赖清单 + arborist 安装 + profile 预置）；各入口装配 dsh 时统一调用自物化 |
 
 ---
 
@@ -135,10 +135,7 @@ $WOPAL_HOME/dsh/
 
 **物化机制**：生成 `package.json`（7 个 `@deepseek-ai/*` 依赖 + `@wopal/ellamaka-cordis`）→ 安装依赖树 → 预置 profile 模板 → 验证锚点与 Node strip-types 导入 dsh-web。幂等：已存在的 profile 与补丁不覆盖。安装引擎为 `@npmcli/arborist`（纯 JS，无外部包管理器依赖），不依赖系统 bun。dsh 依赖清单、profile 模板与安装编排由 `packages/opencode/script/materialize-dsh.ts` 承载，作为 ellamaka 侧的物化参考实现。
 
-**物化触发分两条路径**：
-
-- **提前物化（向导路径）**：`wopal setup` / Desktop onboarding 在安装配置阶段完成物化，让首次启动 Workbench 时依赖已就位。编排见 `DESKTOP-ONBOARDING.md` §5.3 与 `../../../projects/wopal-cli/docs/DESIGN.md` §6.3。
-- **运行时兜底（ellamaka 路径）**：`ELLAMAKA_DSH` 启用时，dev（CLI serve/web/TUI）与 Desktop sidecar 装配 dsh 前检查闭包锚点；缺失则物化后挂载，失败则降级为无 dsh 运行并提示。兜底保证 onboarding 被跳过时 dsh 仍可用，与插件依赖安装的运行时兜底语义一致（$WOPAL_HOME/plugins 首次使用即装；dsh 闭包首次装配即物化）。
+**物化触发（唯一路径：装配自物化）**：`ELLAMAKA_DSH` 启用时，dev（CLI serve/web/TUI）与 Desktop sidecar 在装配 dsh 前检查闭包锚点；缺失则物化后挂载，失败则降级为无 dsh 运行并提示。物化由各入口在装配 dsh 时自行触发，无需 wopal-cli 提前物化。与插件依赖安装的运行时兜底语义一致（`$WOPAL_HOME/plugins` 首次使用即装；dsh 闭包首次装配即物化）。
 
 **依赖解析（installAnchor）**：
 
@@ -337,6 +334,20 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`，**永不设置 `DSH_HOME` env**。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
 11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。CLI 与 Desktop 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
 12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。隔离不依赖 `DSH_HOME` env。
+
+---
+
+## 8. 待解决设计问题
+
+> PoC 实现暴露的、当前设计无法满足生产发布要求的问题，列为下阶段重点解决项。下表记录现象与解决方向，具体方案待设计定稿。
+
+| # | 问题 | 现象 | 解决方向（草案） |
+|---|------|------|------------------|
+| 1 | `file:` 链接 + TS loader 不可行 | 物化清单用 `file:` 指向 workspace/资源，依赖 Node `--experimental-strip-types` 加载 TS 源码；依赖源码布局与构建机状态，无法满足发布要求 | 闭包随产物或 registry 包交付，消除 `file:` 与源码加载 |
+| 2 | 依赖清单无唯一真相源 | 物化器手工复制 7 包清单，与 `cordis package.json` 的 8 个 dependencies 不一致（缺 `@deepseek-ai/dsh-host-webserver`） | 物化器从 `cordis package.json` 派生清单，单一真相源 |
+| 3 | 装配自物化只覆盖 Desktop | Desktop（`dsh-switch`→`dsh-materializer`）自物化；CLI serve/web/TUI（`dsh-mount`）缺失锚点直接不挂载 | CLI 侧补齐装配自物化，与 Desktop 共享同一物化实现 |
+| 4 | 版本常量硬编码 | `0.1.1-rc.2`/`4.0.1`/`1.0.2` 硬编码在物化器，不从 `cordis package.json` 派生 | 版本从单一来源派生，消除手工常量 |
+| 5 | 设计标注与实际不符 | 本文档自称"正式设计（PoC 定稿）"，但物化机制仍是 dev/file: 态，设计严重残缺 | 设计定稿前更新物化模型，与可生产实现对齐 |
 
 ---
 
