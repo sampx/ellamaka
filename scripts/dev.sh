@@ -122,6 +122,24 @@ pgid_of() {
   ps -o pgid= -p "$1" 2>/dev/null | tr -d '[:space:]'
 }
 
+# Gate every dsh dev startup path on manifest freshness (W-04): the embedded
+# dsh-runtime-manifest.json must match the committed lock before the backend /
+# sidecar boots, or the dev instance would materialise a stale closure. Serves
+# as the dev-side equivalent of the CI/release --check gate. Fail-fast with a
+# pointer to the generator.
+require_dsh_manifest_fresh() {
+  local manifest_generator="$root/packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts"
+  if [ ! -f "$manifest_generator" ]; then
+    return 0
+  fi
+  if ! (cd "$root" && bun "$manifest_generator" --check >/dev/null 2>&1); then
+    echo "dsh runtime manifest is out of date; re-run:" >&2
+    echo "  (cd $root && bun $manifest_generator)" >&2
+    return 1
+  fi
+  return 0
+}
+
 process_stamp() {
   ps -o lstart= -p "$1" 2>/dev/null | tr -d '[:space:]'
 }
@@ -514,6 +532,9 @@ cmd_tui() {
     esac
   done
 
+  # W-04: the TUI boots the dsh runtime in-process; gate the manifest first.
+  require_dsh_manifest_fresh || return 1
+
   local ns_arg=()
   $ns && ns_arg=(--disable-wopalspace)
 
@@ -581,6 +602,9 @@ cmd_serve() {
       *) passthrough+=("$1"); shift ;;
     esac
   done
+
+  # W-04: serve boots the dsh runtime in-process; gate the manifest first.
+  require_dsh_manifest_fresh || return 1
 
   if $backend_only; then
     require_stopped backend || return 1
@@ -716,16 +740,17 @@ cmd_desktop() {
   export MIN_WOPAL_CLI_VERSION="${MIN_WOPAL_CLI_VERSION:-$(resolve_min_wopal_cli_version "$root")}"
 
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."
+  # The sidecar bundle inlines generated/dsh-runtime-manifest.json (static JSON
+  # import in @wopal/ellamaka-cordis/runtime). Regenerate it on EVERY desktop
+  # launch so the dev sidecar never ships a stale closure definition (W-04);
+  # the generator is deterministic so this is a no-op when already fresh.
+  (cd "$root" && bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts)
   if $rebuild; then
     echo "==> Rebuilding sidecar (packages/opencode)..."
     if [ -z "${OPENCODE_VERSION:-}" ]; then
       export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$root")"
     fi
     echo "==> Sidecar version: $OPENCODE_VERSION"
-    # The sidecar bundle inlines generated/dsh-runtime-manifest.json (static
-    # JSON import in @wopal/ellamaka-cordis/runtime); regenerate before
-    # bundling so the dev sidecar never ships a stale closure definition.
-    (cd "$root" && bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts)
     (cd "$opencode_dir" && bun script/build-node.ts)
     echo "==> Copying icons..."
     (cd "$DESKTOP_DIR" && bun ./scripts/copy-icons.ts "$CHANNEL")
