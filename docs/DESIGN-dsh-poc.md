@@ -1,12 +1,12 @@
 # DESIGN-dsh — ellamaka 与 dsh 融合架构设计
 
-> **状态**: 正式设计（由 PoC 验证后定稿）
+> **状态**: 目标设计（PoC 已验证融合机制，生产物化模型已定稿，待实施）
 > **上级架构**: `DESIGN.md`
 > **技术依据**: `research/deepseek-harness-architecture-and-integration-research.md`（dsh 全景调研）
 
-本文档定义 ellamaka 与 dsh（DeepSeek Harness）融合后的目标架构。融合机制已经 PoC 完整验证可行，后续工作为细节优化与新增功能插件，本文档作为该架构的正式设计基线。
+本文档定义 ellamaka 与 dsh（DeepSeek Harness）融合后的目标架构。融合机制已经 PoC 验证可行。生产形态由 Ellamaka 自带的 DSH Bridge 与按需物化的 DSH 官方运行时组成。本文档是后续实施与验收的设计基线。
 
-**阅读地图**：§2 架构总览 → §3 运行时机制 → §4 能力采用 → §5 配置与隔离 → §6 已验证事实 → §7 设计约束。
+**阅读地图**：§2 架构总览 → §3 运行时机制 → §4 能力采用 → §5 配置与隔离 → §6 已验证事实 → §7 设计约束 → §8 生产物化验收基线。
 
 ---
 
@@ -54,9 +54,10 @@ ellamaka 进程（唯一监听端口）
 
 **入口分工**：
 
-- CLI serve 与 TUI：挂载 Web 容器 + 工具容器
+- CLI serve / web：挂载 Web 容器 + 工具容器
 - Desktop sidecar：挂载 Web 容器 + 工具容器（boot 系列自建容器）
 - TUI：只挂工具容器（无 iframe 需求）
+- Workbench：由承载页面的 serve/web 后端或 Desktop sidecar 提供 Web 容器与工具容器
 
 ### 2.2 组件清单
 
@@ -64,10 +65,12 @@ ellamaka 进程（唯一监听端口）
 |------|------|------|
 | `VirtualWebServer` | `@wopal/ellamaka-cordis` | 实现 dsh 官方 WebServer 接口，提供路由/upgrade 分发，不创建监听 socket |
 | 受控路由挂载点 | `Listener.mountNodeRoute` | 按前缀分发 HTTP/upgrade 到已注册 handler，保留 Effect listener 生命周期 |
-| dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 重放 dsh boot 序列，构造两个容器；覆盖 `ctx.dshHomePath` 与插件 `dshHome` 配置注入，落地运行时隔离（§3.4） |
+| Ellamaka DSH Bridge | `@wopal/ellamaka-cordis` | 随 CLI 与 Desktop sidecar 编译发布；提供容器、虚拟 WebServer、运行时动态加载与 dsh boot 装配，不作为 DSH 闭包依赖发布 |
+| DSH Runtime Manager | `@wopal/ellamaka-cordis/runtime` | serve、web、TUI 与 Desktop sidecar 共用的启动入口；负责禁用判断、闭包物化、完整性校验、动态加载和容器挂载 |
+| DSH 运行时清单 | Ellamaka 构建产物 | 构建时从 `packages/ellamaka-cordis/package.json` 派生并锁定 DSH 官方依赖、完整依赖树与完整性信息；运行时内嵌读取 |
+| dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 通过 `installAnchor` 从物化闭包加载官方运行时，重放 dsh boot 序列，构造两个容器；覆盖 `ctx.dshHomePath` 与插件 `dshHome` 配置注入，落地运行时隔离（§3.4） |
 | dsh-adapter | `.wopal/plugins/dsh-adapter` | 把工具容器中的工具投影进 ellamaka ToolRegistry |
-| DSH home | `$WOPAL_HOME/dsh` | 依赖闭包、profile 定义与运行时 state 的唯一物化位置 |
-| 物化脚本 | `packages/opencode/script/materialize-dsh.ts` | ellamaka 侧物化参考实现（依赖清单 + arborist 安装 + profile 预置）；各入口装配 dsh 时统一调用自物化 |
+| DSH home | `$WOPAL_HOME/dsh` | 不可变依赖闭包、profile 定义、运行时 state 与物化锁的唯一位置 |
 
 ---
 
@@ -103,44 +106,155 @@ DSH 前端在隔离 iframe 内加载。`VirtualWebServer` 在 index tap 链末�
 
 ### 3.4 DSH home、运行时隔离与依赖物化
 
-**唯一 home**：`$WOPAL_HOME/dsh`。dev（serve/TUI）、Web 与 Desktop sidecar 读取同一位置。ellamaka 集成只用 `$WOPAL_HOME`，**永不使用 `$DSH_HOME`，永不设置 `DSH_HOME` 环境变量**；`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内读写。
+#### 3.4.1 交付边界
+
+Ellamaka 发布物包含编译后的 **Ellamaka DSH Bridge**，不包含 DSH 官方运行时依赖。Bridge 是 Ellamaka 自身代码，随 CLI 二进制与 Desktop sidecar 一同构建。它不发布为独立 registry 包，也不作为 `$WOPAL_HOME/dsh/package.json` 的依赖。
+
+全部 `@deepseek-ai/*` 官方包在首次启用 DSH 时物化到 `$WOPAL_HOME/dsh`。这条边界在 dev、CLI 发布物与 Desktop 发布物中保持一致：
+
+```text
+Ellamaka CLI / Desktop sidecar
+└── compiled DSH Bridge                  ← Ellamaka 发布物
+
+$WOPAL_HOME/dsh/closures/<fingerprint>/
+├── package.json                         ← DSH 官方直接依赖
+├── package-lock.json                    ← 完整解析树与 integrity
+└── node_modules/@deepseek-ai/*          ← DSH 官方运行时闭包
+```
+
+DSH 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge → DSH runtime`。生产闭包中没有 `@wopal/ellamaka-cordis`、`file:` workspace 链接、TS 源码副本或 Node TypeScript loader。
+
+#### 3.4.2 唯一 home 与目录所有权
+
+**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。Ellamaka 集成只用 `$WOPAL_HOME`，**永不使用 `$DSH_HOME`，永不设置 `DSH_HOME` 环境变量**；`~/.dsh` 归 dsh 官方 CLI 专用，Ellamaka 不在其内读写。
 
 ```text
 $WOPAL_HOME/dsh/
-├── package.json          ← 声明 7 个 dsh 依赖 + @wopal/ellamaka-cordis
-├── node_modules/         ← 完整依赖树，顶层扁平安装
-├── profiles/             ← profile 定义（web / ellamaka-tools）
+├── closures/                            ← 按清单指纹隔离的不可变依赖闭包
+│   └── <fingerprint>/
+│       ├── package.json
+│       ├── package-lock.json
+│       └── node_modules/
+├── profiles/                            ← 用户可编辑 profile（跨版本保留）
 │   ├── web/
 │   ├── ellamaka-tools/
-│   └── node_modules/     ← 快捷方式目录（挂载时自动重建）
-└── state/                ← dsh 引擎运行时数据（settings/sessions/storages/...）
+│   └── node_modules/                    ← 启动时按 installAnchor 重建的快捷方式
+├── state/                               ← DSH 运行时数据
+├── staging/                             ← 尚未激活的物化临时目录
+└── locks/materialize.lock               ← 跨进程物化锁
 ```
 
-**运行时隔离**：dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessions、storages、home patch）与依赖闭包、profile 定义三者同根但分目录，全部落在 `$WOPAL_HOME/dsh` 下。运行时数据归 `state/`，与官方 dsh CLI 完全隔离。
+闭包按指纹不可变。新 Ellamaka 版本需要不同的 DSH 依赖树时创建新闭包，不原地修改正在运行的闭包。`profiles/` 与 `state/` 独立于闭包版本，升级时保持用户配置与运行时数据。
 
-隔离采用**纯配置注入，零环境变量**。dsh 引擎解析 home 有两条机制，ellamaka 分别覆盖：
+#### 3.4.3 运行时清单与版本来源
+
+`packages/ellamaka-cordis/package.json` 的精确 `dependencies` 是 DSH 官方**直接依赖版本**的唯一编辑源。Ellamaka 构建流程从中选取 `@deepseek-ai/*` 依赖，并结合仓库锁文件生成 `dsh-runtime-manifest.json`。该文件是构建生成物，随 CLI 与 Desktop sidecar 嵌入，不由开发者手工维护：
+
+- 直接依赖名称与精确版本，包括 `@deepseek-ai/dsh`；
+- 完整传递依赖树的精确解析结果；
+- registry tarball integrity；
+- 清单 schema、Bridge ABI 与内容指纹。
+
+清单的目标形态如下。`packageLock` 在文档中省略展开，实际生成物携带完整 npm lock 数据：
+
+```json
+{
+  "schema": "ellamaka.dsh-runtime/v1",
+  "bridgeAbi": 1,
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.1-rc.2",
+    "@deepseek-ai/cordis": "4.0.1"
+  },
+  "packageLock": { "lockfileVersion": 3, "packages": {} },
+  "fingerprint": "sha256:<manifest-and-lock-digest>"
+}
+```
+
+运行时物化器只消费发布物内嵌的清单和锁，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。例如构建清单声明 `@deepseek-ai/dsh: 0.1.1-rc.2`，该 Ellamaka 发布物始终物化这一版本。升级 DSH 的路径是修改唯一编辑源、更新仓库锁、构建新的 Ellamaka 发布物。
+
+普通配置不提供 DSH 版本覆盖项。Bridge 与 DSH runtime 作为一个经过验证的兼容组合随 Ellamaka 版本发布。单独填写一个 DSH 版本无法同时声明完整传递依赖树、integrity 与 Bridge ABI，容易产生未经验证的运行组合。未来如需独立升级 DSH，由发布流程交付新的完整运行时清单，而不是由用户配置任意版本字符串。
+
+清单指纹覆盖直接依赖、完整锁树、integrity、schema 与 Bridge ABI。目标闭包路径由该指纹确定。构建检查保证内嵌清单与唯一编辑源、仓库锁一致，避免手工清单和版本常量漂移。
+
+#### 3.4.4 统一启动语义
+
+`ELLAMAKA_DSH` 是唯一禁用开关，默认启用：
+
+- 未设置或值不等于 `0`：启动 DSH Runtime Manager；
+- `ELLAMAKA_DSH=0`：跳过清单检查、网络访问、物化、Bridge 动态加载和容器挂载，回到无 DSH 基线。
+
+所有入口共用 `@wopal/ellamaka-cordis/runtime` 下的 Runtime Manager。不存在 Desktop 专用物化器、CLI 参考脚本或需要用户手动运行的预安装命令。
+
+| 用户入口 | 物化责任人 | 成功后的装配 |
+|----------|------------|--------------|
+| `ellamaka serve` / `ellamaka web` | 当前 Ellamaka 进程 | Web 容器 + 工具容器 |
+| `ellamaka` TUI | 当前 Ellamaka 进程 | 工具容器 |
+| 浏览器 Workbench | 承载 Workbench 的 serve/web 后端 | Web 容器 + 工具容器；浏览器不执行文件系统物化 |
+| Desktop Workbench | Desktop sidecar | Web 容器 + 工具容器；Electron Main/Renderer 不物化 |
+
+DSH 初始化是启动阶段的一部分。入口在提供 DSH 能力前等待该阶段完成，并输出明确进度。首次安装或升级在有界超时内完成；成功后挂载容器，失败后 Ellamaka 继续以无 DSH 模式启动。常规启动命中已验证闭包时只执行本地快速校验。
+
+#### 3.4.5 物化状态机
+
+Runtime Manager 对每次启动执行同一状态机：
+
+1. **Gate**：读取 `ELLAMAKA_DSH`。值为 `0` 时返回 `disabled`。
+2. **Resolve**：读取内嵌运行时清单，计算预期指纹与目标闭包目录。
+3. **Inspect**：验证目标闭包的 manifest、lock、关键 anchor 与 integrity 元数据。完整时直接进入 Load。
+4. **Lock**：缺失或损坏时获取跨进程 `materialize.lock`。等待者在持锁者完成后重新 Inspect。
+5. **Stage**：在 `staging/` 写入 manifest 与 lock；用内置 `@npmcli/arborist` 按锁文件 reify。物化不依赖系统 bun、npm 或用户 shell。
+6. **Verify**：校验 lock、一致性、tarball integrity、`@deepseek-ai/dsh` anchor，以及 Bridge 所需的官方模块导出。
+7. **Activate**：把通过验证的 staging 目录原子重命名为 `closures/<fingerprint>`。未通过验证的 staging 从不参与加载。
+8. **Profile**：创建缺失的 profile 模板；已有 profile 与用户补丁保持不变。按本次 installAnchor 重建 `profiles/node_modules` 快捷方式。
+9. **Load**：以 installAnchor 动态加载官方运行时，挂载该入口需要的容器，返回 `ready`。
+
+同一进程对初始化 Promise 做单飞复用。同一 `$WOPAL_HOME` 下的多个 Ellamaka 进程通过文件锁协调，只有一个进程下载和安装；其他进程等待并复用已验证闭包。
+
+#### 3.4.6 installAnchor 与动态加载
+
+`installAnchor` 是目标闭包内 `@deepseek-ai/dsh/package.json` 的绝对路径：
+
+```text
+$WOPAL_HOME/dsh/closures/<fingerprint>/node_modules/@deepseek-ai/dsh/package.json
+```
+
+它是**模块解析锚点**，不是下载地址，也不决定版本。版本由 §3.4.3 的内嵌清单决定。Bridge 以 installAnchor 创建闭包作用域的 resolver，再从同一 `node_modules` 加载 `@deepseek-ai/cordis`、`dsh-app-boot`、`dsh-cmdline`、profile bundles 与其他官方模块。
+
+Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时包。类型依赖在构建期保留，运行时值通过 installAnchor resolver 获取。由此保证：
+
+- CLI 与 Desktop 使用同一份磁盘闭包；
+- 解析结果不受当前工作目录、workspace、全局 node_modules 或应用 bundle 影响；
+- Ellamaka 发布物不重复打包 DSH 官方依赖；
+- Bridge 自身始终是已编译 JavaScript，不需要 Node strip-types 或 `.js → .ts` loader。
+
+#### 3.4.7 升级、失败与可观测状态
+
+指纹相同的闭包可无限复用。新 Ellamaka 发布物携带新指纹时物化新闭包，已经运行的旧进程继续持有自己的 immutable installAnchor，不受升级影响。新闭包验证成功后才参与本次启动；版本不匹配时不回退到旧闭包，以免 Bridge ABI 与 DSH runtime 静默错配。
+
+进程加载闭包前创建 generation lease，正常退出时释放。Runtime Manager 只清理自身管理的 `closures/` 与 `staging/` 缓存：持物化锁时回收已确认无活动 lease 的旧 generation 与过期 staging，并保留当前 generation 和上一份完整 generation。`profiles/` 与 `state/` 不参与缓存清理。异常进程留下的 lease 只有在操作系统进程身份与启动标识均确认失效后才视为过期。
+
+运行状态统一为：
+
+| 状态 | 含义 |
+|------|------|
+| `disabled` | 用户以 `ELLAMAKA_DSH=0` 明确禁用 |
+| `preparing` | 正在校验、等待锁或物化 |
+| `ready` | 目标闭包通过验证且容器已挂载 |
+| `degraded` | 本次启动物化、校验、加载或挂载失败，Ellamaka 无 DSH 继续运行 |
+
+每次进程启动最多自动物化一次。网络不可达、超时、磁盘不足、integrity 不匹配、锁异常和 Bridge 加载失败均进入 `degraded`，保留可诊断错误并在下次启动重试。失败的 staging 不会覆盖可用闭包。已有正确闭包时启动不需要网络。
+
+#### 3.4.8 运行时数据隔离
+
+DSH 引擎的运行时数据（settings、credentials、匿名用户 ID、sessions、storages、home patch）统一落在 `$WOPAL_HOME/dsh/state`。隔离采用**纯配置注入，零环境变量**：
 
 | 机制 | 说明 | 隔离方式 |
 |------|------|---------|
 | `ctx` 注入的 `dshHomePath` | profile 配置 `!!js dshHomePath(...)` 表达式经 `with(ctx){eval}` 求值，覆盖 storages/sessions | 装配时 `ctx.provide("dshHomePath", (...s) => join(stateDir, ...s))` |
 | 插件直接 `import { resolveDshHome }` | settings/credentials/agent-instructions/shell-env/skill-fs/attachment 等读 `config.dshHome` | 在 profile patch 层给各插件传 `dshHome: $WOPAL_HOME/dsh/state` |
-| 无配置注入的例外 | `llm-deepseek` 上传索引、`anonymous-user-id` | 装配时用显式 `path` / `options.env` 参数传入 |
+| 无配置注入的例外 | `llm-deepseek` 上传索引、`anonymous-user-id` | 使用插件显式路径配置；未提供隔离入口的功能保持禁用 |
 
-两种机制殊途同归，最终都落在 `$WOPAL_HOME/dsh/state`，**不依赖 `DSH_HOME` env**。官方 dsh CLI 无论同进程还是独立进程，都感知不到任何污染。
-
-**启用开关（统一语义）**：`ELLAMAKA_DSH` 是**禁用开关（kill switch）**，默认开启。CLI（serve/web/TUI）与 Desktop sidecar 统一遵循：
-
-- 未设置或 `ELLAMAKA_DSH != 0` → 启用 dsh（物化缺失时由各入口自行物化或引导）
-- `ELLAMAKA_DSH=0` → 完全禁用 dsh，回到无 dsh 基线
-
-**物化机制**：生成 `package.json`（7 个 `@deepseek-ai/*` 依赖 + `@wopal/ellamaka-cordis`）→ 安装依赖树 → 预置 profile 模板 → 验证锚点与 Node strip-types 导入 dsh-web。幂等：已存在的 profile 与补丁不覆盖。安装引擎为 `@npmcli/arborist`（纯 JS，无外部包管理器依赖），不依赖系统 bun。dsh 依赖清单、profile 模板与安装编排由 `packages/opencode/script/materialize-dsh.ts` 承载，作为 ellamaka 侧的物化参考实现。
-
-**物化触发（唯一路径：装配自物化）**：`ELLAMAKA_DSH` 启用时，dev（CLI serve/web/TUI）与 Desktop sidecar 在装配 dsh 前检查闭包锚点；缺失则物化后挂载，失败则降级为无 dsh 运行并提示。物化由各入口在装配 dsh 时自行触发，无需 wopal-cli 提前物化。与插件依赖安装的运行时兜底语义一致（`$WOPAL_HOME/plugins` 首次使用即装；dsh 闭包首次装配即物化）。
-
-**依赖解析（installAnchor）**：
-
-- dev 模式：`require.resolve("@deepseek-ai/dsh/package.json")` 解析到 workspace 的 node_modules
-- Desktop sidecar：bundle 不携带 dsh 包，installAnchor 显式指向 `$WOPAL_HOME/dsh/node_modules/@deepseek-ai/dsh/package.json`
+两种机制最终都落在 `$WOPAL_HOME/dsh/state`，不依赖 `DSH_HOME`。官方 dsh CLI 无论同进程还是独立进程，都感知不到 Ellamaka 的运行时数据。
 
 ### 3.5 Profile 机制
 
@@ -320,10 +434,10 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 
 ## 7. 设计约束
 
-> PoC 场景不设红线，一切边界可讨论、可变更。以下为当前生效的约定，任何调整需经用户与实施方双方确认。
+> 以下约束定义生产目标边界。实现可以调整内部结构，但依赖方向、发布边界、版本确定性、启动语义与数据隔离的变化必须先更新本设计并重新确认。
 
-1. **cordis import 边界**：`@deepseek-ai/cordis` 只出现在 `@wopal/ellamaka-cordis` 包内（版本锁 4.0.1）。
-2. **dsh 依赖显式声明**：`ellamaka-cordis` 只显式声明源码真实 import 的 dsh 依赖，不声明凑数依赖。版本统一 `0.1.1-rc.2`，依赖锁定交给 `bun.lock`；root overrides 不再锁 `@deepseek-ai/*`。
+1. **cordis import 边界**：`@deepseek-ai/cordis` 的类型与运行时适配只出现在 `@wopal/ellamaka-cordis` 包内。生产运行时值经 installAnchor resolver 从物化闭包获取。
+2. **DSH 依赖真相源**：`ellamaka-cordis` 的 `dependencies` 只显式声明 Bridge 使用的官方直接依赖，并使用精确版本。构建生成的 `dsh-runtime-manifest.json` 携带完整锁树与 integrity；运行时不维护第二份手工清单。
 3. **dsh 深耦合包暂缓使用**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，暂不被主线代码 import、不在运行时加载、不作为插件挂载。required peer 进入 node_modules/bun.lock 仅供类型解析。运行时加载探针（`forbidden-load.test.ts`）作为当前状态的观测手段保留。
 4. **session 所有权**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
 5. **对外契约稳定**：SSE 事件、HttpApi、SDK 在实验中保持稳定。
@@ -332,22 +446,31 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 8. **工具容器边界**：工具调用走专用工具容器（ellamaka-tools profile），容器内不创建任何 dsh session；adapter 只传递工具实测消费的最小 per-call context。web 容器保持完整 profile，不复用为工具后端。禁用清单是 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 9. **空间隔离**：容器装配是进程级共享能力池，空间差异在投影层解决。
 10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`，**永不设置 `DSH_HOME` env**。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
-11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。CLI 与 Desktop 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
+11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。serve、web、TUI 与 Desktop sidecar 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
 12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。隔离不依赖 `DSH_HOME` env。
+13. **交付边界**：Ellamaka 发布物携带编译后的 Bridge；`@deepseek-ai/*` 官方运行时只存在于指纹闭包。Bridge 不发布为独立 registry 包，也不进入闭包 manifest。
+14. **版本绑定**：DSH 运行时清单与 Ellamaka 发布版本绑定。普通配置不覆盖 DSH 版本；独立升级通过发布经过验证的完整清单完成。
+15. **统一自物化**：Runtime Manager 是所有入口的唯一物化实现。闭包缺失或损坏会触发自动物化，不等价于用户禁用，也不要求用户运行脚本修复。
+16. **不可变闭包**：每份完整依赖树按清单指纹落入独立 generation。升级创建新 generation，运行进程持续使用启动时捕获的 installAnchor。
 
 ---
 
-## 8. 待解决设计问题
+## 8. 生产物化验收基线
 
-> PoC 实现暴露的、当前设计无法满足生产发布要求的问题，列为下阶段重点解决项。下表记录现象与解决方向，具体方案待设计定稿。
+生产实现以本节作为完成判据。各项同时成立时，PoC 物化机制才完成生产化迁移。
 
-| # | 问题 | 现象 | 解决方向（草案） |
-|---|------|------|------------------|
-| 1 | `file:` 链接 + TS loader 不可行 | 物化清单用 `file:` 指向 workspace/资源，依赖 Node `--experimental-strip-types` 加载 TS 源码；依赖源码布局与构建机状态，无法满足发布要求 | 闭包随产物或 registry 包交付，消除 `file:` 与源码加载 |
-| 2 | 依赖清单无唯一真相源 | 物化器手工复制 7 包清单，与 `cordis package.json` 的 8 个 dependencies 不一致（缺 `@deepseek-ai/dsh-host-webserver`） | 物化器从 `cordis package.json` 派生清单，单一真相源 |
-| 3 | 装配自物化只覆盖 Desktop | Desktop（`dsh-switch`→`dsh-materializer`）自物化；CLI serve/web/TUI（`dsh-mount`）缺失锚点直接不挂载 | CLI 侧补齐装配自物化，与 Desktop 共享同一物化实现 |
-| 4 | 版本常量硬编码 | `0.1.1-rc.2`/`4.0.1`/`1.0.2` 硬编码在物化器，不从 `cordis package.json` 派生 | 版本从单一来源派生，消除手工常量 |
-| 5 | 设计标注与实际不符 | 本文档自称"正式设计（PoC 定稿）"，但物化机制仍是 dev/file: 态，设计严重残缺 | 设计定稿前更新物化模型，与可生产实现对齐 |
+| # | 能力 | 验收结果 |
+|---|------|----------|
+| 1 | 发布边界 | CLI 与 Desktop sidecar 包含已编译 Bridge；发布物不包含 DSH 官方包源码；闭包 manifest 不包含 `@wopal/ellamaka-cordis` 或 `file:` 依赖 |
+| 2 | 清单生成 | 构建从 `ellamaka-cordis/package.json` 与仓库锁生成 `dsh-runtime-manifest.json`；CI 检测源、锁与生成物漂移 |
+| 3 | 版本确定性 | 同一 Ellamaka 发布物在不同机器上使用相同直接版本、传递锁树与 integrity；运行时从不查询 `latest` |
+| 4 | 入口一致性 | serve、web、TUI 与 Desktop sidecar 默认自动物化；Workbench 由承载它的后端完成物化；`ELLAMAKA_DSH=0` 是唯一跳过路径 |
+| 5 | 单一实现 | 所有入口调用同一个 Runtime Manager；不存在 Desktop 复制版物化器或需要用户运行的物化脚本 |
+| 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包 |
+| 7 | 动态加载 | Bridge 仅从 installAnchor 对应闭包加载官方运行时；应用 bundle、cwd、workspace 和全局 node_modules 不影响解析 |
+| 8 | 失败语义 | 首次安装、升级、离线、超时、integrity 失败与损坏闭包均产生确定的状态和诊断；Ellamaka 能以无 DSH 模式继续运行 |
+| 9 | 隔离 | 依赖闭包、profiles 与 state 各归其位；Ellamaka 不读写 `~/.dsh`，不设置或消费 `DSH_HOME` |
+| 10 | PoC 机制退出 | 生产链路不再使用 TS strip-types、`.js → .ts` loader、`resources/dsh-materialize/cordis` 源码副本及手工版本常量 |
 
 ---
 
@@ -385,3 +508,9 @@ dsh 的 `web_search` 工具（DeepSeek provider）经评估后未采用。原因
 PoC 前期 dsh 引擎运行时数据落在 `~/.dsh`（settings/credentials/sessions/storages），与闭包 `$WOPAL_HOME/dsh` 分离。初拟方案为在装配时设 `process.env.DSH_HOME = $WOPAL_HOME/dsh/state` 重定向——只需设一个 env 即可覆盖全部路径。
 
 经评估否决：`DSH_HOME` 是 dsh 官方 CLI 的保留环境变量，ellamaka 复用它带来语义混淆与继承污染（从 ellamaka 进程 fork 官方 CLI 时子进程继承 `DSH_HOME` 会写入错误位置）。改为**纯配置注入**：`ctx.provide("dshHomePath", ...)` 覆盖 `!!js` 表达式路径 + profile patch 层给插件传 `dshHome` 配置 + 两个例外用显式参数。完全不设 env，官方 CLI 无感知。dsh 官方本身将 `resolveDshHome(configured, ...)` 的显式配置作为最高优先级，此方案利用官方原生支持、不改依赖。
+
+### A.7 PoC 物化：源码 `file:` 闭包 → Bridge 与运行时分离
+
+PoC 为让 Desktop sidecar 从 `$WOPAL_HOME/dsh/node_modules` 找到 Bridge，把 `@wopal/ellamaka-cordis` 作为 `file:` 依赖写入闭包。dev 指向 workspace 源码，packaged Desktop 指向 `resources/dsh-materialize/cordis` 副本。Node 再通过 strip-types 与 `.js → .ts` loader 执行 Bridge 源码。
+
+该方案把 Ellamaka 适配层混入 DSH 官方依赖闭包，并形成 CLI 静态加载、Desktop 动态源码加载两条交付路径。生产设计改为：Bridge 作为编译后的 Ellamaka 代码随宿主发布；官方 DSH 运行时按清单物化；Bridge 通过 installAnchor 加载闭包。DSH 始终不反向依赖 Bridge。
