@@ -27,6 +27,48 @@ import pkg from "../../../opencode/package.json"
 // name agree.
 const channel = Script.release ? CHANNEL_RELEASE : Script.channel
 
+// ── DSH runtime manifest freshness gate ─────────────────────────────
+// The bundled CLI carries the DSH runtime manifest through the static JSON
+// import in `@wopal/ellamaka-cordis/runtime` (embed-manifest.ts), which Bun
+// inlines at bundle time. So the generated manifest must exist and match the
+// source before any bundling below.
+//
+// Release builds only ever verify (`--check`, read-only, exit != 0 on drift)
+// — they must not regenerate a manifest that is committed to the repo.
+// Development builds generate when the manifest is missing or dirty, with a
+// warning, so a local build never ships a stale closure definition.
+const dshManifestGenerator = path.resolve(
+  __dirname,
+  "../../../ellamaka-cordis/script/generate-dsh-runtime-manifest.ts",
+)
+const dshManifestPath = path.resolve(
+  __dirname,
+  "../../../ellamaka-cordis/generated/dsh-runtime-manifest.json",
+)
+async function ensureDshRuntimeManifest() {
+  if (Script.release) {
+    console.log("[build] verifying DSH runtime manifest (--check)")
+    await $`bun ${dshManifestGenerator} --check`
+    return
+  }
+  const generate = async () => {
+    console.log("[build] generating DSH runtime manifest")
+    await $`bun ${dshManifestGenerator}`
+  }
+  if (!fs.existsSync(dshManifestPath)) {
+    await generate()
+    return
+  }
+  // Dev mode: generate when dirty (no longer matching the source) and warn.
+  try {
+    await $`bun ${dshManifestGenerator} --check`
+  } catch {
+    console.warn("[build] DSH runtime manifest is out of date — regenerating for dev build")
+    await generate()
+  }
+}
+await ensureDshRuntimeManifest()
+
 // Load migrations from migration directories
 const migrationDirs = (
   await fs.promises.readdir(path.join(dir, "migration"), {

@@ -722,6 +722,10 @@ cmd_desktop() {
       export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$root")"
     fi
     echo "==> Sidecar version: $OPENCODE_VERSION"
+    # The sidecar bundle inlines generated/dsh-runtime-manifest.json (static
+    # JSON import in @wopal/ellamaka-cordis/runtime); regenerate before
+    # bundling so the dev sidecar never ships a stale closure definition.
+    (cd "$root" && bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts)
     (cd "$opencode_dir" && bun script/build-node.ts)
     echo "==> Copying icons..."
     (cd "$DESKTOP_DIR" && bun ./scripts/copy-icons.ts "$CHANNEL")

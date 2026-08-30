@@ -28,6 +28,38 @@ function readMinWopalCliVersion(): string {
 
 const generated = await import("./generate.ts")
 
+// ── DSH runtime manifest freshness gate ─────────────────────────────
+// This script is the generic opencode binary bundling point: the compiled
+// `src/index.ts` transitively imports `@wopal/ellamaka-cordis/runtime`, whose
+// `embed-manifest.ts` statically imports `generated/dsh-runtime-manifest.json`
+// and is inlined by Bun at bundle time. Ensure the manifest exists and matches
+// the source before bundling. Release builds verify only (`--check`); dev
+// builds regenerate when missing or dirty.
+const dshManifestGenerator = path.resolve(dir, "../ellamaka-cordis/script/generate-dsh-runtime-manifest.ts")
+const dshManifestPath = path.resolve(dir, "../ellamaka-cordis/generated/dsh-runtime-manifest.json")
+async function ensureDshRuntimeManifest() {
+  if (Script.release) {
+    console.log("[build] verifying DSH runtime manifest (--check)")
+    await $`bun ${dshManifestGenerator} --check`
+    return
+  }
+  const generate = async () => {
+    console.log("[build] generating DSH runtime manifest")
+    await $`bun ${dshManifestGenerator}`
+  }
+  if (!fs.existsSync(dshManifestPath)) {
+    await generate()
+    return
+  }
+  try {
+    await $`bun ${dshManifestGenerator} --check`
+  } catch {
+    console.warn("[build] DSH runtime manifest is out of date — regenerating for dev build")
+    await generate()
+  }
+}
+await ensureDshRuntimeManifest()
+
 import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
 
