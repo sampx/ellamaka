@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
+import { canonicalSerialize } from "./manifest.js"
 import { closureNameForFingerprint, expandCacheDir, resolveDshLayout, type DshLayout } from "./status.js"
 import type { LogBridge } from "./log.js"
 
@@ -220,17 +221,75 @@ function directDepsMissingOnDisk(options: {
 }
 
 /**
+ * Verify the closure's CONTENT against the embedded manifest (B-03). A closure
+ * whose files merely exist is not trustworthy: a tampered
+ * `runtime-manifest.json`, a truncated/corrupt `package-lock.json`, or a
+ * direct dependency installed at the wrong version must be treated as damaged
+ * and re-materialised.
+ *
+ * Checks:
+ * 1. `runtime-manifest.json` is canonical-identical to the embedded manifest
+ *    (fingerprint-exact — object-key order is normalised, so the materialiser's
+ *    plain `JSON.stringify` write and the generator's canonical write compare
+ *    equal for the same content).
+ * 2. `package-lock.json` is a well-formed npm lockfile v3 document (parses as
+ *    JSON with `lockfileVersion === 3` and a `packages` object). A truncated
+ *    or corrupt lock fails to parse and marks the closure damaged; the lock is
+ *    the provenance record the closure was reified from, so a damaged lock
+ *    cannot be trusted even though the runtime does not re-read it post-activate.
+ * 3. every direct dependency's installed `node_modules/<pkg>/package.json`
+ *    `version` equals the manifest's pinned version. The DSH manifest pins
+ *    exact versions (derived from the committed lock), so an exact string
+ *    compare is the intended fingerprint semantics; a range spec would never
+ *    be emitted by the generator.
+ *
+ * Throws on the first mismatch.
+ */
+function verifyClosureContent(closureDir: string, manifest: DshRuntimeManifestV1): void {
+  const stored = JSON.parse(readFileSync(join(closureDir, "runtime-manifest.json"), "utf8")) as unknown
+  if (canonicalSerialize(stored) !== canonicalSerialize(manifest)) {
+    throw new Error("dsh runtime: closure runtime-manifest.json does not match the embedded manifest")
+  }
+  const storedLock = JSON.parse(readFileSync(join(closureDir, "package-lock.json"), "utf8")) as unknown
+  if (
+    typeof storedLock !== "object" ||
+    storedLock === null ||
+    (storedLock as { lockfileVersion?: unknown }).lockfileVersion !== 3 ||
+    typeof (storedLock as { packages?: unknown }).packages !== "object" ||
+    (storedLock as { packages?: unknown }).packages === null
+  ) {
+    throw new Error("dsh runtime: closure package-lock.json is damaged (expected a lockfile v3 document)")
+  }
+  for (const name of Object.keys(manifest.dependencies)) {
+    const pinned = manifest.dependencies[name]
+    const pkgPath = join(closureDir, "node_modules", ...name.split("/"), "package.json")
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown }
+    if (pkg.version !== pinned) {
+      throw new Error(`dsh runtime: closure dependency "${name}" is ${String(pkg.version)}, expected ${pinned}`)
+    }
+  }
+}
+
+/**
  * Whether a closure directory is complete for the given manifest: manifest +
- * lock + runtime-manifest present, the `@deepseek-ai/dsh` anchor present, and
- * every direct dependency installed. Used by the fast-path validate and by the
- * append-only activate guard (a damaged closure must be re-materialised).
+ * lock + runtime-manifest present, the `@deepseek-ai/dsh` anchor present, every
+ * direct dependency installed, AND the closure content matches the embedded
+ * manifest (fingerprint-exact manifest + pinned dependency versions). Used by
+ * the fast-path validate and by the append-only activate guard (a damaged or
+ * tampered closure must be re-materialised, DESIGN §3.4.7).
  */
 function isClosureComplete(closureDir: string, manifest: DshRuntimeManifestV1): boolean {
   if (!existsSync(join(closureDir, "package.json"))) return false
   if (!existsSync(join(closureDir, "package-lock.json"))) return false
   if (!existsSync(join(closureDir, "runtime-manifest.json"))) return false
   if (!existsSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"))) return false
-  return directDepsMissingOnDisk({ closureDir, manifest }).length === 0
+  if (directDepsMissingOnDisk({ closureDir, manifest }).length > 0) return false
+  try {
+    verifyClosureContent(closureDir, manifest)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -257,10 +316,13 @@ export function validateClosureOnDisk(options: {
  * Integrity verification (DESIGN §3.4.5 stage 6 / Out of Scope note).
  *
  * Tarball integrity is verified by Arborist during reify against the lock's
- * `integrity` metadata. The runtime's own check here is structural — every
- * direct dependency's package.json must be present under the closure. When the
- * generator left an empty integrity ledger, this is a no-op reported as
- * "skipped" in diagnostics. A damaged closure is signalled by throwing.
+ * `integrity` metadata. The runtime's own check here is structural AND
+ * content-exact — every direct dependency's package.json must be present
+ * under the closure, the stored `runtime-manifest.json` must be canonical-
+ * identical to the embedded manifest, and every pinned dependency version
+ * must match (B-03). When the generator left an empty integrity ledger, this
+ * is a no-op reported as "skipped" in diagnostics. A damaged closure is
+ * signalled by throwing.
  */
 export async function checkClosureIntegrity(options: {
   home: string
@@ -276,4 +338,5 @@ export async function checkClosureIntegrity(options: {
       `dsh runtime: closure integrity verification failed, missing packages: ${missing.join(", ")}`,
     )
   }
+  verifyClosureContent(closureDir, options.manifest)
 }
