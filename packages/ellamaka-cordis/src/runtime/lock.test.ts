@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -39,7 +39,7 @@ describe("materialize lock (real tmp paths)", () => {
 
   test("release without holding is a harmless no-op", async () => {
     const lockPath = join(tmpHome(), "locks", "materialize.lock")
-    await releaseMaterializeLock(lockPath, "any")
+    await releaseMaterializeLock(lockPath, { pid: process.pid, time: Date.now() })
   })
 
   test("stale lock held by a dead owner is reaped by pid token", async () => {

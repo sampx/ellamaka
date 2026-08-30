@@ -217,7 +217,11 @@ export function buildDshRuntimeManifest(
     schema: DSH_RUNTIME_SCHEMA,
     bridgeAbi: DSH_RUNTIME_ABI,
     dependencies,
-    packageLock: extractPackageLock(pkg, lock),
+    // The lock closure covers ONLY the DSH official direct dependencies (the
+    // filtered map), never unrelated runtime deps this package happens to
+    // carry (e.g. @npmcli/arborist) — the production closure contains only
+    // official packages (DESIGN §3.4.1).
+    packageLock: extractPackageLock({ dependencies }, lock),
     registry: deriveRegistry(pkg, lock) ?? DEFAULT_REGISTRY,
   }
   manifest.fingerprint = computeManifestFingerprint(manifest)

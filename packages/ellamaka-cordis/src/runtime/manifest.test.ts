@@ -158,6 +158,29 @@ describe("extractPackageLock", () => {
     }
     expect(() => extractPackageLock(PKG, lock)).toThrow(/@deepseek-ai\/dsh/)
   })
+
+  test("does not leak non-DSH runtime deps into the manifest closure", () => {
+    // The cordis package carries @npmcli/arborist as a runtime dependency for
+    // the materialiser, but the DSH production closure must contain only the
+    // official @deepseek-ai/* packages (DESIGN §3.4.1).
+    const pkgWithArborist = {
+      dependencies: {
+        ...PKG.dependencies,
+        "@npmcli/arborist": "9.4.0",
+      },
+    }
+    const lockWithArborist: BunLockFile = {
+      lockfileVersion: 1,
+      packages: {
+        ...MINIMAL_LOCK.packages,
+        "@npmcli/arborist": ["@npmcli/arborist@9.4.0", "https://registry.npmjs.org/@npmcli/arborist/-/arborist-9.4.0.tgz", {}, "sha512-abc"],
+      },
+    }
+    const m = buildDshRuntimeManifest(pkgWithArborist, lockWithArborist)
+    expect(m.dependencies["@npmcli/arborist"]).toBeUndefined()
+    expect(m.packageLock["@npmcli/arborist"]).toBeUndefined()
+    expect(m.dependencies["@deepseek-ai/dsh"]).toBe("0.1.1-rc.2")
+  })
 })
 
 // --- canonical serialization ------------------------------------------------

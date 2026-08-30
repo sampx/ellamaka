@@ -50,19 +50,21 @@ const MANIFEST: DshRuntimeManifestV1 = {
 }
 
 /** A fake arborist whose reify synthesises closure node_modules in `home` staging. */
-function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps["arborist"]> {
+function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps> {
   return {
-    create: async () => ({
-      reify: async () => {
-        if (fail) throw new Error("network down")
-        const staging = resolveDshLayout(home).stagingDir
-        for (const name of Object.keys(MANIFEST.dependencies)) {
-          const dir = join(staging, "node_modules", ...name.split("/"))
-          mkdirSync(dir, { recursive: true })
-          writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version: "0.1.1-rc.2" }))
-        }
-      },
-    }),
+    arborist: {
+      create: async () => ({
+        reify: async () => {
+          if (fail) throw new Error("network down")
+          const staging = resolveDshLayout(home).stagingDir
+          for (const name of Object.keys(MANIFEST.dependencies)) {
+            const dir = join(staging, "node_modules", ...name.split("/"))
+            mkdirSync(dir, { recursive: true })
+            writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version: "0.1.1-rc.2" }))
+          }
+        },
+      }),
+    },
   }
 }
 

@@ -73,14 +73,19 @@ function makeBaseOptions(home: string, overrides: Partial<InitializeDshOptions> 
 
 /** Seed a complete valid closure for the default fingerprint under a tmp home. */
 function seedClosure(home: string): string {
+  return seedClosureAt(home, MANIFEST)
+}
+
+/** Seed a complete valid closure for an arbitrary manifest. */
+function seedClosureAt(home: string, manifest: DshRuntimeManifestV1): string {
   const layout = resolveDshLayout(home)
-  const closureDir = join(layout.closuresDir, closureNameForFingerprint(MANIFEST.fingerprint!))
+  const closureDir = join(layout.closuresDir, closureNameForFingerprint(manifest.fingerprint!))
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh"), { recursive: true })
   mkdirSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
   writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.1.1-rc.2" }))
   writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: "4.0.1" }))
-  writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(MANIFEST))
-  writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
+  writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
+  writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
   writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
@@ -121,7 +126,13 @@ describe("initializeDshRuntime state machine", () => {
 
   test("reify failure -> degraded and never overwrites a working closure", async () => {
     const home = tmpHome()
-    const existingAnchor = seedClosure(home)
+    // Seed a working closure for a DIFFERENT fingerprint (the one in use).
+    const otherManifest: DshRuntimeManifestV1 = {
+      ...MANIFEST,
+      dependencies: { "@deepseek-ai/dsh": "0.2.0" },
+      fingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+    const existingAnchor = seedClosureAt(home, otherManifest)
     const failingArborist: ManagerDeps["arborist"] = {
       create: async () => ({
         reify: async () => {
@@ -188,5 +199,41 @@ describe("initializeDshRuntime state machine", () => {
       "node_modules", "@deepseek-ai", "dsh", "package.json",
     )
     expect(existsSync(anchor)).toBe(true)
+  })
+
+  test("staged verification failure (invalid installAnchor) -> degraded, staging kept", async () => {
+    const home = tmpHome()
+    // Fake arborist that writes a staging node_modules WITHOUT the @deepseek-ai/dsh anchor.
+    const badReify: ManagerDeps["arborist"] = {
+      create: async () => ({
+        reify: async () => {
+          const staging = resolveDshLayout(home).stagingDir
+          mkdirSync(join(staging, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
+          writeFileSync(join(staging, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis" }))
+        },
+      }),
+    }
+    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: badReify } }))
+    expect(status).toBe("degraded")
+    // The failed staging scene is kept for diagnosis, and no closure was activated.
+    expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(true)
+    expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
+  })
+
+  test("materialisation timeout -> degraded with no retry this launch", async () => {
+    const home = tmpHome()
+    // Fake arborist that hangs forever; the short injectable timeout must cut it off.
+    const hanging: ManagerDeps["arborist"] = {
+      create: async () => ({
+        reify: async () => {
+          await new Promise<void>(() => {}) // never resolves
+        },
+      }),
+    }
+    const status = await initializeDshRuntime(
+      makeBaseOptions(home, { deps: { arborist: hanging }, timeoutMs: 80 }),
+    )
+    expect(status).toBe("degraded")
+    expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
   })
 })

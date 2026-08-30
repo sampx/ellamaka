@@ -328,6 +328,7 @@
         "@deepseek-ai/dsh-home-paths": "0.1.1-rc.2",
         "@deepseek-ai/dsh-host-webserver": "0.1.1-rc.2",
         "@deepseek-ai/dsh-launch-environment": "0.1.1-rc.2",
+        "@npmcli/arborist": "9.4.0",
       },
       "devDependencies": {
         "@tsconfig/node22": "catalog:",
