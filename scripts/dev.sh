@@ -741,16 +741,33 @@ cmd_desktop() {
 
   echo "🖥  Starting Desktop (channel: $CHANNEL)..."
   # The sidecar bundle inlines generated/dsh-runtime-manifest.json (static JSON
-  # import in @wopal/ellamaka-cordis/runtime). Regenerate it on EVERY desktop
-  # launch so the dev sidecar never ships a stale closure definition (W-04);
-  # the generator is deterministic so this is a no-op when already fresh.
-  (cd "$root" && bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts)
+  # import in @wopal/ellamaka-cordis/runtime). If the manifest is out of date
+  # (a dependency/version change) the `dist/node` sidecar bundle ships a stale
+  # closure definition and would materialise the wrong closure at runtime.
+  #
+  # Round-2 W-02: when the manifest changed but the sidecar is NOT being rebuilt
+  # we must not silently run a stale bundle — fail-fast and ask for --rebuild.
+  # When --rebuild IS passed, regenerate the manifest (deterministic; a no-op
+  # when already fresh) so the newly-built bundle carries the current manifest.
+  local manifest_generator="$root/packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts"
+  local manifest_fresh=false
+  if (cd "$root" && bun "$manifest_generator" --check >/dev/null 2>&1); then
+    manifest_fresh=true
+  fi
+  if ! $rebuild && ! $manifest_fresh; then
+    echo "error: dsh runtime manifest is out of date but the sidecar is not being rebuilt." >&2
+    echo "  The bundled dist/node sidecar would ship a stale closure definition." >&2
+    echo "  Re-run with: $self desktop --rebuild" >&2
+    return 1
+  fi
   if $rebuild; then
     echo "==> Rebuilding sidecar (packages/opencode)..."
     if [ -z "${OPENCODE_VERSION:-}" ]; then
       export OPENCODE_VERSION="$(resolve_build_version "ellamaka-desktop" "$CHANNEL" "$root")"
     fi
     echo "==> Sidecar version: $OPENCODE_VERSION"
+    # Regenerate the manifest before bundling so the rebuilt sidecar carries it.
+    (cd "$root" && bun "$manifest_generator")
     (cd "$opencode_dir" && bun script/build-node.ts)
     echo "==> Copying icons..."
     (cd "$DESKTOP_DIR" && bun ./scripts/copy-icons.ts "$CHANNEL")
