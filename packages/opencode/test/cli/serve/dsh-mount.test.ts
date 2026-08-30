@@ -3,48 +3,42 @@
 // The packaged-CLI condition (dsh closure under $WOPAL_HOME/dsh, absent from
 // the module graph) cannot be reproduced by spawning the source CLI — from
 // source, require.resolve always finds the workspace node_modules. The
-// resolution logic is therefore extracted into pure functions and tested
-// directly; the subprocess tier keeps only the dev-path smoke check.
+// manager-driven anchor resolution lives in @wopal/ellamaka-cordis/runtime
+// (`resolveInstallAnchor`, tested in that package); this file keeps the
+// source-level contract that every command owning a server wires the shared
+// assembly through the unified Runtime Manager.
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { resolveDshAnchor } from "../../../src/cli/cmd/dsh-mount"
-
-describe("resolveDshAnchor", () => {
-  test("prefers the materialised closure under the dsh home when present", () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-home-"))
-    const anchorDir = join(home, "node_modules", "@deepseek-ai", "dsh")
-    mkdirSync(anchorDir, { recursive: true })
-    writeFileSync(join(anchorDir, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh" }))
-
-    expect(resolveDshAnchor(home)).toBe(join(anchorDir, "package.json"))
-  })
-
-  test("returns undefined when the dsh home has no materialised closure", () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-home-empty-"))
-    expect(resolveDshAnchor(home)).toBeUndefined()
-  })
-})
 
 // The regression this locks in: DSH assembly used to live inline in the
 // serve handler, so the `web` entry silently shipped without any /dsh mount
 // (packaged `web` fell into the SPA fallback). Every command that owns a
-// server must gate on the flag and delegate to the shared assembly — the
-// binary-level behaviour is verified by the build smoke, which this source
-// contract complements.
+// server must delegate to the shared assembly — which now runs the unified
+// Runtime Manager (gating on ELLAMAKA_DSH internally, DESIGN-dsh-poc §3.4.4)
+// and mounts only on `ready`.
 describe("server entry points wire the shared dsh assembly", () => {
   const cases = [
     { cmd: "serve", path: "../../../src/cli/cmd/serve.ts" },
     { cmd: "web", path: "../../../src/cli/cmd/web.ts" },
   ]
   for (const { cmd, path } of cases) {
-    test(`${cmd} gates on Flag.ELLAMAKA_DSH and calls mountDshEngine`, () => {
+    test(`${cmd} delegates to mountDshEngine (manager gates ELLAMAKA_DSH internally)`, () => {
       const source = readFileSync(join(import.meta.dir, path), "utf-8")
-      expect(source).toContain("Flag.ELLAMAKA_DSH")
       expect(source).toContain("mountDshEngine")
+      // The manual kill-switch check is gone: the manager gates internally, so
+      // the entry must NOT short-circuit on Flag.ELLAMAKA_DSH itself.
+      expect(source).not.toContain("if (Flag.ELLAMAKA_DSH)")
     })
   }
+
+  test("dsh-mount drives the runtime manager and injects the resolved runtime", () => {
+    const source = readFileSync(join(import.meta.dir, "../../../src/cli/cmd/dsh-mount.ts"), "utf-8")
+    expect(source).toContain("initializeDshRuntime")
+    expect(source).toContain("resolveInstallAnchor")
+    expect(source).toContain("createDshRuntimeApi")
+    expect(source).toContain('entry: opts.entry ?? "serve"')
+  })
 
   test("web opens the browser before suspending on the dsh mount", () => {
     // Regression: the dsh mount block suspended on Effect.never BEFORE the
@@ -58,4 +52,3 @@ describe("server entry points wire the shared dsh assembly", () => {
     expect(openIdx).toBeLessThan(neverIdx)
   })
 })
-

@@ -9,6 +9,13 @@ import * as Log from "@opencode-ai/core/util/log"
 import { Server } from "../../src/server/server"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances } from "../fixture/fixture"
+import { seedDshClosure } from "../fixture/dsh-closure"
+import {
+  DEFAULT_DSH_RUNTIME_MANIFEST,
+  initializeDshRuntime,
+  resolveInstallAnchor,
+} from "@wopal/ellamaka-cordis/runtime"
+import { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
 
 void Log.init({ print: false })
 
@@ -45,11 +52,28 @@ function authorization() {
 
 /**
  * Mount the DSH web profile onto a real Ellamaka listener under /dsh, mirroring
- * the serve.ts wiring (DESIGN-dsh-poc §2.1 single-port scheme). Uses a temp
- * DSH_HOME so the test never touches the user's home.
+ * the serve.ts wiring (DESIGN-dsh-poc §2.1 single-port scheme). Runs the real
+ * unified Runtime Manager: a complete closure is seeded under a temp WOPAL_HOME
+ * (via `seedDshClosure`), the manager fast-path resolves it `ready`, and the
+ * web profile mounts with the closure runtime injected — exactly what the CLI
+ * serve/web entries do. A temp WOPAL_HOME keeps the test off the user's home.
  */
 async function mountDsh(listener: Awaited<ReturnType<typeof startListener>>) {
-  const home = mkdtempSync(join(tmpdir(), "dsh-single-port-"))
+  const wopalHome = mkdtempSync(join(tmpdir(), "dsh-single-port-"))
+  const anchor = seedDshClosure(wopalHome)
+  const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+  const status = await initializeDshRuntime({
+    wopalHome,
+    logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    entry: "serve",
+    manifest,
+  })
+  expect(status).toBe("ready")
+  const resolved = resolveInstallAnchor(wopalHome, manifest)
+  expect(resolved.path).toBe(anchor)
+  const runtime = createDshRuntimeApi(resolved.path)
+  const home = join(wopalHome, "dsh")
+
   const { CordisHub } = await import("@wopal/ellamaka-cordis")
   const { mountDshWeb } = await import("@wopal/ellamaka-cordis/dsh-web")
   const webHub = new CordisHub(null)
@@ -57,6 +81,8 @@ async function mountDsh(listener: Awaited<ReturnType<typeof startListener>>) {
     home,
     port: listener.port,
     logFile: join(home, "dsh-plugins.log"),
+    installAnchor: resolved.path,
+    runtime,
     // The test runs under bun, which lacks node:module.stripTypeScriptTypes.
     disableCodeRuntime: true,
   })

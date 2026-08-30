@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { mountDshIfEnabled } from "@/cli/cmd/tui/dsh-mount"
+import { seedDshClosure } from "../../../fixture/dsh-closure"
 
 const CONTAINER_KEY = "__ellamakaDshContainer"
 
@@ -13,23 +14,38 @@ type ToolContainer = {
   get(name: "sessions"): { list(): unknown[] } | undefined
 }
 
-describe("tui dsh mount", () => {
-  afterEach(() => {
-    delete process.env.ELLAMAKA_DSH
-    delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
-  })
+const dshHomes: string[] = []
 
+function tmpWopalHome(): string {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-tui-wopal-"))
+  dshHomes.push(dir)
+  return dir
+}
+
+afterEach(() => {
+  delete process.env.ELLAMAKA_DSH
+  delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
+  for (const dir of dshHomes.splice(0)) {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+describe("tui dsh mount", () => {
   test("returns undefined when ELLAMAKA_DSH is disabled (kill switch =0)", async () => {
     process.env.ELLAMAKA_DSH = "0"
-    const handle = await mountDshIfEnabled()
+    const handle = await mountDshIfEnabled({ wopalHome: tmpWopalHome() })
     expect(handle).toBeUndefined()
     expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
   })
 
   test("mounts the tool container and executes grep without a live session", async () => {
     process.env.ELLAMAKA_DSH = "1"
-    const home = mkdtempSync(join(tmpdir(), "dsh-tui-mount-"))
-    const handle = await mountDshIfEnabled({ home, logFile: join(home, "dsh-plugins.log") })
+    const wopalHome = tmpWopalHome()
+    seedDshClosure(wopalHome)
+    const handle = await mountDshIfEnabled({
+      wopalHome,
+      logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    })
     expect(handle).toBeDefined()
 
     try {
@@ -63,8 +79,12 @@ describe("tui dsh mount", () => {
 
   test("dispose clears the global container", async () => {
     process.env.ELLAMAKA_DSH = "1"
-    const home = mkdtempSync(join(tmpdir(), "dsh-tui-mount-"))
-    const handle = await mountDshIfEnabled({ home, logFile: join(home, "dsh-plugins.log") })
+    const wopalHome = tmpWopalHome()
+    seedDshClosure(wopalHome)
+    const handle = await mountDshIfEnabled({
+      wopalHome,
+      logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    })
     expect(handle).toBeDefined()
     await handle!.dispose()
     expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
