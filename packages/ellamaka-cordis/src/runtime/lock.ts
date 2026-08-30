@@ -10,6 +10,22 @@ import { dirname, join } from "node:path"
  * guard so a lock abandoned by a crashed owner can be reaped, while a lock
  * held by a live process is never stolen.
  *
+ * Ownership-safe removal (B-04): every destructive path re-reads `owner.json`
+ * immediately before removing the guard and only removes it when the recorded
+ * owner still matches the caller's expectation — a stale-pid token for a
+ * reclaim, or an exact `{pid,time}` token for a release. A mismatched guard is
+ * a no-op (logged to stderr), never a delete. This closes the classic
+ * wait-loop race where two waiters both observe a stale owner and the slower
+ * `rmSync` deletes the faster waiter's freshly created guard.
+ *
+ * Residual TOCTOU: `owner.json` is checked and then `rmSync` runs non-atomically,
+ * so between the read and the remove another process could (a) release and
+ * re-acquire the guard (a different owner.json) or (b) replace the owner file.
+ * Both paths re-read immediately before removal and verify the exact token, so
+ * the window is a single unpaired read+remove; because a fresh guard is only
+ * ever created after the old one is fully gone, an interleaving can at worst
+ * no-op the delete, never delete another owner's live guard.
+ *
  * There is no lease and no GC — this is a pure mutual-exclusion guard for the
  * materialisation window.
  */
@@ -48,9 +64,11 @@ export async function acquireMaterializeLock(
       return token
     } catch {
       // Someone else holds (or is racing for) the guard. Reap a stale owner
-      // if we can prove it is dead, then retry.
-      if (isStaleLock(lockPath)) {
-        rmSync(lockPath, { recursive: true, force: true })
+      // only if we can prove it is dead AND it is still the guard owner at
+      // removal time; otherwise retry. A re-read before removal closes the
+      // race where two waiters both see a stale pid and the slower rm deletes
+      // the faster waiter's freshly created guard.
+      if (isStaleLock(lockPath) && removeOwnedByStalePid(lockPath)) {
         continue
       }
       if (Date.now() >= deadline) return null
@@ -79,11 +97,50 @@ function isStaleLock(lockPath: string): boolean {
 }
 
 /**
- * Release a held materialisation lock. Removing only the exact guard directory
- * named `lockPath` means a stale/foreign lock is never deleted; the token is
- * informational and release is a no-op when nothing is held.
+ * Remove the guard only when its `owner.json` still records a dead pid
+ * (ownership re-read immediately before removal). Returns whether the guard
+ * was actually removed. A lock whose owner.json no longer shows the dead pid
+ * (another process reclaimed or replaced it meanwhile) is left untouched.
  */
-export async function releaseMaterializeLock(lockPath: string, _token: LockToken): Promise<void> {
+function removeOwnedByStalePid(lockPath: string): boolean {
+  try {
+    const ownerPath = join(lockPath, OWNER_FILE)
+    if (!existsSync(ownerPath)) return false
+    const token = JSON.parse(readFileSync(ownerPath, "utf8")) as Partial<LockToken>
+    if (typeof token.pid !== "number") return false
+    try {
+      process.kill(token.pid, 0)
+      // The owner came back to life between the check and here — never steal.
+      return false
+    } catch {
+      // pid is still gone; remove the guard and prove it is gone.
+      rmSync(lockPath, { recursive: true, force: true })
+      return !existsSync(lockPath)
+    }
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Release a held materialisation lock. Only the guard whose `owner.json`
+ * exactly matches the caller's `{pid,time}` token is removed; anything else
+ * (a lock now owned by another process, or a foreign/stale guard) is a no-op.
+ * This guarantees a delayed release never deletes a guard another process
+ * acquired after this one gave up.
+ */
+export async function releaseMaterializeLock(lockPath: string, token: LockToken): Promise<void> {
+  if (!existsSync(lockPath)) return
+  let current: LockToken | undefined
+  try {
+    const ownerPath = join(lockPath, OWNER_FILE)
+    if (!existsSync(ownerPath)) return
+    const parsed = JSON.parse(readFileSync(ownerPath, "utf8")) as Partial<LockToken>
+    if (parsed.pid === token.pid && parsed.time === token.time) current = parsed as LockToken
+  } catch {
+    return
+  }
+  if (!current) return
   rmSync(lockPath, { recursive: true, force: true })
 }
 
