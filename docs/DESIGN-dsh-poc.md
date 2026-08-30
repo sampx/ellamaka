@@ -119,6 +119,7 @@ Ellamaka CLI / Desktop sidecar
 $WOPAL_HOME/dsh/closures/<fingerprint>/
 ├── package.json                         ← DSH 官方直接依赖
 ├── package-lock.json                    ← 完整解析树与 integrity
+├── runtime-manifest.json                ← 本闭包对应的运行时清单复本
 └── node_modules/@deepseek-ai/*          ← DSH 官方运行时闭包
 ```
 
@@ -131,9 +132,11 @@ DSH 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge �
 ```text
 $WOPAL_HOME/dsh/
 ├── closures/                            ← 按清单指纹隔离的不可变依赖闭包
-│   └── <fingerprint>/
+│   └── <fingerprint>/                   ← 清单 sha256 摘要前 12 位 hex；同名即同内容，非代数编号
 │       ├── package.json
 │       ├── package-lock.json
+│       ├── runtime-manifest.json        ← 本闭包对应的运行时清单复本
+│       ├── .lease.<pid>.<random>        ← 进程活动租约（退出即删，详见 §3.4.7）
 │       └── node_modules/
 ├── profiles/                            ← 用户可编辑 profile（跨版本保留）
 │   ├── web/
@@ -231,7 +234,18 @@ Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时�
 
 指纹相同的闭包可无限复用。新 Ellamaka 发布物携带新指纹时物化新闭包，已经运行的旧进程继续持有自己的 immutable installAnchor，不受升级影响。新闭包验证成功后才参与本次启动；版本不匹配时不回退到旧闭包，以免 Bridge ABI 与 DSH runtime 静默错配。
 
-进程加载闭包前创建 generation lease，正常退出时释放。Runtime Manager 只清理自身管理的 `closures/` 与 `staging/` 缓存：持物化锁时回收已确认无活动 lease 的旧 generation 与过期 staging，并保留当前 generation 和上一份完整 generation。`profiles/` 与 `state/` 不参与缓存清理。异常进程留下的 lease 只有在操作系统进程身份与启动标识均确认失效后才视为过期。
+**闭包租约（lease）**：
+
+- 进程在 Load 前于闭包目录原子创建 `.lease.<pid>.<random>`，内容记录 `{ pid, hostname, fingerprint, startedAt }`；进程退出（含异常终止的 finally 路径）时删除。
+- 失效判定：`kill(pid, 0)` 确认进程不存在、`hostname` 与创建者一致、且文件年龄超过安全窗口，三者同时成立才视为过期。不确定时不删。
+- 同一闭包可被多个进程同时 lease（文件名含 pid + random 天然去重）。
+
+**清理（GC）**：
+
+- 时机：仅持 `materialize.lock` 的进程在 Activate 成功后执行；concurrent 启动不触发，避免竞态。
+- 保留：当前代（本次启动目标）、所有仍持有有效 lease 的闭包、以及按目录 mtime 判定的最近一份完整代（回滚余量）。
+- 删除：无有效 lease 且不在「当前代 + 次新代」保护圈内的旧闭包；`staging/` 中超过 24 小时或标记失败的残骸。
+- 永不清理：`profiles/`、`state/` 与锁目录。
 
 运行状态统一为：
 
