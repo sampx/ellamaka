@@ -1019,6 +1019,8 @@ export const dict = {
   "workbench.panel.splitTerminal.loading": "Starting split shell...",
   "workbench.sidebar.spaces": "Sessions",
   "workbench.sidebar.files": "Files",
+  "workbench.sidebar.filesTab": "Files",
+  "workbench.fileViewer.close": "Close file",
   "workbench.sidebar.sessions": "ASSISTANT",
   "workbench.sidebar.refreshing": "Refreshing session list...",
   "workbench.sidebar.refreshed": "Session list refreshed",

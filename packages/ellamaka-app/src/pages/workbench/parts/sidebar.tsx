@@ -1,5 +1,5 @@
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
@@ -14,8 +14,11 @@ import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
 import { createFlyoutController, flyoutVisibilityClass } from "./sidebar-flyout"
+import { resolveSidebarNav, type SidebarNav } from "./sidebar-nav"
 import { FileTreePanel } from "./file-tree-panel"
 import type { FileNode } from "@opencode-ai/sdk/v2"
+
+export { resolveSidebarNav, type SidebarNav } from "./sidebar-nav"
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500
@@ -52,6 +55,10 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
   const t: typeof language.t = (k, p) => language.t(k, p)
 
   const expanded = createMemo(() => wb.display().showSpaceRail)
+  // B-03: the file tree feature is master-gated by display.showFileTree. When it
+  // is off the files view is disabled and activeNav falls back to sessions.
+  const filesEnabled = () => wb.display().showFileTree
+  const effectiveNav = () => resolveSidebarNav(activeNav(), filesEnabled())
   const [widthStore, setWidthStore] = persisted(
     Persist.global("workbench.sidebarWidth", []),
     createStore({ width: DEFAULT_WIDTH }),
@@ -59,7 +66,19 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
 
   const sidebarWidth = () => (expanded() ? widthStore.width : COLLAPSED_WIDTH)
 
-  const [activeNav, setActiveNav] = createSignal<"sessions" | "files" | "maintenance">("sessions")
+  const [activeNav, setActiveNav] = createSignal<SidebarNav>("sessions")
+
+  // Keep the active nav in sync when the file tree feature is toggled off while
+  // the user is on the files view (mod+\ or the settings switch).
+  createEffect(
+    on(
+      filesEnabled,
+      (enabled) => {
+        if (!enabled && activeNav() === "files") setActiveNav("sessions")
+      },
+      { defer: false },
+    ),
+  )
 
   let asideRef: HTMLElement | undefined
   let resizeHandleRef: HTMLElement | undefined
@@ -217,15 +236,17 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
               onMouseLeave={() => flyout.onTriggerLeave()}
             >
               <IconButtonV2
-                variant={activeNav() === "files" ? "neutral" : "ghost-muted"}
+                variant={effectiveNav() === "files" ? "neutral" : "ghost-muted"}
                 size="normal"
-                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "files" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
+                class={`size-8 p-0 flex items-center justify-center ${effectiveNav() === "files" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
                 icon={<FileTreeIcon class="size-4" />}
-                aria-label="Files"
-                title="Files"
+                aria-label={t("workbench.sidebar.filesTab")}
+                title={t("workbench.sidebar.filesTab")}
+                disabled={!filesEnabled()}
                 onClick={() => {
                   flyout.close()
-                  if (activeNav() === "files") {
+                  if (!filesEnabled()) return
+                  if (effectiveNav() === "files") {
                     wb.setDisplay("showSpaceRail", !expanded())
                   } else {
                     setActiveNav("files")
@@ -246,7 +267,7 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
           <header class="flex h-7 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base bg-v2-background-bg-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong truncate">
-                {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : activeNav() === "files" ? t("workbench.sidebar.files") : t("workbench.sidebar.maintenance")}
+                {effectiveNav() === "sessions" ? t("workbench.sidebar.spaces") : effectiveNav() === "files" ? t("workbench.sidebar.files") : t("workbench.sidebar.maintenance")}
               </span>
               <IconButtonV2
                 variant="ghost-muted"
@@ -289,7 +310,7 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
               </Show>
             </div>
 
-            <div class={`flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto ${activeNav() === "files" ? "" : "hidden"}`}>
+            <div class={`flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto ${effectiveNav() === "files" ? "" : "hidden"}`}>
               <FileTreePanel directory={wb.activeTabPath} onFileClick={props.onFileClick ?? (() => {})} />
             </div>
 

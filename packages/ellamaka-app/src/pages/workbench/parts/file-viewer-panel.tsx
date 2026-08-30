@@ -133,7 +133,6 @@ function FileViewerInner(props: FileViewerInnerProps) {
       () => {
         void file.load(path())
       },
-      { defer: true },
     ),
   )
 
@@ -217,6 +216,7 @@ export function FileViewerPanel(props: {
   onClose: () => void
 }) {
   const route = createMemo(() => fileViewerRoute(props.directory, props.filePath))
+  const language = useLanguage()
 
   return (
     <WorkbenchPanelDirectoryProvider panelID={route().key} directory={props.directory}>
@@ -243,8 +243,8 @@ export function FileViewerPanel(props: {
                     <path d="M6 6l12 12M18 6L6 18" />
                   </svg>
                 }
-                aria-label="Close file"
-                title="Close file"
+                aria-label={language.t("workbench.fileViewer.close")}
+                title={language.t("workbench.fileViewer.close")}
                 onClick={props.onClose}
               />
             </header>
