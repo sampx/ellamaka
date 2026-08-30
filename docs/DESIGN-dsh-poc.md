@@ -131,20 +131,19 @@ DSH 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge �
 
 ```text
 $WOPAL_HOME/dsh/
-├── closures/                            ← 按清单指纹隔离的不可变依赖闭包
+├── closures/                            ← 按内容哈希命名的依赖闭包；只增不减，永不自动删除
 │   └── <fingerprint>/                   ← 清单 sha256 摘要前 12 位 hex；同名即同内容，非代数编号
 │       ├── package.json
 │       ├── package-lock.json
 │       ├── runtime-manifest.json        ← 本闭包对应的运行时清单复本
-│       ├── .lease.<pid>.<random>        ← 进程活动租约（退出即删，详见 §3.4.7）
 │       └── node_modules/
 ├── profiles/                            ← 用户可编辑 profile（跨版本保留）
 │   ├── web/
 │   ├── ellamaka-tools/
 │   └── node_modules/                    ← 启动时按 installAnchor 重建的快捷方式
 ├── state/                               ← DSH 运行时数据
-├── staging/                             ← 尚未激活的物化临时目录
-└── locks/materialize.lock               ← 跨进程物化锁
+├── staging/                             ← 物化临时区；持锁进程开始时清空，成功后移入 closures/
+└── locks/materialize.lock               ← 仅物化窗口存在，防两进程并发下载安装
 ```
 
 闭包按指纹不可变。新 Ellamaka 版本需要不同的 DSH 依赖树时创建新闭包，不原地修改正在运行的闭包。`profiles/` 与 `state/` 独立于闭包版本，升级时保持用户配置与运行时数据。
@@ -234,18 +233,11 @@ Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时�
 
 指纹相同的闭包可无限复用。新 Ellamaka 发布物携带新指纹时物化新闭包，已经运行的旧进程继续持有自己的 immutable installAnchor，不受升级影响。新闭包验证成功后才参与本次启动；版本不匹配时不回退到旧闭包，以免 Bridge ABI 与 DSH runtime 静默错配。
 
-**闭包租约（lease）**：
+**闭包生命周期——只增不减**：
 
-- 进程在 Load 前于闭包目录原子创建 `.lease.<pid>.<random>`，内容记录 `{ pid, hostname, fingerprint, startedAt }`；进程退出（含异常终止的 finally 路径）时删除。
-- 失效判定：`kill(pid, 0)` 确认进程不存在、`hostname` 与创建者一致、且文件年龄超过安全窗口，三者同时成立才视为过期。不确定时不删。
-- 同一闭包可被多个进程同时 lease（文件名含 pid + random 天然去重）。
-
-**清理（GC）**：
-
-- 时机：仅持 `materialize.lock` 的进程在 Activate 成功后执行；concurrent 启动不触发，避免竞态。
-- 保留：当前代（本次启动目标）、所有仍持有有效 lease 的闭包、以及按目录 mtime 判定的最近一份完整代（回滚余量）。
-- 删除：无有效 lease 且不在「当前代 + 次新代」保护圈内的旧闭包；`staging/` 中超过 24 小时或标记失败的残骸。
-- 永不清理：`profiles/`、`state/` 与锁目录。
+- 物化成功后永久保留，**自动回收不存在**。磁盘占用 = 本机出现过的版本指纹数（一般 2~3 份）；清理方式只有用户手动删除目录，规则简单可预测。
+- `staging/` 由物化进程自管理：持锁开始即清空残留；成功后原子 `rename` 移入 `closures/`；失败时保留现场供诊断，下次物化直接覆盖。
+- 后续如需便利清理，以显式命令交付（如 `ellamaka dsh cleanup --dry-run` 列出可删闭包），不属于本设计的启动行为。
 
 运行状态统一为：
 
@@ -480,7 +472,7 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 | 3 | 版本确定性 | 同一 Ellamaka 发布物在不同机器上使用相同直接版本、传递锁树与 integrity；运行时从不查询 `latest` |
 | 4 | 入口一致性 | serve、web、TUI 与 Desktop sidecar 默认自动物化；Workbench 由承载它的后端完成物化；`ELLAMAKA_DSH=0` 是唯一跳过路径 |
 | 5 | 单一实现 | 所有入口调用同一个 Runtime Manager；不存在 Desktop 复制版物化器或需要用户运行的物化脚本 |
-| 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包 |
+| 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包；闭包只增不减、无自动删除 |
 | 7 | 动态加载 | Bridge 仅从 installAnchor 对应闭包加载官方运行时；应用 bundle、cwd、workspace 和全局 node_modules 不影响解析 |
 | 8 | 失败语义 | 首次安装、升级、离线、超时、integrity 失败与损坏闭包均产生确定的状态和诊断；Ellamaka 能以无 DSH 模式继续运行 |
 | 9 | 隔离 | 依赖闭包、profiles 与 state 各归其位；Ellamaka 不读写 `~/.dsh`，不设置或消费 `DSH_HOME` |
