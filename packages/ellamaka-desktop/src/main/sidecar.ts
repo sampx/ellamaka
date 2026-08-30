@@ -55,6 +55,20 @@ let listener: Listener | undefined
 let dshHost: { dispose(): Promise<void> } | undefined
 let dshToolsHost: { dispose(): Promise<void> } | undefined
 
+/**
+ * The dsh runtime initialised once per launch (W-02). The manager's
+ * per-process in-flight cache alone is not enough: two sequential manager
+ * calls can each start a fresh run when the first FAILED (in-flight is
+ * removed on settle), so reusing the first run's outcome here guarantees the
+ * sidecar initialises the dsh runtime exactly once and both the web and tool
+ * mounts share the same status/anchor/runtime.
+ */
+let dshLaunchState: {
+  status: import("virtual:opencode-server").Dsh.RuntimeStatus
+  anchor?: import("virtual:opencode-server").Dsh.InstallAnchor
+  runtime?: import("virtual:opencode-server").Dsh.DshRuntimeApi
+} | undefined
+
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
   if (!command) return
@@ -117,7 +131,10 @@ async function start(command: StartCommand) {
     // demand; `disabled`/`degraded` never block the sidecar — the server runs
     // untouched. The web VirtualWebServer mounts onto the Ellamaka listener
     // under /dsh; the tool container (ellamaka-tools profile) feeds the
-    // dsh-adapter so Workbench sessions can adopt container tools.
+    // dsh-adapter so Workbench sessions can adopt container tools. A single
+    // initialisation per launch is shared by both mounts (W-02); each mount is
+    // wrapped in a degrade boundary so a broken closure never exits the
+    // sidecar (B-06).
     await mountDshIfPresent(command)
     await mountDshToolsIfPresent(command)
     parentPort.postMessage({ type: "ready" })
@@ -137,40 +154,43 @@ function dshLaunch(command: StartCommand) {
 /**
  * Mount the dsh web engine via the unified Runtime Manager.
  *
- * Runs `initializeDshRuntime` (entry "tui" — the same manager gate every entry
- * shares; the web container is assembled here at the server mount point).
- * Only on `ready` does it resolve the install anchor, load the closure runtime
- * and mount the VirtualWebServer onto the Ellamaka listener under `/dsh`.
- * `disabled`/`degraded` return without mounting (no warn: the manager already
- * logged the structured diagnosis).
+ * Initialises the dsh runtime exactly once per launch (W-02) and reuses the
+ * outcome for both the web and tool mounts. Only on `ready` does it resolve
+ * the install anchor, load the closure runtime and mount the VirtualWebServer
+ * onto the Ellamaka listener under `/dsh`. `disabled`/`degraded` return
+ * without mounting (no warn: the manager already logged the structured
+ * diagnosis). A broken closure degrades instead of crashing the sidecar
+ * (B-06).
  */
 async function mountDshIfPresent(command: StartCommand): Promise<void> {
   const { wopalHome, logFile, home } = dshLaunch(command)
   const { Dsh } = await import("virtual:opencode-server")
-  const manifest = Dsh.DEFAULT_DSH_RUNTIME_MANIFEST
-  const status = await Dsh.initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
-  if (status !== "ready") return
-
-  const anchor = Dsh.resolveInstallAnchor(wopalHome, manifest)
-  const runtime = Dsh.createDshRuntimeApi(anchor.path)
-  const host = await Dsh.bootDshWeb({
-    home,
-    port: listener?.port ?? 0,
-    installAnchor: anchor.path,
-    logFile,
-    runtime,
-  })
-  // Mount the VirtualWebServer under /dsh on the Ellamaka listener.
-  const unmount = listener?.mountNodeRoute({
-    prefix: host.mountPath,
-    request: (req, res) => host.webServer.request(req, res),
-    upgrade: (req, socket, head) => host.webServer.upgrade(req, socket, head),
-  })
-  dshHost = {
-    dispose: async () => {
-      unmount?.()
-      await host.dispose()
-    },
+  try {
+    const launch = await initDshLaunch(command)
+    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
+    const runtime = launch.runtime
+    const host = await Dsh.bootDshWeb({
+      home,
+      port: listener?.port ?? 0,
+      installAnchor: launch.anchor.path,
+      logFile,
+      runtime,
+    })
+    // Mount the VirtualWebServer under /dsh on the Ellamaka listener.
+    const unmount = listener?.mountNodeRoute({
+      prefix: host.mountPath,
+      request: (req, res) => host.webServer.request(req, res),
+      upgrade: (req, socket, head) => host.webServer.upgrade(req, socket, head),
+    })
+    dshHost = {
+      dispose: async () => {
+        unmount?.()
+        await host.dispose()
+      },
+    }
+  } catch (error) {
+    // A broken closure must never exit the sidecar (B-06).
+    console.error(`dsh web mount failed: ${(error as Error).message}`)
   }
 }
 
@@ -178,28 +198,55 @@ async function mountDshIfPresent(command: StartCommand): Promise<void> {
  * Mount the dsh tool container (ellamaka-tools profile) via the unified
  * Runtime Manager, and expose it via `globalThis.__ellamakaDshContainer` so
  * the dsh-adapter plugin can project container tools into ellamaka's
- * ToolRegistry. Same manager call as the web engine (single-flight), only
- * mounting on `ready`. `disabled`/`degraded` skip silently; the adapter
- * degrades to no projected tools and ellamaka builtins keep serving.
+ * ToolRegistry. Same manager call as the web engine (single-flight, and this
+ * launch's shared init result), only mounting on `ready`. `disabled`/`degraded`
+ * skip silently; the adapter degrades to no projected tools and ellamaka
+ * builtins keep serving.
  */
 async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
-  const { wopalHome, logFile, home } = dshLaunch(command)
+  const { logFile, home } = dshLaunch(command)
+  const { Dsh } = await import("virtual:opencode-server")
+  try {
+    const launch = await initDshLaunch(command)
+    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
+    const runtime = launch.runtime
+    const host = await Dsh.bootDshTools({
+      home,
+      port: 0,
+      installAnchor: launch.anchor.path,
+      logFile,
+      runtime,
+    })
+    dshToolsHost = { dispose: () => host.dispose() }
+    ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
+  } catch (error) {
+    // A broken closure must never exit the sidecar (B-06).
+    console.error(`dsh tool container mount failed: ${(error as Error).message}`)
+  }
+}
+
+/**
+ * Initialise the dsh runtime exactly once per launch and cache the outcome
+ * (W-02). The manager's per-process in-flight cache covers concurrent calls in
+ * one process, but after a FAILED run the in-flight entry is removed, so two
+ * sequential manager calls from the web + tool mounts would each re-run the
+ * state machine. Caching here makes the web and tool mounts share one status /
+ * anchor / runtime.
+ */
+async function initDshLaunch(command: StartCommand): Promise<NonNullable<typeof dshLaunchState>> {
+  if (dshLaunchState) return dshLaunchState
+  const { wopalHome, logFile } = dshLaunch(command)
   const { Dsh } = await import("virtual:opencode-server")
   const manifest = Dsh.DEFAULT_DSH_RUNTIME_MANIFEST
   const status = await Dsh.initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
-  if (status !== "ready") return
-
+  if (status !== "ready") {
+    dshLaunchState = { status }
+    return dshLaunchState
+  }
   const anchor = Dsh.resolveInstallAnchor(wopalHome, manifest)
   const runtime = Dsh.createDshRuntimeApi(anchor.path)
-  const host = await Dsh.bootDshTools({
-    home,
-    port: 0,
-    installAnchor: anchor.path,
-    logFile,
-    runtime,
-  })
-  dshToolsHost = { dispose: () => host.dispose() }
-  ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
+  dshLaunchState = { status, anchor, runtime }
+  return dshLaunchState
 }
 
 async function stop() {

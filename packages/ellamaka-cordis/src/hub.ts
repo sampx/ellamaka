@@ -5,7 +5,15 @@ import { createPackageDshRuntimeApi } from "./runtime/loader.js"
 /** A lazily-resolved cordis module namespace value (never statically imported). */
 let cordisContextValue: typeof import("@deepseek-ai/cordis")["Context"] | undefined
 
-/** Resolve the cordis `Context` value from the package closure (source/dev mode). */
+/**
+ * Resolve the cordis `Context` value from the package closure (source/dev mode
+ * ONLY — B-01). Packaged hosts (CLI bundle, Desktop sidecar) ship WITHOUT
+ * `@deepseek-ai/*` in their own closure, so this fallback is a dev-time
+ * convenience and MUST NOT be reached by any production mount call site. Every
+ * production call site injects a closure-resolved context via
+ * `CordisHubOptions.context`; this fallback is a narrowly-scoped, documented
+ * dev-only seam.
+ */
 function resolveCordisContext(): typeof import("@deepseek-ai/cordis")["Context"] {
   if (!cordisContextValue) {
     const api = createPackageDshRuntimeApi()

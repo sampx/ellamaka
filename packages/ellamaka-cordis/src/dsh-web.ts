@@ -259,8 +259,12 @@ type MountProfileOptions = DshHostOptions & {
  */
 async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<DshHost> {
   const { home, port, prepare, logFile, logLevel, profileName, extraPatches, requireWebServer, virtualWebServer } = opts
-  // The DSH runtime module handle: preferred from an injected runtime, else the
-  // package closure (source/dev mode) — the old module-top static imports.
+  // The DSH runtime module handle: preferred from an injected runtime. The
+  // package-closure fallback below is a DEV-ONLY seam (B-01) — every production
+  // mount call site (CLI serve/web, TUI, Desktop sidecar) injects the
+  // closure-resolved runtime via `DshHostOptions.runtime`; packaged hosts ship
+  // without `@deepseek-ai/*` in their own closure and MUST never reach this
+  // fallback.
   const runtime = opts.runtime ?? createPackageDshRuntimeApi()
   // dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
   // (settings/sessions/storages/credentials/.../home-patch) lands under
@@ -309,13 +313,16 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   const installAnchor = realpathSync(opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json"))
 
   const { healProfilesModuleFallback, loadProfile, resolveProfileDir, initProfile } = runtime.appBoot
-  // Register the dsh-plugins log Exporter before any plugin mounts, so every
-  // dsh plugin's ctx.logger output lands in the dedicated file. The Exporter
-  // is auto-disposed with the host fiber (zero manual cleanup).
+  // The dsh-plugins log Exporter is registered before any plugin mounts, so
+  // every dsh plugin's ctx.logger output lands in the dedicated file. The
+  // Exporter is auto-disposed with the host fiber (zero manual cleanup). The
+  // closure-resolved runtime is injected so the exporter never falls back to
+  // the host package closure on packaged hosts (B-01).
   if (logFile) {
     const exporter = createCordisLogExporter({
       logFile,
       minLevel: logLevel ?? "DEBUG",
+      runtime,
       write: (line) => {
         try {
           appendFileSync(logFile, line, "utf-8")
@@ -470,7 +477,8 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
  * @returns a {@link DshWebHost} handle.
  */
 export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshWebHost> {
-  const virtualWebServer = new VirtualWebServer(ctx, { host: "127.0.0.1", port: opts.port })
+  const runtime = opts.runtime ?? createPackageDshRuntimeApi()
+  const virtualWebServer = new VirtualWebServer(ctx, { host: "127.0.0.1", port: opts.port, runtime })
   const host = await mountProfile(ctx, {
     ...opts,
     profileName: WEB_PROFILE_NAME,

@@ -58,52 +58,79 @@ export async function mountDshEngine(
   if (status !== "ready") return undefined
 
   const anchor = resolveInstallAnchor(wopalHome, manifest)
-  const runtime = createDshRuntimeApi(anchor.path)
   const home = join(wopalHome, "dsh")
 
-  const { CordisHub } = await import("@wopal/ellamaka-cordis")
-  const { mountDshTools, mountDshWeb } = await import("@wopal/ellamaka-cordis/dsh-web")
-  const webHub = new CordisHub(null)
-  const toolsHub = new CordisHub(null)
-  // The CLI serve/web runtime is bun, which lacks
-  // node:module.stripTypeScriptTypes, so code-runtime is disabled here; the
-  // Desktop sidecar (Node 22.18+) keeps it enabled.
-  const dsh = await mountDshWeb(webHub.ctx, {
-    home,
-    port: server.port,
-    logFile,
-    installAnchor: anchor.path,
-    runtime,
-    disableCodeRuntime: true,
-  })
-  const unmountDsh = server.mountNodeRoute({
-    prefix: dsh.mountPath,
-    request: (req, res) => dsh.webServer.request(req, res),
-    upgrade: (req, socket, head) => dsh.webServer.upgrade(req, socket, head),
-  })
-  console.log(`dsh web engine mounted at ${dsh.mountPath}`)
-  webHub.ctx.logger("dsh-web").info("dsh engine mounted")
+  // Degrade boundary (B-06): a closure whose module exports are broken must
+  // never crash the CLI host. Load the closure runtime, then init+mount; any
+  // failure is logged (structured), partial resources are disposed, and the
+  // host keeps running with no dsh. Never process.exit here.
+  type DshModule = typeof import("@wopal/ellamaka-cordis/dsh-web")
+  type DshHubCtx = Parameters<DshModule["mountDshWeb"]>[0]
+  type DshHub = { ctx: DshHubCtx; dispose(): Promise<void> }
+  let webHub: DshHub | undefined
+  let toolsHub: DshHub | undefined
+  let unmountDsh: (() => void) | undefined
+  try {
+    const runtime = createDshRuntimeApi(anchor.path)
+    const { CordisHub } = await import("@wopal/ellamaka-cordis")
+    const { mountDshTools, mountDshWeb } = await import("@wopal/ellamaka-cordis/dsh-web")
+    // The closure-resolved context is injected so the hub NEVER falls back to
+    // the host package closure, which packaged builds do not carry (B-01).
+    webHub = new CordisHub(null, { context: new runtime.cordis.Context() })
+    toolsHub = new CordisHub(null, { context: new runtime.cordis.Context() })
+    // The CLI serve/web runtime is bun, which lacks
+    // node:module.stripTypeScriptTypes, so code-runtime is disabled here; the
+    // Desktop sidecar (Node 22.18+) keeps it enabled.
+    const dsh = await mountDshWeb(webHub.ctx, {
+      home,
+      port: server.port,
+      logFile,
+      installAnchor: anchor.path,
+      runtime,
+      disableCodeRuntime: true,
+    })
+    unmountDsh = server.mountNodeRoute({
+      prefix: dsh.mountPath,
+      request: (req, res) => dsh.webServer.request(req, res),
+      upgrade: (req, socket, head) => dsh.webServer.upgrade(req, socket, head),
+    })
+    console.log(`dsh web engine mounted at ${dsh.mountPath}`)
+    webHub.ctx.logger("dsh-web").info("dsh engine mounted")
 
-  const toolsHost = await mountDshTools(toolsHub.ctx, {
-    home,
-    port: 0,
-    logFile,
-    installAnchor: anchor.path,
-    runtime,
-  })
-  toolsHub.ctx.logger("dsh-tools").info("tool container mounted")
-  ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = toolsHub.ctx
+    const toolsHost = await mountDshTools(toolsHub.ctx, {
+      home,
+      port: 0,
+      logFile,
+      installAnchor: anchor.path,
+      runtime,
+    })
+    toolsHub.ctx.logger("dsh-tools").info("tool container mounted")
+    ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = toolsHub.ctx
 
-  return {
-    mountPath: dsh.mountPath,
-    dispose: async () => {
-      // dsh.dispose() closes the VirtualWebServer's upgrade sockets first,
-      // then unmounts the dsh plugin tree from the web hub.
-      unmountDsh()
-      await dsh.dispose()
-      await toolsHost.dispose()
-      await webHub.dispose()
-      await toolsHub.dispose()
-    },
+    return {
+      mountPath: dsh.mountPath,
+      dispose: async () => {
+        // dsh.dispose() closes the VirtualWebServer's upgrade sockets first,
+        // then unmounts the dsh plugin tree from the web hub.
+        unmountDsh?.()
+        await dsh.dispose()
+        await toolsHost.dispose()
+        await webHub?.dispose()
+        await toolsHub?.dispose()
+      },
+    }
+  } catch (error) {
+    // Never crash the host: log, dispose partial resources, and continue
+    // without dsh (B-06).
+    console.error(`dsh engine mount failed: ${(error as Error).message}`)
+    try {
+      unmountDsh?.()
+      await webHub?.dispose()
+      await toolsHub?.dispose()
+    } catch {
+      // Best-effort partial disposal; the host continues regardless.
+    }
+    delete (globalThis as Record<string, unknown>).__ellamakaDshContainer
+    return undefined
   }
 }

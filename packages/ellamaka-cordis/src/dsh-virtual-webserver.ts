@@ -30,7 +30,7 @@ import type { Context } from "@deepseek-ai/cordis"
 import type { IndexInjection } from "@deepseek-ai/dsh-host-webserver"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import type { Duplex } from "node:stream"
-import { createPackageDshRuntimeApi } from "./runtime/loader.js"
+import { createPackageDshRuntimeApi, type DshRuntimeApi } from "./runtime/loader.js"
 
 /** The prefix under which the DSH surface is mounted on the Ellamaka listener. */
 export const DSH_MOUNT_PREFIX = "/dsh"
@@ -61,6 +61,13 @@ export interface VirtualWebServerOptions {
   host: "127.0.0.1" | "0.0.0.0"
   /** The port the virtual server reports (the Ellamaka public port). */
   port: number
+  /**
+   * The DSH runtime handle to resolve `hostWebserver.renderIndexInjections`
+   * from (DESIGN-dsh-poc §3.4.6). Production mounts inject the closure-resolved
+   * runtime (B-01); when omitted the module falls back to the package closure —
+   * a dev-only convenience that packaged hosts must never rely on.
+   */
+  runtime?: DshRuntimeApi
 }
 
 /** Extract the pathname from a raw request target, defaulting to `/`. */
@@ -189,7 +196,8 @@ export class VirtualWebServer {
    * raw `tapIndex` transforms over the result.
    */
   renderIndex(html: string): string {
-    const { renderIndexInjections } = createPackageDshRuntimeApi().hostWebserver
+    const runtime = this.config.runtime ?? createPackageDshRuntimeApi()
+    const { renderIndexInjections } = runtime.hostWebserver
     return this.applyIndexTaps(renderIndexInjections(html, this.collectIndexInjections()))
   }
 

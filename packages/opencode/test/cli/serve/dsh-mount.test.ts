@@ -40,6 +40,19 @@ describe("server entry points wire the shared dsh assembly", () => {
     expect(source).toContain('entry: opts.entry ?? "serve"')
   })
 
+  test("dsh-mount wraps init+mount in a degrade boundary (B-06) and injects the closure context (B-01)", () => {
+    const source = readFileSync(join(import.meta.dir, "../../../src/cli/cmd/dsh-mount.ts"), "utf-8")
+    // A broken closure must never crash the CLI host: the assembly is wrapped
+    // in a try/catch that logs, disposes partial resources, and returns
+    // undefined (no mount, no process.exit).
+    expect(source).toContain("dsh engine mount failed")
+    expect(source).toContain("mountDshEngine")
+    // The hub is constructed with the closure-resolved context — never a bare
+    // `new CordisHub(null)` that would fall back to the host package closure.
+    expect(source).toContain('new CordisHub(null, { context: new runtime.cordis.Context() })')
+    expect(source).not.toMatch(/new CordisHub\(null\)/)
+  })
+
   test("web opens the browser before suspending on the dsh mount", () => {
     // Regression: the dsh mount block suspended on Effect.never BEFORE the
     // open(browser) call, so ELLAMAKA_DSH=1 web never opened a browser.

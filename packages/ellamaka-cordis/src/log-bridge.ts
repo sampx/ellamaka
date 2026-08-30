@@ -1,5 +1,5 @@
 import type { Exporter, Message } from "@deepseek-ai/cordis"
-import { createPackageDshRuntimeApi } from "./runtime/loader.js"
+import { createPackageDshRuntimeApi, type DshRuntimeApi } from "./runtime/loader.js"
 
 /**
  * ellamaka-side log level names, matching `@opencode-ai/core/util/log`.
@@ -39,6 +39,13 @@ export interface CordisLogExporterDeps {
    * The caller owns file I/O (appendFileSync, rotation, etc.).
    */
   readonly write: (line: string) => void
+  /**
+   * The DSH runtime handle to resolve `cordis.Logger` from. Production mounts
+   * inject the closure-resolved runtime (B-01); when omitted the exporter
+   * falls back to the package closure — a dev-only convenience that packaged
+   * hosts must never rely on.
+   */
+  readonly runtime?: DshRuntimeApi
 }
 
 /**
@@ -63,7 +70,8 @@ export function createCordisLogExporter(deps: CordisLogExporterDeps): Exporter {
     export(message: Message) {
       const levelName = cordisTypeToLevel(message.type)
       if (ELLAMAKA_PRIORITY[levelName] < ELLAMAKA_PRIORITY[deps.minLevel]) return
-      const { Logger } = createPackageDshRuntimeApi().cordis
+      const runtime = deps.runtime ?? createPackageDshRuntimeApi()
+      const { Logger } = runtime.cordis
       const body = Logger.format(exporter, message)
       const ts = new Date(message.ts).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).replace(" ", "T")
       const line = `${ts} [${levelName}] [${message.name}] ${body}\n`

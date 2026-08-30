@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { DEFAULT_DSH_RUNTIME_MANIFEST } from "@wopal/ellamaka-cordis/runtime"
 import { mountDshIfEnabled } from "@/cli/cmd/tui/dsh-mount"
 import { seedDshClosure } from "../../../fixture/dsh-closure"
 
@@ -87,6 +88,45 @@ describe("tui dsh mount", () => {
     })
     expect(handle).toBeDefined()
     await handle!.dispose()
+    expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
+  }, 60_000)
+
+  test("a broken closure degrades instead of crashing the TUI (B-06)", async () => {
+    process.env.ELLAMAKA_DSH = "1"
+    const wopalHome = tmpWopalHome()
+    const anchor = seedDshClosure(wopalHome)
+    const closureRoot = dirname(dirname(dirname(dirname(anchor))))
+    // Replace the symlinked @deepseek-ai tree (which points at the shared real
+    // install) with a self-contained real tree whose @deepseek-ai/dsh package
+    // has NO resolvable entry point — so the manager's loader gate (B-06)
+    // degrades deterministically. All deps match the manifest's pinned
+    // versions so the content check (B-03) passes and the loader gate fires.
+    const aiDir = join(closureRoot, "node_modules", "@deepseek-ai")
+    rmSync(aiDir, { recursive: true, force: true })
+    mkdirSync(aiDir, { recursive: true })
+    const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      // aiDir IS the @deepseek-ai scope; the scoped name "…/dsh" reduces to "dsh".
+      const dir = join(aiDir, name.slice("@deepseek-ai/".length))
+      mkdirSync(dir, { recursive: true })
+      // dsh deliberately has NO entry point (the broken export).
+      const pkg = name === "@deepseek-ai/dsh"
+        ? { name, version }
+        : { name, version, main: "index.js" }
+      writeFileSync(join(dir, "package.json"), JSON.stringify(pkg))
+    }
+    let handle: unknown
+    let error: unknown
+    try {
+      handle = await mountDshIfEnabled({
+        wopalHome,
+        logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+      })
+    } catch (e) {
+      error = e
+    }
+    expect(error).toBeUndefined()
+    expect(handle).toBeUndefined()
     expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
   }, 60_000)
 })

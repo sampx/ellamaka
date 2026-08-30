@@ -48,23 +48,44 @@ export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<Dsh
   if (status !== "ready") return undefined
 
   const anchor = resolveInstallAnchor(wopalHome, manifest)
-  const runtime = createDshRuntimeApi(anchor.path)
-  const { CordisHub } = await import("@wopal/ellamaka-cordis")
-  const { mountDshTools } = await import("@wopal/ellamaka-cordis/dsh-web")
-  const hub = new CordisHub(null)
-  const host = await mountDshTools(hub.ctx, {
-    home: join(wopalHome, "dsh"),
-    port: 0,
-    logFile,
-    installAnchor: anchor.path,
-    runtime,
-  })
-  ;(globalThis as Record<string, unknown>)[CONTAINER_KEY] = hub.ctx
-  return {
-    dispose: async () => {
-      delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
-      await host.dispose()
-      await hub.dispose()
-    },
+  const home = join(wopalHome, "dsh")
+
+  // Degrade boundary (B-06): a broken closure must never crash the TUI host.
+  // Load the closure runtime, then init+mount; any failure is logged, partial
+  // resources are disposed, and the TUI keeps running with no dsh.
+  type DshModule = typeof import("@wopal/ellamaka-cordis/dsh-web")
+  type DshHubCtx = Parameters<DshModule["mountDshTools"]>[0]
+  let hub: { ctx: DshHubCtx; dispose(): Promise<void> } | undefined
+  try {
+    const runtime = createDshRuntimeApi(anchor.path)
+    const { CordisHub } = await import("@wopal/ellamaka-cordis")
+    const { mountDshTools } = await import("@wopal/ellamaka-cordis/dsh-web")
+    // The closure-resolved context is injected so the hub NEVER falls back to
+    // the host package closure, which packaged builds do not carry (B-01).
+    hub = new CordisHub(null, { context: new runtime.cordis.Context() })
+    const host = await mountDshTools(hub.ctx, {
+      home,
+      port: 0,
+      logFile,
+      installAnchor: anchor.path,
+      runtime,
+    })
+    ;(globalThis as Record<string, unknown>)[CONTAINER_KEY] = hub.ctx
+    return {
+      dispose: async () => {
+        delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
+        await host.dispose()
+        await hub?.dispose()
+      },
+    }
+  } catch (error) {
+    console.error(`dsh tool container mount failed: ${(error as Error).message}`)
+    try {
+      await hub?.dispose()
+    } catch {
+      // Best-effort partial disposal; the TUI continues regardless.
+    }
+    delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
+    return undefined
   }
 }
