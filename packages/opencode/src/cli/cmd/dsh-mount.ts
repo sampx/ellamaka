@@ -1,30 +1,20 @@
-import { CordisHub } from "@wopal/ellamaka-cordis"
-import { mountDshTools, mountDshWeb } from "@wopal/ellamaka-cordis/dsh-web"
 import { Global } from "@opencode-ai/core/global"
-import { existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Listener } from "../../server/server"
-
-/**
- * Resolve the dsh installation anchor for a packaged host: the materialised
- * closure under `$WOPAL_HOME/dsh` (DESIGN-dsh-poc §2.2). Returns `undefined`
- * when the closure is absent — the caller's kill switch (skip mounting, keep
- * the host running).
- *
- * Unlike `require.resolve`, this never touches the module graph: a compiled
- * CLI binary (bunfs) or the Desktop sidecar bundle carries no dsh packages,
- * so resolution must go through the filesystem anchor.
- */
-export function resolveDshAnchor(home: string): string | undefined {
-  const anchor = join(home, "node_modules", "@deepseek-ai", "dsh", "package.json")
-  return existsSync(anchor) ? anchor : undefined
-}
+import {
+  DEFAULT_DSH_RUNTIME_MANIFEST,
+  initializeDshRuntime,
+  resolveInstallAnchor,
+} from "@wopal/ellamaka-cordis/runtime"
+import { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
 
 export interface DshEngineMountOptions {
-  /** Override the dsh home; defaults to `$WOPAL_HOME/dsh`. */
-  home?: string
+  /** Override the wopal home; defaults to `$WOPAL_HOME`. */
+  wopalHome?: string
   /** Override the dsh-plugins log file; defaults to `$WOPAL_HOME/logs/dsh-plugins.log`. */
   logFile?: string
+  /** The entry name the runtime manager logs under; defaults to `serve`. */
+  entry?: "serve" | "web"
 }
 
 export interface DshEngineHandle {
@@ -39,26 +29,40 @@ export interface DshEngineHandle {
  * the `serve` and `web` commands; the TUI uses its tools-only variant in
  * `tui/dsh-mount.ts`.
  *
- * The caller is responsible for gating on `Flag.ELLAMAKA_DSH` — this module
- * mounts unconditionally so command handlers stay linear.
- *
- * Kill switch: when the dsh home has no materialised closure
- * (`resolveDshAnchor` → undefined), nothing mounts and `undefined` is
- * returned; the host keeps running untouched (equivalent to
- * `ELLAMAKA_DSH=0`, §2.2 kill-switch semantics).
+ * Assembly (DESIGN-dsh-poc §3.4.4/§3.4.5):
+ * 1. The unified Runtime Manager runs first — it gates on `ELLAMAKA_DSH`
+ *    itself (`=0` → `disabled` with zero file access), so it is called
+ *    unconditionally; no manual kill-switch check here.
+ * 2. `ready` → resolve the install anchor for the manifest's fingerprint,
+ *    load the six official DSH modules from the closure via
+ *    `createDshRuntimeApi`, and mount web + tool containers with that runtime
+ *    injected (the Bridge never statically imports `@deepseek-ai/*`).
+ * 3. `disabled`/`degraded` → `undefined` is returned and the host keeps
+ *    running untouched (no `console.warn`; the manager already logged the
+ *    structured diagnosis).
  */
-export async function mountDshEngine(server: Listener, opts: DshEngineMountOptions = {}): Promise<DshEngineHandle | undefined> {
-  const home = opts.home ?? join(Global.Path.wopalHome, "dsh")
+export async function mountDshEngine(
+  server: Listener,
+  opts: DshEngineMountOptions = {},
+): Promise<DshEngineHandle | undefined> {
+  const wopalHome = opts.wopalHome ?? Global.Path.wopalHome
   const logFile = opts.logFile ?? join(Global.Path.log, "dsh-plugins.log")
-  const installAnchor = resolveDshAnchor(home)
-  if (!installAnchor) {
-    console.warn(
-      `dsh engine disabled: no materialised closure at ${home} (run the dsh materialise script; see DESIGN-dsh-poc §2.2)`,
-    )
-    return undefined
-  }
+  const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+
+  const status = await initializeDshRuntime({
+    wopalHome,
+    logFile,
+    entry: opts.entry ?? "serve",
+    manifest,
+  })
+  if (status !== "ready") return undefined
+
+  const anchor = resolveInstallAnchor(wopalHome, manifest)
+  const runtime = createDshRuntimeApi(anchor.path)
+  const home = join(wopalHome, "dsh")
 
   const { CordisHub } = await import("@wopal/ellamaka-cordis")
+  const { mountDshTools, mountDshWeb } = await import("@wopal/ellamaka-cordis/dsh-web")
   const webHub = new CordisHub(null)
   const toolsHub = new CordisHub(null)
   // The CLI serve/web runtime is bun, which lacks
@@ -68,7 +72,8 @@ export async function mountDshEngine(server: Listener, opts: DshEngineMountOptio
     home,
     port: server.port,
     logFile,
-    installAnchor,
+    installAnchor: anchor.path,
+    runtime,
     disableCodeRuntime: true,
   })
   const unmountDsh = server.mountNodeRoute({
@@ -83,7 +88,8 @@ export async function mountDshEngine(server: Listener, opts: DshEngineMountOptio
     home,
     port: 0,
     logFile,
-    installAnchor,
+    installAnchor: anchor.path,
+    runtime,
   })
   toolsHub.ctx.logger("dsh-tools").info("tool container mounted")
   ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = toolsHub.ctx

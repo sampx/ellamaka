@@ -22,24 +22,17 @@ export const ServeCommand = effectCmd({
     console.log(`${BINARY_NAME} server listening on http://${server.hostname}:${server.port}`)
 
     // Optional dsh engine (single-process, dual-container, DESIGN-dsh-poc
-    // §2.1/§2.2). Kill switch (default ON): `ELLAMAKA_DSH=0` disables; the
-    // assembly (anchor
-    // resolution, kill switch, web+tool containers, /dsh route) lives in
-    // dsh-mount.ts, shared with the `web` command. The dynamic import keeps
-    // the dsh closure out of the desktop sidecar bundle — only
-    // ELLAMAKA_DSH-enabled CLI runs load it.
-    if (Flag.ELLAMAKA_DSH) {
+    // §2.1/§2.2). The unified Runtime Manager (in dsh-mount.ts, shared with the
+    // `web` command) gates on `ELLAMAKA_DSH` itself — `=0` → disabled with zero
+    // file access — and `disabled`/`degraded` never block the server. The
+    // dynamic import keeps the dsh closure out of the desktop sidecar bundle —
+    // only ELLAMAKA_DSH-enabled CLI runs load it.
+    {
       const { mountDshEngine: engine } = yield* Effect.promise(() => import("./dsh-mount"))
       const handle = yield* Effect.promise(() => engine(server))
-      if (handle) {
-        yield* Effect.never.pipe(
-          Effect.ensuring(Effect.promise(() => handle.dispose())),
-        )
-      } else {
-        yield* Effect.never
-      }
-    } else {
-      yield* Effect.never
+      yield* Effect.never.pipe(
+        Effect.ensuring(Effect.promise(() => handle?.dispose() ?? Promise.resolve())),
+      )
     }
   }),
 })
