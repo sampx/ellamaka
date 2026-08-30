@@ -976,6 +976,7 @@ export const dict = {
   "workbench.panel.splitTerminal.resize": "拖动调整拆分终端高度",
   "workbench.panel.splitTerminal.loading": "正在启动拆分终端...",
   "workbench.sidebar.spaces": "会话",
+  "workbench.sidebar.files": "文件",
   "workbench.sidebar.sessions": "助理",
   "workbench.sidebar.refreshing": "正在刷新会话列表...",
   "workbench.sidebar.refreshed": "会话列表已刷新",

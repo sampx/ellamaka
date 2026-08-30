@@ -30,6 +30,7 @@ export type WorkbenchDisplayState = {
   showTitlebar: boolean
   showStatusbar: boolean
   showSpaceRail: boolean
+  showFileTree: boolean
 }
 
 export type WopalSpace = {
@@ -73,6 +74,7 @@ export const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
   showTitlebar: true,
   showStatusbar: true,
   showSpaceRail: true,
+  showFileTree: true,
 }
 
 export const PERSISTED_DEFAULTS: PersistedWorkbench = {
@@ -212,6 +214,7 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     store.display.showTitlebar
     store.display.showStatusbar
     store.display.showSpaceRail
+    store.display.showFileTree
     for (const tab of store.tabs) {
       tab.name
       tab.path

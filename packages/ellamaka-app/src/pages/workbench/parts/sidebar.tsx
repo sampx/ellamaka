@@ -14,6 +14,8 @@ import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
 import { createFlyoutController, flyoutVisibilityClass } from "./sidebar-flyout"
+import { FileTreePanel } from "./file-tree-panel"
+import type { FileNode } from "@opencode-ai/sdk/v2"
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500
@@ -28,7 +30,20 @@ function MaintenanceIcon(props: { class?: string }) {
   )
 }
 
-export function SpaceRail() {
+function FileTreeIcon(props: { class?: string }) {
+  return (
+    <svg class={props.class ?? "size-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 3h5l2 3h9v6" />
+      <path d="M3.5 12h5l2 3h10" />
+      <rect x="3" y="3" width="7" height="6" rx="1" />
+      <rect x="2.5" y="12" width="6" height="6" rx="1" />
+      <rect x="20" y="11" width="3" height="4" rx="1" />
+      <path d="M18.5 13h1.5" />
+    </svg>
+  )
+}
+
+export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
   const store = useSpaceStore()
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
@@ -44,7 +59,7 @@ export function SpaceRail() {
 
   const sidebarWidth = () => (expanded() ? widthStore.width : COLLAPSED_WIDTH)
 
-  const [activeNav, setActiveNav] = createSignal<"sessions" | "maintenance">("sessions")
+  const [activeNav, setActiveNav] = createSignal<"sessions" | "files" | "maintenance">("sessions")
 
   let asideRef: HTMLElement | undefined
   let resizeHandleRef: HTMLElement | undefined
@@ -196,6 +211,29 @@ export function SpaceRail() {
                 }}
               />
             </div>
+            {/* 文件树 Icon：点击展开本空间文件树（与会话树同等级） */}
+            <div
+              onMouseEnter={() => flyout.onTriggerEnter()}
+              onMouseLeave={() => flyout.onTriggerLeave()}
+            >
+              <IconButtonV2
+                variant={activeNav() === "files" ? "neutral" : "ghost-muted"}
+                size="normal"
+                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "files" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
+                icon={<FileTreeIcon class="size-4" />}
+                aria-label="Files"
+                title="Files"
+                onClick={() => {
+                  flyout.close()
+                  if (activeNav() === "files") {
+                    wb.setDisplay("showSpaceRail", !expanded())
+                  } else {
+                    setActiveNav("files")
+                    wb.setDisplay("showSpaceRail", true)
+                  }
+                }}
+              />
+            </div>
           </div>
 
           <div class="mt-auto flex flex-col items-center">
@@ -208,7 +246,7 @@ export function SpaceRail() {
           <header class="flex h-7 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base bg-v2-background-bg-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong truncate">
-                {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : t("workbench.sidebar.maintenance")}
+                {activeNav() === "sessions" ? t("workbench.sidebar.spaces") : activeNav() === "files" ? t("workbench.sidebar.files") : t("workbench.sidebar.maintenance")}
               </span>
               <IconButtonV2
                 variant="ghost-muted"
@@ -249,6 +287,10 @@ export function SpaceRail() {
                   onSessionClick={handleSessionClick}
                 />
               </Show>
+            </div>
+
+            <div class={`flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto ${activeNav() === "files" ? "" : "hidden"}`}>
+              <FileTreePanel directory={wb.activeTabPath} onFileClick={props.onFileClick ?? (() => {})} />
             </div>
 
             <div class={`flex-1 min-h-0 flex flex-col min-w-0 ${activeNav() === "maintenance" ? "" : "hidden"}`}>

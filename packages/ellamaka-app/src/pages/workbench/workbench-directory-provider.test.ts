@@ -12,7 +12,7 @@ import {
 } from "./testing/workbench-test-harness"
 
 const persisted = (): PersistedWorkbench => ({
-  display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true },
+  display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
   spaces: {
     "": {
       activePanelID: WORKBENCH_SCENARIO.panels.general,

@@ -1,4 +1,4 @@
-import { ErrorBoundary, Show, createEffect, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -6,6 +6,8 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
+import { FileViewerPanel } from "./parts/file-viewer-panel"
+import type { FileNode } from "@opencode-ai/sdk/v2"
 import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -36,6 +38,18 @@ function WorkbenchShell() {
   const dialog = useDialog()
   const t: typeof language.t = (key, params) => language.t(key, params)
   let workbenchSurface: HTMLDivElement | undefined
+
+  // Opened file viewer state. Transient Workbench UI state (AGENTS.md §5.1)
+  // lifted here so the sidebar's FileTreePanel can open a viewer rendered in
+  // the Workspace lane to its right.
+  const [openedFile, setOpenedFile] = createSignal<{ directory: string; filePath: string; name?: string } | null>(null)
+  const handleFileClick = (file: FileNode) => {
+    setOpenedFile({
+      directory: wb.activeTabPath,
+      filePath: file.path,
+      name: file.name,
+    })
+  }
 
   const requestCliRepair = (cli: NonNullable<typeof runtime.cli>) => {
     void dialog.show(() => (
@@ -176,10 +190,22 @@ function WorkbenchShell() {
             </WorkbenchActiveDirectoryProvider>
           </Show>
           <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <SpaceRail />
+            <SpaceRail onFileClick={handleFileClick} />
             <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <Workspace />
             </div>
+            <Show when={openedFile()}>
+              {(file) => (
+                <div class="w-[480px] max-w-[50vw] shrink-0 min-h-0 min-w-0 flex">
+                  <FileViewerPanel
+                    directory={file().directory}
+                    filePath={file().filePath}
+                    name={file().name}
+                    onClose={() => setOpenedFile(null)}
+                  />
+                </div>
+              )}
+            </Show>
           </div>
           <Show when={display().showStatusbar}>
             <StatusBar />
