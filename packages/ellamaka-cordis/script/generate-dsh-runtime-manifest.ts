@@ -16,7 +16,6 @@ import { fileURLToPath } from "node:url"
 import {
   buildDshRuntimeManifest,
   canonicalSerialize,
-  deriveRegistry,
   type DshRuntimeManifestV1,
 } from "../src/runtime/manifest.ts"
 
@@ -78,11 +77,9 @@ if (!("@deepseek-ai/dsh" in deps)) {
   )
 }
 
-const registry = deriveRegistry(deps, lock)
 const manifest: DshRuntimeManifestV1 = buildDshRuntimeManifest(
   { dependencies: deps },
   { lockfileVersion: lock.lockfileVersion, packages: lock.packages },
-  registry,
 )
 
 const output = `${canonicalSerialize(manifest)}\n`

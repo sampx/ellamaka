@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import {
+  DEFAULT_REGISTRY,
+  buildDshRuntimeManifest,
   canonicalSerialize,
   computeManifestFingerprint,
   extractPackageLock,
@@ -100,6 +102,41 @@ describe("computeManifestFingerprint", () => {
   test("returns a sha256 hex digest", () => {
     const fp = computeManifestFingerprint(makeManifest())
     expect(fp).toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+})
+
+// --- registry assignment ----------------------------------------------------
+
+describe("buildDshRuntimeManifest registry", () => {
+  test("carries the derived origin when present in the lock", () => {
+    const m = buildDshRuntimeManifest(PKG, MINIMAL_LOCK)
+    expect(m.registry).toBe("https://registry.npmmirror.com")
+  })
+
+  test("defaults to the official npm registry when no origin is derivable", () => {
+    const lockNoIntegrity: BunLockFile = {
+      lockfileVersion: 1,
+      packages: {
+        "@deepseek-ai/dsh": ["@deepseek-ai/dsh@0.1.1-rc.2"],
+        "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1"],
+      },
+    }
+    const m = buildDshRuntimeManifest(PKG, lockNoIntegrity)
+    expect(m.registry).toBe(DEFAULT_REGISTRY)
+    expect(m.registry).toBe("https://registry.npmjs.org/")
+  })
+
+  test("always sets a registry field", () => {
+    const lockNoIntegrity: BunLockFile = {
+      lockfileVersion: 1,
+      packages: {
+        "@deepseek-ai/dsh": ["@deepseek-ai/dsh@0.1.1-rc.2"],
+        "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1"],
+      },
+    }
+    const m = buildDshRuntimeManifest(PKG, lockNoIntegrity)
+    expect(typeof m.registry).toBe("string")
+    expect(m.registry!.length).toBeGreaterThan(0)
   })
 })
 

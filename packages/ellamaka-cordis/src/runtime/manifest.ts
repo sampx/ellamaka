@@ -30,6 +30,9 @@ export interface DshDependencies {
 export const DSH_RUNTIME_SCHEMA = "ellamaka.dsh-runtime/v1"
 export const DSH_RUNTIME_ABI = 1
 
+/** Official npm registry origin used when no origin is derivable from the lock. */
+export const DEFAULT_REGISTRY = "https://registry.npmjs.org/"
+
 /** Packages resolved by name in the lock; undefined when the lock lacks them. */
 export type LockPackages = Record<string, unknown>
 
@@ -202,7 +205,6 @@ export function extractPackageLock(
 export function buildDshRuntimeManifest(
   pkg: DshDependencies,
   lock: BunLockFile,
-  registry?: string,
 ): DshRuntimeManifestV1 {
   const dependencies: Record<string, string> = {}
   for (const [name, version] of Object.entries(pkg.dependencies ?? {})) {
@@ -216,8 +218,8 @@ export function buildDshRuntimeManifest(
     bridgeAbi: DSH_RUNTIME_ABI,
     dependencies,
     packageLock: extractPackageLock(pkg, lock),
+    registry: deriveRegistry(pkg, lock) ?? DEFAULT_REGISTRY,
   }
-  if (registry) manifest.registry = registry
   manifest.fingerprint = computeManifestFingerprint(manifest)
   return manifest
 }
