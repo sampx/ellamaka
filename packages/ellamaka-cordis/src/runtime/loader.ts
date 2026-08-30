@@ -1,4 +1,5 @@
 import { createRequire } from "node:module"
+import { realpathSync } from "node:fs"
 import type * as Cordis from "@deepseek-ai/cordis"
 import type CordisPluginLoader from "@deepseek-ai/cordis-plugin-loader"
 import type * as DshAppBoot from "@deepseek-ai/dsh-app-boot"
@@ -86,7 +87,11 @@ export function createPackageDshRuntimeApi(): DshRuntimeApi {
  * @throws naming the module and anchor when any module cannot be resolved.
  */
 export function createDshRuntimeApi(installAnchor: string): DshRuntimeApi {
-  const requireModule = createRequire(installAnchor)
+  // Resolve to the real path before rooting `createRequire`: module resolution
+  // walks up the *given* path, so a symlinked anchor (pnpm/arborist layout,
+  // test fixtures) would miss the closure's own node_modules. The realpath is
+  // where the closure's packages actually live.
+  const requireModule = createRequire(realpathSync(installAnchor))
   return loadFromRequire(requireModule, installAnchor)
 }
 
@@ -95,7 +100,7 @@ export function createDshRuntimeApi(installAnchor: string): DshRuntimeApi {
  * Useful for resolving bare specifiers against the materialised closure.
  */
 export function createClosureRequire(installAnchor: string): NodeRequire {
-  return createRequire(installAnchor)
+  return createRequire(realpathSync(installAnchor))
 }
 
 function loadFromRequire(

@@ -16,6 +16,13 @@ import {
   type ArboristFactory,
 } from "./materializer.js"
 import { createDshLogger, type LogBridge } from "./log.js"
+import { DEFAULT_DSH_RUNTIME_MANIFEST } from "./embed-manifest.js"
+
+// Re-export the wiring surface entries consume from `@wopal/ellamaka-cordis/runtime`
+// in one place: the default manifest and the install-anchor resolver (Task 4).
+export { DEFAULT_DSH_RUNTIME_MANIFEST }
+export { resolveInstallAnchor } from "./status.js"
+export type { InstallAnchor } from "./status.js"
 
 /**
  * Unified DSH Runtime Manager (DESIGN §3.4.5, 9-step state machine).

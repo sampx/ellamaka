@@ -19,12 +19,13 @@
 import type { Context } from "@deepseek-ai/cordis"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 import { VirtualWebServer, DSH_MOUNT_PREFIX } from "./dsh-virtual-webserver.js"
 import {
+  createClosureRequire,
   createPackageDshRuntimeApi,
   type DshRuntimeApi,
 } from "./runtime/loader.js"
@@ -301,8 +302,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
   // materialised closure copy under $WOPAL_HOME/dsh because require.resolve cannot
-  // reach the resource directory from the bundled sidecar.
-  const installAnchor = opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
+  // reach the resource directory from the bundled sidecar. The realpath is used
+  // so profile resolution and the loader's node_modules walk reach the full
+  // installed closure even when the anchor path is a symlink (pnpm layout,
+  // test fixtures); for a real materialised closure it is a no-op.
+  const installAnchor = realpathSync(opts.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json"))
 
   const { healProfilesModuleFallback, loadProfile, resolveProfileDir, initProfile } = runtime.appBoot
   // Register the dsh-plugins log Exporter before any plugin mounts, so every
@@ -389,7 +393,10 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // polyfill never engages.
   const loader = ctx.get("loader")
   if (loader !== undefined && loader.internal === undefined) {
-    const closureRequire = createRequire(installAnchor)
+    // `createClosureRequire` resolves the anchor's realpath first so the
+    // node_modules walk reaches the materialised closure regardless of a
+    // symlinked layout.
+    const closureRequire = createClosureRequire(installAnchor)
     loader.internal = {
       import: async (name: string) => closureRequire(name),
     }

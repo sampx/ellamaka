@@ -70,6 +70,37 @@ export function closureNameForFingerprint(fingerprint: string): string {
 }
 
 /**
+ * Resolve the install anchor for a manifest's target closure: the absolute
+ * path to `@deepseek-ai/dsh/package.json` under `closures/<genId>/`, matching
+ * the exact layout the runtime manager materialises (DESIGN §3.4.6). Entries
+ * that mount the bridge pass this anchor into `createDshRuntimeApi` /
+ * `mountDshWeb` / `mountDshTools` after the manager reports `ready`.
+ *
+ * @throws when the manifest has no fingerprint (nothing to anchor against).
+ */
+export function resolveInstallAnchor(
+  wopalHome: string,
+  manifest: { fingerprint?: string },
+): InstallAnchor {
+  const fingerprint = manifest.fingerprint
+  if (!fingerprint) {
+    throw new Error("dsh runtime: cannot resolve install anchor without a manifest fingerprint")
+  }
+  const closureName = closureNameForFingerprint(fingerprint)
+  return {
+    path: join(
+      resolveDshLayout(wopalHome).closuresDir,
+      closureName,
+      "node_modules",
+      "@deepseek-ai",
+      "dsh",
+      "package.json",
+    ),
+    genId: closureName,
+  }
+}
+
+/**
  * The npm content-addressed cache used by Arborist for cross-closure reuse
  * (`~/.npm/_cacache`, DESIGN §3.4.7). Interrupted retries fill only gaps.
  */
