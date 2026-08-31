@@ -41,6 +41,10 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
+        // kerberos is an optional peer of proxy-agent-negotiate (pulled in by the
+        // npm bootstrap deps bundled in the opencode server dist); it is loaded
+        // lazily at runtime with a graceful fallback, so keep it external.
+        external: ["kerberos"],
       },
       externalizeDeps: { include: [nodePtyPkg] },
     },
