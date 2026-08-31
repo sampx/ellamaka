@@ -768,8 +768,7 @@ describe("WorkbenchChatTimeline", () => {
     host.remove()
   })
 
-  test("drives autoScroll.handleScroll and history loading on scroll", () => {
-    let autoScrollCalls = 0
+  test("loads earlier history on scroll without treating layout scrolls as user intent", () => {
     let loaded = 0
     withSync([userMessage("u1")], [], { type: "idle" })
 
@@ -781,11 +780,6 @@ describe("WorkbenchChatTimeline", () => {
           loadOlder: async () => {
             loaded += 1
           },
-          onAutoScrollHandleScroll: () => {
-            autoScrollCalls += 1
-          },
-          hasScrollGesture: () => true,
-          onUserScroll: () => {},
         })}
       />
     ))
@@ -795,11 +789,10 @@ describe("WorkbenchChatTimeline", () => {
     scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
 
     expect(loaded).toBeGreaterThan(0)
-    expect(autoScrollCalls).toBeGreaterThan(0)
     host.remove()
   })
 
-  test("pauses bottom-following when the user scrolls up (userScrolled)", () => {
+  test("pauses bottom-following when a user scroll gesture moves the viewport", () => {
     let userScrolled = false
     withSync([userMessage("u1")], [], { type: "idle" })
 
@@ -810,12 +803,12 @@ describe("WorkbenchChatTimeline", () => {
           onUserScroll: () => {
             userScrolled = true
           },
-          hasScrollGesture: () => true,
         })}
       />
     ))
 
     const scroller = host.querySelector("[data-component='chat-scroller']") as HTMLElement
+    scroller.dispatchEvent(new Event("pointerdown", { bubbles: true }))
     scroller.scrollTop = 100
     scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
 
@@ -934,6 +927,7 @@ describe("WorkbenchChatTimeline", () => {
 
     let captured: { scrollToIndex: (i: number, o?: unknown) => void } | undefined
     const calls: Array<{ index: number; options: unknown }> = []
+    let paused = 0
     const host = mount(() => (
       <WorkbenchChatTimeline
         {...baseProps({
@@ -941,6 +935,9 @@ describe("WorkbenchChatTimeline", () => {
           virtualize: false,
           onVirtualizer: (handle) => {
             captured = handle as unknown as { scrollToIndex: (i: number, o?: unknown) => void }
+          },
+          onPauseAutoScroll: () => {
+            paused += 1
           },
         })}
       />
@@ -957,6 +954,7 @@ describe("WorkbenchChatTimeline", () => {
     target.dispatchEvent(new MouseEvent("click", { bubbles: true }))
 
     expect(calls).toEqual([{ index: 2, options: { align: "start" } }])
+    expect(paused).toBe(1)
     host.remove()
   })
 

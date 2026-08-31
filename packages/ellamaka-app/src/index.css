@@ -235,13 +235,17 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 [data-component="workbench-chat"] {
   --workbench-chat-readable-width: 98ch;
   --workbench-chat-gutter: 20px;
+
+  /* Tool rows reserve 6px before their icon. Make the prose and composer use
+     that same optical content guide instead of starting at the bare row edge. */
+  --workbench-chat-content-inset: 6px;
 }
 
 [data-component="workbench-chat"] [data-component="session-prompt-dock"] > div {
   box-sizing: border-box;
   width: 100%;
   max-width: var(--workbench-chat-readable-width);
-  padding-inline: var(--workbench-chat-gutter);
+  padding-inline: calc(var(--workbench-chat-gutter) + var(--workbench-chat-content-inset));
 }
 
 [data-component="chat-content"] {
@@ -469,6 +473,8 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-component="chat-narrative"] {
   width: 100%;
+  padding-inline: var(--workbench-chat-content-inset);
+  box-sizing: border-box;
   font-size: var(--font-size-base);
   line-height: 1.65;
   color: var(--text-strong);
