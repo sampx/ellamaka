@@ -15,6 +15,16 @@ mock.module("@opencode-ai/ui/icon", () => ({
   Icon: (props: { name: string }) => <span data-slot="chat-icon" data-icon={props.name} />,
 }))
 
+const showDialog = mock((_content: () => JSX.Element) => undefined)
+
+mock.module("@opencode-ai/ui/context/dialog", () => ({
+  useDialog: () => ({ show: showDialog }),
+}))
+
+mock.module("@/context/language", () => ({
+  useLanguage: () => ({ t: (key: string) => key }),
+}))
+
 type FileDiffStubProps = {
   mode?: string
   fileDiff?: { deletionLines?: string[]; additionLines?: string[] }
@@ -196,6 +206,35 @@ describe("UserMessageBlock", () => {
     const host = mount(() => <UserMessageBlock message={u} parts={parts} />)
     expect(host.querySelector("[data-slot='chat-user-attachment']")).not.toBeNull()
     expect(host.textContent).toContain("a.ts")
+    host.remove()
+  })
+
+  test("renders image attachments as clickable thumbnails that open a preview", () => {
+    const u = userMessage("u-image")
+    const imageURL = "data:image/png;base64,iVBORw0KGgo="
+    const parts: Part[] = [
+      textPart("p-image", "u-image", "look at this"),
+      {
+        id: "image-1",
+        sessionID: "s",
+        messageID: "u-image",
+        type: "file",
+        mime: "image/png",
+        url: imageURL,
+        filename: "terminal.png",
+      },
+    ]
+    const host = mount(() => <UserMessageBlock message={u} parts={parts} />)
+    const image = host.querySelector("[data-slot='chat-user-image-attachment']") as HTMLButtonElement
+
+    expect(image).not.toBeNull()
+    expect(image.querySelector("img")?.getAttribute("src")).toBe(imageURL)
+    expect(image.querySelector("img")?.getAttribute("alt")).toBe("terminal.png")
+    const text = host.querySelector("[data-slot='chat-user-text']")
+    expect(image.compareDocumentPosition(text!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    image.click()
+    expect(showDialog).toHaveBeenCalledTimes(1)
     host.remove()
   })
 

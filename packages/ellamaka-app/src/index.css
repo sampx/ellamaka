@@ -453,6 +453,166 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   color: var(--text-weak);
 }
 
+/* Image attachments stay visually tied to the user's bubble while retaining
+   their own thumbnail affordance. The full image remains available on demand
+   so a large screenshot never widens the transcript lane. */
+[data-slot="chat-user-image-attachment"] {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 82%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-raised-base);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 16%);
+  cursor: zoom-in;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+[data-slot="chat-user-image-attachment"] img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-slot="chat-user-image-attachment"]:hover {
+  transform: translateY(-2px) scale(1.025);
+  border-color: var(--border-base);
+  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+}
+
+[data-slot="chat-user-image-attachment"]:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 3px;
+}
+
+/* The shared viewer is intentionally adapted into a square chat card. Small
+   images keep a comfortable minimum; zoom can grow the card before overflow
+   moves into the viewer body. */
+[data-component="chat-image-preview"] {
+  --chat-image-preview-size: min(520px, calc(100vw - 48px), calc(100vh - 48px));
+  --chat-image-preview-controls-top: min(calc(50% + 220px), calc(100vh - 60px));
+}
+
+[data-component="chat-image-preview"] [data-component="image-preview"] {
+  --chat-image-preview-max-height: var(--chat-image-preview-size);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-container"] {
+  width: var(--chat-image-preview-size);
+  max-width: var(--chat-image-preview-size);
+  height: var(--chat-image-preview-size);
+  max-height: var(--chat-image-preview-size);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-content"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 94%, transparent);
+  box-shadow:
+    0 20px 48px rgb(0 0 0 / 34%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 13%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-header"] {
+  display: none;
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-body"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  padding: 16px;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-image"] {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 7px;
+}
+
+/* Once the source image is measured, zoom owns its rendered width. The square
+   frame grows with the image to a safe cap, then the enlarged image scrolls. */
+[data-component="chat-image-preview"][data-zoom-ready="true"] [data-component="image-preview"] [data-slot="image-preview-image"] {
+  width: var(--chat-image-preview-image-width);
+  max-width: none;
+  max-height: none;
+}
+
+[data-slot="chat-image-preview-controls"] {
+  position: fixed;
+  z-index: 51;
+  top: var(--chat-image-preview-controls-top);
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 84%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 90%, transparent);
+  box-shadow:
+    0 12px 28px rgb(0 0 0 / 24%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 12%, transparent);
+  color: var(--text-base);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+
+[data-slot="chat-image-preview-controls"] button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+[data-slot="chat-image-preview-controls"] button:hover:not(:disabled) {
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-image-preview-controls"] button:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 2px;
+}
+
+[data-slot="chat-image-preview-controls"] button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+[data-slot="chat-image-preview-zoom-level"] {
+  min-width: 48px;
+  padding-inline: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
 [data-component="chat-agent-response"] {
   display: flex;
   flex-direction: column;

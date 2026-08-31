@@ -3,12 +3,16 @@ import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useLanguage } from "@/context/language"
 import { agentColor } from "@/utils/agent"
 import { agentDisplayName, formatTurnDuration } from "./chat-render.utils"
 import { chatExpansionState } from "./chat-expansion-state"
 import { WorkbenchMarkdown } from "./workbench-markdown-renderer"
+import { ChatImagePreview } from "./chat-image-preview"
+
+export { ChatImagePreview } from "./chat-image-preview"
 
 export type ChatUserActions = {
   fork?: (input: { sessionID: string; messageID: string; target: "current" | "split" }) => Promise<void> | void
@@ -67,6 +71,11 @@ export function UserMessageBlock(props: {
   const [busy, setBusy] = createSignal(false)
   const [forkOpen, setForkOpen] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
+  const dialog = useDialog()
+
+  const openImagePreview = (url: string, filename?: string) => {
+    dialog.show(() => <ChatImagePreview src={url} alt={filename} />)
+  }
 
   const run = (action: (() => Promise<void> | void) | undefined) => {
     if (!action || busy()) return
@@ -94,20 +103,35 @@ export function UserMessageBlock(props: {
 
   return (
     <div data-component="chat-user-message" data-message-id={props.message.id}>
-      <Show when={text()}>
-        <div data-slot="chat-user-text">{text()}</div>
-      </Show>
       <Show when={files().length > 0}>
         <div data-slot="chat-user-attachments">
           <For each={files()}>
             {(file) => (
-              <span data-slot="chat-user-attachment" data-file={file.url}>
-                <Icon name="file-tree" size="small" />
-                {file.filename ?? getFilename(file.url)}
-              </span>
+              <Show
+                when={file.mime.startsWith("image/")}
+                fallback={
+                  <span data-slot="chat-user-attachment" data-file={file.url}>
+                    <Icon name="file-tree" size="small" />
+                    {file.filename ?? getFilename(file.url)}
+                  </span>
+                }
+              >
+                <button
+                  type="button"
+                  data-slot="chat-user-image-attachment"
+                  data-file={file.url}
+                  aria-label={`Preview image ${file.filename ?? getFilename(file.url)}`}
+                  on:click={() => openImagePreview(file.url, file.filename ?? getFilename(file.url))}
+                >
+                  <img src={file.url} alt={file.filename ?? getFilename(file.url)} />
+                </button>
+              </Show>
             )}
           </For>
         </div>
+      </Show>
+      <Show when={text()}>
+        <div data-slot="chat-user-text">{text()}</div>
       </Show>
       <Show when={agents().length > 0}>
         <div data-slot="chat-user-agents">
