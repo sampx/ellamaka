@@ -34,26 +34,50 @@
 }
 
 /* 显式允许的垂直/水平精致滚动条 */
-.has-scrollbar::-webkit-scrollbar,
-.session-tree-scroll::-webkit-scrollbar {
+.has-scrollbar::-webkit-scrollbar {
   display: block;
   width: 6px;
   height: 6px;
 }
 
-.has-scrollbar::-webkit-scrollbar-track,
-.session-tree-scroll::-webkit-scrollbar-track {
+/* Sidebar trees (session + file): hide until hover, reserve the gutter so the
+   content box never shifts when the scrollbar appears. */
+.workbench-tree-scroll {
+  scrollbar-gutter: stable;
+}
+
+.workbench-tree-scroll::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
   background: transparent;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb,
-.session-tree-scroll::-webkit-scrollbar-thumb {
+.workbench-tree-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.workbench-tree-scroll:hover::-webkit-scrollbar-thumb,
+.workbench-tree-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: rgb(140 140 160 / 35%);
+}
+
+.workbench-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(140 140 160 / 65%);
+}
+
+.has-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.has-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(140 140 160 / 35%);
   border-radius: 4px;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb:hover,
-.session-tree-scroll::-webkit-scrollbar-thumb:hover {
+.has-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgb(140 140 160 / 65%);
 }
 

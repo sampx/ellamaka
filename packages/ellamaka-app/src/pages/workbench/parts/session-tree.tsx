@@ -263,7 +263,7 @@ export function SessionTree(props: {
   }
 
   return (
-    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 session-tree-scroll transition-colors [will-change:scroll-position]">
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 workbench-tree-scroll transition-colors [will-change:scroll-position]">
       <For each={props.spaces}>
         {(space) => (
           <SessionTreeSpace
