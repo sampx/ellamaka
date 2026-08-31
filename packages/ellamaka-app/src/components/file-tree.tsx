@@ -66,6 +66,11 @@ const kindLabel = (kind: Kind) => {
   return "M"
 }
 
+export function fileTreeRowTextClass(input: { ignored: boolean; active: boolean }) {
+  if (input.active) return ""
+  return input.ignored ? "text-text-weaker" : "text-v2-text-text-base"
+}
+
 const kindTextColor = (kind: Kind) => {
   if (kind === "add") return "color: var(--icon-diff-add-base)"
   if (kind === "del") return "color: var(--icon-diff-delete-base)"
@@ -167,8 +172,7 @@ const FileTreeNode = (
       <span
         classList={{
           "flex-1 min-w-0 text-12-medium whitespace-nowrap truncate": true,
-          "text-text-weaker": local.node.ignored,
-          "text-text-weak": !local.node.ignored && !active(),
+          [fileTreeRowTextClass({ ignored: local.node.ignored, active: active() })]: true,
         }}
         style={active() ? color() : undefined}
       >
@@ -469,7 +473,7 @@ export default function FileTree(props: {
                       <FileIcon
                         node={node}
                         class="size-4 filetree-icon filetree-icon--mono"
-                        style="color: var(--icon-weak-base)"
+                        style="color: var(--text-weaker)"
                         mono
                       />
                     </Match>

@@ -63,6 +63,7 @@
     "overrides": {
       "text-strong": "#C9D1DC",
       "text-base": "#9AA5B4",
+      "text-muted": "#8B95A7",
       "text-weak": "#8B95A7",
       "text-weaker": "#5E6A7D",
       "background-base": "#2E3440",

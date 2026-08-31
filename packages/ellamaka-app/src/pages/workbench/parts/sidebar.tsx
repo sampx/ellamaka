@@ -15,6 +15,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
 import { createFlyoutController, flyoutVisibilityClass, type FlyoutMode } from "./sidebar-flyout"
 import type { SidebarNav } from "./sidebar-nav"
+import { coerceSidebarNav } from "./sidebar-nav"
 import { FileTreePanel } from "./file-tree-panel"
 import type { FileNode } from "@opencode-ai/sdk/v2"
 
@@ -35,12 +36,12 @@ function MaintenanceIcon(props: { class?: string }) {
 function FileTreeIcon(props: { class?: string }) {
   return (
     <svg class={props.class ?? "size-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M4 3h5l2 3h9v6" />
-      <path d="M3.5 12h5l2 3h10" />
-      <rect x="3" y="3" width="7" height="6" rx="1" />
-      <rect x="2.5" y="12" width="6" height="6" rx="1" />
-      <rect x="20" y="11" width="3" height="4" rx="1" />
-      <path d="M18.5 13h1.5" />
+      <path d="M4 6h8" />
+      <path d="M4 12h8" />
+      <path d="M4 18h8" />
+      <rect x="16" y="4" width="5" height="5" rx="1" />
+      <rect x="16" y="15" width="5" height="5" rx="1" />
+      <path d="M18.5 9v3.5a2 2 0 0 1-2 2h-4" />
     </svg>
   )
 }
@@ -61,7 +62,12 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
 
   const sidebarWidth = () => (expanded() ? widthStore.width : COLLAPSED_WIDTH)
 
-  const [activeNav, setActiveNav] = createSignal<SidebarNav>("sessions")
+  const [activeNavStore, setActiveNavStore] = persisted(
+    Persist.global("workbench.sidebarNav", []),
+    createStore({ nav: "sessions" as SidebarNav }),
+  )
+  const activeNav = () => coerceSidebarNav(activeNavStore.nav)
+  const setActiveNav = (nav: SidebarNav) => setActiveNavStore({ nav })
 
   let asideRef: HTMLElement | undefined
   let resizeHandleRef: HTMLElement | undefined
