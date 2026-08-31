@@ -80,12 +80,7 @@ const playDemoSound = (id: string | undefined) => {
   }, 100)
 }
 
-export type FileTreeToggleAdapter = {
-  value: () => boolean
-  onChange: (checked: boolean) => void
-}
-
-export const SettingsGeneral: Component<{ fileTreeToggle?: FileTreeToggleAdapter }> = (props) => {
+export const SettingsGeneral: Component = () => {
   const theme = useTheme()
   const language = useLanguage()
   const permission = usePermission()
@@ -407,28 +402,6 @@ export const SettingsGeneral: Component<{ fileTreeToggle?: FileTreeToggleAdapter
     </div>
   )
 
-  const AdvancedSection = () => (
-    <Show when={props.fileTreeToggle}>
-      <div class="flex flex-col gap-1">
-        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.advanced")}</h3>
-
-        <SettingsList>
-          <SettingsRow
-            title={language.t("settings.general.row.showFileTree.title")}
-            description={language.t("settings.general.row.showFileTree.description")}
-          >
-            <div data-action="settings-show-file-tree">
-              <Switch
-                checked={props.fileTreeToggle!.value()}
-                onChange={(checked) => props.fileTreeToggle!.onChange(checked)}
-              />
-            </div>
-          </SettingsRow>
-        </SettingsList>
-      </div>
-    </Show>
-  )
-
   const AppearanceSection = () => (
     <div class="flex flex-col gap-1">
       <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
@@ -700,8 +673,6 @@ export const SettingsGeneral: Component<{ fileTreeToggle?: FileTreeToggleAdapter
         <UpdatesSection />
 
         <DisplaySection />
-
-        <AdvancedSection />
       </div>
     </div>
   )

@@ -33,8 +33,6 @@ export const useWorkbenchCommands = () => {
   const agentCommand = withCategory(language.t("command.category.agent"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
-  const shown = () => wb.display().showFileTree
-
   const proxyAction = (id: string) => ({
     get disabled() { return !actions.canExecuteActivePanelAction(id) },
     onSelect: () => actions.executeActivePanelAction(id),
@@ -192,14 +190,7 @@ export const useWorkbenchCommands = () => {
       keybind: "ctrl+comma",
       onSelect: () => {
         void import("@/components/dialog-settings").then((x) => (
-          dialog.show(() => (
-            <x.DialogSettings
-              fileTreeToggle={{
-                value: () => wb.display().showFileTree,
-                onChange: (checked) => wb.setDisplay("showFileTree", checked),
-              }}
-            />
-          ))
+          dialog.show(() => <x.DialogSettings />)
         ))
       },
     }),
@@ -214,16 +205,6 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.review.toggle"),
       ...proxyAction("review.toggle"),
     }),
-    ...(shown()
-      ? [
-    viewCommand({
-      id: "fileTree.toggle",
-      title: language.t("command.fileTree.toggle"),
-      keybind: "mod+\\",
-      onSelect: () => wb.setDisplay("showFileTree", !wb.display().showFileTree),
-    }),
-        ]
-      : []),
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),

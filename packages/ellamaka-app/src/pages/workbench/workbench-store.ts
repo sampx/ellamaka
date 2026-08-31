@@ -30,7 +30,6 @@ export type WorkbenchDisplayState = {
   showTitlebar: boolean
   showStatusbar: boolean
   showSpaceRail: boolean
-  showFileTree: boolean
   showFileViewer: boolean
 }
 
@@ -75,7 +74,6 @@ export const DISPLAY_DEFAULTS: WorkbenchDisplayState = {
   showTitlebar: true,
   showStatusbar: true,
   showSpaceRail: true,
-  showFileTree: true,
   showFileViewer: true,
 }
 
@@ -216,7 +214,6 @@ export function createWorkbenchStore(initial: PersistedWorkbench = PERSISTED_DEF
     store.display.showTitlebar
     store.display.showStatusbar
     store.display.showSpaceRail
-    store.display.showFileTree
     store.display.showFileViewer
     for (const tab of store.tabs) {
       tab.name

@@ -2,24 +2,15 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useWorkbenchState } from "../view-store"
 
 export function WorkbenchSettingsButton() {
   const language = useLanguage()
   const dialog = useDialog()
-  const wb = useWorkbenchState()
   const t = (k: string) => language.t(k)
 
   function openSettings() {
     void import("@/components/dialog-settings").then((x) => {
-      void dialog.show(() => (
-        <x.DialogSettings
-          fileTreeToggle={{
-            value: () => wb.display().showFileTree,
-            onChange: (checked) => wb.setDisplay("showFileTree", checked),
-          }}
-        />
-      ))
+      void dialog.show(() => <x.DialogSettings />)
     })
   }
 
