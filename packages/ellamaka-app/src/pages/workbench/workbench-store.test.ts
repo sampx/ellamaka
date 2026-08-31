@@ -8,6 +8,7 @@ const fixture = (): PersistedWorkbench => ({
     showStatusbar: true,
     showSpaceRail: true,
     showFileTree: true,
+      showFileViewer: true,
   },
   spaces: {
     "/fixtures/space-a": {
@@ -66,7 +67,7 @@ describe("WorkbenchStore", () => {
     // backfill id = path (General uses its name) so the type contract holds.
     const legacy = {
       schemaVersion: 2,
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { name: "General", path: "", type: "general" },
@@ -178,7 +179,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("migrates a legacy active space name to its unique path identity", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -194,7 +195,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("keeps duplicate display names distinct by path after migration", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -214,7 +215,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("falls back to General when a legacy display name is ambiguous", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -229,7 +230,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
 
   test("migrates legacy panels without slotState to have default slotState", () => {
     const legacy = {
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {
         "/fixtures/space-a": {
           activePanelID: "panel-a",
@@ -256,7 +257,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("hydrate prepends General tab when tabs lack a General entry", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [{ id: "space-a", name: "Space A", path: "/fixtures/space-a", type: "space" }],
       activeSpaceName: "Space A",
@@ -271,7 +272,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("hydrate does not duplicate General tab when already present", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -286,7 +287,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
   test("hydrate falls back to General when activeSpaceName is falsy", () => {
     const store = createWorkbenchStore()
     store.hydrate({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [{ id: "General", name: "General", path: "", type: "general" }],
     })
@@ -296,7 +297,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
 
   test("validateTabs removes invalid tabs and falls back to General when activeSpaceName is not in validNames", () => {
     const store = createWorkbenchStore({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -317,7 +318,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
 
   test("validateTabs keeps activeSpaceName when it is still valid", () => {
     const store = createWorkbenchStore({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },
@@ -382,7 +383,7 @@ describe("WorkbenchStore hydrate/migrate", () => {
 
   test("closes other tabs and closes right tabs while preserving pinned and general tabs", () => {
     const store = createWorkbenchStore({
-      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true },
+      display: { showTitlebar: true, showStatusbar: true, showSpaceRail: true, showFileTree: true, showFileViewer: true },
       spaces: {},
       tabs: [
         { id: "General", name: "General", path: "", type: "general" },

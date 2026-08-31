@@ -1,7 +1,7 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, For, createMemo } from "solid-js"
+import { Show, For, createMemo, createSignal, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSessionStore } from "../session-store"
 import { useWorkbenchState } from "../view-store"
@@ -29,6 +29,26 @@ export function PanelHeader(props: {
   const sessionStore = useSessionStore()
   const dialog = useDialog()
   const panelScope = () => scopeFromTab({ name: props.spaceName, path: props.spacePath })
+
+  const [headerMenu, setHeaderMenu] = createSignal<{ x: number; y: number } | undefined>(undefined)
+
+  const handleHeaderContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setHeaderMenu({ x: e.clientX, y: e.clientY })
+  }
+
+  const closeHeaderMenu = () => setHeaderMenu(undefined)
+
+  const canAddPanel = () => {
+    const panels = wb.spaceState(props.spacePath)?.panels ?? []
+    return panels.length < 3
+  }
+
+  const addPanel = () => {
+    const id = wb.addPanel(props.spacePath)
+    if (id) wb.setActivePanel(props.spacePath, id)
+  }
 
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
@@ -65,6 +85,7 @@ export function PanelHeader(props: {
         "bg-v2-background-bg-layer-03 border-v2-border-border-strong": props.isActive,
         "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
       }}
+      onContextMenu={handleHeaderContextMenu}
     >
       <Show when={props.isActive}>
         <div class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-v2-icon-icon-accent pointer-events-none" />
@@ -160,6 +181,74 @@ export function PanelHeader(props: {
           }}
         />
       </Show>
+
+      <Show when={headerMenu()}>
+        {(menu) => (
+          <PanelHeaderMenu
+            x={menu().x}
+            y={menu().y}
+            canAddPanel={canAddPanel()}
+            addPanelLabel={t("workbench.panel.addPanel")}
+            addPanelHint={t("workbench.panel.addPanelHint")}
+            onAddPanel={() => {
+              addPanel()
+              closeHeaderMenu()
+            }}
+            onClose={closeHeaderMenu}
+          />
+        )}
+      </Show>
+    </div>
+  )
+}
+
+function PanelHeaderMenu(props: {
+  x: number
+  y: number
+  canAddPanel: boolean
+  addPanelLabel: string
+  addPanelHint: string
+  onAddPanel: () => void
+  onClose: () => void
+}) {
+  const handleOutside = () => props.onClose()
+
+  window.addEventListener("click", handleOutside, { once: true })
+  onCleanup(() => window.removeEventListener("click", handleOutside))
+
+  return (
+    <div
+      class="fixed z-50 min-w-44 rounded-md border border-v2-border-border-base bg-v2-background-bg-base shadow-lg py-1 select-none"
+      style={{ left: `${props.x}px`, top: `${props.y}px` }}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <button
+        type="button"
+        class="flex items-center gap-2 w-full px-3 py-1.5 text-left text-11-medium text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={!props.canAddPanel}
+        title={props.canAddPanel ? undefined : props.addPanelHint}
+        onClick={() => {
+          if (!props.canAddPanel) return
+          props.onAddPanel()
+        }}
+      >
+        <svg
+          class="size-3.5 text-v2-icon-icon-accent shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          <line x1="12" y1="3" x2="12" y2="21" />
+          <path d="M16 9v6" />
+          <path d="M13 12h6" />
+        </svg>
+        <span>{props.addPanelLabel}</span>
+      </button>
     </div>
   )
 }

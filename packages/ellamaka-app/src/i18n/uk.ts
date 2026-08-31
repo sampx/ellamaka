@@ -967,4 +967,8 @@ export const dict = {
   "workspace.reset.archived.one": "1 сесію буде заархівовано.",
   "workspace.reset.archived.many": "{{count}} сесій буде заархівовано.",
   "workspace.reset.note": "Це скине робочу область, щоб вона відповідала гілці за замовчуванням.",
+  "workbench.topbar.fileViewer.show": "Показати переглядач файлів",
+  "workbench.topbar.fileViewer.hide": "Сховати переглядач файлів",
+  "workbench.panel.addPanel": "Розділити панель",
+  "workbench.panel.addPanelHint": "Додати ще одну панель до цього простору (максимум 3)",
 }

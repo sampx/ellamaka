@@ -1090,6 +1090,8 @@ export const dict = {
   "workbench.sidebar.activeSpace": "当前激活空间：{{name}}",
   "workbench.sidebar.maintenanceDesc": "配置与同步空间诊断结构。",
   "workbench.sidebar.resizeHandle": "拖动调整宽度",
-  "workbench.topbar.splitPanel": "拆分面板",
-  "workbench.topbar.splitPanelHint": "拆分面板 (最多3个)",
+  "workbench.topbar.fileViewer.show": "显示文件查看面板",
+  "workbench.topbar.fileViewer.hide": "收起文件查看面板",
+  "workbench.panel.addPanel": "拆分面板",
+  "workbench.panel.addPanelHint": "在此空间中新增一个面板（最多3个）",
 } satisfies Partial<Record<Keys, string>>

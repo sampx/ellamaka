@@ -58,6 +58,9 @@ function WorkbenchShell() {
     }
     setViewerFiles((tabs) => openViewerFile(tabs, entry))
     setViewerActiveKey(viewerTabKey(entry))
+    // Opening a file is an explicit intent to see content: re-expand the
+    // viewer when the user has collapsed it via the titlebar toggle.
+    if (!wb.display().showFileViewer) wb.setDisplay("showFileViewer", true)
   }
   const closeViewerFile = (key: string) => {
     const result = closeViewerTab(viewerFiles(), viewerActiveKey() ?? "", key)
@@ -207,7 +210,7 @@ function WorkbenchShell() {
             <SpaceRail onFileClick={handleFileClick} />
             <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <Workspace />
-              <Show when={viewerFiles().length > 0 && viewerActiveKey()}>
+              <Show when={display().showFileViewer && viewerFiles().length > 0 && viewerActiveKey()}>
                 <FileViewerSurface
                   files={viewerFiles()}
                   activeKey={viewerActiveKey()!}

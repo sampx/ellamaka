@@ -1132,6 +1132,8 @@ export const dict = {
   "workbench.sidebar.activeSpace": "Active space: {{name}}",
   "workbench.sidebar.maintenanceDesc": "Configure and sync space diagnostics structure.",
   "workbench.sidebar.resizeHandle": "Drag to resize width",
-  "workbench.topbar.splitPanel": "Split Panel",
-  "workbench.topbar.splitPanelHint": "Split panel (max 3)",
+  "workbench.topbar.fileViewer.show": "Show file viewer",
+  "workbench.topbar.fileViewer.hide": "Hide file viewer",
+  "workbench.panel.addPanel": "Split panel",
+  "workbench.panel.addPanelHint": "Add another panel to this space (max 3)",
 }
