@@ -1,5 +1,5 @@
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
@@ -184,6 +184,23 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
     handleSessionClick(sessionId)
   }
 
+  // Flyout must not cover the titlebar or the status bar: it is clamped to the
+  // live bounding rect of the aside, which sits between those two chrome bars.
+  // top/bottom are reactive so titlebar/statusbar toggles re-clamp the flyout.
+  const [flyoutTop, setFlyoutTop] = createSignal(8)
+  const [flyoutBottom, setFlyoutBottom] = createSignal(8)
+  createEffect(
+    on(
+      flyoutOpen,
+      () => {
+        if (!asideRef) return
+        const rect = asideRef.getBoundingClientRect()
+        setFlyoutTop(Math.max(rect.top + 8, 8))
+        setFlyoutBottom(Math.max(window.innerHeight - rect.bottom + 8, 8))
+      },
+    ),
+  )
+
   return (
     <>
       <aside
@@ -326,8 +343,8 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
       <Portal>
         <div
           data-component="space-rail-flyout"
-          class={`fixed top-2 bottom-2 z-40 flex flex-col min-h-0 rounded-lg border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] overflow-hidden transition-opacity duration-150 ${flyoutVisibilityClass(flyoutOpen())}`}
-          style={{ left: `${COLLAPSED_WIDTH}px`, width: `${widthStore.width}px` }}
+          class={`fixed z-40 flex flex-col min-h-0 rounded-lg border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] overflow-hidden transition-opacity duration-150 ${flyoutVisibilityClass(flyoutOpen())}`}
+          style={{ left: `${COLLAPSED_WIDTH}px`, width: `${widthStore.width}px`, top: `${flyoutTop()}px`, bottom: `${flyoutBottom()}px` }}
           onMouseEnter={() => flyout.onFlyoutEnter()}
           onMouseLeave={() => flyout.onFlyoutLeave()}
         >
