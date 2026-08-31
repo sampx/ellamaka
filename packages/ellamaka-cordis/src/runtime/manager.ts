@@ -19,10 +19,12 @@ import { createDshLogger, type LogBridge } from "./log.js"
 import { DEFAULT_DSH_RUNTIME_MANIFEST } from "./embed-manifest.js"
 
 // Re-export the wiring surface entries consume from `@wopal/ellamaka-cordis/runtime`
-// in one place: the default manifest and the install-anchor resolver (Task 4).
+// in one place: the default manifest, the install-anchor resolver, and the
+// runtime registry selector (Task 4 / §3.4.3).
 export { DEFAULT_DSH_RUNTIME_MANIFEST }
 export { resolveInstallAnchor } from "./status.js"
-export { closureLockJson } from "./materializer.js"
+export { pickFastestRegistry, CANDIDATE_REGISTRIES, DEFAULT_REGISTRY } from "./registry.js"
+export type { RegistryCandidate, RegistryProbeResult } from "./registry.js"
 export type { InstallAnchor } from "./status.js"
 
 /**

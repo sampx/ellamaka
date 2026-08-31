@@ -44,8 +44,6 @@ declare module "virtual:opencode-server" {
       schema: "ellamaka.dsh-runtime/v1"
       bridgeAbi: number
       dependencies: Record<string, string>
-      packageLock: Record<string, unknown>
-      registry?: string
       fingerprint?: string
     }
 

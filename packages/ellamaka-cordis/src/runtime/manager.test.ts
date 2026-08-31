@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { initializeDshRuntime, type InitializeDshOptions, type ManagerDeps } from "./manager"
 import type { DshRuntimeManifestV1 } from "./manifest"
 import { closureNameForFingerprint, resolveDshLayout } from "./status"
-import { closureLockJson } from "./materializer"
 
 const dirs: string[] = []
 
@@ -28,21 +27,22 @@ const MANIFEST: DshRuntimeManifestV1 = {
     "@deepseek-ai/dsh": "0.1.1-rc.2",
     "@deepseek-ai/cordis": "4.0.1",
   },
-  packageLock: {
-    "@deepseek-ai/dsh": [
-      "@deepseek-ai/dsh@0.1.1-rc.2",
-      "https://registry.npmmirror.com/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz",
-      {},
-      "sha512-abc123",
-    ],
-    "@deepseek-ai/cordis": [
-      "@deepseek-ai/cordis@4.0.1",
-      "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.1.tgz",
-      {},
-      "sha512-def456",
-    ],
-  },
   fingerprint: "sha256:9e1ee84dfdd992bf9ebb37c7506f13bc17b87158d02783c2b1b24fd25a32cda7",
+}
+
+/** A minimal valid npm lockfile v3 document (the runtime-lock shape). */
+function runtimeLock(manifest: DshRuntimeManifestV1): string {
+  const packages: Record<string, { version: string }> = {
+    "": { version: "0.0.0" },
+  }
+  for (const [name, version] of Object.entries(manifest.dependencies)) {
+    packages[`node_modules/${name}`] = { version }
+  }
+  return JSON.stringify(
+    { name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages },
+    null,
+    2,
+  )
 }
 
 /** The closure package.json for a direct dependency; dsh carries a bin entry (real shape). */
@@ -67,6 +67,8 @@ function fakeArborist(home: string, reifyHook?: () => void | Promise<void>): Man
           mkdirSync(dir, { recursive: true })
           writeFileSync(join(dir, "package.json"), depPkgJson(name))
         }
+        // The real Arborist produces the runtime lock during reify.
+        writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
       },
     }),
   }
@@ -79,6 +81,13 @@ function makeBaseOptions(home: string, overrides: Partial<InitializeDshOptions> 
     entry: "serve",
     manifest: MANIFEST,
     ...overrides,
+    // A stub fetch so the registry-selection probe never touches the network
+    // in tests: it returns a fast, reachable response for any candidate. Caller
+    // deps (arborist) are merged over this default fetch.
+    deps: {
+      fetch: async () => ({ status: 200, ok: true }),
+      ...overrides.deps,
+    },
   }
 }
 
@@ -97,9 +106,8 @@ function seedClosureAt(home: string, manifest: DshRuntimeManifestV1): string {
   writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: manifest.dependencies["@deepseek-ai/cordis"] }))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
-  // The stored lock must be the canonical npm v3 lock derived from the manifest
-  // (B-03 binding), matching what the real materialiser writes.
-  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
+  // The stored lock is the runtime lock (valid npm v3 shape).
+  writeFileSync(join(closureDir, "package-lock.json"), runtimeLock(manifest))
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
 
@@ -211,6 +219,7 @@ describe("initializeDshRuntime state machine", () => {
             mkdirSync(dir, { recursive: true })
             writeFileSync(join(dir, "package.json"), depPkgJson(name))
           }
+          writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
         },
       }),
     }
@@ -326,6 +335,7 @@ describe("B-05: timeout must not abandon a running reify while releasing the loc
               mkdirSync(dir, { recursive: true })
               writeFileSync(join(dir, "package.json"), depPkgJson(name))
             }
+            writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
           },
         }),
       }
@@ -377,6 +387,7 @@ describe("B-05: timeout must not abandon a running reify while releasing the loc
               mkdirSync(dir, { recursive: true })
               writeFileSync(join(dir, "package.json"), depPkgJson(name))
             }
+            writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
           },
         }),
       }
@@ -409,7 +420,7 @@ describe("B-06: loader failure degrades instead of crashing", () => {
       writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: MANIFEST.dependencies["@deepseek-ai/cordis"] }))
       writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(MANIFEST))
       writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
-      writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(MANIFEST))
+      writeFileSync(join(closureDir, "package-lock.json"), runtimeLock(MANIFEST))
     }
     seed()
     const status = await initializeDshRuntime(makeBaseOptions(home))

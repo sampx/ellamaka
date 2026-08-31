@@ -1,7 +1,6 @@
 /**
  * Generate `generated/dsh-runtime-manifest.json` from the DSH official direct
- * dependencies declared in this package's package.json plus the workspace lock
- * file (bun.lock).
+ * dependencies declared in this package's package.json.
  *
  *   bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts
  *   bun packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts --check
@@ -9,6 +8,10 @@
  * Default: write the generated manifest. `--check`: compare the in-repo
  * `generated/dsh-runtime-manifest.json` against freshly computed output and
  * exit non-zero on mismatch (drift guard for CI/release gate), without writing.
+ *
+ * The manifest carries only the exact direct dependency versions. No lock file
+ * is read or embedded: the closure lock is produced at runtime by npm during
+ * materialisation (DESIGN-dsh-poc §3.4.3).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -45,29 +48,8 @@ function readJson(path: string): unknown {
   }
 }
 
-/**
- * bun.lock is written with trailing commas, which plain JSON.parse rejects.
- * Strip trailing commas before object/array closing braces so it becomes strict JSON.
- */
-function readLock(path: string): unknown {
-  if (!existsSync(path)) {
-    fatal(`lock file not found: ${path}`)
-  }
-  const raw = readFileSync(path, "utf8")
-  const cleaned = raw.replace(/,(\s*[}\]])/g, "$1")
-  try {
-    return JSON.parse(cleaned)
-  } catch (error) {
-    fatal(`failed to parse lock file ${path}: ${(error as Error).message}`)
-  }
-}
-
 const pkg = readJson(join(pkgRoot, "package.json")) as {
   dependencies?: Record<string, string>
-}
-const lock = readLock(join(pkgRoot, "..", "..", "bun.lock")) as {
-  lockfileVersion: number
-  packages: Record<string, unknown>
 }
 
 const deps = pkg.dependencies ?? {}
@@ -77,10 +59,7 @@ if (!("@deepseek-ai/dsh" in deps)) {
   )
 }
 
-const manifest: DshRuntimeManifestV1 = buildDshRuntimeManifest(
-  { dependencies: deps },
-  { lockfileVersion: lock.lockfileVersion, packages: lock.packages },
-)
+const manifest: DshRuntimeManifestV1 = buildDshRuntimeManifest({ dependencies: deps })
 
 const output = `${canonicalSerialize(manifest)}\n`
 

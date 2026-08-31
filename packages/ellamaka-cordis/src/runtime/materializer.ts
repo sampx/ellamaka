@@ -5,17 +5,21 @@ import { Arborist } from "@npmcli/arborist"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
 import { canonicalSerialize } from "./manifest.js"
 import { closureNameForFingerprint, expandCacheDir, resolveDshLayout, type DshLayout } from "./status.js"
+import { pickFastestRegistry, type FetchLike } from "./registry.js"
 import type { LogBridge } from "./log.js"
 
 /**
  * Closure materialiser (DESIGN §3.4.5 stages 5-7).
  *
  * Pure-injection seams:
- * - `deps.arborist` is the only network/install boundary. Production resolves
- *   the real `@npmcli/arborist` (a runtime dependency of this package) with an
+ * - `deps.arborist` is the network/install boundary. Production resolves the
+ *   real `@npmcli/arborist` (a runtime dependency of this package) with an
  *   explicit `~/.npm/_cacache` cache so cross-closure common deps hit the
  *   cache and interrupted retries only fill gaps; tests inject a fake whose
  *   `reify` synthesises the closure files.
+ * - `deps.fetch` (when provided) drives registry selection; production uses
+ *   the global `fetch`. Tests inject a stub so the fastest-registry probe
+ *   never hits the network.
  *
  * Staging lifecycle (DESIGN §3.4.7, append-only):
  * - cleared at the start (the caller holds the materialise lock);
@@ -35,6 +39,19 @@ export interface ArboristFactory {
 
 export interface MaterializeDeps {
   arborist?: ArboristFactory
+  /** Fetch for registry selection; production defaults to global fetch. */
+  fetch?: FetchLike
+  /**
+   * Explicit registry override for this materialisation (tests use a local
+   * `file:` tarball source). When set, it wins over the dynamic fastest-registry
+   * probe.
+   */
+  registry?: string
+  /**
+   * Override the dependency specs written into the staged package.json
+   * (tests point direct deps at local `file:` tarballs). Keyed by package name.
+   */
+  dependencySpecs?: Record<string, string>
 }
 
 export interface MaterializeResult {
@@ -56,14 +73,49 @@ async function createRealArborist(opts: Record<string, unknown>): Promise<Arbori
   return new Arborist(opts)
 }
 
-/** The closure package.json: only the manifest's exact DSH direct dependencies. */
-function closurePackageJson(manifest: DshRuntimeManifestV1): string {
+/** The global fetch (bun & node 18+). */
+const globalFetch: FetchLike = (url, init) => fetch(url, init)
+
+/**
+ * One registry probe per process: the first materialisation measures all
+ * candidates and reuses the winner for the rest of the process (subsequent
+ * closures are usually already cached, so re-probing would be pure overhead).
+ */
+let cachedRegistry: string | undefined
+
+/**
+ * Resolve the registry for this materialisation. An explicit `deps.registry`
+ * (tests) wins; otherwise probe the candidates with the injected fetch (or the
+ * global fetch) and cache the winner per process.
+ */
+async function resolveRegistry(deps: MaterializeDeps | undefined): Promise<string> {
+  if (deps?.registry) return deps.registry
+  if (cachedRegistry) return cachedRegistry
+  const fetchFn = deps?.fetch ?? globalFetch
+  const winner = await pickFastestRegistry(fetchFn)
+  cachedRegistry = winner.url
+  return winner.url
+}
+
+/**
+ * The closure package.json: the manifest's exact DSH direct dependencies, with
+ * optional per-package spec overrides (tests point direct deps at local
+ * `file:` tarballs).
+ */
+function closurePackageJson(
+  manifest: DshRuntimeManifestV1,
+  specOverrides?: Record<string, string>,
+): string {
+  const dependencies: Record<string, string> = {}
+  for (const [name, version] of Object.entries(manifest.dependencies)) {
+    dependencies[name] = specOverrides?.[name] ?? version
+  }
   return JSON.stringify(
     {
       name: "ellamaka-dsh-closure",
       private: true,
       type: "module",
-      dependencies: manifest.dependencies,
+      dependencies,
     },
     null,
     2,
@@ -71,43 +123,31 @@ function closurePackageJson(manifest: DshRuntimeManifestV1): string {
 }
 
 /**
- * Build an npm package-lock v3 document from the manifest's lock closure so
- * Arborist can reify deterministically (pinned versions, resolved tarball URLs
- * and integrity carried straight from the embedded lock; no `latest`, no
- * registry re-resolution). The root `""` entry declares the direct
- * dependencies so Arborist knows the install target.
+ * The runtime lock: the npm `package-lock.json` Arborist produces while
+ * reifying the exact dependency versions. The materialiser writes the closure
+ * package.json (exact versions) and lets Arborist resolve the transitive tree
+ * against the registry at first install; the lock it emits becomes the
+ * closure's immutable runtime lock (DESIGN §3.4.3 — the closure lock is
+ * produced at runtime by npm, not derived from a build-time bun.lock).
  *
- * The same function is used by {@link verifyClosureContent} to canonical-bind a
- * stored closure lock to the manifest's packageLock (B-03).
+ * This helper reads the lock from a closure/staging dir and validates that it
+ * is a well-formed npm lockfile v3 document (used by content verification and
+ * the fast-path inspect: presence + shape, not byte-compare against a
+ * build-time lock — there is none anymore).
  */
-export function closureLockJson(manifest: DshRuntimeManifestV1): string {
-  const packages: Record<string, unknown> = {
-    "": { name: "ellamaka-dsh-closure", dependencies: manifest.dependencies },
-  }
-  for (const [name, entry] of Object.entries(manifest.packageLock)) {
-    if (!Array.isArray(entry) || entry.length === 0) continue
-    const [spec, tarballUrl, specObj, integrity] = entry as [
-      string | undefined,
-      string | undefined,
-      Record<string, unknown> | undefined,
-      string | undefined,
-    ]
-    const version = spec && spec.includes("@") ? spec.slice(spec.lastIndexOf("@") + 1) : spec ?? ""
-    const record: Record<string, unknown> = { version }
-    if (tarballUrl) record.resolved = tarballUrl
-    if (integrity) record.integrity = integrity
-    const map = specObj as Record<string, unknown> | undefined
-    for (const key of ["dependencies", "peerDependencies", "optionalDependencies", "bin"] as const) {
-      const value = map?.[key]
-      if (value && typeof value === "object") record[key] = value
+export function readRuntimeLock(closureDir: string): Record<string, unknown> | null {
+  const path = join(closureDir, "package-lock.json")
+  if (!existsSync(path)) return null
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { lockfileVersion?: unknown; packages?: unknown }
+    if (parsed === null || typeof parsed !== "object") return null
+    if (parsed.lockfileVersion !== 3 || typeof parsed.packages !== "object" || parsed.packages === null) {
+      return null
     }
-    packages[`node_modules/${name}`] = record
+    return parsed
+  } catch {
+    return null
   }
-  return JSON.stringify(
-    { name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages },
-    null,
-    2,
-  )
 }
 
 function anchorFor(layout: DshLayout, closureName: string): string {
@@ -162,6 +202,10 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
   // Self-managed staging: clear any leftover scene from a previous run.
   await clearStaging(layout, log)
 
+  // Select the fastest reachable registry for this user (per-process cache).
+  const registry = await resolveRegistry(options.deps)
+  log?.info("materializer.registry", { registry })
+
   const arboristFactory = options.deps?.arborist ?? { create: createRealArborist }
   const arborist = await arboristFactory.create({
     path: layout.stagingDir,
@@ -170,31 +214,44 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
     progress: false,
     ignoreScripts: true,
     savePrefix: "",
+    // The exact dependency versions come from the manifest; the registry is the
+    // transport channel, not the version truth source (DESIGN §3.4.3). Picking
+    // the fastest reachable mirror per user keeps installs fast worldwide.
+    registry,
     // The DSH dependency tree carries peer conflicts that bun tolerates but
     // Arborist's strict peer resolution rejects (`could not resolve`). `force`
     // relaxes peer-conflict errors while still installing peer dependencies
     // (unlike `legacyPeerDeps`, which skips them and leaves the closure
     // missing packages the runtime imports). The closure is a self-contained
-    // install of pinned versions, so peer resolution is not needed here.
+    // install of exact versions, so peer resolution is not needed here.
     force: true,
   })
 
-  // Stage the manifest + lock so Arborist reifies exactly the declared closure.
+  // Stage the manifest so Arborist reifies exactly the declared closure. The
+  // package-lock.json is NOT written here: Arborist resolves the exact
+  // dependency versions against the registry and PRODUCES the lock itself,
+  // which becomes the closure's immutable runtime lock (DESIGN §3.4.3).
   mkdirSync(layout.stagingDir, { recursive: true })
-  writeFileSync(join(layout.stagingDir, "package.json"), closurePackageJson(options.manifest))
-  writeFileSync(join(layout.stagingDir, "package-lock.json"), closureLockJson(options.manifest))
+  writeFileSync(
+    join(layout.stagingDir, "package.json"),
+    closurePackageJson(options.manifest, options.deps?.dependencySpecs),
+  )
   // Write the runtime-manifest into staging so content verification (B-02/B-03)
   // can run against the staged tree before activation.
   writeFileSync(join(layout.stagingDir, "runtime-manifest.json"), JSON.stringify(options.manifest))
-  log?.info("materializer.reify", { fingerprint, cache: expandCacheDir() })
+  log?.info("materializer.reify", { fingerprint, cache: expandCacheDir(), registry })
 
-  await arborist.reify({ save: false, saveType: "prod" })
+  // `save: true` makes Arborist persist the resolved tree to package-lock.json
+  // (the closure's immutable runtime lock). Exact version specs in package.json
+  // are preserved as-is; only the lock file is added/updated. With `save:false`
+  // Arborist skips `saveIdealTree` entirely and no lock is written.
+  await arborist.reify({ save: true, saveType: "prod" })
 
   // Verify the staged tree CONTENT before activation (B-02). Existence alone is
   // not enough: a staged direct dep installed at the wrong version must fail
   // here, keep staging for diagnosis, and never activate. This runs the same
   // full verifyClosureContent() used by the fast-path inspect (canonical
-  // runtime-manifest compare + pinned dep versions + lock binding).
+  // runtime-manifest compare + runtime-lock shape + pinned dep versions).
   const stagedClosureDir = layout.stagingDir
   const missing = directDepsMissingOnDisk({
     closureDir: stagedClosureDir,
@@ -257,13 +314,14 @@ function directDepsMissingOnDisk(options: {
  * 2. `package-lock.json` is a well-formed npm lockfile v3 document (parses as
  *    JSON with `lockfileVersion === 3` and a `packages` object). A truncated
  *    or corrupt lock fails to parse and marks the closure damaged; the lock is
- *    the provenance record the closure was reified from, so a damaged lock
- *    cannot be trusted even though the runtime does not re-read it post-activate.
+ *    the immutable runtime lock Arborist produced at first materialisation, so
+ *    a damaged lock cannot be trusted even though the runtime does not re-read
+ *    it post-activate. Content is not compared against any build-time lock —
+ *    there is none (DESIGN §3.4.3).
  * 3. every direct dependency's installed `node_modules/<pkg>/package.json`
- *    `version` equals the manifest's pinned version. The DSH manifest pins
- *    exact versions (derived from the committed lock), so an exact string
- *    compare is the intended fingerprint semantics; a range spec would never
- *    be emitted by the generator.
+ *    `version` equals the manifest's exact version. The DSH manifest pins
+ *    exact versions, so an exact string compare is the intended fingerprint
+ *    semantics; a range spec would never be emitted by the generator.
  *
  * Throws on the first mismatch.
  */
@@ -272,16 +330,13 @@ function verifyClosureContent(closureDir: string, manifest: DshRuntimeManifestV1
   if (canonicalSerialize(stored) !== canonicalSerialize(manifest)) {
     throw new Error("dsh runtime: closure runtime-manifest.json does not match the embedded manifest")
   }
-  // Lock binding (B-03): the stored npm lockfile v3 document must canonical-equal
-  // the deterministic npm v3 lock derived from the manifest's packageLock
-  // (closureLockJson). This binds the whole tree — resolved tarball URLs,
-  // integrity, and every transitive entry — with no per-entry logic. A
-  // valid-shaped-but-different lock (empty packages map, altered integrity, an
-  // extra/different entry) fails and marks the closure damaged.
-  const storedLock = JSON.parse(readFileSync(join(closureDir, "package-lock.json"), "utf8")) as unknown
-  const expectedLock = JSON.parse(closureLockJson(manifest)) as unknown
-  if (canonicalSerialize(storedLock) !== canonicalSerialize(expectedLock)) {
-    throw new Error("dsh runtime: closure package-lock.json does not match the embedded manifest lock")
+  // Runtime lock (B-03): the closure must carry a well-formed npm lockfile v3
+  // document — the lock Arborist produced when this closure was first
+  // materialised (the immutable runtime lock). There is no build-time lock to
+  // compare against anymore; presence + shape is the binding, so a missing,
+  // truncated, or malformed lock marks the closure damaged.
+  if (readRuntimeLock(closureDir) === null) {
+    throw new Error("dsh runtime: closure package-lock.json is missing or malformed")
   }
   for (const name of Object.keys(manifest.dependencies)) {
     const pinned = manifest.dependencies[name]

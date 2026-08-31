@@ -57,8 +57,9 @@ describe("W-03: real Arborist reify against a local offline fixture", () => {
       const dshTarball = makeTarball(fixture, "@deepseek-ai/dsh", "1.0.0-reify")
       const cordisTarball = makeTarball(fixture, "@deepseek-ai/cordis", "4.0.1")
 
-      // A manifest whose lock closure points at the LOCAL tarballs — the real
-      // arborist reifies from disk, proving the whole pipeline is offline.
+      // A manifest whose direct deps resolve to the LOCAL tarballs via
+      // dependencySpecs — the real arborist reifies from disk, proving the
+      // whole pipeline works without any network registry.
       const manifest: DshRuntimeManifestV1 = {
         schema: "ellamaka.dsh-runtime/v1",
         bridgeAbi: 1,
@@ -66,17 +67,23 @@ describe("W-03: real Arborist reify against a local offline fixture", () => {
           "@deepseek-ai/dsh": "1.0.0-reify",
           "@deepseek-ai/cordis": "4.0.1",
         },
-        packageLock: {
-          "@deepseek-ai/dsh": ["@deepseek-ai/dsh@1.0.0-reify", `file:${dshTarball}`, {}],
-          "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1", `file:${cordisTarball}`, {}],
-        },
-        registry: "file:",
       }
       manifest.fingerprint = computeManifestFingerprint(manifest)
 
-      // Omit deps so materializeClosure uses the REAL production arborist
-      // factory (no fake injected).
-      const result = await materializeClosure({ home, manifest })
+      // Omit deps.arborist so materializeClosure uses the REAL production
+      // arborist factory (no fake injected). Point the direct deps at the
+      // local tarballs so nothing touches the network.
+      const result = await materializeClosure({
+        home,
+        manifest,
+        deps: {
+          registry: "file:",
+          dependencySpecs: {
+            "@deepseek-ai/dsh": `file:${dshTarball}`,
+            "@deepseek-ai/cordis": `file:${cordisTarball}`,
+          },
+        },
+      })
 
       const closureDir = result.closureDir
       expect(existsSync(closureDir)).toBe(true)

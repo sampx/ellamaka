@@ -123,10 +123,11 @@ pgid_of() {
 }
 
 # Gate every dsh dev startup path on manifest freshness (W-04): the embedded
-# dsh-runtime-manifest.json must match the committed lock before the backend /
-# sidecar boots, or the dev instance would materialise a stale closure. Serves
-# as the dev-side equivalent of the CI/release --check gate. Fail-fast with a
-# pointer to the generator.
+# dsh-runtime-manifest.json must match the exact direct-dependency versions in
+# packages/ellamaka-cordis/package.json before the backend / sidecar boots, or
+# the dev instance would materialise a stale closure. Serves as the dev-side
+# equivalent of the CI/release --check gate. Fail-fast with a pointer to the
+# generator.
 require_dsh_manifest_fresh() {
   local manifest_generator="$root/packages/ellamaka-cordis/script/generate-dsh-runtime-manifest.ts"
   if [ ! -f "$manifest_generator" ]; then

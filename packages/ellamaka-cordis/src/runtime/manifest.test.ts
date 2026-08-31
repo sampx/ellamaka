@@ -1,42 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import {
-  DEFAULT_REGISTRY,
   buildDshRuntimeManifest,
   canonicalSerialize,
   computeManifestFingerprint,
-  extractPackageLock,
   parseDshRuntimeManifest,
   type DshRuntimeManifestV1,
-  type BunLockFile,
 } from "./manifest"
 
 // --- helpers ---------------------------------------------------------------
-
-const MINIMAL_LOCK: BunLockFile = {
-  lockfileVersion: 1,
-  packages: {
-    "@deepseek-ai/dsh": [
-      "@deepseek-ai/dsh@0.1.1-rc.2",
-      "https://registry.npmmirror.com/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz",
-      {},
-      "sha512-abc123",
-    ],
-    "@deepseek-ai/cordis": [
-      "@deepseek-ai/cordis@4.0.1",
-      "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.1.tgz",
-      {},
-      "sha512-def456",
-    ],
-  },
-}
 
 function makeManifest(overrides: Partial<DshRuntimeManifestV1> = {}): DshRuntimeManifestV1 {
   const base: DshRuntimeManifestV1 = {
     schema: "ellamaka.dsh-runtime/v1",
     bridgeAbi: 1,
     dependencies: { "@deepseek-ai/dsh": "0.1.1-rc.2" },
-    packageLock: MINIMAL_LOCK.packages,
     fingerprint: "sha512-placeholder",
   }
   return { ...base, ...overrides }
@@ -105,61 +83,22 @@ describe("computeManifestFingerprint", () => {
   })
 })
 
-// --- registry assignment ----------------------------------------------------
+// --- buildDshRuntimeManifest ------------------------------------------------
 
-describe("buildDshRuntimeManifest registry", () => {
-  test("carries the derived origin when present in the lock", () => {
-    const m = buildDshRuntimeManifest(PKG, MINIMAL_LOCK)
-    expect(m.registry).toBe("https://registry.npmmirror.com")
+describe("buildDshRuntimeManifest", () => {
+  test("carries the exact DSH direct dependency versions", () => {
+    const m = buildDshRuntimeManifest(PKG)
+    expect(m.dependencies["@deepseek-ai/dsh"]).toBe("0.1.1-rc.2")
+    expect(m.dependencies["@deepseek-ai/cordis"]).toBe("4.0.1")
   })
 
-  test("defaults to the official npm registry when no origin is derivable", () => {
-    const lockNoIntegrity: BunLockFile = {
-      lockfileVersion: 1,
-      packages: {
-        "@deepseek-ai/dsh": ["@deepseek-ai/dsh@0.1.1-rc.2"],
-        "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1"],
-      },
-    }
-    const m = buildDshRuntimeManifest(PKG, lockNoIntegrity)
-    expect(m.registry).toBe(DEFAULT_REGISTRY)
-    expect(m.registry).toBe("https://registry.npmjs.org/")
+  test("carries no lock snapshot or registry field (runtime resolves them)", () => {
+    const m = buildDshRuntimeManifest(PKG)
+    expect(m.packageLock).toBeUndefined()
+    expect(m.registry).toBeUndefined()
   })
 
-  test("always sets a registry field", () => {
-    const lockNoIntegrity: BunLockFile = {
-      lockfileVersion: 1,
-      packages: {
-        "@deepseek-ai/dsh": ["@deepseek-ai/dsh@0.1.1-rc.2"],
-        "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1"],
-      },
-    }
-    const m = buildDshRuntimeManifest(PKG, lockNoIntegrity)
-    expect(typeof m.registry).toBe("string")
-    expect(m.registry!.length).toBeGreaterThan(0)
-  })
-})
-
-// --- extractPackageLock -----------------------------------------------------
-
-describe("extractPackageLock", () => {
-  test("returns the direct dependencies from the lock packages map", () => {
-    const lock = extractPackageLock(PKG, MINIMAL_LOCK)
-    expect(lock["@deepseek-ai/dsh"]).toBeDefined()
-    expect(lock["@deepseek-ai/cordis"]).toBeDefined()
-  })
-
-  test("throws with a diagnostic naming the missing package when a direct dep is absent", () => {
-    const lock: BunLockFile = {
-      lockfileVersion: 1,
-      packages: {
-        "@deepseek-ai/cordis": MINIMAL_LOCK.packages["@deepseek-ai/cordis"],
-      },
-    }
-    expect(() => extractPackageLock(PKG, lock)).toThrow(/@deepseek-ai\/dsh/)
-  })
-
-  test("does not leak non-DSH runtime deps into the manifest closure", () => {
+  test("does not leak non-DSH runtime deps into the manifest", () => {
     // The cordis package carries @npmcli/arborist as a runtime dependency for
     // the materialiser, but the DSH production closure must contain only the
     // official @deepseek-ai/* packages (DESIGN §3.4.1).
@@ -169,17 +108,16 @@ describe("extractPackageLock", () => {
         "@npmcli/arborist": "9.4.0",
       },
     }
-    const lockWithArborist: BunLockFile = {
-      lockfileVersion: 1,
-      packages: {
-        ...MINIMAL_LOCK.packages,
-        "@npmcli/arborist": ["@npmcli/arborist@9.4.0", "https://registry.npmjs.org/@npmcli/arborist/-/arborist-9.4.0.tgz", {}, "sha512-abc"],
-      },
-    }
-    const m = buildDshRuntimeManifest(pkgWithArborist, lockWithArborist)
+    const m = buildDshRuntimeManifest(pkgWithArborist)
     expect(m.dependencies["@npmcli/arborist"]).toBeUndefined()
-    expect(m.packageLock["@npmcli/arborist"]).toBeUndefined()
     expect(m.dependencies["@deepseek-ai/dsh"]).toBe("0.1.1-rc.2")
+  })
+
+  test("computes a fingerprint covering the exact dependency set", () => {
+    const a = buildDshRuntimeManifest(PKG)
+    const b = buildDshRuntimeManifest({ dependencies: { ...PKG.dependencies, "@deepseek-ai/cordis": "4.0.2" } })
+    expect(a.fingerprint).not.toBe(b.fingerprint)
+    expect(a.fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/)
   })
 })
 

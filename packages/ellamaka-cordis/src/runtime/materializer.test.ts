@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import {
   checkClosureIntegrity,
-  closureLockJson,
   materializeClosure,
   validateClosureOnDisk,
   type MaterializeDeps,
@@ -33,26 +32,29 @@ const MANIFEST: DshRuntimeManifestV1 = {
     "@deepseek-ai/dsh": "0.1.1-rc.2",
     "@deepseek-ai/cordis": "4.0.1",
   },
-  packageLock: {
-    "@deepseek-ai/dsh": [
-      "@deepseek-ai/dsh@0.1.1-rc.2",
-      "https://registry.npmmirror.com/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz",
-      {},
-      "sha512-abc123",
-    ],
-    "@deepseek-ai/cordis": [
-      "@deepseek-ai/cordis@4.0.1",
-      "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.1.tgz",
-      {},
-      "sha512-def456",
-    ],
-  },
   fingerprint: "sha256:9e1ee84dfdd992bf9ebb37c7506f13bc17b87158d02783c2b1b24fd25a32cda7",
+}
+
+/** A minimal valid npm lockfile v3 document (the runtime-lock shape). */
+function runtimeLock(manifest: DshRuntimeManifestV1): string {
+  const packages: Record<string, { version: string }> = {
+    "": { version: "0.0.0" },
+  }
+  for (const [name, version] of Object.entries(manifest.dependencies)) {
+    packages[`node_modules/${name}`] = { version }
+  }
+  return JSON.stringify(
+    { name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages },
+    null,
+    2,
+  )
 }
 
 /** A fake arborist whose reify synthesises closure node_modules in `home` staging. */
 function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps> {
   return {
+    // A stub fetch so the registry-selection probe never touches the network.
+    fetch: async () => ({ status: 200, ok: true }),
     arborist: {
       create: async () => ({
         reify: async () => {
@@ -65,6 +67,9 @@ function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps> 
             if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
             writeFileSync(join(dir, "package.json"), JSON.stringify(body))
           }
+          // The real Arborist produces the runtime lock during reify; the fake
+          // must too, so staged verification (lock presence) passes.
+          writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
         },
       }),
     },
@@ -81,9 +86,8 @@ function seedClosure(home: string, manifest = MANIFEST): string {
   writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: manifest.dependencies["@deepseek-ai/cordis"] }))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
-  // The stored lock must be the canonical npm v3 lock derived from the manifest
-  // (B-03 binding), matching what the real materialiser writes.
-  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
+  // The stored lock is the runtime lock (valid npm v3 shape).
+  writeFileSync(join(closureDir, "package-lock.json"), runtimeLock(manifest))
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
 
@@ -192,30 +196,34 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
     expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
   })
 
-  test("returns null when package-lock.json is valid-shaped but different content (B-03)", () => {
+  test("returns null when package-lock.json is a valid JSON but not an npm v3 lock", () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
-    // A well-formed npm v3 lock whose packages map differs from the manifest's
-    // (here: empty packages map — the old shape-only check accepted this).
-    // The lock must canonical-bind to the manifest's packageLock, so any
-    // content difference marks the closure damaged.
+    // A well-formed JSON that is not a v3 lockfile (no lockfileVersion 3 /
+    // packages map) is not the runtime lock the materialiser produces — the
+    // closure is damaged. Content beyond shape is NOT compared anymore: the
+    // runtime lock is produced by npm at first install, so only presence +
+    // shape bind it.
     writeFileSync(
       join(closureRoot(anchor), "package-lock.json"),
-      JSON.stringify({ name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages: {} }),
+      JSON.stringify({ foo: "bar" }),
     )
     expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
   })
 
-  test("returns null when package-lock.json integrity string is altered (B-03)", () => {
+  test("returns the anchor when the runtime lock has a valid v3 shape with different content", () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
-    // Alter the integrity of one lock entry — the resolved/integrity fields are
-    // part of the canonical lock binding and must match the manifest.
-    const lock = JSON.parse(readFileSync(join(closureRoot(anchor), "package-lock.json"), "utf8")) as Record<string, unknown>
-    const dshEntry = (lock.packages as Record<string, { integrity?: string }>)["node_modules/@deepseek-ai/dsh"]
-    dshEntry.integrity = "sha512-tampered"
-    writeFileSync(join(closureRoot(anchor), "package-lock.json"), JSON.stringify(lock))
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    // A valid npm v3 lock whose packages map differs from the seeded one is
+    // still a legitimate runtime lock: npm produced it at first install, and
+    // the closure content is what actually got installed (the direct deps
+    // are verified exactly below). There is no build-time lock to compare
+    // against (DESIGN §3.4.3).
+    writeFileSync(
+      join(closureRoot(anchor), "package-lock.json"),
+      JSON.stringify({ name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages: {} }),
+    )
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBe(anchor)
   })
 
   test("returns null when a direct dependency is installed at the wrong version", () => {

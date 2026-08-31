@@ -56,7 +56,6 @@ describe("resolveInstallAnchor", () => {
     schema: "ellamaka.dsh-runtime/v1",
     bridgeAbi: 1,
     dependencies: { "@deepseek-ai/dsh": "0.1.1-rc.2" },
-    packageLock: {},
     fingerprint: "sha256:9e1ee84dfdd992bf9ebb37c7506f13bc17b87158d02783c2b1b24fd25a32cda7",
   }
 

@@ -150,14 +150,12 @@ $WOPAL_HOME/dsh/
 
 #### 3.4.3 运行时清单与版本来源
 
-`packages/ellamaka-cordis/package.json` 的精确 `dependencies` 是 DSH 官方**直接依赖版本**的唯一编辑源。Ellamaka 构建流程从中选取 `@deepseek-ai/*` 依赖，并结合仓库锁文件生成 `dsh-runtime-manifest.json`。该文件是构建生成物，随 CLI 与 Desktop sidecar 嵌入，不由开发者手工维护：
+`packages/ellamaka-cordis/package.json` 的精确 `dependencies` 是 DSH 官方**直接依赖版本**的唯一编辑源。Ellamaka 构建流程从中选取 `@deepseek-ai/*` 依赖生成 `dsh-runtime-manifest.json`。该文件是构建生成物，随 CLI 与 Desktop sidecar 嵌入，不由开发者手工维护：
 
 - 直接依赖名称与精确版本，包括 `@deepseek-ai/dsh`；
-- 完整传递依赖树的精确解析结果；
-- registry tarball integrity；
 - 清单 schema、Bridge ABI 与内容指纹。
 
-清单的目标形态如下。`packageLock` 在文档中省略展开，实际生成物携带完整 npm lock 数据：
+清单不携带任何锁快照，也不从构建期锁文件（bun.lock）推导版本或 registry。传递依赖树的解析与锁定发生在**运行时物化**阶段：物化器以清单的精确直接依赖版本调用 npm（Arborist）解析，Arborist 产出的 `package-lock.json` 即该闭包的**运行时锁**，记录实际解析出的完整传递依赖树。清单的目标形态如下：
 
 ```json
 {
@@ -167,16 +165,15 @@ $WOPAL_HOME/dsh/
     "@deepseek-ai/dsh": "0.1.1-rc.2",
     "@deepseek-ai/cordis": "4.0.1"
   },
-  "packageLock": { "lockfileVersion": 3, "packages": {} },
-  "fingerprint": "sha256:<manifest-and-lock-digest>"
+  "fingerprint": "sha256:<manifest-digest>"
 }
 ```
 
-运行时物化器只消费发布物内嵌的清单和锁，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。例如构建清单声明 `@deepseek-ai/dsh: 0.1.1-rc.2`，该 Ellamaka 发布物始终物化这一版本。升级 DSH 的路径是修改唯一编辑源、更新仓库锁、构建新的 Ellamaka 发布物。
+运行时物化器只消费发布物内嵌的清单，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。例如构建清单声明 `@deepseek-ai/dsh: 0.1.1-rc.2`，该 Ellamaka 发布物始终物化这一版本。升级 DSH 的路径是修改唯一编辑源、构建新的 Ellamaka 发布物。
 
-普通配置不提供 DSH 版本覆盖项。Bridge 与 DSH runtime 作为一个经过验证的兼容组合随 Ellamaka 版本发布。单独填写一个 DSH 版本无法同时声明完整传递依赖树、integrity 与 Bridge ABI，容易产生未经验证的运行组合。未来如需独立升级 DSH，由发布流程交付新的完整运行时清单，而不是由用户配置任意版本字符串。
+普通配置不提供 DSH 版本覆盖项。Bridge 与 DSH runtime 作为一个经过验证的兼容组合随 Ellamaka 版本发布。单独填写一个 DSH 版本无法同时声明完整传递依赖树与 Bridge ABI，容易产生未经验证的运行组合。未来如需独立升级 DSH，由发布流程交付新的完整运行时清单，而不是由用户配置任意版本字符串。
 
-清单指纹覆盖直接依赖、完整锁树、integrity、schema 与 Bridge ABI。目标闭包路径由该指纹确定。构建检查保证内嵌清单与唯一编辑源、仓库锁一致，避免手工清单和版本常量漂移。
+清单指纹覆盖直接依赖精确版本、schema 与 Bridge ABI。目标闭包路径由该指纹确定。构建检查保证内嵌清单与唯一编辑源一致，避免手工清单和版本常量漂移。同一精确版本清单对应同一指纹；运行时首次物化产出的锁不参与指纹，因此同一清单在多台机器上可能因 registry 解析差异装出不同的传递树，但**一旦锁定即不可变**，二次启动零网络命中。换源不改变已锁定闭包。
 
 #### 3.4.4 统一启动语义
 
@@ -206,10 +203,10 @@ Runtime Manager 对每次启动执行同一状态机：
 
 1. **Gate**：读取 `ELLAMAKA_DSH`。值为 `0` 时返回 `disabled`。
 2. **Resolve**：读取内嵌运行时清单，计算预期指纹与目标闭包目录。
-3. **Inspect**：验证目标闭包的 manifest、lock、关键 anchor 与 integrity 元数据。完整时直接进入 Load。
+3. **Inspect**：验证目标闭包的 manifest、运行时锁、关键 anchor 与直接依赖版本。完整时直接进入 Load。
 4. **Lock**：缺失或损坏时获取跨进程 `materialize.lock`。等待者在持锁者完成后重新 Inspect。
-5. **Stage**：在 `staging/` 写入 manifest 与 lock；用内置 `@npmcli/arborist` 按锁文件 reify。物化不依赖系统 bun、npm 或用户 shell。
-6. **Verify**：校验 lock、一致性、tarball integrity、`@deepseek-ai/dsh` anchor，以及 Bridge 所需的官方模块导出。
+5. **Stage**：在 `staging/` 写入 package.json（精确直接依赖版本）；用内置 `@npmcli/arborist` 按版本解析并 reify。Arborist 解析后自产 `package-lock.json`（运行时锁）。物化不依赖系统 bun、npm 或用户 shell。
+6. **Verify**：校验运行时锁的合法 npm v3 形状、`@deepseek-ai/dsh` anchor、每个直接依赖的精确版本，以及 Bridge 所需的官方模块导出。
 7. **Activate**：把通过验证的 staging 目录原子重命名为 `closures/<fingerprint>`。未通过验证的 staging 从不参与加载。
 8. **Profile**：创建缺失的 profile 模板；已有 profile 与用户补丁保持不变。按本次 installAnchor 重建 `profiles/node_modules` 快捷方式。
 9. **Load**：以 installAnchor 动态加载官方运行时，挂载该入口需要的容器，返回 `ready`。
@@ -257,7 +254,7 @@ Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时�
 **下载与缓存**：
 
 - Arborist 显式使用 npm 内容寻址缓存（`~/.npm/_cacache`）。跨闭包公共传递依赖（升级时大部分未变）从缓存命中，不重复下载；超时中断后重试同样只补缺口。
-- registry 由构建期锁文件推导并固化到运行时清单 `registry` 字段，无法推导时兜底官方 npm（`https://registry.npmjs.org/`）；真相源是仓库提交的锁文件，换源只需重建锁文件，运行时行为不变。不使用 `latest`、不依赖用户在 shell 里的 npm 配置。
+- registry 是**传输通道，不是版本真相源**：物化器对一组候选 registry 做并发测速（metadata 端点往返延迟），选取本次启动最快可达的一个作为下载源，不同地区与不同时刻的用户自动获得最合适的通道；全部不可达时兜底官方 npm（`https://registry.npmjs.org/`）。换源不改变已锁定闭包，不使用 `latest`、不依赖用户在 shell 里的 npm 配置。
 
 #### 3.4.8 运行时数据隔离
 

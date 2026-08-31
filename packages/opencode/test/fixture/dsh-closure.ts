@@ -16,7 +16,6 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import {
   DEFAULT_DSH_RUNTIME_MANIFEST,
-  closureLockJson,
   resolveInstallAnchor,
 } from "@wopal/ellamaka-cordis/runtime"
 
@@ -26,6 +25,23 @@ const CORDIS_DEEPSEEK_AI_DIR = join(
   "node_modules",
   "@deepseek-ai",
 )
+
+/**
+ * A minimal valid npm lockfile v3 document — the runtime-lock shape the real
+ * materialiser's Arborist produces. The runtime only checks presence + shape
+ * (DESIGN-dsh-poc §3.4.3), so a v3 lockfile with a packages map suffices.
+ */
+function runtimeLock(manifest: { dependencies: Record<string, string> }): string {
+  const packages: Record<string, { version: string }> = { "": { version: "0.0.0" } }
+  for (const [name, version] of Object.entries(manifest.dependencies)) {
+    packages[`node_modules/${name}`] = { version }
+  }
+  return JSON.stringify(
+    { name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages },
+    null,
+    2,
+  )
+}
 
 /**
  * Seed a complete real closure for the default manifest's fingerprint under a
@@ -42,10 +58,9 @@ export function seedDshClosure(wopalHome: string): string {
     join(closureDir, "package.json"),
     JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }),
   )
-  // The stored lock must be the canonical npm v3 lock derived from the manifest
-  // (B-03 binding), matching what the real materialiser writes, so the fast
-  // path hits and no network reify is triggered.
-  writeFileSync(join(closureDir, "package-lock.json"), closureLockJson(manifest))
+  // The stored lock is the runtime lock (valid npm v3 shape), so the fast path
+  // hits and no network reify is triggered.
+  writeFileSync(join(closureDir, "package-lock.json"), runtimeLock(manifest))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   return anchor.path
 }
