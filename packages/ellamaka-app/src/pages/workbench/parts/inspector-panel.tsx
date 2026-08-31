@@ -7,10 +7,10 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { sampledChecksum } from "@opencode-ai/core/util/encode"
-import { createLineCommentController } from "@opencode-ai/ui/line-comment-annotations"
-import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
+import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
+import { findFileLineNumber, readShadowLineSelection } from "@opencode-ai/ui/pierre/file-selection"
 import { FileProvider, useFile, type SelectedLineRange } from "@/context/file"
-import type { LineComment } from "@/context/comments"
+import { selectionFromLines } from "@/context/file/types"
 import { useLanguage } from "@/context/language"
 import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
 import { useWorkbenchPromptRegistry } from "../workbench-prompt-registry"
@@ -19,7 +19,6 @@ import {
   createFileScroller,
   fileViewerRoute,
   resolveFileViewerState,
-  submitFileComment,
   surfaceTabKey,
   type FileScroller,
   type FileScrollPos,
@@ -29,12 +28,14 @@ import {
 } from "./inspector-adapter"
 
 /**
- * Workbench file viewer panel (read-only).
+ * Workbench file inspector panel (read-only reference viewer).
  *
  * Renders a single file with the shared `FileComponent` in text mode, syncing
  * the scroll position through the pure `FileScroller` adapter (backed by
- * `useFile`). Inline line comments are intentionally not wired up yet — see the
- * Task 2 trade-off note in the plan. The v2 header owns the close affordance.
+ * `useFile`). Selecting a range of lines in the file lets the user attach a
+ * short note which is pushed into the active chat Panel's prompt context (the
+ * note is editable/deletable from the chat input, not inside this viewer).
+ * The v2 header owns the close affordance.
  */
 
 type FileViewerInnerProps = {
@@ -58,129 +59,47 @@ function FileViewerInner(props: FileViewerInnerProps) {
   const state = createMemo(() => file.get(path()))
   const contents = createMemo(() => state()?.content?.content ?? "")
   const cacheKey = createMemo(() => sampledChecksum(contents()))
-  const selectedLines = createMemo<SelectedLineRange | null>(() => {
-    if (!file.ready()) return null
-    const value = file.selectedLines(path())
-    if (typeof value !== "object" || value === null) return null
-    const start = (value as { start?: unknown }).start
-    const end = (value as { end?: unknown }).end
-    if (typeof start !== "number" || typeof end !== "number") return null
-    return { start, end } satisfies SelectedLineRange
-  })
 
-  // Line comments. The viewer floats outside the chat Panel's provider tree,
-  // so comments are projected into the active Panel's prompt/comments through
-  // the workbench registry; the local store is the viewer's own projection for
-  // rendering and inline editing within this viewer session.
+  // -- note-to-chat: select lines, add a short note, push it into the active
+  // chat Panel's prompt context. The note is edited/deleted in the chat input,
+  // never inside this viewer.
   const registry = useWorkbenchPromptRegistry()
-  const [localComments, setLocalComments] = createSignal<LineComment[]>([])
-  const fileComments = createMemo(() => {
-    const target = registry.activeComments()
-    const persisted = target?.list(path()) ?? []
-    return [...persisted.filter((c) => c.file === path()), ...localComments()]
-  })
-  const commentedLines = createMemo(() => fileComments().map((comment) => comment.selection))
-  const [openedComment, setOpenedComment] = createSignal<string | null>(null)
-  const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
+  const [noteRange, setNoteRange] = createSignal<SelectedLineRange | null>(null)
+  const [noteText, setNoteText] = createSignal("")
 
-  const addCommentToContext = (input: {
-    file: string
-    selection: SelectedLineRange
-    comment: string
-    preview?: string
-    origin?: "review" | "file"
-  }) => {
-    const saved = submitFileComment({
-      file: input.file,
-      selection: input.selection,
-      comment: input.comment,
-      preview: input.preview,
-      origin: input.origin,
-      contents: contents(),
-      comments: registry.activeComments(),
-      prompt: registry.activePrompt(),
+  let noteInput: HTMLTextAreaElement | null = null
+
+  const addNoteToContext = (selection: SelectedLineRange, comment: string) => {
+    const trimmed = comment.trim()
+    if (!trimmed) return
+    const p = path()
+    if (!p) return
+    const preview = previewSelectedLines(contents(), {
+      start: selection.start,
+      end: selection.end,
     })
-    if (saved) setLocalComments((list) => [...list.filter((c) => c.id !== saved.id), saved])
-  }
-
-  const updateCommentInContext = (input: {
-    id: string
-    file: string
-    selection: SelectedLineRange
-    comment: string
-  }) => {
-    registry.activeComments()?.update(input.file, input.id, input.comment)
-    const preview =
-      input.file === path()
-        ? previewSelectedLines(contents(), { start: input.selection.start, end: input.selection.end })
-        : undefined
-    registry.activePrompt()?.context.updateComment(input.file, input.id, {
-      comment: input.comment,
+    registry.activePrompt()?.context.add({
+      type: "file",
+      path: p,
+      selection: selectionFromLines(selection),
+      comment: trimmed,
+      commentOrigin: "file",
       ...(preview ? { preview } : {}),
     })
-    setLocalComments((list) =>
-      list.map((c) => (c.id === input.id ? { ...c, comment: input.comment } : c)),
-    )
+    setNoteRange(null)
+    setNoteText("")
   }
 
-  const removeCommentFromContext = (input: { id: string; file: string }) => {
-    registry.activeComments()?.remove(input.file, input.id)
-    registry.activePrompt()?.context.removeComment(input.file, input.id)
-    setLocalComments((list) => list.filter((c) => c.id !== input.id))
+  const dismissNote = () => {
+    setNoteRange(null)
+    setNoteText("")
   }
 
-  const commentsUi = createLineCommentController({
-    comments: fileComments,
-    label: language.t("ui.lineComment.submit"),
-    draftKey: () => path(),
-    state: {
-      opened: () => openedComment(),
-      setOpened: (id) => setOpenedComment(id),
-      selected: () => null,
-      setSelected: () => {},
-      commenting: () => commenting(),
-      setCommenting: (range) => setCommenting(range),
-      syncSelected: (range) => {
-        const p = path()
-        if (!p) return
-        file.setSelectedLines(p, range ? cloneSelectedLineRange(range) : null)
-      },
-      hoverSelected: (range) => {
-        const p = path()
-        if (!p) return
-        file.setSelectedLines(p, range ? cloneSelectedLineRange(range) : null)
-      },
-    },
-    getHoverSelectedRange: () => selectedLines(),
-    cancelDraftOnCommentToggle: true,
-    clearSelectionOnSelectionEndNull: true,
-    onSubmit: ({ comment, selection }) => {
-      const p = path()
-      if (!p) return
-      addCommentToContext({ file: p, selection, comment, origin: "file" })
-    },
-    onUpdate: ({ id, comment, selection }) => {
-      const p = path()
-      if (!p) return
-      updateCommentInContext({ id, file: p, selection, comment })
-    },
-    onDelete: (comment) => {
-      const p = path()
-      if (!p) return
-      removeCommentFromContext({ id: comment.id, file: p })
-    },
-    editSubmitLabel: language.t("common.save"),
-    renderCommentActions: (_, controls) => (
-      <div class="flex items-center gap-1">
-        <button type="button" class="text-11-medium text-v2-text-text-weak hover:text-v2-text-text-strong px-1" onClick={controls.edit}>
-          {language.t("common.edit")}
-        </button>
-        <button type="button" class="text-11-medium text-v2-text-text-weak hover:text-v2-text-text-danger px-1" onClick={controls.remove}>
-          {language.t("common.delete")}
-        </button>
-      </div>
-    ),
-  })
+  const confirmNote = () => {
+    const range = noteRange()
+    if (!range) return
+    addNoteToContext(range, noteText())
+  }
 
   // Scroll sync backed by the pure FileScroller adapter over useFile primitives.
   const scroller: FileScroller = createFileScroller({
@@ -249,6 +168,7 @@ function FileViewerInner(props: FileViewerInnerProps) {
 
   const setViewport = (el: HTMLDivElement) => {
     viewport = el
+    viewportEl = el
     restore()
   }
 
@@ -286,8 +206,47 @@ function FileViewerInner(props: FileViewerInnerProps) {
       error: state()?.error,
     })
 
+  let viewportEl: HTMLDivElement | undefined
+
+  const viewerRoot = (): ShadowRoot | undefined => {
+    const el = viewportEl
+    if (!el) return undefined
+    const host = el.querySelector("diffs-container")
+    if (!(host instanceof HTMLElement)) return undefined
+    return host.shadowRoot ?? undefined
+  }
+
+  // Detect a completed text selection inside the viewer and surface the
+  // note-to-chat input. Text selection lives in the pierre shadow root, so we
+  // read it through the same selection-bridge primitives the code viewer uses.
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    if (!file.ready()) return
+
+    const onMouseUp = () => {
+      const root = viewerRoot()
+      if (!root) return
+      const selection = readShadowLineSelection({
+        root,
+        lineForNode: findFileLineNumber,
+      })
+      if (!selection) return
+      setNoteRange(selection.range)
+      setNoteText("")
+      requestAnimationFrame(() => noteInput?.focus())
+    }
+
+    makeEventListener(window, "mouseup", onMouseUp, { capture: true })
+  })
+
   const renderFile = (source: string) => (
-    <div class="relative overflow-hidden pb-40">
+    <div
+      class="relative overflow-hidden"
+      // The inspector is a plain reader: the upstream line-hover highlight is
+      // presentation noise here, so we neutralize the pierre hover token for
+      // this panel only (session review and diffs keep their behavior).
+      style={{ "--diffs-bg-hover-override": "transparent" }}
+    >
       <Dynamic
         component={fileComponent}
         mode="text"
@@ -296,19 +255,10 @@ function FileViewerInner(props: FileViewerInnerProps) {
           contents: source,
           cacheKey: cacheKey(),
         }}
-        enableLineSelection
-        enableHoverUtility
-        selectedLines={selectedLines()}
-        commentedLines={commentedLines()}
-        annotations={commentsUi.annotations()}
-        renderAnnotation={commentsUi.renderAnnotation}
-        renderHoverUtility={commentsUi.renderHoverUtility}
+        // Line highlight owned by the note bar: purely visual and focus-free,
+        // so it persists while the user types in the note input.
+        selectedLines={noteRange()}
         onRendered={queueRestore}
-        onLineSelected={(range: SelectedLineRange | null) => {
-          commentsUi.onLineSelected(range)
-        }}
-        onLineSelectionEnd={commentsUi.onLineSelectionEnd}
-        onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
         search={search}
         class="select-text"
         media={{
@@ -321,21 +271,79 @@ function FileViewerInner(props: FileViewerInnerProps) {
     </div>
   )
 
+  const noteOpen = () => noteRange() != null
+  const noteLabel = createMemo(() => {
+    const range = noteRange()
+    if (!range) return ""
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+    if (start === end) return language.t("workbench.fileViewer.line", { line: start })
+    return language.t("workbench.fileViewer.lines", { start, end })
+  })
+
   return (
-    <ScrollView class="h-full" viewportRef={setViewport} onScroll={handleScroll}>
-      <Switch>
-        <Match when={viewState() === "loaded"}>{renderFile(contents())}</Match>
-        <Match when={viewState() === "loading"}>
-          <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
-        </Match>
-        <Match when={viewState() === "error"}>
-          <div class="px-6 py-4 text-text-weak">{state()?.error}</div>
-        </Match>
-        <Match when={viewState() === "empty"}>
-          <div class="px-6 py-4 text-text-weak">{language.t("session.files.empty")}</div>
-        </Match>
-      </Switch>
-    </ScrollView>
+    <div class="flex h-full min-h-0 flex-col">
+      <ScrollView class="h-full flex-1 min-h-0" viewportRef={setViewport} onScroll={handleScroll}>
+        <Switch>
+          <Match when={viewState() === "loaded"}>{renderFile(contents())}</Match>
+          <Match when={viewState() === "loading"}>
+            <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
+          </Match>
+          <Match when={viewState() === "error"}>
+            <div class="px-6 py-4 text-text-weak">{state()?.error}</div>
+          </Match>
+          <Match when={viewState() === "empty"}>
+            <div class="px-6 py-4 text-text-weak">{language.t("session.files.empty")}</div>
+          </Match>
+        </Switch>
+      </ScrollView>
+      <Show when={noteOpen()}>
+        <div class="shrink-0 border-t border-v2-border-border-base bg-v2-background-bg-base px-3 py-2">
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <span class="text-11-medium text-v2-text-text-weak">{noteLabel()}</span>
+            <button
+              type="button"
+              class="text-11-medium text-v2-text-text-weak hover:text-v2-text-text-strong"
+              onClick={dismissNote}
+            >
+              {language.t("common.cancel")}
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <textarea
+              ref={(el) => {
+                noteInput = el
+              }}
+              value={noteText()}
+              onInput={(event) => setNoteText(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  confirmNote()
+                }
+                if (event.key === "Escape") dismissNote()
+              }}
+              rows={2}
+              placeholder={language.t("workbench.fileViewer.notePlaceholder")}
+              class="flex-1 min-w-0 resize-none rounded border border-v2-border-border-base bg-v2-background-bg-subtle px-2 py-1 text-12 text-v2-text-text-base placeholder:text-v2-text-text-weak focus:outline-none focus:border-v2-icon-icon-brand"
+            />
+            <IconButtonV2
+              variant="ghost-muted"
+              size="small"
+              class="size-6 shrink-0"
+              icon={
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              }
+              aria-label={language.t("workbench.fileViewer.submitNote")}
+              title={language.t("workbench.fileViewer.submitNote")}
+              onClick={confirmNote}
+            />
+          </div>
+        </div>
+      </Show>
+    </div>
   )
 }
 
@@ -381,11 +389,14 @@ export function WorkbenchInspector(props: {
   onActiveKeyChange: (key: string) => void
   onWidthChange: (width: number) => void
   width: number
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
   onCloseTab: (key: string) => void
   onClose: () => void
 }) {
   const language = useLanguage()
-  const [expanded, setExpanded] = createSignal(false)
+  const expanded = () => props.expanded
+  const setExpanded = (next: boolean) => props.onExpandedChange(next)
 
   let resizing = false
   let rafId: number | null = null
@@ -429,7 +440,7 @@ export function WorkbenchInspector(props: {
   return (
     <div
       data-component="workbench-inspector-surface"
-      class={`absolute z-40 flex flex-col overflow-hidden border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
+      class={`absolute z-40 flex flex-col overflow-hidden rounded-lg border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
         expanded() ? "inset-2" : "top-2 bottom-2 right-2 w-[480px] max-w-[50vw]"
       }`}
       style={expanded() ? undefined : { width: `${props.width}px`, "max-width": "60vw" }}

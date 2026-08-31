@@ -8,13 +8,10 @@ import {
   openSurfaceTab,
   openViewerFile,
   resolveFileViewerState,
-  submitFileComment,
   surfaceTabKey,
   viewerTabKey,
 } from "./inspector-adapter"
 import type { SurfaceTab } from "./inspector-adapter"
-import type { LineComment } from "@/context/comments"
-import type { FileContextItem } from "@/context/prompt"
 
 describe("fileViewerRoute", () => {
   test("changes the keyed router identity for a new file or directory", () => {
@@ -218,65 +215,3 @@ describe("clampInspectorWidth", () => {
   })
 })
 
-describe("submitFileComment", () => {
-  const contents = ["line one", "line two", "line three"].join("\n")
-
-  test("persists via comments.add and publishes into the prompt context", () => {
-    const added: LineComment[] = []
-    const contextItems: FileContextItem[] = []
-    const saved: LineComment = { id: "c1", time: 1, file: "src/main.ts", selection: { start: 2, end: 2 }, comment: "check this" }
-
-    const result = submitFileComment({
-      file: "src/main.ts",
-      selection: { start: 2, end: 2 },
-      comment: "check this",
-      origin: "file",
-      contents,
-      comments: {
-        add: (input) => {
-          added.push({ ...saved, ...input })
-          return saved
-        },
-      },
-      prompt: {
-        context: {
-          add: (item) => contextItems.push(item),
-        },
-      },
-    })
-
-    expect(result).toBe(saved)
-    expect(added).toHaveLength(1)
-    expect(contextItems).toHaveLength(1)
-    expect(contextItems[0]).toMatchObject({
-      type: "file",
-      path: "src/main.ts",
-      comment: "check this",
-      commentID: "c1",
-      commentOrigin: "file",
-    })
-    expect(contextItems[0].selection).toEqual({ startLine: 2, startChar: 0, endLine: 2, endChar: 0 })
-  })
-
-  test("builds a preview from the selected lines of the given contents", () => {
-    const contextItems: FileContextItem[] = []
-    submitFileComment({
-      file: "src/main.ts",
-      selection: { start: 2, end: 2 },
-      comment: "note",
-      contents,
-      prompt: { context: { add: (item) => contextItems.push(item) } },
-    })
-    expect(contextItems[0].preview).toContain("line two")
-  })
-
-  test("does nothing when no chat target is registered", () => {
-    const result = submitFileComment({
-      file: "src/main.ts",
-      selection: { start: 1, end: 1 },
-      comment: "note",
-      contents,
-    })
-    expect(result).toBeUndefined()
-  })
-})

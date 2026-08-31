@@ -1,16 +1,12 @@
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
-import { selectionFromLines, type SelectedLineRange } from "@/context/file/types"
-import type { FileContextItem } from "@/context/prompt"
-import type { LineComment } from "@/context/comments"
 
 /**
- * Pure helpers for the Workbench file viewer, kept in a standalone module so
+ * Pure helpers for the Workbench file inspector, kept in a standalone module so
  * unit tests can exercise routing, state resolution and scroll sync without
  * pulling the heavy file-component and its context graph into the test bundle.
  *
- * Owner: Workbench file viewer
- * Deletion condition: never (lives with the viewer)
+ * Owner: Workbench file inspector
+ * Deletion condition: never (lives with the inspector)
  */
 
 /**
@@ -222,52 +218,4 @@ export function createFileScroller(input: {
       if (currentY !== pos.y) input.setScrollTop(key, pos.y)
     },
   }
-}
-
-/**
- * Publishes a line comment into the active chat Panel's prompt context and
- * comment store. The viewer floats outside the Panel provider tree, so the
- * call site passes the targets resolved from the workbench prompt registry.
- * Returns the persisted comment (when a comment store is registered) so the
- * viewer can mirror it locally; undefined means no chat target existed and the
- * submission was a no-op.
- */
-export function submitFileComment(input: {
-  file: string
-  selection: SelectedLineRange
-  comment: string
-  origin?: "review" | "file"
-  preview?: string
-  contents: string
-  comments?: {
-    add: (item: Omit<LineComment, "id" | "time">) => LineComment
-  }
-  prompt?: {
-    context: {
-      add: (item: FileContextItem) => void
-    }
-  }
-}): LineComment | undefined {
-  const selection = selectionFromLines(input.selection)
-  const preview =
-    input.preview ??
-    previewSelectedLines(input.contents, {
-      start: input.selection.start,
-      end: input.selection.end,
-    })
-  const saved = input.comments?.add({
-    file: input.file,
-    selection: input.selection,
-    comment: input.comment,
-  })
-  input.prompt?.context.add({
-    type: "file",
-    path: input.file,
-    selection,
-    comment: input.comment,
-    commentID: saved?.id,
-    commentOrigin: input.origin,
-    preview,
-  })
-  return saved
 }

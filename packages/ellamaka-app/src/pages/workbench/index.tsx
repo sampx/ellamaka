@@ -56,10 +56,11 @@ function WorkbenchShell() {
   // state may persist; file contents themselves are re-fetched, never stored).
   const [surfaceStore, setSurfaceStore] = persisted(
     Persist.global("workbench.inspector", []),
-    createStore<{ tabs: SurfaceTab[]; activeKey?: string; width: number }>({
+    createStore<{ tabs: SurfaceTab[]; activeKey?: string; width: number; expanded: boolean }>({
       tabs: [],
       activeKey: undefined,
       width: INSPECTOR_DEFAULT_WIDTH,
+      expanded: false,
     }),
   )
   // Clamped on read so a stale persisted width can never break the layout.
@@ -235,6 +236,8 @@ function WorkbenchShell() {
                   onActiveKeyChange={(key) => setSurfaceStore("activeKey", key)}
                   width={surfaceWidth()}
                   onWidthChange={(width) => setSurfaceStore("width", width)}
+                  expanded={surfaceStore.expanded}
+                  onExpandedChange={(expanded) => setSurfaceStore("expanded", expanded)}
                   onCloseTab={closeSurfaceTabByKey}
                   onClose={() => {
                     setSurfaceStore("tabs", [])
