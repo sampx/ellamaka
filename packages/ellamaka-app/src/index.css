@@ -41,31 +41,18 @@
 }
 
 /* Sidebar trees (session + file): hide until hover, reserve the gutter so the
-   content box never shifts when the scrollbar appears. */
+   content box never shifts when the scrollbar appears. Uses the standard
+   scrollbar properties because element-scoped ::-webkit-scrollbar rules lose
+   to the global display:none rule's cascade behavior in Chromium, and
+   pseudo-element hover state is unreliable. */
 .workbench-tree-scroll {
   scrollbar-gutter: stable;
+  scrollbar-color: transparent transparent;
 }
 
-.workbench-tree-scroll::-webkit-scrollbar {
-  display: block;
-  width: 6px;
-  height: 6px;
-  background: transparent;
-}
-
-.workbench-tree-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 4px;
-  transition: background-color 0.15s ease;
-}
-
-.workbench-tree-scroll:hover::-webkit-scrollbar-thumb,
-.workbench-tree-scroll:focus-within::-webkit-scrollbar-thumb {
-  background: rgb(140 140 160 / 35%);
-}
-
-.workbench-tree-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(140 140 160 / 65%);
+.workbench-tree-scroll:hover,
+.workbench-tree-scroll:focus-within {
+  scrollbar-color: var(--text-muted) transparent;
 }
 
 .has-scrollbar::-webkit-scrollbar-track {
