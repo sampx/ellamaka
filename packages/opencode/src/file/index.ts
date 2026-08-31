@@ -594,13 +594,17 @@ export const layer = Layer.effect(
         if (exclude.includes(entry.name)) continue
         const absolute = path.join(resolved, entry.name)
         const file = path.relative(ctx.directory, absolute)
-        const type = entry.type === "directory" ? "directory" : "file"
+        // readdir reports symlinks under their lstat kind, so follow the link:
+        // a symlink to a directory is a directory for tree purposes, anything
+        // else (including dangling links) falls back to file.
+        const isDir = entry.type === "directory" || (entry.type === "symlink" && (yield* appFs.isDir(absolute)))
+        const type = isDir ? "directory" : "file"
         nodes.push({
           name: entry.name,
           path: file,
           absolute,
           type,
-          ignored: ignored(type === "directory" ? file + "/" : file),
+          ignored: ignored(isDir ? file + "/" : file),
         })
       }
       return nodes.sort((a, b) => {
