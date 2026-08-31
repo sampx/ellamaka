@@ -112,7 +112,7 @@ const baselineFlag = process.argv.includes("--baseline")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
-const webUiOptions = ["ellamaka-app", "app", "none"] as const
+const webUiOptions = ["ellamaka-app", "none"] as const
 type WebUiOption = (typeof webUiOptions)[number]
 const webUiIndex = process.argv.indexOf("--web-ui")
 const webUiArg = webUiIndex === -1 ? "ellamaka-app" : process.argv[webUiIndex + 1]
