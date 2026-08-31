@@ -180,7 +180,7 @@ export function WorkbenchTitlebar() {
   }
 
   return (
-    <header class="relative z-40 flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base select-none">
+    <header class="relative z-50 flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base select-none">
       <div data-tauri-drag-region class="workbench-macos-window-chrome shrink-0" />
       <div data-tauri-drag-region class="workbench-titlebar-toolbar relative flex h-10 items-center justify-between px-3">
         {/* Brand Logo - Left side */}
