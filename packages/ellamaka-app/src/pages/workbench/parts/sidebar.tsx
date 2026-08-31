@@ -200,9 +200,9 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
               onMouseLeave={() => flyout.onTriggerLeave()}
             >
               <IconButtonV2
-                variant={activeNav() === "sessions" ? "neutral" : "ghost-muted"}
+                variant={activeNav() === "sessions" && expanded() ? "neutral" : "ghost-muted"}
                 size="normal"
-                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "sessions" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
+                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "sessions" && expanded() ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
                 icon={<ChatIcon class="size-4" />}
                 aria-label="Sessions"
                 title="Sessions"
@@ -223,9 +223,9 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
               onMouseLeave={() => flyout.onTriggerLeave()}
             >
               <IconButtonV2
-                variant={activeNav() === "files" ? "neutral" : "ghost-muted"}
+                variant={activeNav() === "files" && expanded() ? "neutral" : "ghost-muted"}
                 size="normal"
-                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "files" ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
+                class={`size-8 p-0 flex items-center justify-center ${activeNav() === "files" && expanded() ? "text-v2-icon-icon-accent bg-v2-overlay-simple-overlay-hover" : ""}`}
                 icon={<FileTreeIcon class="size-4" />}
                 aria-label={t("workbench.sidebar.filesTab")}
                 title={t("workbench.sidebar.filesTab")}
@@ -248,7 +248,7 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
         </div>
 
         {/* 侧栏面板内容 (DOM 常驻，通过 CSS 显隐保持状态与 Scroll 位置) */}
-        <div class={`flex-1 min-w-0 flex flex-col h-full bg-v2-background-bg-deep ${expanded() ? "" : "hidden"}`}>
+        <div class={`flex-1 min-w-0 flex flex-col h-full bg-v2-background-bg-base ${expanded() ? "" : "hidden"}`}>
           <header class="flex h-7 shrink-0 items-center justify-between px-3 border-b border-v2-border-border-base bg-v2-background-bg-base">
             <div class="flex items-center gap-1.5 min-w-0 flex-1">
               <span class="text-11-medium text-v2-text-text-strong truncate">

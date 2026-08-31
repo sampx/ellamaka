@@ -14,7 +14,7 @@ export function FileTreePanel(props: {
     <WorkbenchPanelDirectoryProvider panelID={identity().key} directory={identity().path}>
       {() => (
         <FileProvider>
-          <div class="flex flex-col min-h-0 h-full bg-v2-background-bg-deep">
+          <div class="flex flex-col min-h-0 h-full bg-v2-background-bg-base">
             <div class="flex-1 min-h-0 overflow-y-auto px-1.5 py-1">
               <FileTree path={identity().path} onFileClick={props.onFileClick} />
             </div>
