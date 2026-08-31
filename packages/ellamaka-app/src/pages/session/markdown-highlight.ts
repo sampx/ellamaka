@@ -147,7 +147,12 @@ export async function deferredHighlight(
   onComplete?: () => void,
   signal?: { aborted: boolean },
 ): Promise<void> {
-  const blocks = Array.from(container.querySelectorAll("pre > code[data-lang]:not([data-highlighted])"))
+  // Mermaid has a separate, completion-only SVG pipeline. Do not send it
+  // through Shiki first: a plain-text highlight would create a needless
+  // intermediate layout and a visible flash before the diagram appears.
+  const blocks = Array.from(container.querySelectorAll("pre > code[data-lang]:not([data-highlighted])")).filter(
+    (block) => (block.getAttribute("data-lang") ?? "").toLowerCase() !== "mermaid",
+  )
   if (blocks.length === 0) {
     onComplete?.()
     return

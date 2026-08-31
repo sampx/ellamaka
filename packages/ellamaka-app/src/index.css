@@ -748,6 +748,32 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   margin-block-start: 12px;
 }
 
+/* Mermaid keeps the original fenced source hidden inside markdown-code, so
+   copy and error fallback remain identical to ordinary code blocks. The SVG
+   gets its own calm, responsive surface rather than inheriting Shiki's code
+   presentation. Horizontal overflow is intentional for wide diagrams, and
+   the reserved gutter keeps the chat lane from shifting on hover. */
+[data-slot="workbench-markdown-content"] [data-component="markdown-mermaid"] {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 16px;
+  overflow: auto hidden;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 12px;
+  background: var(--background-base);
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-mermaid"] svg {
+  display: block;
+  flex: none;
+  max-width: none;
+  height: auto;
+}
+
 /* Shiki dual-theme switch: codeToHtml emits github-light colors as the inline
    default and the dark palette as --shiki-dark variables. The base text color
    must follow the active color scheme, or light-mode blocks render light text

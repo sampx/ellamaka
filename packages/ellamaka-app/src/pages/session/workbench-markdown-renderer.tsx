@@ -1,4 +1,5 @@
 import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTheme } from "@opencode-ai/ui/theme/context"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
@@ -7,6 +8,7 @@ import { isServer } from "solid-js/web"
 import { streamBlocks } from "./workbench-markdown-stream"
 import { createIncrementalMarkdown } from "./markdown-incremental-dom"
 import { tryFastRender } from "./markdown-fast-path"
+import { deferredMermaid } from "./markdown-mermaid"
 import {
   deferredHighlight,
   fnv1a,
@@ -265,6 +267,7 @@ export function WorkbenchMarkdown(
 ) {
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
   const i18n = useI18n()
+  const theme = useTheme()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const [html] = createResource(
     () => ({
@@ -316,11 +319,20 @@ export function WorkbenchMarkdown(
   let pendingFrame: number | undefined
   let pendingContent: string | undefined
   let pendingLabels: { copy: string; copied: string } | undefined
+  let renderedContent = ""
 
   // Generation counter + abort signal: a newer render cancels any in-flight
   // highlight pass so concurrent passes never race on the same DOM nodes
   // (ported from kilocode, issue #6221).
   const highlightState = { gen: 0, signal: { aborted: false } }
+  const mermaidState = { signal: { aborted: false } }
+
+  function kickMermaid(container: HTMLDivElement, mode: "light" | "dark", streaming: boolean) {
+    mermaidState.signal.aborted = true
+    const signal = { aborted: false }
+    mermaidState.signal = signal
+    void deferredMermaid(container, { mode, streaming }, signal).catch(() => {})
+  }
 
   function kickHighlight(container: HTMLDivElement, labels: CopyLabels) {
     highlightState.signal.aborted = true
@@ -356,6 +368,8 @@ export function WorkbenchMarkdown(
     const container = root()
     const rendered = html.latest ?? html() ?? { content: "", blocks: [] }
     const content = local.text ? rendered.content : ""
+    const themeMode = theme.mode()
+    const streaming = local.streaming ?? false
     if (!container) return
     if (isServer) return
 
@@ -368,12 +382,22 @@ export function WorkbenchMarkdown(
       }
       incremental.reset()
       container.innerHTML = ""
+      renderedContent = ""
       return
     }
 
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
+    }
+
+    // Theme and locale updates should refresh only the deferred decorators.
+    // Re-applying the raw markdown here would temporarily replace a completed
+    // diagram with its source code before Mermaid can redraw it.
+    if (renderedContent === content && container.childNodes.length > 0) {
+      kickMermaid(container, themeMode, streaming)
+      kickHighlight(container, labels)
+      return
     }
 
     const fast = tryFastRender(container, content, local.streaming, decorate, setupCodeCopy, () => labels, copyCleanup)
@@ -386,11 +410,15 @@ export function WorkbenchMarkdown(
       }
       incremental.reset()
       copyCleanup = fast.copyCleanup
+      renderedContent = content
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, labels)
       return
     }
 
-    if (incremental.render(local.streaming ?? false, container, rendered.blocks, labels, undefined)) {
+    if (incremental.render(streaming, container, rendered.blocks, labels, undefined)) {
+      renderedContent = content
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, labels)
       return
     }
@@ -454,7 +482,9 @@ export function WorkbenchMarkdown(
         },
       })
 
+      renderedContent = next
       copyCleanup ??= setupCodeCopy(container, () => nextLabels)
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, nextLabels)
     })
   })
@@ -468,6 +498,7 @@ export function WorkbenchMarkdown(
     }
     highlightState.signal.aborted = true
     highlightState.gen++
+    mermaidState.signal.aborted = true
     if (copyCleanup) copyCleanup()
   })
 

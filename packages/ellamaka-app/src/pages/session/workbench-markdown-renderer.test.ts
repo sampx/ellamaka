@@ -99,6 +99,14 @@ describe("WorkbenchMarkdown table layout", () => {
     )
     expect(css).not.toContain('[data-slot="workbench-markdown-content"] tbody tr:hover td')
   })
+
+  test("gives completed Mermaid diagrams their own stable, scroll-safe surface", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] \[data-component="markdown-mermaid"\] \{[\s\S]*?overflow: auto hidden;[\s\S]*?scrollbar-gutter: stable;[\s\S]*?border: 1px solid var\(--border-weaker-base\);/,
+    )
+  })
 })
 
 describe("WorkbenchMarkdown highlight pipeline", () => {
@@ -140,6 +148,18 @@ describe("WorkbenchMarkdown highlight pipeline", () => {
     await deferredHighlight(container, undefined, { aborted: true })
 
     expect(container.querySelector("pre")?.classList.contains("shiki")).toBe(false)
+    container.remove()
+  })
+
+  test("leaves Mermaid fences for the completion-only SVG renderer", async () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    container.innerHTML = '<pre><code class="language-mermaid" data-lang="mermaid">flowchart LR\nA --> B</code></pre>'
+
+    await deferredHighlight(container)
+
+    expect(container.querySelector("pre")?.classList.contains("shiki")).toBe(false)
+    expect(container.querySelector("code")?.textContent).toContain("flowchart LR")
     container.remove()
   })
 
