@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { Arborist } from "@npmcli/arborist"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
 import { canonicalSerialize } from "./manifest.js"
 import { closureNameForFingerprint, expandCacheDir, resolveDshLayout, type DshLayout } from "./status.js"
@@ -52,9 +53,6 @@ export interface MaterializeOptions {
 
 /** Resolve the production Arborist factory from this package's own dependency. */
 async function createRealArborist(opts: Record<string, unknown>): Promise<ArboristLike> {
-  const { createRequire } = await import("node:module")
-  const require = createRequire(import.meta.url)
-  const Arborist = require("@npmcli/arborist").Arborist as new (o: Record<string, unknown>) => ArboristLike
   return new Arborist(opts)
 }
 
@@ -172,6 +170,13 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
     progress: false,
     ignoreScripts: true,
     savePrefix: "",
+    // The DSH dependency tree carries peer conflicts that bun tolerates but
+    // Arborist's strict peer resolution rejects (`could not resolve`). `force`
+    // relaxes peer-conflict errors while still installing peer dependencies
+    // (unlike `legacyPeerDeps`, which skips them and leaves the closure
+    // missing packages the runtime imports). The closure is a self-contained
+    // install of pinned versions, so peer resolution is not needed here.
+    force: true,
   })
 
   // Stage the manifest + lock so Arborist reifies exactly the declared closure.
