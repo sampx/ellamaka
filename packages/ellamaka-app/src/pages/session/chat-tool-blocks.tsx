@@ -42,7 +42,6 @@ function ToolBlockHeader(props: {
   title: string
   titleColor?: string
   subtitle?: string
-  subtitleTitle?: string
   args?: string[]
   status: string
   open: boolean
@@ -74,11 +73,11 @@ function ToolBlockHeader(props: {
           {props.title}
         </span>
         <Show when={props.subtitle}>
-          <span data-slot="chat-tool-subtitle" title={props.subtitleTitle}>{props.subtitle}</span>
+          <span data-slot="chat-tool-subtitle">{props.subtitle}</span>
         </Show>
         <For each={props.args}>
           {(arg) => (
-            <span data-slot="chat-tool-arg" title={arg}>{arg}</span>
+            <span data-slot="chat-tool-arg">{arg}</span>
           )}
         </For>
         <span data-slot="chat-tool-chevron" aria-hidden="true">
@@ -181,7 +180,7 @@ export function ContextToolBlock(props: {
           </span>
           <span data-slot="chat-tool-title">read</span>
           <Show when={subtitle()}>
-            <span data-slot="chat-tool-subtitle" title={rawPath()}>{displayPath()}</span>
+            <span data-slot="chat-tool-subtitle">{displayPath()}</span>
           </Show>
           <span data-slot="chat-tool-status" data-status={props.part.state.status}>
             {toolStatusLabel(props.part.state.status)}
@@ -379,7 +378,6 @@ export function FileChangeBlock(props: {
           icon="code-lines"
           title={title()}
           subtitle={subtitle()}
-          subtitleTitle={filePath()}
           status={props.part.state.status}
           open={open()}
           toggle={(_event: MouseEvent) => setOpen(!open())}

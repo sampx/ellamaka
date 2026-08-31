@@ -370,9 +370,7 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
             <span data-slot="chat-reasoning-label">思考</span>
           </div>
           <Show when={!open() && previewText().length > 0}>
-            <div data-slot="chat-reasoning-preview" title={props.part.type === "reasoning" ? props.part.text : ""}>
-              {previewText()}
-            </div>
+            <div data-slot="chat-reasoning-preview">{previewText()}</div>
           </Show>
         </Collapsible.Trigger>
         <Collapsible.Content

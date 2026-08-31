@@ -387,6 +387,7 @@ describe("ReasoningBlock", () => {
     const preview = host.querySelector("[data-slot='chat-reasoning-preview']")
     expect(preview).not.toBeNull()
     expect(preview?.textContent).toContain("internal reasoning")
+    expect(preview?.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -616,7 +617,7 @@ describe("ContextToolBlock", () => {
     host.remove()
   })
 
-  test("exposes the full absolute path of a read file on hover via the title attribute", () => {
+  test("does not expose a native hover tooltip for a shortened read path", () => {
     const a = assistantMessage("a-read-title", "u1")
     const part = toolPart("t-read-title", "a-read-title", "read", "c-read-title", {
       input: { filePath: "/repo/deep/nested/big.ts" },
@@ -626,7 +627,7 @@ describe("ContextToolBlock", () => {
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
     expect(subtitle).not.toBeNull()
     expect(subtitle.textContent).toBe("deep/nested/big.ts")
-    expect(subtitle.getAttribute("title")).toBe("/repo/deep/nested/big.ts")
+    expect(subtitle.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -641,7 +642,7 @@ describe("ContextToolBlock", () => {
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
     expect(subtitle).not.toBeNull()
     expect(subtitle.textContent).toBe("src/early.ts")
-    expect(subtitle.getAttribute("title")).toBe("/repo/src/early.ts")
+    expect(subtitle.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -871,7 +872,7 @@ describe("FileChangeBlock", () => {
     expect(trigger).not.toBeNull()
     expect(trigger.querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("edit")
     expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("src/b.ts")
-    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBe("/repo/src/b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBeNull()
     expect(host.querySelector("[data-component='chat-file-change-wrapper']")).not.toBeNull()
     expect(host.querySelector("[data-renderer='opencode-message-part']")).not.toBeNull()
     host.remove()
@@ -1013,6 +1014,18 @@ describe("GenericToolBlock", () => {
     expect(args).toContain("verbose=true")
     // The primary label stays separate and never swallows the params.
     expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("search")
+    host.remove()
+  })
+
+  test("does not attach native hover tooltips to generic tool labels or arguments", () => {
+    const a = assistantMessage("a-generic-no-tooltip", "u1")
+    const part = toolPart("t-generic-no-tooltip", "a-generic-no-tooltip", "memory_manage", "c-generic-no-tooltip", {
+      input: { command: "search", category: "experience", limit: 5 },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBeNull()
+    expect(host.querySelectorAll("[data-slot='chat-tool-arg'][title]")).toHaveLength(0)
     host.remove()
   })
 

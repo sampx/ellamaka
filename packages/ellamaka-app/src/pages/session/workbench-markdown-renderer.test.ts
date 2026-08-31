@@ -19,6 +19,8 @@ mock.module("@opencode-ai/ui/context/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
+const { suppressNativeMarkdownLinkStatus } = await import("./workbench-markdown-renderer")
+
 /**
  * WorkbenchMarkdown component behavior is verified end-to-end through the
  * chat timeline tests, which mock this renderer at the module boundary. These
@@ -72,6 +74,26 @@ describe("WorkbenchMarkdown streaming pipeline", () => {
     const blocks = streamBlocks(text, true)
     expect(blocks.at(-1)?.mode).toBe("full")
     expect(blocks.at(-1)?.raw).toContain("```js")
+  })
+})
+
+describe("WorkbenchMarkdown links", () => {
+  test("keeps Markdown links interactive without leaving an href for the browser status bar", () => {
+    const root = document.createElement("div")
+    root.innerHTML =
+      '<a href="/wopal-space/REGULATIONS.md">本体维护</a><a href="https://example.com/docs" target="_blank">文档</a>'
+
+    suppressNativeMarkdownLinkStatus(root)
+
+    const links = root.querySelectorAll("a")
+    expect(links).toHaveLength(2)
+    expect(links[0]?.getAttribute("href")).toBeNull()
+    expect(links[0]?.getAttribute("data-workbench-markdown-href")).toBe("/wopal-space/REGULATIONS.md")
+    expect(links[0]?.getAttribute("role")).toBe("link")
+    expect(links[0]?.getAttribute("tabindex")).toBe("0")
+    expect(links[1]?.getAttribute("href")).toBeNull()
+    expect(links[1]?.getAttribute("data-workbench-markdown-href")).toBe("https://example.com/docs")
+    expect(links[1]?.getAttribute("target")).toBe("_blank")
   })
 })
 

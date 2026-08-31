@@ -76,6 +76,7 @@ type CopyLabels = {
 }
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
+const markdownLinkHrefAttribute = "data-workbench-markdown-href"
 
 function codeUrl(text: string) {
   const href = text.trim().replace(/[),.;!?]+$/, "")
@@ -185,12 +186,54 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
+/**
+ * A native anchor's href makes Chromium show a URL in its status bar while
+ * hovered. Chat keeps links keyboard-accessible but delegates navigation so
+ * the transcript stays visually self-contained.
+ */
+export function suppressNativeMarkdownLinkStatus(root: ParentNode) {
+  const links = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))
+  for (const link of links) {
+    const href = link.getAttribute("href")
+    if (!href) continue
+    link.setAttribute(markdownLinkHrefAttribute, href)
+    link.removeAttribute("href")
+    link.setAttribute("role", "link")
+    if (!link.hasAttribute("tabindex")) link.tabIndex = 0
+  }
+}
+
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
   markCodeLinks(root)
+  suppressNativeMarkdownLinkStatus(root)
+}
+
+function markdownLinkFromTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return
+  const link = target.closest<HTMLAnchorElement>(`a[${markdownLinkHrefAttribute}]`)
+  return link ?? undefined
+}
+
+function navigateMarkdownLink(link: HTMLAnchorElement, newWindow: boolean) {
+  const rawHref = link.getAttribute(markdownLinkHrefAttribute)
+  if (!rawHref) return
+  let href: string
+  try {
+    const url = new URL(rawHref, window.location.href)
+    if (!["http:", "https:", "mailto:"].includes(url.protocol)) return
+    href = url.href
+  } catch {
+    return
+  }
+  if (newWindow) {
+    window.open(href, "_blank", "noopener,noreferrer")
+    return
+  }
+  window.location.assign(href)
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -269,6 +312,26 @@ export function WorkbenchMarkdown(
   const i18n = useI18n()
   const theme = useTheme()
   const [root, setRoot] = createSignal<HTMLDivElement>()
+  const handleLinkClick = (event: MouseEvent) => {
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, link.getAttribute("target") === "_blank" || event.metaKey || event.ctrlKey || event.shiftKey)
+  }
+  const handleLinkAuxClick = (event: MouseEvent) => {
+    if (event.button !== 1) return
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, true)
+  }
+  const handleLinkKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter") return
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, link.getAttribute("target") === "_blank")
+  }
   const [html] = createResource(
     () => ({
       text: local.text,
@@ -511,6 +574,9 @@ export function WorkbenchMarkdown(
         [local.class ?? ""]: !!local.class,
       }}
       ref={setRoot}
+      on:click={handleLinkClick}
+      on:auxclick={handleLinkAuxClick}
+      on:keydown={handleLinkKeyDown}
       {...others}
     />
   )
