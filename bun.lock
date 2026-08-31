@@ -334,6 +334,7 @@
         "@tsconfig/node22": "catalog:",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
+        "@types/npmcli__arborist": "6.3.3",
         "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
       },

@@ -36,7 +36,8 @@
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "catalog:",
-    "@typescript/native-preview": "catalog:"
+    "@types/npmcli__arborist": "6.3.3",
+    "@typescript/native-preview": "catalog:",
+    "typescript": "catalog:"
   }
 }
