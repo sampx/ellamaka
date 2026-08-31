@@ -268,7 +268,7 @@ export function WorkbenchTitlebar() {
           <div
             class="relative"
             ref={(el) => { spaceMenuRef = el }}
-            onMouseEnter={() => spaceMenuFlyout.onTriggerEnter()}
+            onMouseEnter={() => spaceMenuFlyout.onTriggerEnter("sessions")}
             onMouseLeave={() => spaceMenuFlyout.onTriggerLeave()}
           >
             <ButtonV2
@@ -280,7 +280,7 @@ export function WorkbenchTitlebar() {
                 if (showSpaceMenu()) {
                   spaceMenuFlyout.close()
                 } else {
-                  spaceMenuFlyout.onTriggerEnter()
+                  spaceMenuFlyout.onTriggerEnter("sessions")
                 }
               }}
             >

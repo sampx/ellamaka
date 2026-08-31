@@ -19,13 +19,13 @@ describe("sidebar hover flyout", () => {
   test("opens on trigger hover when the rail is collapsed", () => {
     const flyout = createFlyoutController({ pinned: () => false })
     expect(flyout.isOpen()).toBe(false)
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     expect(flyout.isOpen()).toBe(true)
   })
 
   test("does not open on hover while the rail is pinned open", () => {
     const flyout = createFlyoutController({ pinned: () => true })
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     expect(flyout.isOpen()).toBe(false)
   })
 
@@ -44,7 +44,7 @@ describe("sidebar hover flyout", () => {
       }) as typeof clearTimeout,
     })
 
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     flyout.onTriggerLeave()
     expect(timers.size).toBe(1)
     flyout.onFlyoutEnter()
@@ -65,7 +65,7 @@ describe("sidebar hover flyout", () => {
       clearTimeoutFn: (() => {}) as typeof clearTimeout,
     })
 
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     flyout.onTriggerLeave()
     expect(flyout.isOpen()).toBe(true)
     pending.forEach((fn) => fn())
@@ -85,7 +85,7 @@ describe("sidebar hover flyout", () => {
       }) as typeof clearTimeout,
     })
 
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     flyout.close()
     expect(flyout.isOpen()).toBe(false)
     expect(pending.length).toBe(0)
@@ -94,9 +94,47 @@ describe("sidebar hover flyout", () => {
   test("isOpen() reports closed once the rail becomes pinned even if open was requested", () => {
     let pinned = false
     const flyout = createFlyoutController({ pinned: () => pinned })
-    flyout.onTriggerEnter()
+    flyout.onTriggerEnter("sessions")
     expect(flyout.isOpen()).toBe(true)
     pinned = true
+    expect(flyout.isOpen()).toBe(false)
+  })
+
+  test("reports the mode of the last hovered trigger", () => {
+    const flyout = createFlyoutController({ pinned: () => false })
+    expect(flyout.mode()).toBe("sessions")
+    flyout.onTriggerEnter("files")
+    expect(flyout.mode()).toBe("files")
+    expect(flyout.isOpen()).toBe(true)
+  })
+
+  test("switching mode while open notifies onChange with the new mode", () => {
+    const seen: Array<"sessions" | "files"> = []
+    const flyout = createFlyoutController({
+      pinned: () => false,
+      onChange: (mode) => seen.push(mode),
+    })
+    flyout.onTriggerEnter("sessions")
+    flyout.onTriggerEnter("files")
+    expect(seen).toEqual(["sessions", "files"])
+    expect(flyout.mode()).toBe("files")
+  })
+
+  test("hovering the same mode again does not re-notify", () => {
+    const seen: Array<"sessions" | "files"> = []
+    const flyout = createFlyoutController({
+      pinned: () => false,
+      onChange: (mode) => seen.push(mode),
+    })
+    flyout.onTriggerEnter("sessions")
+    flyout.onTriggerLeave()
+    flyout.onTriggerEnter("sessions")
+    expect(seen).toEqual(["sessions"])
+  })
+
+  test("files flyout stays suppressed while the rail is pinned", () => {
+    const flyout = createFlyoutController({ pinned: () => true })
+    flyout.onTriggerEnter("files")
     expect(flyout.isOpen()).toBe(false)
   })
 })

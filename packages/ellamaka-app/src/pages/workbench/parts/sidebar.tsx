@@ -13,7 +13,7 @@ import { SessionTree } from "./session-tree"
 import { ChatIcon } from "./session-tree-space"
 import { Persist, persisted } from "@/utils/persist"
 import { useWorkbenchRuntime } from "../workbench-runtime"
-import { createFlyoutController, flyoutVisibilityClass } from "./sidebar-flyout"
+import { createFlyoutController, flyoutVisibilityClass, type FlyoutMode } from "./sidebar-flyout"
 import type { SidebarNav } from "./sidebar-nav"
 import { FileTreePanel } from "./file-tree-panel"
 import type { FileNode } from "@opencode-ai/sdk/v2"
@@ -169,9 +169,13 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
   })
 
   const [flyoutOpen, setFlyoutOpen] = createSignal(false)
+  const [flyoutMode, setFlyoutMode] = createSignal<FlyoutMode>("sessions")
   const flyout = createFlyoutController({
     pinned: () => expanded(),
-    onChange: () => setFlyoutOpen(flyout.isOpen()),
+    onChange: (mode) => {
+      setFlyoutMode(mode)
+      setFlyoutOpen(flyout.isOpen())
+    },
   })
   onCleanup(() => flyout.destroy())
 
@@ -192,7 +196,7 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
           <div class="flex flex-col gap-2.5 items-center">
             {/* 会话 Icon：折叠时悬停以浮层临时展开会话树，点击固定展开/收起 */}
             <div
-              onMouseEnter={() => flyout.onTriggerEnter()}
+              onMouseEnter={() => flyout.onTriggerEnter("sessions")}
               onMouseLeave={() => flyout.onTriggerLeave()}
             >
               <IconButtonV2
@@ -213,9 +217,9 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
                 }}
               />
             </div>
-            {/* 文件树 Icon：点击展开本空间文件树（与会话树同等级） */}
+            {/* 文件树 Icon：折叠时悬停以浮层临时展开文件树，点击固定展开/收起 */}
             <div
-              onMouseEnter={() => flyout.onTriggerEnter()}
+              onMouseEnter={() => flyout.onTriggerEnter("files")}
               onMouseLeave={() => flyout.onTriggerLeave()}
             >
               <IconButtonV2
@@ -318,7 +322,7 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
         />
       </Show>
 
-      {/* 折叠态悬停浮层：DOM 常驻，通过 CSS 显隐保持会话树状态与 Scroll 位置 */}
+      {/* 折叠态悬停浮层：DOM 常驻，通过 CSS 显隐保持树状态与 Scroll 位置 */}
       <Portal>
         <div
           data-component="space-rail-flyout"
@@ -328,9 +332,13 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
           onMouseLeave={() => flyout.onFlyoutLeave()}
         >
           <header class="flex h-7 shrink-0 items-center px-3 border-b border-v2-border-border-base">
-            <span class="text-11-medium text-v2-text-text-strong truncate">{t("workbench.sidebar.spaces")}</span>
+            <span class="text-11-medium text-v2-text-text-strong truncate">
+              {flyoutMode() === "files" ? t("workbench.sidebar.files") : t("workbench.sidebar.spaces")}
+            </span>
           </header>
-          <div class="flex-1 min-h-0 flex flex-col min-w-0 py-1 overflow-y-auto">
+          <div
+            class={`flex-1 min-h-0 flex flex-col min-w-0 py-1 overflow-y-auto ${flyoutMode() === "sessions" ? "" : "hidden"}`}
+          >
             <Show
               when={store.spaces() !== undefined}
               fallback={<div class="px-3 py-6 text-12-regular text-v2-text-text-muted">{t("common.loading")}</div>}
@@ -342,6 +350,17 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
                 onSessionClick={handleFlyoutSessionClick}
               />
             </Show>
+          </div>
+          <div
+            class={`flex-1 min-h-0 flex flex-col min-w-0 overflow-y-auto ${flyoutMode() === "files" ? "" : "hidden"}`}
+          >
+            <FileTreePanel
+              directory={wb.activeTabPath}
+              onFileClick={(file) => {
+                flyout.close()
+                ;(props.onFileClick ?? (() => {}))(file)
+              }}
+            />
           </div>
         </div>
       </Portal>
