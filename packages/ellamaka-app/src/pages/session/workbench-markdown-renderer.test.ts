@@ -155,6 +155,28 @@ describe("Chat tool scrollbar geometry", () => {
   })
 })
 
+describe("Chat tool header width", () => {
+  test("lets long tool details yield to the trailing status and keeps their tail visible", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-header"\]\s*\{[^}]*\bwidth: 100%;[^}]*\bmin-width: 0;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-trigger"\]\s*\{[^}]*\bflex: 1 1 auto;[^}]*\bmin-width: 0;[^}]*\boverflow: hidden;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-trailing"\]\s*\{[^}]*\bflex: 0 0 auto;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-subtitle"\]\s*\{[^}]*\bdirection: rtl;[^}]*\btext-align: left;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-context-info-bar"\]\s*\{[^}]*\bbox-sizing: border-box;[^}]*\bwidth: 100%;[^}]*\}/,
+    )
+  })
+})
+
 describe("WorkbenchMarkdown highlight pipeline", () => {
   test("fnv1a is deterministic and content-sensitive", () => {
     expect(fnv1a("const a = 1")).toBe(fnv1a("const a = 1"))

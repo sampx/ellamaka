@@ -1120,6 +1120,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   min-height: 30px;
   padding: 2px 0;
   font-size: var(--font-size-base);
@@ -1129,10 +1130,12 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-trigger"] {
   display: inline-flex;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   max-width: 100%;
+  min-width: 0;
   min-height: 26px;
   padding: 3px 6px;
   font-size: var(--font-size-base);
@@ -1144,6 +1147,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   cursor: pointer;
   text-align: left;
   outline: none;
+  overflow: hidden;
   white-space: nowrap;
   transition: background-color 150ms ease, color 150ms ease;
 }
@@ -1187,6 +1191,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 30px;
   padding: 3px 6px;
   font-size: var(--font-size-base);
@@ -1204,10 +1210,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 /* Read info bar subtitle truncates to a single line with an ellipsis, so long
-   relative paths never wrap. The full absolute path is exposed on hover via
-   the title attribute. */
+   relative paths never wrap. Direction is reversed so the useful path tail
+   stays visible when the available width is tight. */
 [data-slot="chat-context-info-bar"] [data-slot="chat-tool-subtitle"] {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1215,9 +1221,9 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 /* File-change (edit/write/patch) trigger subtitle aligns with the read info
-   bar: a single-line ellipsized relative path with the full path on hover. */
+   bar: a single-line ellipsized relative path that keeps its tail visible. */
 [data-component="chat-file-change"] [data-slot="chat-tool-subtitle"] {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1234,13 +1240,15 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-subtitle"] {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   font-size: var(--font-size-small);
   font-weight: 400;
   color: var(--text-weak);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 [data-slot="chat-tool-arg"] {
