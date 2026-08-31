@@ -103,6 +103,21 @@ export function closeSurfaceTab(
   return { tabs: next, activeKey: fallback ? surfaceTabKey(fallback) : undefined }
 }
 
+export const INSPECTOR_MIN_WIDTH = 280
+export const INSPECTOR_DEFAULT_WIDTH = 480
+export const INSPECTOR_MAX_VIEWPORT_RATIO = 0.6
+
+/**
+ * Resolves the inspector panel width: clamped to [280px, 60% of viewport],
+ * falling back to the 480px default for non-finite or non-positive input so a
+ * corrupted persisted value can never break the layout.
+ */
+export function clampInspectorWidth(width: number, viewportWidth: number): number {
+  if (!Number.isFinite(width) || width <= 0) return INSPECTOR_DEFAULT_WIDTH
+  const max = Math.max(INSPECTOR_MIN_WIDTH, viewportWidth * INSPECTOR_MAX_VIEWPORT_RATIO)
+  return Math.min(Math.max(width, INSPECTOR_MIN_WIDTH), max)
+}
+
 /**
  * Local URL-safe base64 (RFC 4648 §5) that does not depend on
  * `@opencode-ai/core/util/encode`. Test suites elsewhere mock that module

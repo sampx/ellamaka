@@ -9,7 +9,9 @@ import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
 import { WorkbenchInspector } from "./parts/inspector-panel"
 import {
+  clampInspectorWidth,
   closeSurfaceTab,
+  INSPECTOR_DEFAULT_WIDTH,
   openSurfaceTab,
   surfaceTabKey,
   type FileSurfaceTab,
@@ -54,12 +56,14 @@ function WorkbenchShell() {
   // state may persist; file contents themselves are re-fetched, never stored).
   const [surfaceStore, setSurfaceStore] = persisted(
     Persist.global("workbench.inspector", []),
-    createStore<{ tabs: SurfaceTab[]; activeKey?: string; expanded?: boolean }>({
+    createStore<{ tabs: SurfaceTab[]; activeKey?: string; width: number }>({
       tabs: [],
       activeKey: undefined,
-      expanded: false,
+      width: INSPECTOR_DEFAULT_WIDTH,
     }),
   )
+  // Clamped on read so a stale persisted width can never break the layout.
+  const surfaceWidth = () => clampInspectorWidth(surfaceStore.width, window.innerWidth)
   const surfaceTabs = () => surfaceStore.tabs
   const surfaceActiveKey = () => surfaceStore.activeKey
   const handleFileClick = (file: FileNode) => {
@@ -229,6 +233,8 @@ function WorkbenchShell() {
                   tabs={surfaceTabs()}
                   activeKey={surfaceActiveKey()!}
                   onActiveKeyChange={(key) => setSurfaceStore("activeKey", key)}
+                  width={surfaceWidth()}
+                  onWidthChange={(width) => setSurfaceStore("width", width)}
                   onCloseTab={closeSurfaceTabByKey}
                   onClose={() => {
                     setSurfaceStore("tabs", [])

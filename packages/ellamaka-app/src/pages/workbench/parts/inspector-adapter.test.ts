@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  clampInspectorWidth,
   closeSurfaceTab,
   closeViewerTab,
   createFileScroller,
@@ -190,6 +191,30 @@ describe("generic surface tabs", () => {
       tabs: [fileTab],
       activeKey: keyFile,
     })
+  })
+})
+
+describe("clampInspectorWidth", () => {
+  test("clamps to the 280px minimum", () => {
+    expect(clampInspectorWidth(100, 2000)).toBe(280)
+  })
+
+  test("clamps to at most 60% of the viewport", () => {
+    expect(clampInspectorWidth(2000, 1000)).toBe(600)
+  })
+
+  test("keeps an in-range width unchanged", () => {
+    expect(clampInspectorWidth(420, 1000)).toBe(420)
+  })
+
+  test("non-finite or non-positive input falls back to the default", () => {
+    expect(clampInspectorWidth(Number.NaN, 1000)).toBe(480)
+    expect(clampInspectorWidth(0, 1000)).toBe(480)
+    expect(clampInspectorWidth(-50, 1000)).toBe(480)
+  })
+
+  test("restored persisted width is clamped on hydrate", () => {
+    expect(clampInspectorWidth(9999, 800)).toBe(480)
   })
 })
 

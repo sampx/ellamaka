@@ -1,6 +1,6 @@
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Tabs } from "@opencode-ai/ui/tabs"
-import { For, Show, createEffect, createMemo, createSignal, Match, on, Switch } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -15,6 +15,7 @@ import { useLanguage } from "@/context/language"
 import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
 import { useWorkbenchPromptRegistry } from "../workbench-prompt-registry"
 import {
+  clampInspectorWidth,
   createFileScroller,
   fileViewerRoute,
   resolveFileViewerState,
@@ -378,11 +379,52 @@ export function WorkbenchInspector(props: {
   tabs: SurfaceTab[]
   activeKey: string
   onActiveKeyChange: (key: string) => void
+  onWidthChange: (width: number) => void
+  width: number
   onCloseTab: (key: string) => void
   onClose: () => void
 }) {
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
+
+  let resizing = false
+  let rafId: number | null = null
+  onCleanup(() => {
+    if (rafId !== null) cancelAnimationFrame(rafId)
+  })
+
+  function startResize(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    resizing = true
+    const onMove = (event: MouseEvent) => {
+      if (!resizing) return
+      event.preventDefault()
+      // The panel is anchored to the right edge: growing it means dragging left.
+      const viewport = window.innerWidth
+      const next = clampInspectorWidth(viewport - event.clientX, viewport)
+      if (rafId !== null) return
+      pendingNextWidth = next
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        if (pendingNextWidth === null) return
+        props.onWidthChange(pendingNextWidth)
+        pendingNextWidth = null
+      })
+    }
+    const onUp = () => {
+      resizing = false
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+    let pendingNextWidth: number | null = null
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+  }
 
   return (
     <div
@@ -390,9 +432,22 @@ export function WorkbenchInspector(props: {
       class={`absolute z-40 flex flex-col overflow-hidden border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
         expanded() ? "inset-2" : "top-2 bottom-2 right-2 w-[480px] max-w-[50vw]"
       }`}
+      style={expanded() ? undefined : { width: `${props.width}px`, "max-width": "60vw" }}
     >
-      <Tabs value={props.activeKey} onChange={props.onActiveKeyChange} class="flex flex-col h-full min-h-0">
-        <div class="flex h-9 shrink-0 items-center border-b border-v2-border-border-base bg-v2-background-bg-base">
+      <Show when={!expanded()}>
+        <div
+          class="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize z-50 hover:bg-v2-icon-icon-brand/30 transition-colors"
+          aria-hidden="true"
+          onMouseDown={startResize}
+        />
+      </Show>
+      <Tabs
+        value={props.activeKey}
+        onChange={props.onActiveKeyChange}
+        variant="pill"
+        class="flex flex-col h-full min-h-0"
+      >
+        <div class="flex shrink-0 items-center border-b border-v2-border-border-base bg-v2-background-bg-base">
           <Show when={props.tabs.length > 0}>
             <Tabs.List class="flex-1 min-w-0 overflow-x-auto">
               <For each={props.tabs}>
