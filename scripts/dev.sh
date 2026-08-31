@@ -167,17 +167,60 @@ read_record() {
   return 1
 }
 
-record_is_current() {
-  local label="$1" pid="$2" stamp="$3" command
-  [ -n "$stamp" ] && [ "$(process_stamp "$pid")" = "$stamp" ] && return 0
-  [ -n "$stamp" ] && return 1
+cwd_of() {
+  # Empty for processes we cannot inspect (not owned by us, already gone).
+  lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1
+}
+
+# Best-effort identity check for "is pid $1 plausibly service $2 of THIS
+# project". The command match alone is too loose: any `vite` process answers to
+# it, including one another worktree started on the same port. The cwd narrows
+# it to this project.
+#
+# The cwd probe must never be allowed to DISPROVE identity. It returns empty for
+# processes we lack permission to inspect or that have already exited, and
+# treating that as "foreign" would break stop/restart against a perfectly
+# healthy service. When the probe is inconclusive we fall back to the command
+# match, i.e. the pre-existing behaviour.
+is_service_process() {
+  local pid="$1" label="$2" command cwd expected
   command="$(ps -o command= -p "$pid" 2>/dev/null)"
   case "$label" in
-    backend) [[ "$command" == *"$opencode_entry"* ]] ;;
-    frontend) [[ "$command" == *"bun run dev"* || "$command" == *"vite"* ]] ;;
+    backend)
+      [[ "$command" == *"$opencode_entry"* ]] || return 1
+      expected="$opencode_dir"
+      ;;
+    frontend)
+      [[ "$command" == *"bun run dev"* || "$command" == *"vite"* ]] || return 1
+      expected="$ellamaka_app_dir"
+      ;;
     desktop) [[ "$command" == *"electron-vite"* ]] ;;
     *) return 1 ;;
   esac
+  [ -n "${expected:-}" ] || return 0
+  cwd="$(cwd_of "$pid")"
+  [ -n "$cwd" ] || return 0
+  # macOS resolves symlinked paths (/tmp -> /private/tmp) in lsof output while
+  # $root may still be the symlinked form, so compare resolved paths.
+  [ "$cwd" = "$expected" ] || [ "$(resolve_path "$cwd")" = "$(resolve_path "$expected")" ]
+}
+
+resolve_path() {
+  local rest="" base="$1" dir
+  while [ -L "$base" ]; do
+    dir="$(cd "$(dirname "$base")" 2>/dev/null && pwd)" || return 0
+    base="$(readlink "$base")"
+    [[ "$base" != /* ]] && base="$dir/$base"
+  done
+  dir="$(cd "$(dirname "$base")" 2>/dev/null && pwd)" || return 0
+  printf '%s/%s\n' "$dir" "$(basename "$base")"
+}
+
+record_is_current() {
+  local label="$1" pid="$2" stamp="$3"
+  [ -n "$stamp" ] && [ "$(process_stamp "$pid")" = "$stamp" ] && return 0
+  [ -n "$stamp" ] && return 1
+  is_service_process "$pid" "$label"
 }
 
 rewrite_records() {
@@ -254,6 +297,12 @@ service_has_records() {
   return 1
 }
 
+# Refuse to start when a dev.sh-managed instance is already live, but tolerate
+# a foreign listener on the port we want. Bumping past a foreign listener keeps
+# worktrees from blocking each other and is safe because the chosen port is
+# reported to the caller. Bumping past our own live instance is not: the
+# pidfile holds one record per service, so the first copy would become
+# unreachable while still holding its port.
 require_stopped() {
   local service
   for service in "$@"; do
@@ -269,21 +318,61 @@ require_stopped() {
   return 0
 }
 
+# Like require_stopped, but a foreign listener on $2 only causes a bump instead
+# of an abort, because the caller hands $2 to choose_free_port right after.
+require_own_instance_stopped() {
+  local service="$1" port="$2"
+  if service_running "$service"; then
+    echo "$service is already running; run '$self stop $service' first"
+    return 1
+  fi
+  if service_has_records "$service"; then
+    remove_service_records "$service"
+    cleanup_service_logs "$service"
+  fi
+  if is_running "$port"; then
+    echo "port :$port is held by a process outside dev.sh; picking another port"
+  fi
+  return 0
+}
+
+# Ports already handed out by choose_free_port during the current command.
+# Nothing binds until start_backend/start_frontend run, so a plain lsof probe
+# still reports a claimed port as free — without this bookkeeping two services
+# asked for the same port would both accept it, and the second one to bind
+# (vite, launched with --strictPort) would exit with "port already in use".
+# Space-delimited with leading/trailing delimiters; bash 3.2 has no assoc arrays.
+CLAIMED_PORTS=" "
+
+claim_ports_reset() { CLAIMED_PORTS=" "; }
+
+port_claimed() { [[ "$CLAIMED_PORTS" == *" $1 "* ]]; }
+
+claim_port() { port_claimed "$1" || CLAIMED_PORTS="${CLAIMED_PORTS}$1 "; }
+
+# Must be called directly, never inside $( ): SELECTED_PORT is set in the
+# caller's shell, and command substitution would trap the assignment in a
+# subshell. bash 3.2 has no `local -n`, so a nameref is not an option.
 next_free_port() {
   local port="$1"
-  while is_running "$port"; do port=$((port + 1)); done
-  echo "$port"
+  while is_running "$port" || port_claimed "$port"; do port=$((port + 1)); done
+  SELECTED_PORT="$port"
 }
 
 choose_free_port() {
   local name="$1" port="$2"
-  SELECTED_PORT="$port"
+  next_free_port "$port"
+  claim_port "$SELECTED_PORT"
+  [ "$SELECTED_PORT" = "$port" ] && return 0
   if is_running "$port"; then
-    SELECTED_PORT="$(next_free_port "$((port + 1))")"
     echo "port :$port in use, auto-bumped $name → :$SELECTED_PORT"
+  else
+    echo "port :$port reserved by another service, auto-bumped $name → :$SELECTED_PORT"
   fi
 }
 
+# Desktop keeps the strict contract: 5173 is electron-vite's fixed port and
+# 9222 is the CDP port its main process expects, so neither can move.
 require_free_ports() {
   local port
   for port in "$@"; do
@@ -529,11 +618,19 @@ cmd_tui() {
     if read_record backend && service_running backend && backend_healthy "$RECORD_PORT"; then
       echo "attaching to running server :$RECORD_PORT"
       warmup_config "$RECORD_PORT"
+      if ! read_record frontend || ! service_running frontend; then
+        claim_ports_reset
+        choose_free_port workbench "$APP_PORT"; APP_PORT="$SELECTED_PORT"
+        start_frontend "$APP_PORT" "$RECORD_PORT" || { echo "workbench failed to start; see $FRONTEND_LOG"; return 1; }
+        echo "  workbench :$APP_PORT"
+      fi
       cd "$opencode_dir"
       exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$RECORD_PORT" --dir "$caller_pwd"
     fi
 
-    require_stopped backend frontend || return 1
+    require_own_instance_stopped backend "$PORT" || return 1
+    require_own_instance_stopped frontend "$APP_PORT" || return 1
+    claim_ports_reset
     choose_free_port backend "$PORT"; PORT="$SELECTED_PORT"
     choose_free_port workbench "$APP_PORT"; APP_PORT="$SELECTED_PORT"
     start_backend "$PORT" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || return 1
@@ -583,10 +680,12 @@ cmd_serve() {
   done
 
   if $backend_only; then
-    require_stopped backend || return 1
+    require_own_instance_stopped backend "$PORT" || return 1
   else
-    require_stopped backend frontend || return 1
+    require_own_instance_stopped backend "$PORT" || return 1
+    require_own_instance_stopped frontend "$APP_PORT" || return 1
   fi
+  claim_ports_reset
   choose_free_port backend "$PORT"; PORT="$SELECTED_PORT"
   if ! $backend_only; then
     choose_free_port workbench "$APP_PORT"; APP_PORT="$SELECTED_PORT"
@@ -651,10 +750,18 @@ EOF
       read_record backend && service_running backend || { echo "restart: backend not running"; return 1; }
       local backend_port="$RECORD_PORT"
       stop_service backend || return 1
-      start_backend "$backend_port" false all "$opencode_preload" || return 1
-      wait_backend "$backend_port" || { echo "restart: backend failed to start; see $BACKEND_LOG"; return 1; }
-      warmup_config "$backend_port"
-      echo "  backend :$backend_port restarted"
+      # Re-pick rather than reuse: the port may have been taken during the
+      # restart, and vite/ellamaka both bind with strictPort semantics.
+      claim_ports_reset
+      choose_free_port backend "$backend_port"; local new_backend_port="$SELECTED_PORT"
+      start_backend "$new_backend_port" false all "$opencode_preload" || return 1
+      wait_backend "$new_backend_port" || { echo "restart: backend failed to start; see $BACKEND_LOG"; return 1; }
+      warmup_config "$new_backend_port"
+      echo "  backend :$new_backend_port restarted"
+      if [ "$new_backend_port" != "$backend_port" ] && service_running frontend; then
+        echo "  ⚠  backend moved :$backend_port → :$new_backend_port"
+        echo "     the workbench still points at :$backend_port; run '$self restart frontend' to rebind it"
+      fi
       ;;
     frontend)
       read_record frontend && service_running frontend || { echo "restart: frontend not running"; return 1; }
@@ -662,8 +769,11 @@ EOF
       read_record backend && service_running backend || { echo "restart: backend not running"; return 1; }
       local frontend_backend_port="$RECORD_PORT"
       stop_service frontend || return 1
-      start_frontend "$frontend_port" "$frontend_backend_port" || return 1
-      echo "  workbench :$frontend_port restarted"
+      claim_ports_reset
+      claim_port "$frontend_backend_port"
+      choose_free_port workbench "$frontend_port"; local new_frontend_port="$SELECTED_PORT"
+      start_frontend "$new_frontend_port" "$frontend_backend_port" || return 1
+      echo "  workbench :$new_frontend_port restarted  → http://127.0.0.1:$new_frontend_port/workbench"
       ;;
     all)
       local restart_backend=false restart_frontend=false backend_port="" frontend_port=""
@@ -672,14 +782,22 @@ EOF
       $restart_backend || $restart_frontend || { echo "restart: no dev instance running"; return 1; }
       if $restart_frontend; then stop_service frontend || return 1; fi
       if $restart_backend; then stop_service backend || return 1; fi
+      claim_ports_reset
       if $restart_backend; then
+        choose_free_port backend "$backend_port"; backend_port="$SELECTED_PORT"
         start_backend "$backend_port" false all "$opencode_preload" || return 1
         wait_backend "$backend_port" || { echo "restart: backend failed to start; see $BACKEND_LOG"; return 1; }
         warmup_config "$backend_port"
+        echo "  backend :$backend_port restarted"
       fi
       if $restart_frontend; then
         $restart_backend || { echo "restart: backend not running"; return 1; }
+        # The workbench bakes its backend port in at start, so it always
+        # rebinds to the backend port resolved above, bumped or not.
+        claim_port "$backend_port"
+        choose_free_port workbench "$frontend_port"; frontend_port="$SELECTED_PORT"
         start_frontend "$frontend_port" "$backend_port" || return 1
+        echo "  workbench :$frontend_port restarted  → http://127.0.0.1:$frontend_port/workbench"
       fi
       echo "restarted dev services"
       ;;
