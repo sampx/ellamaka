@@ -109,6 +109,30 @@ describe("WorkbenchMarkdown table layout", () => {
   })
 })
 
+describe("Chat tool scrollbar geometry", () => {
+  test("reserves the tool scrollbar track while the pointer is away", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="chat-shell-command"\]::-webkit-scrollbar,[\s\S]*?\)::-webkit-scrollbar \{\n  display: block;\n  width: 8px;\n  height: 8px;/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-shell-command"\]::-webkit-scrollbar-thumb,[\s\S]*?\)::-webkit-scrollbar-thumb \{\n  background: transparent;/,
+    )
+    expect(css).toContain('scrollbar-color: transparent transparent;')
+    expect(css).not.toContain('[data-slot="chat-shell-command"]:hover::-webkit-scrollbar,')
+  })
+
+  test("marks every custom tool output as nested scrollable content", async () => {
+    const source = await Bun.file(new URL("./chat-tool-blocks.tsx", import.meta.url)).text()
+
+    for (const slot of ["chat-shell-command", "chat-shell-output", "chat-shell-error", "chat-context-output", "chat-generic-output"]) {
+      expect(source).toContain(`<pre data-slot="${slot}" data-scrollable="">`)
+    }
+    expect(source).toContain('<div data-component="chat-file-change-wrapper" data-scrollable="">')
+  })
+})
+
 describe("WorkbenchMarkdown highlight pipeline", () => {
   test("fnv1a is deterministic and content-sensitive", () => {
     expect(fnv1a("const a = 1")).toBe(fnv1a("const a = 1"))

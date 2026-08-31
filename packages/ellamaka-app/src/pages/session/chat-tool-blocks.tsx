@@ -210,7 +210,7 @@ export function ContextToolBlock(props: {
         />
         <Collapsible.Content>
           <Show when={output()}>
-            <pre data-slot="chat-context-output">{output()}</pre>
+            <pre data-slot="chat-context-output" data-scrollable="">{output()}</pre>
           </Show>
         </Collapsible.Content>
       </Collapsible>
@@ -289,7 +289,7 @@ export function ShellActivityBlock(props: { part: ToolPart; message: AssistantMe
         />
         <Collapsible.Content>
           <div data-slot="chat-shell-command-region">
-            <pre data-slot="chat-shell-command">$ {command()}</pre>
+            <pre data-slot="chat-shell-command" data-scrollable="">$ {command()}</pre>
             <button
               type="button"
               data-action="chat-shell-copy"
@@ -302,12 +302,12 @@ export function ShellActivityBlock(props: { part: ToolPart; message: AssistantMe
           </div>
           <Show when={output()}>
             <div data-slot="chat-shell-output-region">
-              <pre data-slot="chat-shell-output">{output()}</pre>
+              <pre data-slot="chat-shell-output" data-scrollable="">{output()}</pre>
             </div>
           </Show>
           <Show when={error()}>
             <div data-slot="chat-shell-error-region">
-              <pre data-slot="chat-shell-error">{error()}</pre>
+              <pre data-slot="chat-shell-error" data-scrollable="">{error()}</pre>
             </div>
           </Show>
         </Collapsible.Content>
@@ -395,7 +395,7 @@ export function FileChangeBlock(props: {
             {(renderer) => {
               const Renderer = renderer()
               return (
-                <div data-component="chat-file-change-wrapper">
+                <div data-component="chat-file-change-wrapper" data-scrollable="">
                   <Renderer
                     part={props.part}
                     message={props.message}
@@ -536,7 +536,7 @@ export function GenericToolBlock(props: { part: ToolPart; message: AssistantMess
         />
         <Collapsible.Content>
           <Show when={output()}>
-            <pre data-slot="chat-generic-output">{output()}</pre>
+            <pre data-slot="chat-generic-output" data-scrollable="">{output()}</pre>
           </Show>
         </Collapsible.Content>
       </Collapsible>
