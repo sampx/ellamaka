@@ -468,6 +468,7 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 }
 
 [data-component="chat-narrative"] {
+  width: 100%;
   font-size: var(--font-size-base);
   line-height: 1.65;
   color: var(--text-strong);
@@ -587,7 +588,10 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 }
 
 [data-slot="workbench-markdown-content"] table {
-  width: max-content;
+  /* Keep the table formatting context: a block-level outer box can be full
+     width while its rows still shrink to their intrinsic content width. */
+  display: table;
+  width: 100%;
   max-width: 100%;
   margin: 0 0 14px;
   border-collapse: collapse;
@@ -596,16 +600,35 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="workbench-markdown-content"] th,
 [data-slot="workbench-markdown-content"] td {
-  padding: 6px 8px;
-  border: 1px solid var(--border-weaker-base);
+  padding: 9px 12px;
+  border: 0;
+  border-block-end: 1px solid var(--border-weaker-base);
   text-align: left;
   vertical-align: top;
 }
 
 [data-slot="workbench-markdown-content"] th {
-  background: var(--surface-weak);
+  background: transparent;
   color: var(--text-strong);
   font-weight: 600;
+}
+
+/* Let the table begin and end on the same vertical guides as the prose. The
+   horizontal dividers retain the row structure without the heavy grid. */
+[data-slot="workbench-markdown-content"] :is(th, td):first-child {
+  padding-inline-start: 0;
+}
+
+[data-slot="workbench-markdown-content"] :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+[data-slot="workbench-markdown-content"] tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+[data-slot="workbench-markdown-content"] tbody tr:hover td {
+  background: color-mix(in srgb, var(--surface-weak) 58%, transparent);
 }
 
 /* KaTeX supplies semantic MathML alongside its visual HTML. Keep both the

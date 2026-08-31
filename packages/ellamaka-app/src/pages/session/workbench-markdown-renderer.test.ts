@@ -75,6 +75,31 @@ describe("WorkbenchMarkdown streaming pipeline", () => {
   })
 })
 
+describe("WorkbenchMarkdown table layout", () => {
+  test("uses the full message reading lane for markdown tables", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toContain('[data-component="chat-narrative"] {\n  width: 100%;')
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] table \{[\s\S]*?display: table;[\s\S]*?width: 100%;[\s\S]*?max-width: 100%;/,
+    )
+  })
+
+  test("uses an airy row-divider treatment instead of boxed cells", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] th,[\s\S]*?\[data-slot="workbench-markdown-content"\] td \{[\s\S]*?border: 0;[\s\S]*?border-block-end: 1px solid var\(--border-weaker-base\);/,
+    )
+    expect(css).toContain(
+      '[data-slot="workbench-markdown-content"] th {\n  background: transparent;',
+    )
+    expect(css).toContain(
+      '[data-slot="workbench-markdown-content"] tbody tr:last-child td {\n  border-block-end: 0;',
+    )
+  })
+})
+
 describe("WorkbenchMarkdown highlight pipeline", () => {
   test("fnv1a is deterministic and content-sensitive", () => {
     expect(fnv1a("const a = 1")).toBe(fnv1a("const a = 1"))
