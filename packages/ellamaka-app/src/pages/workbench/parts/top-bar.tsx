@@ -179,11 +179,6 @@ export function WorkbenchTitlebar() {
     setTabMenu({ x: e.clientX, y: e.clientY, tab })
   }
 
-  const currentSpacePanelsCount = () => {
-    const space = wb.spaceState(activePath())
-    return space?.panels.length ?? 0
-  }
-
   return (
     <header class="relative z-40 flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base select-none">
       <div data-tauri-drag-region class="workbench-macos-window-chrome shrink-0" />
