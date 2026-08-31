@@ -15,7 +15,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
-import { CommentsProvider } from "@/context/comments"
+import { CommentsProvider, useComments } from "@/context/comments"
 import { LocalProvider, useLocal } from "@/context/local"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
@@ -43,6 +43,7 @@ import { nextFollowupToSend } from "./panel-chat-followup"
 import { chatTranscriptNavigation } from "./panel-chat-resume-scroll"
 
 import { reportWorkbenchError } from "../workbench-error"
+import { useWorkbenchPromptRegistry } from "../workbench-prompt-registry"
 
 const emptyUserMessages: UserMessage[] = []
 type FollowupItem = FollowupDraft & { id: string }
@@ -62,6 +63,8 @@ function PanelChatInner(props: {
   const sdk = useSDK()
   const serverSync = useServerSync()
   const prompt = usePrompt()
+  const comments = useComments()
+  const promptRegistry = useWorkbenchPromptRegistry()
   const language = useLanguage()
   const settings = useSettings()
   const actions = useWorkbenchActions()
@@ -71,6 +74,32 @@ function PanelChatInner(props: {
   const modelName = (providerID: string, modelID: string) =>
     providers.all().get(providerID)?.models[modelID]?.name
   const scope = createMemo(() => scopeFromTab({ name: props.spaceName, path: props.spacePath }))
+
+  // Expose this Panel's prompt/comments to the workbench-wide registry so the
+  // floating file viewer can submit line comments into the active Panel's
+  // prompt context. Registration is keyed by Panel id and torn down on unmount;
+  // the active Panel marker follows the canonical selector (§5.5).
+  createEffect(
+    on(
+      () => props.panel.id,
+      (panelID) => {
+        if (!panelID) return
+        promptRegistry.registerPrompt(panelID, prompt)
+        promptRegistry.registerComments(panelID, comments)
+        onCleanup(() => {
+          promptRegistry.unregisterPrompt(panelID)
+          promptRegistry.unregisterComments(panelID)
+        })
+      },
+      { defer: true },
+    ),
+  )
+  createEffect(() => {
+    const state = wb.spaceState(props.spacePath)
+    const isActive = state?.activePanelID === props.panel.id
+    if (!isActive) return
+    promptRegistry.setActivePanel(props.panel.id)
+  })
 
   const panels = () => wb.spaceState(props.spacePath)?.panels ?? []
   const canSplit = createMemo(() => {

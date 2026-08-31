@@ -7,13 +7,18 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { sampledChecksum } from "@opencode-ai/core/util/encode"
+import { createLineCommentController } from "@opencode-ai/ui/line-comment-annotations"
+import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { FileProvider, useFile, type SelectedLineRange } from "@/context/file"
+import type { LineComment } from "@/context/comments"
 import { useLanguage } from "@/context/language"
 import { WorkbenchPanelDirectoryProvider } from "../workbench-directory-provider"
+import { useWorkbenchPromptRegistry } from "../workbench-prompt-registry"
 import {
   createFileScroller,
   fileViewerRoute,
   resolveFileViewerState,
+  submitFileComment,
   viewerTabKey,
   type FileScroller,
   type FileScrollPos,
@@ -58,6 +63,120 @@ function FileViewerInner(props: FileViewerInnerProps) {
     const end = (value as { end?: unknown }).end
     if (typeof start !== "number" || typeof end !== "number") return null
     return { start, end } satisfies SelectedLineRange
+  })
+
+  // Line comments. The viewer floats outside the chat Panel's provider tree,
+  // so comments are projected into the active Panel's prompt/comments through
+  // the workbench registry; the local store is the viewer's own projection for
+  // rendering and inline editing within this viewer session.
+  const registry = useWorkbenchPromptRegistry()
+  const [localComments, setLocalComments] = createSignal<LineComment[]>([])
+  const fileComments = createMemo(() => {
+    const target = registry.activeComments()
+    const persisted = target?.list(path()) ?? []
+    return [...persisted.filter((c) => c.file === path()), ...localComments()]
+  })
+  const commentedLines = createMemo(() => fileComments().map((comment) => comment.selection))
+  const [openedComment, setOpenedComment] = createSignal<string | null>(null)
+  const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
+
+  const addCommentToContext = (input: {
+    file: string
+    selection: SelectedLineRange
+    comment: string
+    preview?: string
+    origin?: "review" | "file"
+  }) => {
+    const saved = submitFileComment({
+      file: input.file,
+      selection: input.selection,
+      comment: input.comment,
+      preview: input.preview,
+      origin: input.origin,
+      contents: contents(),
+      comments: registry.activeComments(),
+      prompt: registry.activePrompt(),
+    })
+    if (saved) setLocalComments((list) => [...list.filter((c) => c.id !== saved.id), saved])
+  }
+
+  const updateCommentInContext = (input: {
+    id: string
+    file: string
+    selection: SelectedLineRange
+    comment: string
+  }) => {
+    registry.activeComments()?.update(input.file, input.id, input.comment)
+    const preview =
+      input.file === path()
+        ? previewSelectedLines(contents(), { start: input.selection.start, end: input.selection.end })
+        : undefined
+    registry.activePrompt()?.context.updateComment(input.file, input.id, {
+      comment: input.comment,
+      ...(preview ? { preview } : {}),
+    })
+    setLocalComments((list) =>
+      list.map((c) => (c.id === input.id ? { ...c, comment: input.comment } : c)),
+    )
+  }
+
+  const removeCommentFromContext = (input: { id: string; file: string }) => {
+    registry.activeComments()?.remove(input.file, input.id)
+    registry.activePrompt()?.context.removeComment(input.file, input.id)
+    setLocalComments((list) => list.filter((c) => c.id !== input.id))
+  }
+
+  const commentsUi = createLineCommentController({
+    comments: fileComments,
+    label: language.t("ui.lineComment.submit"),
+    draftKey: () => path(),
+    state: {
+      opened: () => openedComment(),
+      setOpened: (id) => setOpenedComment(id),
+      selected: () => null,
+      setSelected: () => {},
+      commenting: () => commenting(),
+      setCommenting: (range) => setCommenting(range),
+      syncSelected: (range) => {
+        const p = path()
+        if (!p) return
+        file.setSelectedLines(p, range ? cloneSelectedLineRange(range) : null)
+      },
+      hoverSelected: (range) => {
+        const p = path()
+        if (!p) return
+        file.setSelectedLines(p, range ? cloneSelectedLineRange(range) : null)
+      },
+    },
+    getHoverSelectedRange: () => selectedLines(),
+    cancelDraftOnCommentToggle: true,
+    clearSelectionOnSelectionEndNull: true,
+    onSubmit: ({ comment, selection }) => {
+      const p = path()
+      if (!p) return
+      addCommentToContext({ file: p, selection, comment, origin: "file" })
+    },
+    onUpdate: ({ id, comment, selection }) => {
+      const p = path()
+      if (!p) return
+      updateCommentInContext({ id, file: p, selection, comment })
+    },
+    onDelete: (comment) => {
+      const p = path()
+      if (!p) return
+      removeCommentFromContext({ id: comment.id, file: p })
+    },
+    editSubmitLabel: language.t("common.save"),
+    renderCommentActions: (_, controls) => (
+      <div class="flex items-center gap-1">
+        <button type="button" class="text-11-medium text-v2-text-text-weak hover:text-v2-text-text-strong px-1" onClick={controls.edit}>
+          {language.t("common.edit")}
+        </button>
+        <button type="button" class="text-11-medium text-v2-text-text-weak hover:text-v2-text-text-danger px-1" onClick={controls.remove}>
+          {language.t("common.delete")}
+        </button>
+      </div>
+    ),
   })
 
   // Scroll sync backed by the pure FileScroller adapter over useFile primitives.
@@ -177,11 +296,16 @@ function FileViewerInner(props: FileViewerInnerProps) {
         enableLineSelection
         enableHoverUtility
         selectedLines={selectedLines()}
-        commentedLines={[]}
+        commentedLines={commentedLines()}
+        annotations={commentsUi.annotations()}
+        renderAnnotation={commentsUi.renderAnnotation}
+        renderHoverUtility={commentsUi.renderHoverUtility}
         onRendered={queueRestore}
         onLineSelected={(range: SelectedLineRange | null) => {
-          file.setSelectedLines(path(), range)
+          commentsUi.onLineSelected(range)
         }}
+        onLineSelectionEnd={commentsUi.onLineSelectionEnd}
+        onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
         search={search}
         class="select-text"
         media={{

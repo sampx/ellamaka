@@ -21,6 +21,7 @@ import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchRuntimeProvider, useWorkbenchRuntime } from "./workbench-runtime"
+import { WorkbenchPromptRegistryProvider } from "./workbench-prompt-registry"
 import { WorkbenchSidecarCleanupBinding } from "./workbench-sidecar-cleanup"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
@@ -201,11 +202,12 @@ function WorkbenchShell() {
             </div>
           }
         >
-          <Show when={display().showTitlebar}>
-            <WorkbenchActiveDirectoryProvider>
-              {() => <WorkbenchTitlebar />}
-            </WorkbenchActiveDirectoryProvider>
-          </Show>
+          <WorkbenchPromptRegistryProvider>
+            <Show when={display().showTitlebar}>
+              <WorkbenchActiveDirectoryProvider>
+                {() => <WorkbenchTitlebar />}
+              </WorkbenchActiveDirectoryProvider>
+            </Show>
           <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <SpaceRail onFileClick={handleFileClick} />
             <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -228,6 +230,7 @@ function WorkbenchShell() {
             <StatusBar />
           </Show>
           <WorkbenchSessionDeepLink />
+          </WorkbenchPromptRegistryProvider>
         </Show>
       </div>
       <Show when={runtime.status === "offline"}>
