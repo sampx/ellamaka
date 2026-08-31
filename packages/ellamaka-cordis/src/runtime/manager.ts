@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
+import type { DshRuntimeLockV1 } from "./lockfile.js"
 import {
   MATERIALIZE_TIMEOUT_MS,
   closureNameForFingerprint,
@@ -13,7 +14,7 @@ import {
   checkClosureIntegrity,
   materializeClosure,
   validateClosureOnDisk,
-  type ArboristFactory,
+  type ExtractLike,
 } from "./materializer.js"
 import { createDshLogger, type LogBridge } from "./log.js"
 import { DEFAULT_DSH_RUNTIME_MANIFEST } from "./embed-manifest.js"
@@ -39,34 +40,34 @@ export type { InstallAnchor } from "./status.js"
  *                version is treated as damaged and re-materialised (B-03).
  *   4. Lock    — otherwise acquire the cross-process `materialize.lock`;
  *                waiters re-inspect after the holder finishes.
- *   5. Stage   — write manifest+lock to `staging/` and reify with Arborist.
+ *   5. Stage   — extract the embedded lock's packages into `staging/` (pacote).
  *   6. Verify  — validate the staged tree (anchor + every direct dependency).
  *   7. Activate— atomically rename staging → `closures/<fingerprint>/`.
  *   8. Profile — create missing profile templates (never overwrite user edits).
  *   9. Load    — validate the closure loader and report `ready`.
  *
  * Single-flight: concurrent calls in one process share one durable in-flight
- * promise, so only one reify runs. Multi-process coordination is the file lock.
+ * promise, so only one materialisation runs. Multi-process coordination is the file lock.
  * Failures degrade (never overwrite a working closure, no retry this launch).
  *
  * Timeout (B-05): the hard materialisation timeout is applied at the CALLER
  * boundary, never inside the durable work. On timeout the caller returns
- * `degraded` WITHOUT releasing the lock while the underlying reify keeps
+ * `degraded` WITHOUT releasing the lock while the underlying materialisation keeps
  * running — the durable work holds the lock and only releases it in its own
  * completion handler, so no second process can clear the same `staging/` and
- * reify concurrently. A concurrent call for the same fingerprint shares the
- * in-flight durable promise (kept until the reify settles), so it neither
- * touches staging nor steals the lock; after the abandoned reify settles, the
+ * materialisation concurrently. A concurrent call for the same fingerprint shares the
+ * in-flight durable promise (kept until the materialisation settles), so it neither
+ * touches staging nor steals the lock; after the abandoned materialisation settles, the
  * shared promise resolves — a successful activation still counts as `ready`
  * (idempotent).
  *
- * Hung reify / lock-holding (round-2 W-01 decision): a live-but-hung
+ * Hung materialisation / lock-holding (round-2 W-01 decision): a live-but-hung
  * materialisation holds the lock until the process dies — there is no lease or
  * GC (§3.4.7). This is an ACCEPTED self-healing limitation: when the hung
  * process dies, the atomic reclaim protocol (lock.ts B-01) reaps its lock and
  * the next launch retries; a live-but-hung process holding the lock is a
  * pathological network case where `degraded` with a structured log is the
- * designed behaviour (no child-process reify is implemented).
+ * designed behaviour (no child-process install is implemented).
  */
 
 /** The fetch signature the manager may use for a network probe (tests stub it). */
@@ -81,7 +82,7 @@ export type LoaderResolver = (installAnchor: string) => unknown
 
 export interface ManagerDeps {
   fetch?: FetchLike
-  arborist?: ArboristFactory
+  extract?: ExtractLike
   /**
    * Loader-resolution hook. When omitted, `finishReady` runs a structural
    * loadability check on the closure's `@deepseek-ai/dsh` package.json.
@@ -94,6 +95,8 @@ export interface InitializeDshOptions {
   readonly logFile: string
   readonly entry: "serve" | "web" | "tui"
   readonly manifest: DshRuntimeManifestV1
+  /** The embedded lock to materialise from; defaults to the build-time lock. */
+  readonly lock?: DshRuntimeLockV1
   readonly deps?: ManagerDeps
   /** For tests: explicit env instead of `process.env`. */
   readonly env?: Record<string, string | undefined>
@@ -118,8 +121,8 @@ interface ManagerContext {
 
 /**
  * The durable in-flight work per `home::fingerprint`. It settles only when the
- * underlying materialisation (reify) settles, so a timed-out caller never
- * removes the entry while the abandoned reify is still running (B-05).
+ * underlying materialisation settles, so a timed-out caller never
+ * removes the entry while the abandoned materialisation is still running (B-05).
  */
 const inFlight = new Map<string, Promise<DshRuntimeStatus>>()
 
@@ -153,7 +156,7 @@ export function initializeDshRuntime(options: InitializeDshOptions): Promise<Dsh
   const existing = inFlight.get(key)
   if (existing) {
     // Concurrent caller shares the durable work (single-flight). Apply this
-    // caller's own timeout so a slow reify degrades this caller without ever
+    // caller's own timeout so a slow materialisation degrades this caller without ever
     // touching staging or stealing the lock (B-05).
     return raceTimeout(existing, timeoutMs, log)
   }
@@ -174,7 +177,7 @@ export function initializeDshRuntime(options: InitializeDshOptions): Promise<Dsh
     ),
   }
 
-  // The durable work settles only when the reify settles; it owns the lock and
+  // The durable work settles only when the materialisation settles; it owns the lock and
   // its release. Single-flight reuses it across concurrent calls, keeping the
   // entry until settle (B-05).
   const work = run(ctx).catch((error) => {
@@ -259,6 +262,7 @@ async function run(ctx: ManagerContext): Promise<DshRuntimeStatus> {
     const result = await materializeClosure({
       home: options.wopalHome,
       manifest: options.manifest,
+      lock: options.lock,
       deps: options.deps,
       log,
     })
@@ -272,9 +276,9 @@ async function run(ctx: ManagerContext): Promise<DshRuntimeStatus> {
     log.error("dsh.stage.materialise.failed", { error })
     return "degraded"
   } finally {
-    // The lock is released only when the durable work settles (reify done,
+    // The lock is released only when the durable work settles (materialisation done,
     // success or failure). A timed-out caller never reaches here — it returned
-    // `degraded` without releasing, so the in-flight reify stays single-writer
+    // `degraded` without releasing, so the in-flight materialisation stays single-writer
     // on staging until it completes (B-05).
     await releaseMaterializeLock(layout.lockFile, token)
   }

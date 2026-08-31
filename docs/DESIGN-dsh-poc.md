@@ -118,7 +118,7 @@ Ellamaka CLI / Desktop sidecar
 
 $WOPAL_HOME/dsh/closures/<fingerprint>/
 ├── package.json                         ← DSH 官方直接依赖
-├── package-lock.json                    ← 完整解析树与 integrity
+├── package-lock.json                    ← 完整解析树与 integrity（构建期内嵌锁的落盘复本）
 ├── runtime-manifest.json                ← 本闭包对应的运行时清单复本
 └── node_modules/@deepseek-ai/*          ← DSH 官方运行时闭包
 ```
@@ -155,7 +155,7 @@ $WOPAL_HOME/dsh/
 - 直接依赖名称与精确版本，包括 `@deepseek-ai/dsh`；
 - 清单 schema、Bridge ABI 与内容指纹。
 
-清单不携带任何锁快照，也不从构建期锁文件（bun.lock）推导版本或 registry。传递依赖树的解析与锁定发生在**运行时物化**阶段：物化器以清单的精确直接依赖版本调用 npm（Arborist）解析，Arborist 产出的 `package-lock.json` 即该闭包的**运行时锁**，记录实际解析出的完整传递依赖树。清单的目标形态如下：
+清单不携带任何锁快照，也不从构建期锁文件（bun.lock）推导版本或 registry。传递依赖树的解析与锁定发生在**构建期**：构建流程以清单的精确直接依赖版本调用 npm（Arborist）解析出完整传递依赖树，产出一份**内嵌锁**（`dsh-runtime-lock.json`），随 CLI 与 Desktop sidecar 一同嵌入二进制。清单的目标形态如下：
 
 ```json
 {
@@ -163,17 +163,19 @@ $WOPAL_HOME/dsh/
   "bridgeAbi": 1,
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.1-rc.2",
-    "@deepseek-ai/cordis": "4.0.1"
+    "@deepseek-ai/cordis": "4.0.2"
   },
   "fingerprint": "sha256:<manifest-digest>"
 }
 ```
 
-运行时物化器只消费发布物内嵌的清单，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。例如构建清单声明 `@deepseek-ai/dsh: 0.1.1-rc.2`，该 Ellamaka 发布物始终物化这一版本。升级 DSH 的路径是修改唯一编辑源、构建新的 Ellamaka 发布物。
+**内嵌锁**是构建期由清单解析出的完整传递依赖树快照，记录每个包的名称、精确版本与 `node_modules` 相对路径。它由 `Bun.build` 编译期内联成 JS 常量打进二进制，运行时通过静态 `import` 直接读取内存对象，不读任何磁盘文件。锁与清单指纹绑定：清单直接依赖版本变化必然触发锁重新生成，二者永远同步。
+
+运行时物化器只消费发布物内嵌的清单与内嵌锁，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。例如构建清单声明 `@deepseek-ai/dsh: 0.1.1-rc.2`，该 Ellamaka 发布物始终物化这一版本。升级 DSH 的路径是修改唯一编辑源、构建新的 Ellamaka 发布物。
 
 普通配置不提供 DSH 版本覆盖项。Bridge 与 DSH runtime 作为一个经过验证的兼容组合随 Ellamaka 版本发布。单独填写一个 DSH 版本无法同时声明完整传递依赖树与 Bridge ABI，容易产生未经验证的运行组合。未来如需独立升级 DSH，由发布流程交付新的完整运行时清单，而不是由用户配置任意版本字符串。
 
-清单指纹覆盖直接依赖精确版本、schema 与 Bridge ABI。目标闭包路径由该指纹确定。构建检查保证内嵌清单与唯一编辑源一致，避免手工清单和版本常量漂移。同一精确版本清单对应同一指纹；运行时首次物化产出的锁不参与指纹，因此同一清单在多台机器上可能因 registry 解析差异装出不同的传递树，但**一旦锁定即不可变**，二次启动零网络命中。换源不改变已锁定闭包。
+清单指纹覆盖直接依赖精确版本、schema 与 Bridge ABI。目标闭包路径由该指纹确定。构建检查保证内嵌清单与唯一编辑源一致，避免手工清单和版本常量漂移。同一精确版本清单对应同一指纹；内嵌锁由构建期解析产生，同一清单在构建时解析出确定性的传递树，因此同一发布物在不同机器上物化出相同的闭包。**闭包一旦锁定即不可变**，二次启动零网络命中。换源不改变已锁定闭包。
 
 #### 3.4.4 统一启动语义
 
@@ -193,7 +195,7 @@ $WOPAL_HOME/dsh/
 
 DSH 初始化是启动阶段的一部分，采用**阻塞等待**策略：入口在提供 DSH 能力前等待该阶段完成。等待期间的体验契约：
 
-- **进度**：物化按阶段输出进度（解析清单 → 下载 → 安装 → 校验 → 激活），日志含阶段名与包数，避免用户面对无反馈的挂起。
+- **进度**：物化按阶段输出进度（读取内嵌锁 → 下载 → 解压 → 校验 → 激活），日志含阶段名与包数，避免用户面对无反馈的挂起。
 - **超时**：物化整个阶段硬超时默认 5 分钟（下载、安装合并计时）。超时进入 `degraded`，Ellamaka 继续无 DSH 启动，本次不重试。
 - **成本分布**：下载只发生在首装与指纹变更两个时刻。常规启动命中已验证闭包时只执行本地快速校验，零网络、零等待。
 
@@ -203,10 +205,10 @@ Runtime Manager 对每次启动执行同一状态机：
 
 1. **Gate**：读取 `ELLAMAKA_DSH`。值为 `0` 时返回 `disabled`。
 2. **Resolve**：读取内嵌运行时清单，计算预期指纹与目标闭包目录。
-3. **Inspect**：验证目标闭包的 manifest、运行时锁、关键 anchor 与直接依赖版本。完整时直接进入 Load。
+3. **Inspect**：验证目标闭包的 manifest、内嵌锁、关键 anchor 与直接依赖版本。完整时直接进入 Load。
 4. **Lock**：缺失或损坏时获取跨进程 `materialize.lock`。等待者在持锁者完成后重新 Inspect。
-5. **Stage**：在 `staging/` 写入 package.json（精确直接依赖版本）；用内置 `@npmcli/arborist` 按版本解析并 reify。Arborist 解析后自产 `package-lock.json`（运行时锁）。物化不依赖系统 bun、npm 或用户 shell。
-6. **Verify**：校验运行时锁的合法 npm v3 形状、`@deepseek-ai/dsh` anchor、每个直接依赖的精确版本，以及 Bridge 所需的官方模块导出。
+5. **Stage**：读取内嵌锁（完整传递依赖树快照）；用内置 `pacote` 按锁逐包下载 tarball 并解压到 `staging/` 对应路径。物化不依赖系统 bun、npm 或用户 shell，也不在运行时解析依赖树——树已在构建期解析并内嵌。
+6. **Verify**：校验内嵌锁的合法 npm v3 形状、`@deepseek-ai/dsh` anchor、每个直接依赖的精确版本，以及 Bridge 所需的官方模块导出。
 7. **Activate**：把通过验证的 staging 目录原子重命名为 `closures/<fingerprint>`。未通过验证的 staging 从不参与加载。
 8. **Profile**：创建缺失的 profile 模板；已有 profile 与用户补丁保持不变。按本次 installAnchor 重建 `profiles/node_modules` 快捷方式。
 9. **Load**：以 installAnchor 动态加载官方运行时，挂载该入口需要的容器，返回 `ready`。
@@ -253,7 +255,7 @@ Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时�
 
 **下载与缓存**：
 
-- Arborist 显式使用 npm 内容寻址缓存（`~/.npm/_cacache`）。跨闭包公共传递依赖（升级时大部分未变）从缓存命中，不重复下载；超时中断后重试同样只补缺口。
+- 物化器用 `pacote` 按内嵌锁逐包下载 tarball 并解压。`pacote` 不做依赖树求解（树已在构建期解析并内嵌），只做"按精确版本下载 + 解压"，在 SEA 单文件二进制内稳定可用。
 - registry 是**传输通道，不是版本真相源**：物化器对一组候选 registry 做并发测速（metadata 端点往返延迟），选取本次启动最快可达的一个作为下载源，不同地区与不同时刻的用户自动获得最合适的通道；全部不可达时兜底官方 npm（`https://registry.npmjs.org/`）。换源不改变已锁定闭包，不使用 `latest`、不依赖用户在 shell 里的 npm 配置。
 
 #### 3.4.8 运行时数据隔离
@@ -449,7 +451,7 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 > 以下约束定义生产目标边界。实现可以调整内部结构，但依赖方向、发布边界、版本确定性、启动语义与数据隔离的变化必须先更新本设计并重新确认。
 
 1. **cordis import 边界**：`@deepseek-ai/cordis` 的类型与运行时适配只出现在 `@wopal/ellamaka-cordis` 包内。生产运行时值经 installAnchor resolver 从物化闭包获取。
-2. **DSH 依赖真相源**：`ellamaka-cordis` 的 `dependencies` 只显式声明 Bridge 使用的官方直接依赖，并使用精确版本。构建生成的 `dsh-runtime-manifest.json` 携带完整锁树与 integrity；运行时不维护第二份手工清单。
+2. **DSH 依赖真相源**：`ellamaka-cordis` 的 `dependencies` 只显式声明 Bridge 使用的官方直接依赖，并使用精确版本。构建生成的 `dsh-runtime-manifest.json` 携带直接依赖精确版本，`dsh-runtime-lock.json` 携带完整传递依赖树与 integrity；运行时不维护第二份手工清单，也不在运行时解析依赖树。
 3. **dsh 深耦合包暂缓使用**：agent-loop/session/session-query/compaction/subagent/schedule 及任何 rt-import dsh-session 的包，暂不被主线代码 import、不在运行时加载、不作为插件挂载。required peer 进入 node_modules/bun.lock 仅供类型解析。运行时加载探针（`forbidden-load.test.ts`）作为当前状态的观测手段保留。
 4. **session 所有权**：持久化与事件定义归 Storage/Bus/EventV2；Cordis 层只持有 facade。
 5. **对外契约稳定**：SSE 事件、HttpApi、SDK 在实验中保持稳定。
@@ -474,8 +476,8 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 | # | 能力 | 验收结果 |
 |---|------|----------|
 | 1 | 发布边界 | CLI 与 Desktop sidecar 包含已编译 Bridge；发布物不包含 DSH 官方包源码；闭包 manifest 不包含 `@wopal/ellamaka-cordis` 或 `file:` 依赖 |
-| 2 | 清单生成 | 构建从 `ellamaka-cordis/package.json` 与仓库锁生成 `dsh-runtime-manifest.json`；CI 检测源、锁与生成物漂移 |
-| 3 | 版本确定性 | 同一 Ellamaka 发布物在不同机器上使用相同直接版本、传递锁树与 integrity；运行时从不查询 `latest` |
+| 2 | 清单生成 | 构建从 `ellamaka-cordis/package.json` 生成 `dsh-runtime-manifest.json`，并解析出内嵌锁 `dsh-runtime-lock.json`；CI 检测源、清单与锁的漂移 |
+| 3 | 版本确定性 | 同一 Ellamaka 发布物在不同机器上使用相同直接版本、传递锁树与 integrity；运行时从不查询 `latest`，也不在运行时解析依赖树 |
 | 4 | 入口一致性 | serve、web、TUI 与 Desktop sidecar 默认自动物化；Workbench 由承载它的后端完成物化；`ELLAMAKA_DSH=0` 是唯一跳过路径 |
 | 5 | 单一实现 | 所有入口调用同一个 Runtime Manager；不存在 Desktop 复制版物化器或需要用户运行的物化脚本 |
 | 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包；闭包只增不减、无自动删除 |

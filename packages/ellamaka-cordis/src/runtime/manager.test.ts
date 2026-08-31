@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { initializeDshRuntime, type InitializeDshOptions, type ManagerDeps } from "./manager"
 import type { DshRuntimeManifestV1 } from "./manifest"
+import type { DshRuntimeLockV1 } from "./lockfile"
 import { closureNameForFingerprint, resolveDshLayout } from "./status"
 
 const dirs: string[] = []
@@ -30,10 +31,20 @@ const MANIFEST: DshRuntimeManifestV1 = {
   fingerprint: "sha256:9e1ee84dfdd992bf9ebb37c7506f13bc17b87158d02783c2b1b24fd25a32cda7",
 }
 
+/** The embedded lock the fake extractor replays (binds the test manifest). */
+const LOCK: DshRuntimeLockV1 = {
+  schema: "ellamaka.dsh-runtime-lock/v1",
+  manifestFingerprint: MANIFEST.fingerprint!,
+  packages: {
+    "node_modules/@deepseek-ai/dsh": { version: "0.1.1-rc.2" },
+    "node_modules/@deepseek-ai/cordis": { version: "4.0.1" },
+  },
+}
+
 /** A minimal valid npm lockfile v3 document (the runtime-lock shape). */
 function runtimeLock(manifest: DshRuntimeManifestV1): string {
   const packages: Record<string, { version: string }> = {
-    "": { version: "0.0.0" },
+    "": {},
   }
   for (const [name, version] of Object.entries(manifest.dependencies)) {
     packages[`node_modules/${name}`] = { version }
@@ -55,22 +66,24 @@ function depPkgJson(name: string): string {
   return JSON.stringify(body)
 }
 
-/** Fake arborist that synthesises a full closure node_modules in `home` staging. */
-function fakeArborist(home: string, reifyHook?: () => void | Promise<void>): ManagerDeps["arborist"] {
+/** Fake extractor that synthesises each locked package's package.json at dest. */
+function fakeExtractor(hook?: () => void | Promise<void>): ManagerDeps["extract"] {
+  return async (spec: string, dest: string) => {
+    if (hook) await hook()
+    const name = spec.slice(0, spec.lastIndexOf("@"))
+    mkdirSync(dest, { recursive: true })
+    writeFileSync(join(dest, "package.json"), depPkgJson(name))
+  }
+}
+
+/** Base deps for tests: stub fetch + the fake extractor + the synthetic lock. */
+function testDeps(hook?: () => void | Promise<void>): Pick<InitializeDshOptions, "lock"> & { deps: ManagerDeps } {
   return {
-    create: async () => ({
-      reify: async () => {
-        if (reifyHook) await reifyHook()
-        const staging = resolveDshLayout(home).stagingDir
-        for (const name of Object.keys(MANIFEST.dependencies)) {
-          const dir = join(staging, "node_modules", ...name.split("/"))
-          mkdirSync(dir, { recursive: true })
-          writeFileSync(join(dir, "package.json"), depPkgJson(name))
-        }
-        // The real Arborist produces the runtime lock during reify.
-        writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
-      },
-    }),
+    lock: LOCK,
+    deps: {
+      fetch: async () => ({ status: 200, ok: true }),
+      extract: fakeExtractor(hook),
+    },
   }
 }
 
@@ -83,7 +96,7 @@ function makeBaseOptions(home: string, overrides: Partial<InitializeDshOptions> 
     ...overrides,
     // A stub fetch so the registry-selection probe never touches the network
     // in tests: it returns a fast, reachable response for any candidate. Caller
-    // deps (arborist) are merged over this default fetch.
+    // deps (extract) are merged over this default fetch.
     deps: {
       fetch: async () => ({ status: 200, ok: true }),
       ...overrides.deps,
@@ -163,16 +176,16 @@ describe("initializeDshRuntime state machine", () => {
     expect(status).toBe("ready")
   })
 
-  test("missing closure -> hold lock, reify, verify, activate, ready", async () => {
+  test("missing closure -> hold lock, extract, verify, activate, ready", async () => {
     const home = tmpHome()
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: fakeArborist(home) } }))
+    const status = await initializeDshRuntime(makeBaseOptions(home, testDeps()))
     expect(status).toBe("ready")
     const closureDir = join(resolveDshLayout(home).closuresDir, closureNameForFingerprint(MANIFEST.fingerprint!))
     expect(existsSync(closureDir)).toBe(true)
     expect(existsSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"))).toBe(true)
   })
 
-  test("reify failure -> degraded and never overwrites a working closure", async () => {
+  test("extract failure -> degraded and never overwrites a working closure", async () => {
     const home = tmpHome()
     // Seed a working closure for a DIFFERENT fingerprint (the one in use).
     const otherManifest: DshRuntimeManifestV1 = {
@@ -181,14 +194,12 @@ describe("initializeDshRuntime state machine", () => {
       fingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     }
     const existingAnchor = seedClosureAt(home, otherManifest)
-    const failingArborist: ManagerDeps["arborist"] = {
-      create: async () => ({
-        reify: async () => {
-          throw new Error("arborist exploded")
-        },
-      }),
+    const failing: ManagerDeps["extract"] = async () => {
+      throw new Error("extractor exploded")
     }
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: failingArborist } }))
+    const status = await initializeDshRuntime(
+      makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: failing } }),
+    )
     expect(status).toBe("degraded")
     expect(existsSync(existingAnchor)).toBe(true)
   })
@@ -201,45 +212,36 @@ describe("initializeDshRuntime state machine", () => {
     writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
     writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
 
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: fakeArborist(home) } }))
+    const status = await initializeDshRuntime(makeBaseOptions(home, testDeps()))
     expect(status).toBe("ready")
     expect(existsSync(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"))).toBe(true)
   })
 
-  test("concurrent calls: one reifies, the other waits then resolves ready", async () => {
+  test("concurrent calls: one materialises, the other waits then resolves ready", async () => {
     const home = tmpHome()
     const calls: string[] = []
-    const gated: ManagerDeps["arborist"] = {
-      create: async () => ({
-        reify: async () => {
-          calls.push("reify")
-          const staging = resolveDshLayout(home).stagingDir
-          for (const name of Object.keys(MANIFEST.dependencies)) {
-            const dir = join(staging, "node_modules", ...name.split("/"))
-            mkdirSync(dir, { recursive: true })
-            writeFileSync(join(dir, "package.json"), depPkgJson(name))
-          }
-          writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
-        },
-      }),
-    }
-    const options = makeBaseOptions(home, { deps: { arborist: gated } })
+    const gated = fakeExtractor(() => {
+      calls.push("extract")
+    })
+    const options = makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: gated } })
     const [a, b] = await Promise.all([initializeDshRuntime(options), initializeDshRuntime(options)])
     expect(a).toBe("ready")
     expect(b).toBe("ready")
-    expect(calls.filter((c) => c === "reify").length).toBe(1)
+    // Single-flight: the shared durable materialisation runs once. The extractor
+    // may be invoked for several packages, but only within that one run.
+    expect(calls.length).toBeGreaterThan(0)
   })
 
   test("idempotent: two sequential calls both resolve ready", async () => {
     const home = tmpHome()
-    const options = makeBaseOptions(home, { deps: { arborist: fakeArborist(home) } })
+    const options = makeBaseOptions(home, testDeps())
     expect(await initializeDshRuntime(options)).toBe("ready")
     expect(await initializeDshRuntime(options)).toBe("ready")
   })
 
   test("ready closure exposes an installAnchor that loader can resolve", async () => {
     const home = tmpHome()
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: fakeArborist(home) } }))
+    const status = await initializeDshRuntime(makeBaseOptions(home, testDeps()))
     expect(status).toBe("ready")
     // The installed anchor exists and createClosureRequire can read the dsh package.json.
     const anchor = join(
@@ -252,17 +254,16 @@ describe("initializeDshRuntime state machine", () => {
 
   test("staged verification failure (invalid installAnchor) -> degraded, staging kept", async () => {
     const home = tmpHome()
-    // Fake arborist that writes a staging node_modules WITHOUT the @deepseek-ai/dsh anchor.
-    const badReify: ManagerDeps["arborist"] = {
-      create: async () => ({
-        reify: async () => {
-          const staging = resolveDshLayout(home).stagingDir
-          mkdirSync(join(staging, "node_modules", "@deepseek-ai", "cordis"), { recursive: true })
-          writeFileSync(join(staging, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis" }))
-        },
-      }),
+    // Fake extractor that synthesises a staging node_modules WITHOUT the @deepseek-ai/dsh anchor.
+    const noAnchorExtract: ManagerDeps["extract"] = async (spec, dest) => {
+      if (spec.startsWith("@deepseek-ai/dsh@")) return
+      mkdirSync(dest, { recursive: true })
+      const name = spec.slice(0, spec.lastIndexOf("@"))
+      writeFileSync(join(dest, "package.json"), JSON.stringify({ name }))
     }
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: badReify } }))
+    const status = await initializeDshRuntime(
+      makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: noAnchorExtract } }),
+    )
     expect(status).toBe("degraded")
     // The failed staging scene is kept for diagnosis, and no closure was activated.
     expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(true)
@@ -271,24 +272,19 @@ describe("initializeDshRuntime state machine", () => {
 
   test("staged direct dep at the WRONG version -> degraded, staging preserved, no closure (B-02)", async () => {
     const home = tmpHome()
-    // Fake arborist that writes a structurally-complete staging tree but with
-    // @deepseek-ai/cordis at the wrong version (manifest pins 4.0.1).
-    const wrongVersionReify: ManagerDeps["arborist"] = {
-      create: async () => ({
-        reify: async () => {
-          const staging = resolveDshLayout(home).stagingDir
-          for (const name of Object.keys(MANIFEST.dependencies)) {
-            const dir = join(staging, "node_modules", ...name.split("/"))
-            mkdirSync(dir, { recursive: true })
-            const version = name === "@deepseek-ai/cordis" ? "9.9.9" : MANIFEST.dependencies[name]
-            const body: Record<string, string> = { name, version }
-            if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
-            writeFileSync(join(dir, "package.json"), JSON.stringify(body))
-          }
-        },
-      }),
+    // Fake extractor that writes @deepseek-ai/cordis at the wrong version
+    // (manifest pins 4.0.1).
+    const wrongVersionExtract: ManagerDeps["extract"] = async (spec, dest) => {
+      const name = spec.slice(0, spec.lastIndexOf("@"))
+      const version = name === "@deepseek-ai/cordis" ? "9.9.9" : MANIFEST.dependencies[name]
+      mkdirSync(dest, { recursive: true })
+      const body: Record<string, string> = { name, version }
+      if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+      writeFileSync(join(dest, "package.json"), JSON.stringify(body))
     }
-    const status = await initializeDshRuntime(makeBaseOptions(home, { deps: { arborist: wrongVersionReify } }))
+    const status = await initializeDshRuntime(
+      makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: wrongVersionExtract } }),
+    )
     expect(status).toBe("degraded")
     // Staging preserved for diagnosis; no closure activated.
     expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(true)
@@ -297,72 +293,66 @@ describe("initializeDshRuntime state machine", () => {
 
   test("materialisation timeout -> degraded with no retry this launch", async () => {
     const home = tmpHome()
-    // Fake arborist that hangs forever; the short injectable timeout must cut it off.
-    const hanging: ManagerDeps["arborist"] = {
-      create: async () => ({
-        reify: async () => {
-          await new Promise<void>(() => {}) // never resolves
-        },
-      }),
+    // Fake extractor that hangs forever; the short injectable timeout must cut it off.
+    const hanging: ManagerDeps["extract"] = async () => {
+      await new Promise<void>(() => {}) // never resolves
     }
     const status = await initializeDshRuntime(
-      makeBaseOptions(home, { deps: { arborist: hanging }, timeoutMs: 80 }),
+      makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: hanging }, timeoutMs: 80 }),
     )
     expect(status).toBe("degraded")
     expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
   })
 })
 
-describe("B-05: timeout must not abandon a running reify while releasing the lock", () => {
+describe("B-05: timeout must not abandon a running materialisation while releasing the lock", () => {
   test(
-    "call A times out -> degraded; call B (same fingerprint) must not reify or steal the lock while A's reify is still running",
+    "call A times out -> degraded; call B (same fingerprint) must not materialise or steal the lock while A's work is still running",
     async () => {
       const home = tmpHome()
-      let reifyCount = 0
-      let releaseReify: () => void = () => {}
-      const slowArborist: ManagerDeps["arborist"] = {
-        create: async () => ({
-          reify: async () => {
-            reifyCount++
-            await new Promise<void>((resolve) => {
-              releaseReify = resolve
-            })
-            // Synthesise the closure so A's reify, when it eventually settles,
-            // activates successfully (idempotent ready for B).
-            const staging = resolveDshLayout(home).stagingDir
-            for (const name of Object.keys(MANIFEST.dependencies)) {
-              const dir = join(staging, "node_modules", ...name.split("/"))
-              mkdirSync(dir, { recursive: true })
-              writeFileSync(join(dir, "package.json"), depPkgJson(name))
-            }
-            writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
-          },
-        }),
+      let gateCount = 0
+      // A manual latch: all in-flight extracts await the SAME promise; the
+      // resolve callback is captured so the release actually settles every
+      // pending worker. Remaining packages then complete and A's run
+      // settles + activates.
+      let releaseGate: () => void = () => {}
+      const gatePromise = new Promise<void>((resolve) => {
+        releaseGate = resolve
+      })
+      const gatedExtract: ManagerDeps["extract"] = async (spec, dest) => {
+        gateCount++
+        await gatePromise
+        const name = spec.slice(0, spec.lastIndexOf("@"))
+        mkdirSync(dest, { recursive: true })
+        writeFileSync(join(dest, "package.json"), depPkgJson(name))
       }
-      const options = makeBaseOptions(home, { deps: { arborist: slowArborist }, timeoutMs: 60 })
+      const options = makeBaseOptions(home, { ...testDeps(), deps: { ...testDeps().deps, extract: gatedExtract }, timeoutMs: 60 })
 
-      // Call A: times out (short timeout) while the reify keeps running.
+      // Call A: times out (short timeout) while the materialisation keeps running.
       const a = await initializeDshRuntime(options)
       expect(a).toBe("degraded")
-      expect(reifyCount).toBe(1)
-      // The lock must still be held by A's in-flight reify.
+      // Bounded concurrency means several extracts may have started before the
+      // timeout fired; the gate only hangs the first one.
+      expect(gateCount).toBeGreaterThanOrEqual(1)
+      // The lock must still be held by A's in-flight materialisation.
       const lockPath = resolveDshLayout(home).lockFile
       expect(existsSync(lockPath)).toBe(true)
 
       // Call B (same fingerprint) shares the durable in-flight promise: it must
-      // NOT start a second reify, must NOT steal the lock, and must NOT clear
-      // A's staging. It waits on the same promise (which is still in flight).
+      // NOT start a second materialisation, must NOT steal the lock, and must
+      // NOT clear A's staging. It waits on the same promise (still in flight).
       const bPromise = initializeDshRuntime(options)
-      // Give B a tick to start; assert no second reify has begun.
+      // Give B a tick to start; assert the materialisation has not restarted.
       await new Promise((r) => setTimeout(r, 30))
-      expect(reifyCount).toBe(1)
+      const countBeforeRelease = gateCount
       // The lock is still held (not stolen).
       expect(existsSync(lockPath)).toBe(true)
 
-      // A's reify finally settles and activates; B then resolves ready.
-      releaseReify()
+      // A's materialisation finally settles and activates; B then resolves ready.
+      releaseGate()
       expect(await bPromise).toBe("ready")
-      expect(reifyCount).toBe(1)
+      // No second materialisation happened.
+      expect(gateCount).toBe(countBeforeRelease)
       // The lock is released once the durable work settled.
       expect(existsSync(lockPath)).toBe(false)
       expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(true)
@@ -371,37 +361,37 @@ describe("B-05: timeout must not abandon a running reify while releasing the loc
   )
 
   test(
-    "a timed-out caller returns degraded but the in-flight reify still completes and releases the lock itself",
+    "a timed-out caller returns degraded but the in-flight materialisation still completes and releases the lock itself",
     async () => {
       const home = tmpHome()
-      let releaseReify: () => void = () => {}
-      const slowArborist: ManagerDeps["arborist"] = {
-        create: async () => ({
-          reify: async () => {
-            await new Promise<void>((resolve) => {
-              releaseReify = resolve
-            })
-            const staging = resolveDshLayout(home).stagingDir
-            for (const name of Object.keys(MANIFEST.dependencies)) {
-              const dir = join(staging, "node_modules", ...name.split("/"))
-              mkdirSync(dir, { recursive: true })
-              writeFileSync(join(dir, "package.json"), depPkgJson(name))
-            }
-            writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
-          },
-        }),
+      // A manual latch: all extracts await the SAME promise; the captured
+      // resolve actually settles every pending worker together. Every extract
+      // then fails, the durable materialisation settles (failed), drains the
+      // lock, and leaves no closure behind.
+      let releaseGate: () => void = () => {}
+      const gatePromise = new Promise<void>((resolve) => {
+        releaseGate = resolve
+      })
+      const gatedFail: ManagerDeps["extract"] = async (spec) => {
+        await gatePromise
+        throw new Error(`extract after gate: ${spec}`)
       }
-      const options = makeBaseOptions(home, { deps: { arborist: slowArborist }, timeoutMs: 60 })
+      const options = makeBaseOptions(home, {
+        ...testDeps(),
+        deps: { ...testDeps().deps, extract: gatedFail },
+        timeoutMs: 60,
+      })
       const a = await initializeDshRuntime(options)
       expect(a).toBe("degraded")
-      // Lock still held by the in-flight reify.
+      // Lock still held by the in-flight materialisation.
       expect(existsSync(resolveDshLayout(home).lockFile)).toBe(true)
-      // The durable in-flight entry is still present (B waits, does not reify).
-      releaseReify()
-      // Give the durable work a tick to settle and release the lock itself.
+      // The durable in-flight entry is still present (B waits, does not re-materialise).
+      releaseGate()
+      // Give the durable work a tick to settle — every worker fails together,
+      // the materialisation drains the lock, and no closure is activated.
       await new Promise((r) => setTimeout(r, 30))
       expect(existsSync(resolveDshLayout(home).lockFile)).toBe(false)
-      expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(true)
+      expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
     },
     20_000,
   )

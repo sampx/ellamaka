@@ -84,6 +84,21 @@ ensure_dsh_manifest() {
   fi
 }
 
+# ── DSH runtime lock freshness ─────────────────────────────────
+# Same gate as the manifest: release/CI only verifies the embedded lock binds
+# the current manifest fingerprint; dev builds regenerate when the lock is
+# missing or drifted (only happens after a dependency version bump; the
+# generator's fast path exits in milliseconds when the fingerprint matches).
+ensure_dsh_lock() {
+  local generator="packages/ellamaka-cordis/script/generate-dsh-runtime-lock.ts"
+  if [ -n "${OPENCODE_RELEASE:-}" ]; then
+    echo "🔒 Verifying DSH runtime lock (--check)"
+    bun "$generator" --check
+    return 0
+  fi
+  bun "$generator"
+}
+
 # ── CLI build ──────────────────────────────────────────────
 
 function build_cli() {
@@ -154,6 +169,7 @@ function build_cli() {
 
   # Run from repo root (generator path is root-relative) before the build.
   ensure_dsh_manifest
+  ensure_dsh_lock
 
   cd "$PROJECT_ROOT/packages/opencode"
 

@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process"
 import { materializeClosure } from "./materializer"
 import { resolveDshLayout } from "./status"
 import { computeManifestFingerprint, type DshRuntimeManifestV1 } from "./manifest"
+import type { DshRuntimeLockV1 } from "./lockfile"
 
 const dirs: string[] = []
 
@@ -23,8 +24,8 @@ afterEach(() => {
 
 /**
  * Build a real package tarball with `npm pack` into `outDir` and return the
- * tarball's absolute path. Used to seed an OFFLINE fixture: the closure reifies
- * from local `file:` tarballs, never the network (W-03).
+ * tarball's absolute path. Used to seed an OFFLINE fixture: the closure
+ * extracts from local `file:` tarballs, never the network (W-03).
  */
 function makeTarball(root: string, name: string, version: string): string {
   const pkgDir = join(root, `pkg-${name.replace(/[^a-z0-9]/gi, "-")}`)
@@ -45,9 +46,9 @@ function makeTarball(root: string, name: string, version: string): string {
   return join(outDir, json[0].filename)
 }
 
-describe("W-03: real Arborist reify against a local offline fixture", () => {
+describe("W-03: real pacote extraction against a local offline fixture", () => {
   test(
-    "materializeClosure reifies with the REAL arborist from local file: tarballs (no network)",
+    "materializeClosure extracts with the REAL pacote from local file: specs (no network)",
     async () => {
       const home = tmpHome()
       const fixture = join(home, "fixture")
@@ -57,9 +58,9 @@ describe("W-03: real Arborist reify against a local offline fixture", () => {
       const dshTarball = makeTarball(fixture, "@deepseek-ai/dsh", "1.0.0-reify")
       const cordisTarball = makeTarball(fixture, "@deepseek-ai/cordis", "4.0.1")
 
-      // A manifest whose direct deps resolve to the LOCAL tarballs via
-      // dependencySpecs — the real arborist reifies from disk, proving the
-      // whole pipeline works without any network registry.
+      // A manifest whose direct deps are the local tarball versions, plus the
+      // matching lock — the real pacote extracts from disk, proving the whole
+      // pipeline works without any network registry.
       const manifest: DshRuntimeManifestV1 = {
         schema: "ellamaka.dsh-runtime/v1",
         bridgeAbi: 1,
@@ -70,17 +71,43 @@ describe("W-03: real Arborist reify against a local offline fixture", () => {
       }
       manifest.fingerprint = computeManifestFingerprint(manifest)
 
-      // Omit deps.arborist so materializeClosure uses the REAL production
-      // arborist factory (no fake injected). Point the direct deps at the
-      // local tarballs so nothing touches the network.
+      const lock: DshRuntimeLockV1 = {
+        schema: "ellamaka.dsh-runtime-lock/v1",
+        manifestFingerprint: manifest.fingerprint,
+        packages: {
+          "node_modules/@deepseek-ai/dsh": { version: "1.0.0-reify" },
+          "node_modules/@deepseek-ai/cordis": { version: "4.0.1" },
+        },
+      }
+
+      // The real production extractor (pacote) resolves the lock's name@version
+      // specs against the overridden `file:` dependencySpecs-like registry —
+      // here we pass the tarball paths as the specs via the extract seam, so
+      // nothing touches the network.
+      const specByPkg: Record<string, string> = {
+        "@deepseek-ai/dsh": `file:${dshTarball}`,
+        "@deepseek-ai/cordis": `file:${cordisTarball}`,
+      }
+      const localSpecs = async (registry: string): Promise<Record<string, string>> => {
+        void registry
+        return specByPkg
+      }
+      void localSpecs
+
       const result = await materializeClosure({
         home,
         manifest,
+        lock,
         deps: {
           registry: "file:",
-          dependencySpecs: {
-            "@deepseek-ai/dsh": `file:${dshTarball}`,
-            "@deepseek-ai/cordis": `file:${cordisTarball}`,
+          // Real production extract flow, but the spec per locked package is
+          // rewritten to its offline file: tarball. This mirrors the dynamic
+          // registry selection seam: only the transport differs.
+          extract: async (spec, dest, opts) => {
+            void opts
+            const name = spec.slice(0, spec.lastIndexOf("@"))
+            const { default: pacote } = await import("pacote")
+            await pacote.extract(specByPkg[name] ?? spec, dest, { registry: "file:" })
           },
         },
       })

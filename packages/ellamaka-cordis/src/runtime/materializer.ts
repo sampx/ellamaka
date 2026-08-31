@@ -1,25 +1,33 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { rename } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { Arborist } from "@npmcli/arborist"
 import type { DshRuntimeManifestV1 } from "./manifest.js"
 import { canonicalSerialize } from "./manifest.js"
-import { closureNameForFingerprint, expandCacheDir, resolveDshLayout, type DshLayout } from "./status.js"
+import type { DshRuntimeLockV1 } from "./lockfile.js"
+import { validateEmbeddedLock } from "./lockfile.js"
+import { DEFAULT_DSH_RUNTIME_LOCK } from "./embed-lock.js"
+import { closureNameForFingerprint, resolveDshLayout, type DshLayout } from "./status.js"
 import { pickFastestRegistry, type FetchLike } from "./registry.js"
 import type { LogBridge } from "./log.js"
 
 /**
  * Closure materialiser (DESIGN §3.4.5 stages 5-7).
  *
+ * The materialiser replays the EMBEDDED lock: the complete transitive
+ * dependency tree is resolved at BUILD time (source environment, Arborist) and
+ * embedded into the binary; at runtime each locked package is downloaded with
+ * `pacote` and extracted into `staging/`. The SEA single-file binary never
+ * resolves the dependency tree itself (Arborist's tree solver hangs inside a
+ * compiled binary).
+ *
  * Pure-injection seams:
- * - `deps.arborist` is the network/install boundary. Production resolves the
- *   real `@npmcli/arborist` (a runtime dependency of this package) with an
- *   explicit `~/.npm/_cacache` cache so cross-closure common deps hit the
- *   cache and interrupted retries only fill gaps; tests inject a fake whose
- *   `reify` synthesises the closure files.
+ * - `deps.extract` is the download/extract boundary. Production resolves
+ *   `pacote.extract`; tests inject a fake that synthesises the closure files.
  * - `deps.fetch` (when provided) drives registry selection; production uses
  *   the global `fetch`. Tests inject a stub so the fastest-registry probe
  *   never hits the network.
+ * - `options.lock` overrides the embedded lock (tests inject a synthetic
+ *   tree); production defaults to `DEFAULT_DSH_RUNTIME_LOCK`.
  *
  * Staging lifecycle (DESIGN §3.4.7, append-only):
  * - cleared at the start (the caller holds the materialise lock);
@@ -29,16 +37,11 @@ import type { LogBridge } from "./log.js"
  *   overwrites it. A failed staging never overwrites an activated closure.
  */
 
-export interface ArboristLike {
-  reify(opts?: Record<string, unknown>): Promise<unknown>
-}
-
-export interface ArboristFactory {
-  create(opts: Record<string, unknown>): Promise<ArboristLike>
-}
+/** Extract one package spec into a destination dir (pacote in production). */
+export type ExtractLike = (spec: string, dest: string, opts?: { registry?: string }) => Promise<unknown>
 
 export interface MaterializeDeps {
-  arborist?: ArboristFactory
+  extract?: ExtractLike
   /** Fetch for registry selection; production defaults to global fetch. */
   fetch?: FetchLike
   /**
@@ -47,11 +50,6 @@ export interface MaterializeDeps {
    * probe.
    */
   registry?: string
-  /**
-   * Override the dependency specs written into the staged package.json
-   * (tests point direct deps at local `file:` tarballs). Keyed by package name.
-   */
-  dependencySpecs?: Record<string, string>
 }
 
 export interface MaterializeResult {
@@ -64,13 +62,17 @@ export interface MaterializeResult {
 export interface MaterializeOptions {
   readonly home: string
   readonly manifest: DshRuntimeManifestV1
+  /** The embedded lock to replay; production defaults to the build-time lock. */
+  readonly lock?: DshRuntimeLockV1
   readonly deps?: MaterializeDeps
   readonly log?: LogBridge
 }
 
-/** Resolve the production Arborist factory from this package's own dependency. */
-async function createRealArborist(opts: Record<string, unknown>): Promise<ArboristLike> {
-  return new Arborist(opts)
+/** Production extractor: `pacote.extract` from this package's own dependency. */
+async function createRealExtract(): Promise<ExtractLike> {
+  const { default: pacote } = await import("pacote")
+  return (spec, dest, opts) =>
+    pacote.extract(spec, dest, { registry: opts?.registry, ignoreScripts: true })
 }
 
 /** The global fetch (bun & node 18+). */
@@ -98,24 +100,22 @@ async function resolveRegistry(deps: MaterializeDeps | undefined): Promise<strin
 }
 
 /**
- * The closure package.json: the manifest's exact DSH direct dependencies, with
- * optional per-package spec overrides (tests point direct deps at local
- * `file:` tarballs).
+ * Derive the package name from a lock path (`node_modules/<name>` possibly
+ * nested under a parent package).
  */
-function closurePackageJson(
-  manifest: DshRuntimeManifestV1,
-  specOverrides?: Record<string, string>,
-): string {
-  const dependencies: Record<string, string> = {}
-  for (const [name, version] of Object.entries(manifest.dependencies)) {
-    dependencies[name] = specOverrides?.[name] ?? version
-  }
+function packageNameFromLockPath(path: string): string {
+  const marker = path.lastIndexOf("node_modules/")
+  return path.slice(marker + "node_modules/".length)
+}
+
+/** The staging package.json: the manifest's exact DSH direct dependencies. */
+function closurePackageJson(manifest: DshRuntimeManifestV1): string {
   return JSON.stringify(
     {
       name: "ellamaka-dsh-closure",
       private: true,
       type: "module",
-      dependencies,
+      dependencies: manifest.dependencies,
     },
     null,
     2,
@@ -123,17 +123,28 @@ function closurePackageJson(
 }
 
 /**
- * The runtime lock: the npm `package-lock.json` Arborist produces while
- * reifying the exact dependency versions. The materialiser writes the closure
- * package.json (exact versions) and lets Arborist resolve the transitive tree
- * against the registry at first install; the lock it emits becomes the
- * closure's immutable runtime lock (DESIGN §3.4.3 — the closure lock is
- * produced at runtime by npm, not derived from a build-time bun.lock).
- *
- * This helper reads the lock from a closure/staging dir and validates that it
- * is a well-formed npm lockfile v3 document (used by content verification and
- * the fast-path inspect: presence + shape, not byte-compare against a
- * build-time lock — there is none anymore).
+ * The on-disk npm lockfile v3 document written into the staging/closure dir:
+ * the embedded lock's packages table rendered in standard npm v3 shape. The
+ * closure's lock is a copy of the build-time tree, so Inspect/Verify validate
+ * against the exact tree the release was built with.
+ */
+function lockDocument(lock: DshRuntimeLockV1): string {
+  return JSON.stringify({
+    name: "ellamaka-dsh-closure",
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      "": {},
+      ...Object.fromEntries(Object.entries(lock.packages).map(([path, entry]) => [path, { ...entry }])),
+    },
+  })
+}
+
+/**
+ * The runtime lock: the npm `package-lock.json` the materialiser writes from
+ * the embedded lock. This helper reads the lock from a closure/staging dir and
+ * validates that it is a well-formed npm lockfile v3 document (used by content
+ * verification and the fast-path inspect: presence + shape).
  */
 export function readRuntimeLock(closureDir: string): Record<string, unknown> | null {
   const path = join(closureDir, "package-lock.json")
@@ -170,10 +181,11 @@ async function clearStaging(layout: DshLayout, log?: LogBridge): Promise<void> {
 
 /**
  * Materialise the closure for `manifest.fingerprint` into `closures/`:
- * write manifest + lock into `staging/`, reify with Arborist (explicit npm
- * cacache cache), verify the staged tree, then atomically activate via rename.
+ * validate the embedded lock against the manifest, extract every locked
+ * package into `staging/`, verify the staged tree, then atomically activate
+ * via rename.
  *
- * Throws on any failure (reify error, staged verification failure, invalid
+ * Throws on any failure (extract error, staged verification failure, invalid
  * install anchor) so the caller can degrade; a failed run never overwrites an
  * already-activated closure.
  */
@@ -186,6 +198,10 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
   }
   const closureName = closureNameForFingerprint(fingerprint)
   const closureDir = join(layout.closuresDir, closureName)
+  const lock = options.lock ?? DEFAULT_DSH_RUNTIME_LOCK
+
+  // Drift gate: the lock must bind this exact manifest (see lockfile.ts).
+  validateEmbeddedLock(lock, options.manifest)
 
   // Append-only: never overwrite a complete, working closure of this
   // fingerprint. A damaged closure (missing anchor / direct deps) is treated
@@ -206,46 +222,23 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
   const registry = await resolveRegistry(options.deps)
   log?.info("materializer.registry", { registry })
 
-  const arboristFactory = options.deps?.arborist ?? { create: createRealArborist }
-  const arborist = await arboristFactory.create({
-    path: layout.stagingDir,
-    cache: expandCacheDir(),
-    binLinks: false,
-    progress: false,
-    ignoreScripts: true,
-    savePrefix: "",
-    // The exact dependency versions come from the manifest; the registry is the
-    // transport channel, not the version truth source (DESIGN §3.4.3). Picking
-    // the fastest reachable mirror per user keeps installs fast worldwide.
-    registry,
-    // The DSH dependency tree carries peer conflicts that bun tolerates but
-    // Arborist's strict peer resolution rejects (`could not resolve`). `force`
-    // relaxes peer-conflict errors while still installing peer dependencies
-    // (unlike `legacyPeerDeps`, which skips them and leaves the closure
-    // missing packages the runtime imports). The closure is a self-contained
-    // install of exact versions, so peer resolution is not needed here.
-    force: true,
-  })
-
-  // Stage the manifest so Arborist reifies exactly the declared closure. The
-  // package-lock.json is NOT written here: Arborist resolves the exact
-  // dependency versions against the registry and PRODUCES the lock itself,
-  // which becomes the closure's immutable runtime lock (DESIGN §3.4.3).
+  // Stage the manifest + the embedded lock (on-disk npm v3 copy) BEFORE the
+  // extracts, so verification (B-02/B-03) can run against the staged tree.
   mkdirSync(layout.stagingDir, { recursive: true })
-  writeFileSync(
-    join(layout.stagingDir, "package.json"),
-    closurePackageJson(options.manifest, options.deps?.dependencySpecs),
-  )
-  // Write the runtime-manifest into staging so content verification (B-02/B-03)
-  // can run against the staged tree before activation.
+  writeFileSync(join(layout.stagingDir, "package.json"), closurePackageJson(options.manifest))
+  writeFileSync(join(layout.stagingDir, "package-lock.json"), lockDocument(lock))
   writeFileSync(join(layout.stagingDir, "runtime-manifest.json"), JSON.stringify(options.manifest))
-  log?.info("materializer.reify", { fingerprint, cache: expandCacheDir(), registry })
+  log?.info("materializer.stage", { fingerprint, packages: Object.keys(lock.packages).length, registry })
 
-  // `save: true` makes Arborist persist the resolved tree to package-lock.json
-  // (the closure's immutable runtime lock). Exact version specs in package.json
-  // are preserved as-is; only the lock file is added/updated. With `save:false`
-  // Arborist skips `saveIdealTree` entirely and no lock is written.
-  await arborist.reify({ save: true, saveType: "prod" })
+  const extract = options.deps?.extract ?? (await createRealExtract())
+
+  // Download-extract every locked package into its node_modules path.
+  // Failures reject the run; staging is kept for diagnosis (DESIGN §3.4.7).
+  try {
+    await extractAll(lock, layout.stagingDir, extract, registry, log)
+  } catch (error) {
+    throw new Error(`dsh runtime: staged closure extraction failed: ${(error as Error).message}`)
+  }
 
   // Verify the staged tree CONTENT before activation (B-02). Existence alone is
   // not enough: a staged direct dep installed at the wrong version must fail
@@ -286,6 +279,37 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
   return { anchor: anchorFor(layout, closureName), closureDir }
 }
 
+/**
+ * Extract every locked package with bounded concurrency (the SEA binary's
+ * network stack is reliable for concurrent small downloads; 16 keeps peak
+ * memory modest while saturating the fastest registry's throughput).
+ */
+async function extractAll(
+  lock: DshRuntimeLockV1,
+  stagingDir: string,
+  extract: ExtractLike,
+  registry: string,
+  log?: LogBridge,
+): Promise<void> {
+  const paths = Object.keys(lock.packages)
+  const CONCURRENCY = 16
+  let cursor = 0
+  let done = 0
+  const worker = async () => {
+    while (cursor < paths.length) {
+      const path = paths[cursor++]
+      const spec = `${packageNameFromLockPath(path)}@${lock.packages[path]!.version}`
+      await extract(spec, join(stagingDir, ...path.split("/")), { registry })
+      done++
+      if (done % 64 === 0) {
+        log?.info("materializer.extract.progress", { done, total: paths.length })
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, paths.length) }, worker))
+  log?.info("materializer.extract.done", { packages: done })
+}
+
 /** Direct dependency package.json paths missing under a closure dir. */
 function directDepsMissingOnDisk(options: {
   closureDir: string
@@ -314,10 +338,7 @@ function directDepsMissingOnDisk(options: {
  * 2. `package-lock.json` is a well-formed npm lockfile v3 document (parses as
  *    JSON with `lockfileVersion === 3` and a `packages` object). A truncated
  *    or corrupt lock fails to parse and marks the closure damaged; the lock is
- *    the immutable runtime lock Arborist produced at first materialisation, so
- *    a damaged lock cannot be trusted even though the runtime does not re-read
- *    it post-activate. Content is not compared against any build-time lock —
- *    there is none (DESIGN §3.4.3).
+ *    the on-disk copy of the build-time embedded lock.
  * 3. every direct dependency's installed `node_modules/<pkg>/package.json`
  *    `version` equals the manifest's exact version. The DSH manifest pins
  *    exact versions, so an exact string compare is the intended fingerprint
@@ -330,10 +351,9 @@ function verifyClosureContent(closureDir: string, manifest: DshRuntimeManifestV1
   if (canonicalSerialize(stored) !== canonicalSerialize(manifest)) {
     throw new Error("dsh runtime: closure runtime-manifest.json does not match the embedded manifest")
   }
-  // Runtime lock (B-03): the closure must carry a well-formed npm lockfile v3
-  // document — the lock Arborist produced when this closure was first
-  // materialised (the immutable runtime lock). There is no build-time lock to
-  // compare against anymore; presence + shape is the binding, so a missing,
+  // On-disk lock (B-03): the closure must carry a well-formed npm lockfile v3
+  // document — the copy of the build-time embedded lock the materialiser
+  // wrote at extraction time. Presence + shape is the binding, so a missing,
   // truncated, or malformed lock marks the closure damaged.
   if (readRuntimeLock(closureDir) === null) {
     throw new Error("dsh runtime: closure package-lock.json is missing or malformed")
@@ -393,14 +413,13 @@ export function validateClosureOnDisk(options: {
 /**
  * Integrity verification (DESIGN §3.4.5 stage 6 / Out of Scope note).
  *
- * Tarball integrity is verified by Arborist during reify against the lock's
- * `integrity` metadata. The runtime's own check here is structural AND
- * content-exact — every direct dependency's package.json must be present
- * under the closure, the stored `runtime-manifest.json` must be canonical-
- * identical to the embedded manifest, and every pinned dependency version
- * must match (B-03). When the generator left an empty integrity ledger, this
- * is a no-op reported as "skipped" in diagnostics. A damaged closure is
- * signalled by throwing.
+ * Every package's content is exactly what the embedded lock pins: the
+ * extraction step downloads the precise version per lock entry, and the
+ * runtime's own check here is structural AND content-exact — every direct
+ * dependency's package.json must be present under the closure, the stored
+ * `runtime-manifest.json` must be canonical-identical to the embedded
+ * manifest, and every pinned dependency version must match (B-03). A damaged
+ * closure is signalled by throwing.
  */
 export async function checkClosureIntegrity(options: {
   home: string

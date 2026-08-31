@@ -9,6 +9,7 @@ import {
   type MaterializeDeps,
 } from "./materializer"
 import type { DshRuntimeManifestV1 } from "./manifest"
+import type { DshRuntimeLockV1 } from "./lockfile"
 import { closureNameForFingerprint, resolveDshLayout } from "./status"
 
 const dirs: string[] = []
@@ -35,45 +36,38 @@ const MANIFEST: DshRuntimeManifestV1 = {
   fingerprint: "sha256:9e1ee84dfdd992bf9ebb37c7506f13bc17b87158d02783c2b1b24fd25a32cda7",
 }
 
-/** A minimal valid npm lockfile v3 document (the runtime-lock shape). */
-function runtimeLock(manifest: DshRuntimeManifestV1): string {
-  const packages: Record<string, { version: string }> = {
-    "": { version: "0.0.0" },
-  }
-  for (const [name, version] of Object.entries(manifest.dependencies)) {
-    packages[`node_modules/${name}`] = { version }
-  }
-  return JSON.stringify(
-    { name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages },
-    null,
-    2,
-  )
+/** The embedded lock for the test manifest (the exact tree the materialiser replays). */
+const LOCK: DshRuntimeLockV1 = {
+  schema: "ellamaka.dsh-runtime-lock/v1",
+  manifestFingerprint: MANIFEST.fingerprint!,
+  packages: {
+    "node_modules/@deepseek-ai/dsh": { version: "0.1.1-rc.2" },
+    "node_modules/@deepseek-ai/cordis": { version: "4.0.1" },
+    "node_modules/@deepseek-ai/cordis-plugin-include": { version: "1.0.6" },
+  },
 }
 
-/** A fake arborist whose reify synthesises closure node_modules in `home` staging. */
-function fakeArborist(home: string, fail = false): NonNullable<MaterializeDeps> {
+/** A fake extractor that synthesises the closure package.json for each spec. */
+function fakeExtractor(fail?: (spec: string) => string): NonNullable<MaterializeDeps> {
   return {
     // A stub fetch so the registry-selection probe never touches the network.
     fetch: async () => ({ status: 200, ok: true }),
-    arborist: {
-      create: async () => ({
-        reify: async () => {
-          if (fail) throw new Error("network down")
-          const staging = resolveDshLayout(home).stagingDir
-          for (const name of Object.keys(MANIFEST.dependencies)) {
-            const dir = join(staging, "node_modules", ...name.split("/"))
-            mkdirSync(dir, { recursive: true })
-            const body: Record<string, string> = { name, version: MANIFEST.dependencies[name] }
-            if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
-            writeFileSync(join(dir, "package.json"), JSON.stringify(body))
-          }
-          // The real Arborist produces the runtime lock during reify; the fake
-          // must too, so staged verification (lock presence) passes.
-          writeFileSync(join(staging, "package-lock.json"), runtimeLock(MANIFEST))
-        },
-      }),
+    extract: async (spec: string, dest: string) => {
+      if (fail) throw new Error(fail(spec))
+      // `dest` is the closure node_modules path for the package; create the
+      // package the way the real pacote extract would (contents at dest).
+      const name = spec.slice(0, spec.lastIndexOf("@"))
+      const body: Record<string, string> = { name, version: spec.slice(spec.lastIndexOf("@") + 1) }
+      if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+      mkdirSync(dest, { recursive: true })
+      writeFileSync(join(dest, "package.json"), JSON.stringify(body))
     },
   }
+}
+
+/** Materialise with the fake extractor and the test lock. */
+function materialize(home: string, fail?: (spec: string) => string) {
+  return materializeClosure({ home, manifest: MANIFEST, lock: LOCK, deps: fakeExtractor(fail) })
 }
 
 /** Synthesise a complete, valid closure directory under a tmp home. */
@@ -86,15 +80,30 @@ function seedClosure(home: string, manifest = MANIFEST): string {
   writeFileSync(join(closureDir, "node_modules", "@deepseek-ai", "cordis", "package.json"), JSON.stringify({ name: "@deepseek-ai/cordis", version: manifest.dependencies["@deepseek-ai/cordis"] }))
   writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(manifest))
   writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: manifest.dependencies }))
-  // The stored lock is the runtime lock (valid npm v3 shape).
-  writeFileSync(join(closureDir, "package-lock.json"), runtimeLock(manifest))
+  // The stored lock is the embedded lock's on-disk copy (npm v3 shape).
+  writeFileSync(
+    join(closureDir, "package-lock.json"),
+    JSON.stringify({
+      name: "ellamaka-dsh-closure",
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": {},
+        ...Object.fromEntries(
+          Object.entries(LOCK.packages).map(([path, entry]) => [path, entry]),
+        ),
+      },
+      ...(!manifest.fingerprint ? {} : {}),
+    }),
+  )
   return join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json")
 }
 
 describe("materializeClosure", () => {
-  test("writes manifest+lock into staging, reifies, then activates into closures/<fingerprint>", async () => {
+  test("extracts every locked package into staging, then activates into closures/<fingerprint>", async () => {
     const home = tmpHome()
-    const result = await materializeClosure({ home, manifest: MANIFEST, deps: fakeArborist(home) })
+    const lock = LOCK
+    const result = await materialize(home)
     const closureDir = join(resolveDshLayout(home).closuresDir, closureNameForFingerprint(MANIFEST.fingerprint!))
     expect(result.anchor).toBe(join(closureDir, "node_modules", "@deepseek-ai", "dsh", "package.json"))
     expect(result.closureDir).toBe(closureDir)
@@ -102,22 +111,35 @@ describe("materializeClosure", () => {
     expect(existsSync(join(closureDir, "runtime-manifest.json"))).toBe(true)
     expect(existsSync(join(closureDir, "package.json"))).toBe(true)
     expect(existsSync(join(closureDir, "package-lock.json"))).toBe(true)
+    // every locked package was extracted
+    for (const path of Object.keys(lock.packages)) {
+      expect(existsSync(join(closureDir, ...path.split("/"), "package.json"))).toBe(true)
+    }
     // staging is drained after a successful activate
     expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(false)
   })
 
-  test("reify failure leaves staging in place and rejects (no closure activated)", async () => {
+  test("extract failure leaves staging in place and rejects (no closure activated)", async () => {
     const home = tmpHome()
-    await expect(materializeClosure({ home, manifest: MANIFEST, deps: fakeArborist(home, true) })).rejects.toThrow(/network down/)
+    await expect(materialize(home, () => "network down")).rejects.toThrow(/network down/)
     expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(true)
     expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
+  })
+
+  test("rejects when the injected lock does not bind the manifest fingerprint", async () => {
+    const home = tmpHome()
+    const drifted: DshRuntimeLockV1 = { ...LOCK, manifestFingerprint: "sha256:stale" }
+    await expect(
+      materializeClosure({ home, manifest: MANIFEST, lock: drifted, deps: fakeExtractor() }),
+    ).rejects.toThrow(/fingerprint|drift/i)
+    expect(existsSync(resolveDshLayout(home).stagingDir)).toBe(false)
   })
 
   test("does not overwrite an existing closure of the same fingerprint", async () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
     const before = readFileSync(anchor, "utf8")
-    const result = await materializeClosure({ home, manifest: MANIFEST, deps: fakeArborist(home) })
+    const result = await materialize(home)
     expect(result.anchor).toBe(anchor)
     expect(readFileSync(anchor, "utf8")).toBe(before)
   })
@@ -127,12 +149,12 @@ describe("validateClosureOnDisk", () => {
   test("returns the anchor when the closure is complete", () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBe(anchor)
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBe(anchor)
   })
 
   test("returns null when the closure is missing", () => {
     const home = tmpHome()
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns null when the anchor is damaged (missing dsh package.json)", () => {
@@ -142,7 +164,7 @@ describe("validateClosureOnDisk", () => {
     writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(MANIFEST))
     writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
     writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns null when a direct dependency package.json is missing", () => {
@@ -153,7 +175,7 @@ describe("validateClosureOnDisk", () => {
     writeFileSync(join(closureDir, "runtime-manifest.json"), JSON.stringify(MANIFEST))
     writeFileSync(join(closureDir, "package.json"), JSON.stringify({ name: "ellamaka-dsh-closure", dependencies: MANIFEST.dependencies }))
     writeFileSync(join(closureDir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }))
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns null when the closure manifest does not match the fingerprint", () => {
@@ -164,7 +186,7 @@ describe("validateClosureOnDisk", () => {
       fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     }
     seedClosure(home, other)
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 })
 
@@ -184,7 +206,7 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
       fingerprint: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     }
     writeFileSync(join(closureRoot(anchor), "runtime-manifest.json"), JSON.stringify(other))
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns null when package-lock.json is truncated", () => {
@@ -193,37 +215,33 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
     // Truncating the lock leaves a partial document; presence alone is not
     // enough — the closure must be treated as damaged and re-materialised.
     writeFileSync(join(closureRoot(anchor), "package-lock.json"), '{"lockfileVersion": 3, ')
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns null when package-lock.json is a valid JSON but not an npm v3 lock", () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
     // A well-formed JSON that is not a v3 lockfile (no lockfileVersion 3 /
-    // packages map) is not the runtime lock the materialiser produces — the
-    // closure is damaged. Content beyond shape is NOT compared anymore: the
-    // runtime lock is produced by npm at first install, so only presence +
-    // shape bind it.
+    // packages map) is not a lock the materialiser writes — the closure is
+    // damaged.
     writeFileSync(
       join(closureRoot(anchor), "package-lock.json"),
       JSON.stringify({ foo: "bar" }),
     )
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns the anchor when the runtime lock has a valid v3 shape with different content", () => {
     const home = tmpHome()
     const anchor = seedClosure(home)
-    // A valid npm v3 lock whose packages map differs from the seeded one is
-    // still a legitimate runtime lock: npm produced it at first install, and
-    // the closure content is what actually got installed (the direct deps
-    // are verified exactly below). There is no build-time lock to compare
-    // against (DESIGN §3.4.3).
+    // A valid npm v3 lock whose packages map differs from the embedded lock's
+    // is still a legitimate install record: the direct-deps exact versions
+    // below bind closure correctness (DESIGN §3.4.3).
     writeFileSync(
       join(closureRoot(anchor), "package-lock.json"),
       JSON.stringify({ name: "ellamaka-dsh-closure", lockfileVersion: 3, requires: true, packages: {} }),
     )
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBe(anchor)
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBe(anchor)
   })
 
   test("returns null when a direct dependency is installed at the wrong version", () => {
@@ -234,7 +252,7 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
       join(closureRoot(anchor), "node_modules", "@deepseek-ai", "cordis", "package.json"),
       JSON.stringify({ name: "@deepseek-ai/cordis", version: "9.9.9" }),
     )
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBeNull()
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBeNull()
   })
 
   test("returns the anchor when runtime-manifest.json is key-order-mutated but same content", () => {
@@ -246,7 +264,7 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
       Object.entries(MANIFEST).reverse().filter(([, v]) => v !== undefined),
     )
     writeFileSync(join(closureRoot(anchor), "runtime-manifest.json"), JSON.stringify(reversed))
-    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeArborist(home) })).toBe(anchor)
+    expect(validateClosureOnDisk({ home, manifest: MANIFEST, deps: fakeExtractor() })).toBe(anchor)
   })
 
   test("a tampered closure is re-materialised by materializeClosure, not adopted", async () => {
@@ -261,8 +279,8 @@ describe("validateClosureOnDisk — closure content verification (B-03)", () => 
     }
     writeFileSync(join(root, "runtime-manifest.json"), JSON.stringify(other))
     // Tampered closure must be treated as damaged and replaced with a
-    // canonical one (the fake arborist synthesises the closure again).
-    const result = await materializeClosure({ home, manifest: MANIFEST, deps: fakeArborist(home) })
+    // canonical one (the fake extractor synthesises the closure again).
+    const result = await materialize(home)
     expect(result.anchor).toBe(anchor)
     const stored = JSON.parse(readFileSync(join(root, "runtime-manifest.json"), "utf8"))
     expect(JSON.stringify(stored)).toBe(JSON.stringify(MANIFEST))
@@ -273,12 +291,12 @@ describe("checkClosureIntegrity", () => {
   test("resolves when integrity metadata is present and anchor files exist", async () => {
     const home = tmpHome()
     seedClosure(home)
-    await expect(checkClosureIntegrity({ home, manifest: MANIFEST, deps: fakeArborist(home) })).resolves.toBeUndefined()
+    await expect(checkClosureIntegrity({ home, manifest: MANIFEST, deps: fakeExtractor() })).resolves.toBeUndefined()
   })
 
   test("rejects when integrity metadata is present but the anchor is missing", async () => {
     const home = tmpHome()
     // no closure seeded
-    await expect(checkClosureIntegrity({ home, manifest: MANIFEST, deps: fakeArborist(home) })).rejects.toThrow(/anchor|integrity/i)
+    await expect(checkClosureIntegrity({ home, manifest: MANIFEST, deps: fakeExtractor() })).rejects.toThrow(/anchor|integrity/i)
   })
 })
