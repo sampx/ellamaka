@@ -77,8 +77,8 @@ function PanelChatInner(props: {
 
   // Expose this Panel's prompt/comments to the workbench-wide registry so the
   // floating file viewer can submit line comments into the active Panel's
-  // prompt context. Registration is keyed by Panel id and torn down on unmount;
-  // the active Panel marker follows the canonical selector (§5.5).
+  // prompt context. Registration must run on mount (no defer) — panel ids are
+  // stable, so a deferred `on` would never fire and the registry stays empty.
   createEffect(
     on(
       () => props.panel.id,
@@ -91,7 +91,6 @@ function PanelChatInner(props: {
           promptRegistry.unregisterComments(panelID)
         })
       },
-      { defer: true },
     ),
   )
   createEffect(() => {
