@@ -39,12 +39,19 @@ opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 ellamaka_app_dir="$root/packages/ellamaka-app"
+
+# Each worktree gets its own pidfile and dev logs, keyed by a hash of the
+# worktree path: status/stop/restart are scoped to the directory the script
+# runs in, and separate worktrees can run dev instances side by side without
+# stealing each other's records.
 LOGDIR="$space/.wopal-space/logs"
-PIDFILE="$LOGDIR/ellamaka-dev.pid"
-BACKEND_LOG="$LOGDIR/ellamaka-dev-backend.log"
-FRONTEND_LOG="$LOGDIR/ellamaka-dev-frontend.log"
-DESKTOP_LOG="$LOGDIR/ellamaka-dev-desktop.log"
-SIDECAR_LOG="$LOGDIR/ellamaka-dev-sidecar.log"
+DEV_SCOPE="$(printf '%s' "$root" | md5 -q | cut -c1-10)"
+DEV_DIR="$LOGDIR/dev/$DEV_SCOPE"
+PIDFILE="$DEV_DIR/ellamaka-dev.pid"
+BACKEND_LOG="$DEV_DIR/ellamaka-dev-backend.log"
+FRONTEND_LOG="$DEV_DIR/ellamaka-dev-frontend.log"
+DESKTOP_LOG="$DEV_DIR/ellamaka-dev-desktop.log"
+SIDECAR_LOG="$DEV_DIR/ellamaka-dev-sidecar.log"
 PLUGIN_DEBUG_LOG="$LOGDIR/wopal-plugins-debug.log"
 SELF_PGID="$(ps -o pgid= -p "$$" | tr -d '[:space:]')"
 
@@ -229,8 +236,8 @@ record_is_current() {
 
 rewrite_records() {
   local mode="$1" value="$2" label port pid pgid stamp tmp
-  mkdir -p "$LOGDIR"
-  tmp="$(mktemp "$LOGDIR/ellamaka-dev.pid.XXXXXX")"
+  mkdir -p "$DEV_DIR"
+  tmp="$(mktemp "$PIDFILE.XXXXXX")"
   if [ -f "$PIDFILE" ]; then
     while IFS=$' \t' read -r label port pid pgid stamp; do
       [ -n "$label" ] || continue
@@ -256,8 +263,8 @@ write_record() {
     echo "cannot register $label: invalid pid or process group" >&2
     return 1
   }
-  mkdir -p "$LOGDIR"
-  tmp="$(mktemp "$LOGDIR/ellamaka-dev.pid.XXXXXX")"
+  mkdir -p "$DEV_DIR"
+  tmp="$(mktemp "$PIDFILE.XXXXXX")"
   if [ -f "$PIDFILE" ]; then
     while IFS=$' \t' read -r line_label line_port line_pid line_pgid line_stamp; do
       [ -n "$line_label" ] || continue
@@ -324,11 +331,13 @@ require_stopped() {
 
 # Like require_stopped, but a foreign listener on $2 only causes a bump instead
 # of an abort, because the caller hands $2 to choose_free_port right after.
+# Exit code 2 means "this worktree's own instance is already running" — the
+# caller shows a status summary instead of starting a second copy.
 require_own_instance_stopped() {
   local service="$1" port="$2"
   if service_running "$service"; then
-    echo "$service is already running; run '$self stop $service' first"
-    return 1
+    echo "$service is already running in this worktree"
+    return 2
   fi
   if service_has_records "$service"; then
     remove_service_records "$service"
@@ -611,7 +620,7 @@ cmd_tui() {
   $ns && ns_arg=(--disable-wopalspace)
 
   if $attach; then
-    mkdir -p "$LOGDIR"
+    mkdir -p "$DEV_DIR"
     local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") attach_args=() plugin_modules=""
     if $debug; then
       attach_args+=(--log-level DEBUG)
@@ -632,8 +641,13 @@ cmd_tui() {
       exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$RECORD_PORT" --dir "$caller_pwd"
     fi
 
-    require_own_instance_stopped backend "$PORT" || return 1
-    require_own_instance_stopped frontend "$APP_PORT" || return 1
+    if ! require_own_instance_stopped backend "$PORT" || ! require_own_instance_stopped frontend "$APP_PORT"; then
+      echo
+      cmd_status
+      echo
+      echo "  → restart them: $self restart    ·    stop them: $self stop all"
+      return 0
+    fi
     claim_ports_reset
     choose_free_port backend "$PORT"; PORT="$SELECTED_PORT"
     choose_free_port workbench "$APP_PORT"; APP_PORT="$SELECTED_PORT"
@@ -651,7 +665,7 @@ cmd_tui() {
     exec env "${attach_env[@]}" bun --preload "$opencode_preload" "$opencode_entry" "${attach_args[@]}" "${ns_arg[@]}" attach "http://localhost:$PORT" --dir "$caller_pwd"
   fi
 
-  mkdir -p "$LOGDIR"
+  mkdir -p "$DEV_DIR"
   local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") tui_args=() plugin_modules=""
   if $debug; then
     tui_args+=(--log-level DEBUG)
@@ -684,10 +698,20 @@ cmd_serve() {
   done
 
   if $backend_only; then
-    require_own_instance_stopped backend "$PORT" || return 1
+    if ! require_own_instance_stopped backend "$PORT"; then
+      echo
+      cmd_status
+      return 0
+    fi
   else
-    require_own_instance_stopped backend "$PORT" || return 1
-    require_own_instance_stopped frontend "$APP_PORT" || return 1
+    # Same-worktree instance already serving? Show where, then stop.
+    if ! require_own_instance_stopped backend "$PORT" || ! require_own_instance_stopped frontend "$APP_PORT"; then
+      echo
+      cmd_status
+      echo
+      echo "  → restart them: $self restart    ·    stop them: $self stop all"
+      return 0
+    fi
   fi
   claim_ports_reset
   choose_free_port backend "$PORT"; PORT="$SELECTED_PORT"
@@ -695,7 +719,7 @@ cmd_serve() {
     choose_free_port workbench "$APP_PORT"; APP_PORT="$SELECTED_PORT"
   fi
 
-  mkdir -p "$LOGDIR"
+  mkdir -p "$DEV_DIR"
   $debug && echo "debug: modules=$debug_modules"
   start_backend "$PORT" "$debug" "$debug_modules" "$opencode_preload" "${passthrough[@]}" || return 1
   if ! wait_backend "$PORT"; then
@@ -851,7 +875,7 @@ cmd_desktop() {
     echo "==> Skipping sidecar build (use --rebuild to force)"
   fi
 
-  mkdir -p "$LOGDIR"
+  mkdir -p "$DEV_DIR"
   local plugin_modules=""
   local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
   if $cdp_debug; then
@@ -949,7 +973,7 @@ cmd_status() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  mkdir -p "$LOGDIR"
+  mkdir -p "$DEV_DIR"
   cmd="${1:-help}"
   shift 2>/dev/null || true
   case "$cmd" in
