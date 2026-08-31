@@ -73,11 +73,13 @@ WopalSpace 模式下配置加载优先级（低→高）：
 
 ## 5. Upstream Merge Boundary
 
+> **状态**: 已放弃跟踪上游（2026-08-31 起）。ellamaka 不再从 `upstream/dev` 合并 OpenCode 变更，`dev` 分支不再作为上游跟踪线。以下历史机制仅作记录，不再执行。
+
 | 规则     | 说明                                                                                  |
 | -------- | ------------------------------------------------------------------------------------- |
-| 分支     | `main` = 定制稳定线；`dev` = 跟踪 upstream/dev，不作为开发主线                        |
-| 合并方向 | upstream/dev → merge to main                                                          |
-| 裁剪前缀 | 见 `UPSTREAM-MERGE-LOG.md`（desktop、enterprise、slack、nix、specs 等非 engine 组件） |
+| 分支     | `main` = 定制稳定线；`dev` = 不再跟踪 upstream/dev                                    |
+| 合并方向 | 无（已放弃上游合并）                                                                  |
+| 参考来源 | 后续如需参考 OpenCode 模块代码，从 `labs/ref-repos/opencode/` 读取对应模块            |
 
 详细合并流程、合并保护文件清单、定制代码最小侵入原则、冲突热点和验证清单见 **BRANDING.md §9**。
 
@@ -139,13 +141,15 @@ WopalSpace 需要 Web UI 作为 TUI 之外的第二种用户界面。经过 PoC 
 | ------------------------------------------------- | ------- | --------------------------------------------------------------------------------- |
 | 直接修改 `packages/app`                           | ❌ 否决 | 侵入上游源码,合并上游 `opencode` 更新时冲突面大                                   |
 | 在 `poc/web` 基础上迭代                           | ❌ 否决 | PoC 代码质量和架构无法承接产品化(单文件 1025 行、裸 JSON 协议、CDN 外部依赖)      |
-| **Fork `packages/app` → `packages/ellamaka-app`** | ✅ 采纳 | 复用现有基础设施(core/sdk/ui/i18n/terminal/theme);保持上游同步能力;定制与上游解耦 |
+| **Fork `packages/app` → `packages/ellamaka-app`** | ✅ 采纳 | 复用现有基础设施(core/sdk/ui/i18n/terminal/theme);定制与上游解耦                 |
 
 ### 8.3 详细规约
 
-关于 `ellamaka-app` 工作台（Workbench）的具体界面、视图模型（TUI/Chat/Split 面板模型）、详细目录架构、上游同步细节、PoC 能力迁移规约以及与 `wopal-cli` 的协同，请参阅独立的详细设计规范文档：
+关于 `ellamaka-app` 工作台（Workbench）的具体界面、视图模型（TUI/Chat/Split 面板模型）、详细目录架构、PoC 能力迁移规约以及与 `wopal-cli` 的协同，请参阅独立的详细设计规范文档：
 
 - 中文版：[WORKBENCH.md](file:///Volumes/U500G/coding/wopal-workspace/projects/ellamaka/docs/WORKBENCH.md)
+
+> 上游 `packages/app` 已放弃跟踪（见 §5），`ellamaka-app` 独立演进。后续如需参考上游 UI 代码，从 `labs/ref-repos/opencode/packages/app` 读取。
 
 ---
 

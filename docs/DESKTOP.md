@@ -3,7 +3,7 @@
 > **状态**: Draft
 > **更新时间**: 2026-08-03
 > **目标包**: `packages/ellamaka-desktop`
-> **上游基线**: Engine baseline 与冻结 component baselines 均以 `release/upstreams.lock.json` 为准；当前 `packages/desktop` 复制参照为 OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
+> **上游基线**: 上游 `packages/desktop` 已删除（2026-08-31），参考代码从 `labs/ref-repos/opencode/packages/desktop` 读取；历史复制参照为 OpenCode `v1.15.13` / `385cb694419f98103af0e8fc6187ddcbcbb6eecb`
 > **相关文档**: `BRANDING.md §17`、`ELLAMAKA-WORKBENCH.zh-CN.md`、`DESIGN.md`、`DISTRIBUTION.md`
 
 本文档描述 ellamaka 官方桌面应用的目标架构。桌面应用承载 `ellamaka-app` Workbench。Electron 主进程管理窗口和本地 sidecar，sidecar 统一管理 Web 与 Desktop 的 PTY 生命周期。
@@ -20,21 +20,18 @@
 
 ## 2. 包定位与版本基线
 
-### 2.1 双包模型
+### 2.1 包定位
 
-本项目同时保留两个 `packages/desktop/` 目录，各司其职：
+`packages/desktop/`（上游基线）已删除（2026-08-31）。ellamaka 不再保留上游桌面目录，后续如需参考 OpenCode 桌面代码，从 `labs/ref-repos/opencode/packages/desktop` 读取。
 
 | 包       | 路径                         | 角色                            | 修改规则                                                          |
 | -------- | ---------------------------- | ------------------------------- | ----------------------------------------------------------------- |
-| 上游基线 | `packages/desktop/`          | 冻结的 OpenCode v1.15.13 参照源 | **禁止修改**。仅通过 `git diff` 读取，作为安全/兼容修复的评估基准 |
 | 品牌产品 | `packages/ellamaka-desktop/` | 可编辑的 Ellamaka 桌面应用      | 正常开发、修改、定制                                              |
 
 **基线使用规则**：
 
-- `packages/desktop/` 是只读参照，不作为产品包或运行时依赖。
-- 上游安全修复或兼容修复以 `release/upstreams.lock.json` 中 `componentBaselines["packages/desktop"].gitCommit` 为比较起点，评估后手工移植到 `packages/ellamaka-desktop/`。
-- 基线完整性由 `scripts/check-desktop-baseline.sh` 守护；脚本读取该 component entry，任何对 `packages/desktop/` 的误修改均被检测为 drift 并阻止提交。
-- `packages/desktop/` 不在 `CLEANUP_PATHS` 中，不在构建图中，turbo 不为其编排 Task。
+- 上游安全修复或兼容修复以 `labs/ref-repos/opencode/packages/desktop` 为参考，评估后手工移植到 `packages/ellamaka-desktop/`。
+- `packages/desktop/` 已加入 `CLEANUP_PATHS`，不在构建图中，turbo 不为其编排 Task。
 
 ### 2.2 独立复制模式
 
@@ -42,10 +39,10 @@
 
 | 维度     | 上游基线                     | ellamaka-desktop                                |
 | -------- | ---------------------------- | ----------------------------------------------- |
-| 包路径   | `packages/desktop`           | `packages/ellamaka-desktop`                     |
-| 包名     | `@opencode-ai/desktop`       | `@opencode-ai/ellamaka-desktop`                 |
+| 包路径   | `packages/desktop`（已删，参考 `labs/ref-repos/opencode/packages/desktop`） | `packages/ellamaka-desktop`                     |
+| 包名     | `@opencode-ai/desktop`       | `@wopal/ellamaka-desktop`                       |
 | 桌面框架 | 初始复制时为 Electron 41.2.1 | Electron；具体版本由 Desktop 自身依赖与测试决定 |
-| 渲染应用 | `@opencode-ai/app`           | `@opencode-ai/ellamaka-app`                     |
+| 渲染应用 | `@opencode-ai/app`（已删，参考 `labs/ref-repos/opencode/packages/app`） | `@wopal/ellamaka-app`                           |
 | 本地服务 | OpenCode node sidecar        | Ellamaka/WopalSpace node sidecar                |
 | 默认界面 | OpenCode 主界面              | Ellamaka Workbench `/workbench`                 |
 
@@ -281,14 +278,13 @@ Sidecar 生命周期由 `SidecarSupervisor`（§13）管理，提供自动重启
 15. PTY 创建后始终在宽限期内建立第一个 subscriber；连接未建立时自动回收。
 16. TUI 视图隐藏或 Split Terminal 收起超过宽限期后，PTY 仍保持运行。
 
-## 12. 上游同步
+## 12. 上游关系
 
-`ellamaka-desktop` 在 upstream lock 中记录历史复制基线及其来源 commit。后续同步以选择性移植为主：
+`ellamaka-desktop` 在 `release/upstreams.lock.json` 中记录历史复制基线及其来源 commit。ellamaka 已放弃跟踪上游（2026-08-31，见 `BRANDING.md` §12），上游 `packages/desktop` 已删除，参考实现从 `labs/ref-repos/opencode/packages/desktop` 读取，按人工 review 选择性移植：
 
-- 同版本 desktop 修复可以直接评估和移植。
-- 跨版本修复按依赖、接口和行为逐项回移。
 - Electron 安全更新保持优先级，并通过完整桌面回归验证。
-- Ellamaka 升级 OpenCode Engine baseline 时，sidecar 与 Engine API 共同升级评估；desktop/app component baseline 是否前进是独立、显式决定。
+- 修复按依赖、接口和行为逐项回移。
+- Ellamaka 如升级 OpenCode Engine baseline，sidecar 与 Engine API 共同升级评估。
 
 包级 `AGENTS.md` 维护开发命令、测试方式、生命周期规则和上游基线。`BRANDING.md` 继续记录品牌差异与分发身份，本文件维护桌面架构和运行时行为。
 

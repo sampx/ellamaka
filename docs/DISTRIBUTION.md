@@ -36,7 +36,7 @@ Release identity 必须回答四个互不混淆的问题：
 
 ## 2. Release Backbone
 
-ellamaka 是 OpenCode 的 fork，构建体系通过 `@opencode-ai/script` 包引入上游脚本，`packages/ellamaka-release/src/cli/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
+ellamaka 是 OpenCode 的 fork，构建体系通过 `@wopal/ellamaka-script` 包引入上游脚本，`packages/ellamaka-release/src/cli/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
 
 - **平台裁剪**：`--arch primary` 构建 8 个平台（5 native + 3 baseline），排除 musl、Windows arm64 变体；baseline 兼容不支持 AVX2 的老 x64 CPU。
 - **发布位置**：binary 分发从 GitHub Release 迁移到 Cloudflare R2。
@@ -68,7 +68,7 @@ Contract：
 
 ### 2.2 构建接口
 
-`@opencode-ai/script` 的 `Script` 类仍作为 CLI 构建接口使用，但注入的是已经由 release context 验证的 Ellamaka CLI 产品版本：
+`@wopal/ellamaka-script` 的 `Script` 类仍作为 CLI 构建接口使用，但注入的是已经由 release context 验证的 Ellamaka CLI 产品版本：
 
 | 环境变量 | 作用 | 约束 |
 | -------- | ---- | ---- |
@@ -88,7 +88,7 @@ Contract：
 Ellamaka 发布的 `version` 遵循 SemVer 2.0：
 
 - MAJOR：Ellamaka 对外公共契约发生不兼容变化。
-- MINOR：新增向后兼容能力，或完成较大的向后兼容上游同步。
+- MINOR：新增向后兼容能力，或完成较大的向后兼容能力演进。
 - PATCH：向后兼容的 bug、安全或兼容性修复。
 - prerelease：Desktop 只使用 `-beta.N`。CLI 不发布 prerelease（rc 机制已移除），每次发布直接递增 patch/minor。
 
@@ -126,18 +126,11 @@ OpenCode baseline 不是每次 build/release 的人工输入。仓库维护受�
       "gitCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
     }
   },
-  "componentBaselines": {
-    "packages/app": {
-      "source": "opencode",
-      "sourcePath": "packages/app",
-      "version": "1.15.13",
-      "gitCommit": "385cb694419f98103af0e8fc6187ddcbcbb6eecb"
-    }
-  }
+  "componentBaselines": {}
 }
 ```
 
-`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。
+`componentBaselines` 记录仍按独立复制策略冻结的上游目录来源，只用于 drift 检查和审计，不参与产品版本排序或 CLI 兼容过滤。上游 `packages/app`、`packages/desktop` 已删除（2026-08-31），不再作为冻结 component baseline；参考代码从 `labs/ref-repos/opencode/` 读取。
 
 只有"正式采用新的 OpenCode Engine baseline"时才更新 `sources.opencode`：专用命令接收目标 OpenCode version，解析上游 tag 对应的完整 commit，校验后写入 lock；baseline 更新与上游合并在同一变更中审查和提交。component baseline 使用独立的显式更新动作，禁止被 Engine baseline 升级顺带改写。release workflow 禁止通过 input、环境变量或网络上的"最新 OpenCode tag"覆盖 lock。
 

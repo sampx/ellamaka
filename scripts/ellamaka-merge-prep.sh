@@ -98,7 +98,7 @@ UP_RENAMED=$(git diff "$MERGE_BASE".."$TARGET_TAG" --diff-filter=R --name-only |
 UP_SRC_MODIFIED=$(git diff "$MERGE_BASE".."$TARGET_TAG" --diff-filter=M --name-only -- packages/opencode/src/ packages/core/src/ | sort -u)
 
 # Ellamaka modifications
-EL_MODIFIED=$(git diff "$MERGE_BASE"..HEAD --diff-filter=M --name-only -- packages/opencode/src/ packages/core/src/ | sort -u)
+EL_MODIFIED=$(git diff "$MERGE_BASE"..HEAD --diff-filter=M --name-only -- packages/opencode/src/ packages/ellamaka-core/src/ | sort -u)
 
 # New upstream packages (directory-level comparison)
 TARGET_PKGS=$(git ls-tree -d --name-only "$TARGET_TAG":packages/ 2>/dev/null | sort)

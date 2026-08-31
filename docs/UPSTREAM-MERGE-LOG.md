@@ -1,11 +1,13 @@
 # ellamaka 上游合并记录
 
-## 分支策略
+> **状态**: 已放弃跟踪上游（2026-08-31 起）。本文件仅保留历史合并记录，不再新增。后续如需参考 OpenCode 模块代码，从 `labs/ref-repos/opencode/` 读取。
+
+## 分支策略（历史记录，不再执行）
 
 | 分支 | 用途 |
 |------|------|
 | `main` | ellamaka 定制代码的稳定版本 |
-| `dev` | 上游跟踪，与 `upstream/dev` 同步 |
+| `dev` | 上游跟踪，与 `upstream/dev` 同步（已废弃） |
 
 合并流程和策略统一维护在 `docs/BRANDING.md` §9，此处只记录每次合并的关键元数据和值得注意的事项。
 
@@ -25,7 +27,7 @@
 | Remote | URL | 用途 |
 |--------|-----|------|
 | `origin` | `sampx/ellamaka` | fork 仓库 |
-| `upstream` | `anomalyco/opencode` | 上游官方仓库 |
+| `upstream` | `anomalyco/opencode` | 上游官方仓库（已废弃，参考代码改从 `labs/ref-repos/opencode/` 读取） |
 
 ## 合并历史（按时间倒序）
 

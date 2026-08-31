@@ -29,9 +29,9 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | Directory | Responsibility |
 |---|---|
 | `packages/opencode/` | Inherited OpenCode engine main package; see `packages/opencode/AGENTS.md` for internal rules |
-| `packages/core/` | Shared core, flags, global paths, installation/runtime primitives |
-| `packages/app/`, `packages/ui/`, `packages/storybook/` | Inherited UI surfaces; only modify when engine/TUI requires |
-| `packages/plugin/`, `packages/script/`, `packages/util/` | Workspace support packages |
+| `packages/ellamaka-core/` | Shared core, flags, global paths, installation/runtime primitives |
+| `packages/ui/` | Inherited UI component library; only modify when engine/TUI requires |
+| `packages/plugin/`, `packages/ellamaka-script/` | Workspace support packages |
 | `packages/sdk/` | SDK workspace; JS SDK regeneration uses existing script |
 | `packages/ellamaka/` | Brand constants, logo, build wrapper, WopalSpace auto-detection, install path detection, and package-level tests |
 | `packages/ellamaka-app/` | Workbench Web UI frontend; see `packages/ellamaka-app/AGENTS.md` for internal rules |
@@ -156,6 +156,6 @@ Workbench frontend development rules (state ownership, identity scope, dependenc
 ## 6. User-Supplied Rules
 
 - JS SDK regeneration: `./packages/sdk/js/script/build.ts`.
-- The default branch in this repo is `main`. The `dev` branch only tracks upstream OpenCode `dev` for merge integration.
-- Use `main` or `origin/main` as the diff baseline; `dev` is for upstream-tracking only.
+- The default branch in this repo is `main`. ellamaka has stopped tracking upstream OpenCode (2026-08-31); the `dev` branch is no longer used for upstream merge integration.
+- Use `main` or `origin/main` as the diff baseline. To reference upstream OpenCode module code, read from `labs/ref-repos/opencode/` in the workspace.
 - Prefer auto-executing clear requests; confirm when missing critical info, security risks, or irreversible operations.

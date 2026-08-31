@@ -25,7 +25,11 @@ fi
 # Paths that should NOT exist in ellamaka.
 # Listed by category — keep in sync with docs/BRANDING.md §0.
 CLEANUP_PATHS=(
-  # Desktop (kept as upstream reference for ellamaka-desktop diff/sync)
+  # Upstream app/desktop/storybook (ellamaka uses ellamaka-app/ellamaka-desktop;
+  # upstream reference lives in labs/ref-repos/opencode)
+  "packages/app"
+  "packages/desktop"
+  "packages/storybook"
   # SaaS / Cloud
   "packages/enterprise"
   "console"

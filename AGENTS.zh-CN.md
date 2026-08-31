@@ -29,9 +29,9 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | 目录 | 职责 |
 |---|---|
 | `packages/opencode/` | OpenCode inherited engine 主包；内部规则见 `packages/opencode/AGENTS.md` |
-| `packages/core/` | shared core、flags、global paths、installation/runtime 基础能力 |
-| `packages/app/`, `packages/ui/`, `packages/storybook/` | inherited UI surfaces；只在 engine/TUI 需要时改动 |
-| `packages/plugin/`, `packages/script/`, `packages/util/` | workspace support packages |
+| `packages/ellamaka-core/` | shared core、flags、global paths、installation/runtime 基础能力 |
+| `packages/ui/` | inherited UI 组件库；只在 engine/TUI 需要时改动 |
+| `packages/plugin/`, `packages/ellamaka-script/` | workspace support packages |
 | `packages/sdk/` | SDK workspace；JS SDK regeneration 使用既有脚本 |
 | `packages/ellamaka/` | 品牌常量、品牌字模、构建包装、WopalSpace 自动检测、安装路径判断及包级测试 |
 | `packages/ellamaka-app/` | Workbench Web UI 前端；内部规则见 `packages/ellamaka-app/AGENTS.md` |
