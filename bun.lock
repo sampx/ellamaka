@@ -320,8 +320,8 @@
       "name": "@wopal/ellamaka-cordis",
       "version": "0.1.0",
       "dependencies": {
-        "@deepseek-ai/cordis": "4.0.1",
-        "@deepseek-ai/cordis-plugin-loader": "1.0.2",
+        "@deepseek-ai/cordis": "4.0.2",
+        "@deepseek-ai/cordis-plugin-loader": "1.0.3",
         "@deepseek-ai/dsh": "0.1.1-rc.2",
         "@deepseek-ai/dsh-app-boot": "0.1.1-rc.2",
         "@deepseek-ai/dsh-cmdline": "0.1.1-rc.2",
@@ -1098,7 +1098,7 @@
 
     "@csstools/selector-specificity": ["@csstools/selector-specificity@6.0.0", "https://registry.npmmirror.com/@csstools/selector-specificity/-/selector-specificity-6.0.0.tgz", { "peerDependencies": { "postcss-selector-parser": "^7.1.1" } }, "sha512-4sSgl78OtOXEX/2d++8A83zHNTgwCJMaR24FvsYL7Uf/VS8HZk9PTwR51elTbGqMuwH3szLvvOXEaVnqn0Z3zA=="],
 
-    "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1", "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.1.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2", "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "^1.0.6", "@deepseek-ai/cordis-plugin-loader": "^1.0.2" }, "optionalPeers": ["@deepseek-ai/cordis-plugin-include", "@deepseek-ai/cordis-plugin-loader"], "bin": { "cordis": "bin.js" } }, "sha512-YBdskTU2Po1kru3GgcUWUbkTsPMA9LkSQDAY8rBkFJeajdgcQad3QPJZE26JyK99Xb6HaASvoXg2DSUTeN/0Nw=="],
+    "@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.2", "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.2.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.3", "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "^1.0.7", "@deepseek-ai/cordis-plugin-loader": "^1.0.3" }, "optionalPeers": ["@deepseek-ai/cordis-plugin-include", "@deepseek-ai/cordis-plugin-loader"], "bin": { "cordis": "bin.js" } }, "sha512-asOnXP1TzFSFQlHb1iegDZp0z/8WD1c7YNrwJR/Tx2bzNuMXfcekE/I67Iv6SQXeLB4csxqCngzQKANP7gdw0g=="],
 
     "@deepseek-ai/cordis-plugin-group": ["@deepseek-ai/cordis-plugin-group@1.0.1", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-group/-/cordis-plugin-group-1.0.1.tgz", { "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/cordis-plugin-loader": "^1.0.2" } }, "sha512-E1NThkFB3jn3TCqa6Oc++1zQHqLejF3W2wDwv2BlL3UEmgtBXL1K1j1koc+j676RuiOXtJkUJlPcOntRGKLWBQ=="],
 
@@ -1106,11 +1106,11 @@
 
     "@deepseek-ai/cordis-plugin-include": ["@deepseek-ai/cordis-plugin-include@1.0.6", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-include/-/cordis-plugin-include-1.0.6.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2", "js-yaml": "^4.1.0" }, "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/cordis-plugin-loader": "^1.0.2" } }, "sha512-i1VXrZCbv6tk/iUgedCNjrxxArbWT3IvRZGB5sdqJ3ectnihivXXQbRZ8JJ73DSmAPvlMGmrbtjFAfm10yvXRg=="],
 
-    "@deepseek-ai/cordis-plugin-loader": ["@deepseek-ai/cordis-plugin-loader@1.0.2", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-loader/-/cordis-plugin-loader-1.0.2.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2" }, "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "node-addon-require-builtin": "^0.1.4" }, "optionalPeers": ["node-addon-require-builtin"] }, "sha512-RIW9hoVyhYDWdCI9BsvtZccPde1ECLC4OAxupwowGTak78vwVTVdb3HezTSOK1Y1/Ax3Ru0LA1pYOB04CnTxIQ=="],
+    "@deepseek-ai/cordis-plugin-loader": ["@deepseek-ai/cordis-plugin-loader@1.0.3", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-loader/-/cordis-plugin-loader-1.0.3.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.3" }, "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2", "node-addon-require-builtin": "^0.1.4" }, "optionalPeers": ["node-addon-require-builtin"] }, "sha512-YNcHiH7TRFrgnRbQU7qdS1spABUFFHg04QpB9DdboPEjgKLTFfeEAvr6Y7qll3/nGgqywDQdk1tYshqKO0p1WQ=="],
 
     "@deepseek-ai/cordis-plugin-timer": ["@deepseek-ai/cordis-plugin-timer@1.1.3", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-timer/-/cordis-plugin-timer-1.1.3.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2" }, "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" } }, "sha512-IOkey1VNmJwYa5U8bksyMOnM7mtirqjjbWLr3xA8QybLMK0sMooG3a6iJwtvd8P3MFwo3FQibEg+JPixp37MEw=="],
 
-    "@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
+    "@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.3", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.3.tgz", {}, "sha512-qBo+ronVM6Eu2WNVJXi8JcMiqZ19T9BRIpV+5qJUFPXjGH/Z0QKcQMC/IZJ7L394YTOtJgcovbk9qP0w2GsBXQ=="],
 
     "@deepseek-ai/dsh": ["@deepseek-ai/dsh@0.1.1-rc.2", "https://registry.npmmirror.com/@deepseek-ai/dsh/-/dsh-0.1.1-rc.2.tgz", { "dependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/cordis-plugin-hmr": "^1.0.16", "@deepseek-ai/cordis-plugin-include": "^1.0.6", "@deepseek-ai/cordis-plugin-loader": "^1.0.2", "@deepseek-ai/cordis-plugin-timer": "^1.1.3", "@deepseek-ai/dsh-agent-instructions": "^0.1.1-rc.2", "@deepseek-ai/dsh-agent-tool-presentation": "^0.1.1-rc.2", "@deepseek-ai/dsh-app-boot": "^0.1.1-rc.2", "@deepseek-ai/dsh-base": "^0.1.1-rc.2", "@deepseek-ai/dsh-client-ui-agent-preset": "^0.1.1-rc.2", "@deepseek-ai/dsh-client-ui-cordis": "^0.1.1-rc.2", "@deepseek-ai/dsh-cmdline": "^0.1.1-rc.2", "@deepseek-ai/dsh-command-compact": "^0.1.1-rc.2", "@deepseek-ai/dsh-command-goal": "^0.1.1-rc.2", "@deepseek-ai/dsh-compaction-basic": "^0.1.1-rc.2", "@deepseek-ai/dsh-compaction-tool-result-pruner": "^0.1.1-rc.2", "@deepseek-ai/dsh-cordis-client-runner": "^0.1.1-rc.2", "@deepseek-ai/dsh-fs-local": "^0.1.1-rc.2", "@deepseek-ai/dsh-goal": "^0.1.1-rc.2", "@deepseek-ai/dsh-goal-round-driver": "^0.1.1-rc.2", "@deepseek-ai/dsh-headless": "^0.1.1-rc.2", "@deepseek-ai/dsh-home-paths": "^0.1.1-rc.2", "@deepseek-ai/dsh-jobs-local": "^0.1.1-rc.2", "@deepseek-ai/dsh-launch-environment": "^0.1.1-rc.2", "@deepseek-ai/dsh-mcp-client": "^0.1.1-rc.2", "@deepseek-ai/dsh-persona": "^0.1.1-rc.2", "@deepseek-ai/dsh-plan-mode": "^0.1.1-rc.2", "@deepseek-ai/dsh-pwsh-local": "^0.1.1-rc.2", "@deepseek-ai/dsh-pwsh-sandbox": "^0.1.1-rc.2", "@deepseek-ai/dsh-schedule": "^0.1.1-rc.2", "@deepseek-ai/dsh-session-projection": "^0.1.1-rc.2", "@deepseek-ai/dsh-session-reference": "^0.1.1-rc.2", "@deepseek-ai/dsh-skill": "^0.1.1-rc.2", "@deepseek-ai/dsh-skill-filesystem": "^0.1.1-rc.2", "@deepseek-ai/dsh-terminal": "^0.1.1-rc.2", "@deepseek-ai/dsh-terminal-bash": "^0.1.1-rc.2", "@deepseek-ai/dsh-time-context": "^0.1.1-rc.2", "@deepseek-ai/dsh-tmux-context": "^0.1.1-rc.2", "@deepseek-ai/dsh-token-meter": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-ask-user": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-bash": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-bash-persistent": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-cordis": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-fs": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-fs-search": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-goal": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-jobs": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-pwsh": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-pwsh-persistent": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-ralph": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-skill": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-str-replace-editor": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-subagent": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-subagent-control": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-todo": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-web": "^0.1.1-rc.2", "@deepseek-ai/dsh-tool-workflow": "^0.1.1-rc.2", "@deepseek-ai/dsh-web-app": "^0.1.1-rc.2", "@deepseek-ai/dsh-workflow-worker-thread": "^0.1.1-rc.2", "commander": "^15.0.0", "js-yaml": "^4.2.0", "node-addon-require-builtin": "^0.1.4" }, "bin": { "dsh": "lib/bin.js" } }, "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg=="],
 
@@ -4696,6 +4696,16 @@
 
     "@deepseek-ai/cordis/@standard-schema/spec": ["@standard-schema/spec@1.1.0", "https://registry.npmmirror.com/@standard-schema/spec/-/spec-1.1.0.tgz", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
+    "@deepseek-ai/cordis-plugin-hmr/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
+
+    "@deepseek-ai/cordis-plugin-include/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
+
+    "@deepseek-ai/cordis-plugin-timer/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
+
+    "@deepseek-ai/dsh/@deepseek-ai/cordis": ["@deepseek-ai/cordis@4.0.1", "https://registry.npmmirror.com/@deepseek-ai/cordis/-/cordis-4.0.1.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2", "@standard-schema/spec": "^1.1.0" }, "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "^1.0.6", "@deepseek-ai/cordis-plugin-loader": "^1.0.2" }, "optionalPeers": ["@deepseek-ai/cordis-plugin-include", "@deepseek-ai/cordis-plugin-loader"], "bin": { "cordis": "bin.js" } }, "sha512-YBdskTU2Po1kru3GgcUWUbkTsPMA9LkSQDAY8rBkFJeajdgcQad3QPJZE26JyK99Xb6HaASvoXg2DSUTeN/0Nw=="],
+
+    "@deepseek-ai/dsh/@deepseek-ai/cordis-plugin-loader": ["@deepseek-ai/cordis-plugin-loader@1.0.2", "https://registry.npmmirror.com/@deepseek-ai/cordis-plugin-loader/-/cordis-plugin-loader-1.0.2.tgz", { "dependencies": { "@deepseek-ai/cosmokit": "^1.8.2" }, "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "node-addon-require-builtin": "^0.1.4" }, "optionalPeers": ["node-addon-require-builtin"] }, "sha512-RIW9hoVyhYDWdCI9BsvtZccPde1ECLC4OAxupwowGTak78vwVTVdb3HezTSOK1Y1/Ax3Ru0LA1pYOB04CnTxIQ=="],
+
     "@deepseek-ai/dsh/commander": ["commander@15.0.0", "https://registry.npmmirror.com/commander/-/commander-15.0.0.tgz", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 
     "@deepseek-ai/dsh/js-yaml": ["js-yaml@4.3.1", "https://registry.npmmirror.com/js-yaml/-/js-yaml-4.3.1.tgz", { "dependencies": { "argparse": "^2.0.1" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ=="],
@@ -4787,6 +4797,8 @@
     "@deepseek-ai/dsh-web-app/open": ["open@11.0.0", "https://registry.npmmirror.com/open/-/open-11.0.0.tgz", { "dependencies": { "default-browser": "^5.4.0", "define-lazy-prop": "^3.0.0", "is-in-ssh": "^1.0.0", "is-inside-container": "^1.0.0", "powershell-utils": "^0.1.0", "wsl-utils": "^0.3.0" } }, "sha512-smsWv2LzFjP03xmvFoJ331ss6h+jixfA4UUV/Bsiyuu4YJPfN+FIQGOIiv4w9/+MoHkfkJ22UIaQWRVFRfH6Vw=="],
 
     "@deepseek-ai/dsh-workspace/zod": ["zod@4.4.3", "https://registry.npmmirror.com/zod/-/zod-4.4.3.tgz", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "@deepseek-ai/schemastery/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
 
     "@deepseek-ai/schemastery/@standard-schema/spec": ["@standard-schema/spec@1.1.0", "https://registry.npmmirror.com/@standard-schema/spec/-/spec-1.1.0.tgz", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -5493,6 +5505,12 @@
     "@deepseek-ai/dsh-session-telemetry-otel/@opentelemetry/sdk-logs/@opentelemetry/resources": ["@opentelemetry/resources@2.9.0", "https://registry.npmmirror.com/@opentelemetry/resources/-/resources-2.9.0.tgz", { "dependencies": { "@opentelemetry/core": "2.9.0", "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.3.0 <1.10.0" } }, "sha512-jyA5MBLQ+Dkl3+JsZkUoUvL7yHvU64kLsvpXKarWm6347Sl1t1bXFTFykUePNpT5WH5pm9a2Qtt03iIYQhZ1Fg=="],
 
     "@deepseek-ai/dsh-skill-filesystem/chokidar/readdirp": ["readdirp@5.0.0", "https://registry.npmmirror.com/readdirp/-/readdirp-5.0.0.tgz", {}, "sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ=="],
+
+    "@deepseek-ai/dsh/@deepseek-ai/cordis/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
+
+    "@deepseek-ai/dsh/@deepseek-ai/cordis/@standard-schema/spec": ["@standard-schema/spec@1.1.0", "https://registry.npmmirror.com/@standard-schema/spec/-/spec-1.1.0.tgz", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
+
+    "@deepseek-ai/dsh/@deepseek-ai/cordis-plugin-loader/@deepseek-ai/cosmokit": ["@deepseek-ai/cosmokit@1.8.2", "https://registry.npmmirror.com/@deepseek-ai/cosmokit/-/cosmokit-1.8.2.tgz", {}, "sha512-muBOKtSrUKU5m/xpq8ZXWL6hQ/jgd4PhU2PqH97bcxIiLEJfNwZOGQEx4t/aS/GgxRAR+ra9pMHPMtTHU4sqqA=="],
 
     "@earendil-works/pi-ai/@smithy/node-http-handler/@smithy/core": ["@smithy/core@3.24.3", "https://registry.npmmirror.com/@smithy/core/-/core-3.24.3.tgz", { "dependencies": { "@aws-crypto/crc32": "5.2.0", "@smithy/types": "^4.14.2", "tslib": "^2.6.2" } }, "sha512-Ep/7tPamGY8mgESE3LyLKtxJyy6U52WWAqr/3wial47Sj4u3PiIF73AOGI27UyLy9duTkhZbgzodOfLV4TduZg=="],
 
