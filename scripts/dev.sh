@@ -218,8 +218,12 @@ resolve_path() {
 
 record_is_current() {
   local label="$1" pid="$2" stamp="$3"
-  [ -n "$stamp" ] && [ "$(process_stamp "$pid")" = "$stamp" ] && return 0
-  [ -n "$stamp" ] && return 1
+  if [ -n "$stamp" ]; then
+    [ "$(process_stamp "$pid")" = "$stamp" ] || return 1
+  fi
+  # A live stamp match alone does not mean "ours": every worktree shares this
+  # pidfile, so the record may describe a sibling worktree's instance. Only a
+  # process actually rooted in THIS worktree may claim it.
   is_service_process "$pid" "$label"
 }
 
