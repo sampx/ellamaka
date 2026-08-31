@@ -643,6 +643,9 @@ export const dict = {
   "workbench.chat.answer": "Відповідь: ",
   "workbench.sidebar.filesTab": "Файли",
   "workbench.fileViewer.close": "Закрити файл",
+  "workbench.fileViewer.closeAll": "Закрити переглядач файлів",
+  "workbench.fileViewer.expand": "Розгорнути на весь екран",
+  "workbench.fileViewer.collapse": "Згорнути панель",
   "terminal.connectionLost.abnormalClose": "WebSocket закрито аномально: {{code}}",
   "terminal.connectionLost.description":
     "З'єднання з терміналом було перервано. Це може статися під час перезапуску сервера.",

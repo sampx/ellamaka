@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createFileScroller, fileViewerRoute, resolveFileViewerState } from "./file-viewer-adapter"
+import { closeViewerTab, createFileScroller, fileViewerRoute, openViewerFile, resolveFileViewerState } from "./file-viewer-adapter"
 
 describe("fileViewerRoute", () => {
   test("changes the keyed router identity for a new file or directory", () => {
@@ -79,5 +79,50 @@ describe("createFileScroller", () => {
     const { writes, scroller } = primitiveStore({ top: 10, left: 20 })
     scroller.setScroll("/a/file.ts", { x: 20, y: 10 })
     expect(writes).toEqual([])
+  })
+})
+
+describe("openViewerFile", () => {
+  const a = { directory: "/space-a", filePath: "/space-a/main.ts" }
+  const b = { directory: "/space-a", filePath: "/space-a/other.ts" }
+
+  test("appends and activates a new file (activating is derived by caller)", () => {
+    expect(openViewerFile([], a)).toEqual([a])
+    expect(openViewerFile([a], b)).toEqual([a, b])
+  })
+
+  test("does not duplicate an already-open file", () => {
+    expect(openViewerFile([a, b], { ...a })).toEqual([a, b])
+  })
+
+  test("same path in a different directory is a distinct tab", () => {
+    const inOtherDir = { directory: "/space-b", filePath: a.filePath }
+    expect(openViewerFile([a], inOtherDir)).toEqual([a, inOtherDir])
+  })
+})
+
+describe("closeViewerTab", () => {
+  const a = { directory: "/space-a", filePath: "/space-a/main.ts" }
+  const b = { directory: "/space-a", filePath: "/space-a/other.ts" }
+  const c = { directory: "/space-a", filePath: "/space-a/third.ts" }
+  const keyA = "/space-a\n/space-a/main.ts"
+  const keyB = "/space-a\n/space-a/other.ts"
+  const keyC = "/space-a\n/space-a/third.ts"
+
+  test("closing the active tab activates the right neighbour", () => {
+    expect(closeViewerTab([a, b, c], keyA, keyA)).toEqual({ tabs: [b, c], activeKey: keyB })
+    expect(closeViewerTab([a, b, c], keyC, keyC)).toEqual({ tabs: [a, b], activeKey: keyB })
+  })
+
+  test("closing a background tab keeps the current selection", () => {
+    expect(closeViewerTab([a, b, c], keyC, keyA)).toEqual({ tabs: [b, c], activeKey: keyC })
+  })
+
+  test("closing the last remaining tab clears the active key", () => {
+    expect(closeViewerTab([a], keyA, keyA)).toEqual({ tabs: [], activeKey: undefined })
+  })
+
+  test("closing an unknown tab is a no-op", () => {
+    expect(closeViewerTab([a, b], keyB, "/unknown\n/x.ts")).toEqual({ tabs: [a, b], activeKey: keyB })
   })
 })

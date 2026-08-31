@@ -1,5 +1,6 @@
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
-import { createEffect, createMemo, Match, on, Switch } from "solid-js"
+import { Tabs } from "@opencode-ai/ui/tabs"
+import { For, Show, createEffect, createMemo, createSignal, Match, on, Switch } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -15,6 +16,7 @@ import {
   resolveFileViewerState,
   type FileScroller,
   type FileScrollPos,
+  type OpenedFileEntry,
 } from "./file-viewer-adapter"
 
 /**
@@ -206,6 +208,122 @@ function FileViewerInner(props: FileViewerInnerProps) {
         </Match>
       </Switch>
     </ScrollView>
+  )
+}
+
+function FileViewerTabContent(props: { entry: OpenedFileEntry }) {
+  const route = createMemo(() => fileViewerRoute(props.entry.directory, props.entry.filePath))
+
+  return (
+    <WorkbenchPanelDirectoryProvider panelID={route().key} directory={props.entry.directory}>
+      {() => (
+        <FileProvider>
+          <FileViewerInner
+            filePath={props.entry.filePath}
+            name={props.entry.name ?? props.entry.filePath}
+          />
+        </FileProvider>
+      )}
+    </WorkbenchPanelDirectoryProvider>
+  )
+}
+
+export function FileViewerSurface(props: {
+  files: OpenedFileEntry[]
+  activeKey: string
+  onActiveKeyChange: (key: string) => void
+  onCloseFile: (key: string) => void
+  onClose: () => void
+}) {
+  const language = useLanguage()
+  const [expanded, setExpanded] = createSignal(false)
+
+  return (
+    <div
+      data-component="workbench-file-viewer-surface"
+      class={`absolute z-40 flex flex-col overflow-hidden border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
+        expanded() ? "inset-2" : "top-2 bottom-2 right-2 w-[480px] max-w-[50vw]"
+      }`}
+    >
+      <Tabs value={props.activeKey} onChange={props.onActiveKeyChange} class="flex flex-col h-full min-h-0">
+        <div class="flex h-9 shrink-0 items-center border-b border-v2-border-border-base bg-v2-background-bg-base">
+          <Show when={props.files.length > 0}>
+            <Tabs.List class="flex-1 min-w-0 overflow-x-auto">
+              <For each={props.files}>
+                {(file) => {
+                  const key = `${file.directory}\n${file.filePath}`
+                  return (
+                    <Tabs.Trigger
+                      value={key}
+                      class="max-w-[180px]"
+                      closeButton={
+                        <IconButtonV2
+                          variant="ghost-muted"
+                          size="small"
+                          class="size-4 flex items-center justify-center p-0 shrink-0"
+                          icon={
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M6 6l12 12M18 6L6 18" />
+                            </svg>
+                          }
+                          aria-label={language.t("workbench.fileViewer.close")}
+                          onClick={() => props.onCloseFile(key)}
+                        />
+                      }
+                    >
+                      <span class="text-12-medium truncate">{file.name ?? file.filePath}</span>
+                    </Tabs.Trigger>
+                  )
+                }}
+              </For>
+            </Tabs.List>
+          </Show>
+          <div class="ml-auto flex shrink-0 items-center gap-1 pr-2 pl-2">
+            <IconButtonV2
+              variant="ghost-muted"
+              size="small"
+              class="size-5 flex items-center justify-center p-0 shrink-0"
+              icon={
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <Show
+                    when={expanded()}
+                    fallback={<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />}
+                  >
+                    <path d="M9 3H3v6M15 21h6v-6M3 3l6 6M21 21l-7-7" />
+                  </Show>
+                </svg>
+              }
+              aria-label={language.t(expanded() ? "workbench.fileViewer.collapse" : "workbench.fileViewer.expand")}
+              title={language.t(expanded() ? "workbench.fileViewer.collapse" : "workbench.fileViewer.expand")}
+              onClick={() => setExpanded(!expanded())}
+            />
+            <IconButtonV2
+              variant="ghost-muted"
+              size="small"
+              class="size-5 flex items-center justify-center p-0 shrink-0"
+              icon={
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              }
+              aria-label={language.t("workbench.fileViewer.closeAll")}
+              title={language.t("workbench.fileViewer.closeAll")}
+              onClick={props.onClose}
+            />
+          </div>
+        </div>
+        <For each={props.files}>
+          {(file) => {
+            const key = `${file.directory}\n${file.filePath}`
+            return (
+              <Tabs.Content value={key} class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
+                <FileViewerTabContent entry={file} />
+              </Tabs.Content>
+            )
+          }}
+        </For>
+      </Tabs>
+    </div>
   )
 }
 
