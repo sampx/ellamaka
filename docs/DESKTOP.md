@@ -52,7 +52,7 @@ OpenCode v1.15.13 的 desktop 已经采用 Electron。Tauri 运行时不属于 e
 
 `ellamaka-desktop`、`ellamaka-app`、`packages/opencode` 和 JS SDK 在一次 Desktop build 内使用同一 source commit 和 OpenCode upstream lock，避免跨源码快照组合。这个 source 一致性不等于产品版本锁步：`ellamaka-desktop` 与外部 `ellamaka-cli` 各自使用独立 SemVer 和 release tag。
 
-Electron 安全修复、生命周期修复和平台兼容修复可以只发布 Desktop patch。共享 Engine/API 变化或 OpenCode baseline 升级通常协调发布 CLI 与 Desktop，但两个产品版本无需相同。兼容性由 upstream baseline、engine API range 和 CLI stable latest promotion gate 决定，详见 `DISTRIBUTION.md`。
+Electron 安全修复、生命周期修复和平台兼容修复可以只发布 Desktop patch。共享 Engine/API 变化或 OpenCode baseline 升级通常协调发布 CLI 与 Desktop，但两个产品版本无需相同。兼容性由 upstream baseline、engine API range 和 CLI latest promotion gate 决定，详见 `DISTRIBUTION.md`。
 
 ## 3. 系统架构
 
@@ -500,7 +500,7 @@ Desktop 自身在 `resources/release-identity.json` 中内嵌相同的 ReleaseId
 
 | 严重度                     | 行为                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 onboarding，并调用 `install-engine` 读取、校验并安装 CLI stable latest；仍不兼容则提示更新 Desktop 或稍后重试 |
+| 阻断（CLI 缺失或不兼容）   | 不启动 sidecar。进入 onboarding，并调用 `install-engine` 读取、校验并安装 CLI latest；仍不兼容则提示更新 Desktop 或稍后重试 |
 | 阻断（Wopal CLI 版本过低） | onboarding 调用第一方 installer 的 install-only 模式，完成后重新 inspect                                                            |
 
 **与自动更新的协作**：Desktop 先校验 manifest ReleaseIdentity 并使用标准 SemVer 授权同 channel 更新，electron-updater 负责下载和安装。新版本首次启动时，在 sidecar 前按运行时版本检查准备外部 CLI，然后进入 Workbench。

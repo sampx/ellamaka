@@ -420,7 +420,7 @@ WopalSpace 模式下，`<spaceRoot>/.wopal/skills/` 的同名技能显式优先�
 
 ### 目的
 
-Ellamaka 通过 wopal-cli 分发安装。`wopal ellamaka install` 默认安装 Desktop latest 与 CLI stable latest；`--cli` 只安装 CLI stable latest。制品使用自有 CDN，不依赖 OpenCode 的 GitHub/npm/brew 更新通道。
+Ellamaka 通过 wopal-cli 分发安装。`wopal ellamaka install` 默认安装 Desktop latest 与 CLI latest；`--cli` 只安装 CLI latest。制品使用自有 CDN，不依赖 OpenCode 的 GitHub/npm/brew 更新通道。
 
 ### 9.1 安装方法
 
