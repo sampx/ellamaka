@@ -1,10 +1,21 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "version": "1.15.13",
-  "name": "opencode",
+  "name": "@wopal/ellamaka",
   "type": "module",
   "license": "MIT",
   "private": true,
+  "description": "Ellamaka engine package powered by WopalSpace",
+  "homepage": "https://github.com/wopal-cn/ellamaka",
+  "author": {
+    "name": "Samuel.Xu",
+    "email": "sam618.xu@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wopal-cn/ellamaka",
+    "directory": "packages/opencode"
+  },
   "scripts": {
     "typecheck": "tsgo --noEmit",
     "test": "bun test --timeout 30000 --force-exit",
@@ -21,9 +32,6 @@
     "dev": "bun run --conditions=browser ./src/index.ts",
     "dev:temporary": "bun run --conditions=browser ./src/temporary.ts",
     "db": "bun drizzle-kit"
-  },
-  "bin": {
-    "opencode": "./bin/opencode"
   },
   "exports": {
     "./*": "./src/*.ts"

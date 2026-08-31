@@ -5,7 +5,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
-import { BINARY_NAME, CHANNEL_RELEASE } from "@ellamaka/build/branding"
+import { BINARY_NAME, CHANNEL_RELEASE } from "@wopal/ellamaka-build/branding"
 import { buildReleaseIdentityForBuild } from "../build-identity"
 import { filterTargets, type BuildTarget } from "../build-targets"
 

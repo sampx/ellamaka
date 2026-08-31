@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/ellamaka-app",
+  "name": "@wopal/ellamaka-app",
   "version": "1.15.13",
   "description": "ellamaka web UI for WopalSpace",
   "type": "module",

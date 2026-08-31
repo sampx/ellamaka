@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/ellamaka-desktop",
+  "name": "@wopal/ellamaka-desktop",
   "private": true,
   "version": "1.15.13",
   "description": "Ellamaka desktop application powered by Electron",
@@ -45,7 +45,7 @@
   "devDependencies": {
     "@actions/artifact": "4.0.0",
     "@lydell/node-pty": "catalog:",
-    "@opencode-ai/ellamaka-app": "workspace:*",
+    "@wopal/ellamaka-app": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@sentry/solid": "catalog:",
     "@sentry/vite-plugin": "catalog:",
