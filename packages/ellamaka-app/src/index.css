@@ -548,7 +548,7 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   height: 0;
   margin: 18px 0;
   border: 0;
-  border-top: 1px solid var(--border-weaker-base);
+  border-top: 1px solid var(--border-base);
 }
 
 [data-slot="workbench-markdown-content"] blockquote {
@@ -608,7 +608,7 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 [data-slot="workbench-markdown-content"] td {
   padding: 9px 12px;
   border: 0;
-  border-block-end: 1px solid var(--border-weaker-base);
+  border-block-end: 1px solid var(--border-base);
   text-align: left;
   vertical-align: top;
 }
@@ -631,10 +631,6 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="workbench-markdown-content"] tbody tr:last-child td {
   border-block-end: 0;
-}
-
-[data-slot="workbench-markdown-content"] tbody tr:hover td {
-  background: color-mix(in srgb, var(--surface-weak) 58%, transparent);
 }
 
 /* KaTeX supplies semantic MathML alongside its visual HTML. Keep both the
@@ -718,11 +714,17 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
    The height is capped so a long snippet never floods the transcript. Scoped to
    the Workbench markdown slot so the official Session page keeps shared styles. */
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] {
+  /* The native <pre> margin combines with the following heading's larger
+     top margin, making the space after a block visibly heavier than before
+     it. Keep the block spacing on its wrapper so every adjacent Markdown
+     element shares the paragraph rhythm. */
+  margin-block: 12px;
   border-radius: 12px;
 }
 
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre,
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] .shiki {
+  margin: 0;
   background: var(--background-base) !important;
   border: 1px solid var(--border-weaker-base);
   border-radius: 12px;
@@ -740,6 +742,10 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
      resizing the block mid-stream, which is the render flicker source. */
   padding: 12px 16px !important;
   tab-size: 4;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] + :is(h1, h2, h3, h4) {
+  margin-block-start: 12px;
 }
 
 /* Shiki dual-theme switch: codeToHtml emits github-light colors as the inline

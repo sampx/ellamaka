@@ -89,7 +89,7 @@ describe("WorkbenchMarkdown table layout", () => {
     const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
 
     expect(css).toMatch(
-      /\[data-slot="workbench-markdown-content"\] th,[\s\S]*?\[data-slot="workbench-markdown-content"\] td \{[\s\S]*?border: 0;[\s\S]*?border-block-end: 1px solid var\(--border-weaker-base\);/,
+      /\[data-slot="workbench-markdown-content"\] th,[\s\S]*?\[data-slot="workbench-markdown-content"\] td \{[\s\S]*?border: 0;[\s\S]*?border-block-end: 1px solid var\(--border-base\);/,
     )
     expect(css).toContain(
       '[data-slot="workbench-markdown-content"] th {\n  background: transparent;',
@@ -97,6 +97,7 @@ describe("WorkbenchMarkdown table layout", () => {
     expect(css).toContain(
       '[data-slot="workbench-markdown-content"] tbody tr:last-child td {\n  border-block-end: 0;',
     )
+    expect(css).not.toContain('[data-slot="workbench-markdown-content"] tbody tr:hover td')
   })
 })
 
