@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 /**
@@ -26,6 +26,16 @@ import { dirname, join } from "node:path"
  * read-owner→rm window so a slower waiter can never delete a guard another
  * process has just reclaimed and re-created.
  *
+ * Owner-write failure & orphaned guards (B-01 / round-3): the mkdir EEXIST
+ * case is separated from the owner-write failure. If `mkdirSync` succeeds but
+ * writing `owner.json` fails (ENOSPC / I/O), the guard this process just
+ * created is deleted and the acquire degrades — an empty guard is never left
+ * behind. A guard with no readable owner (crash between mkdir and owner write)
+ * is self-healed: if it is OLDER than the grace window it is reclaimable under
+ * the exclusive reclaim guard; a FRESH owner-less guard (within grace) is
+ * treated as in-progress and waited on, so a live process mid-acquire is never
+ * stolen.
+ *
  * There is no lease and no GC — this is a pure mutual-exclusion guard for the
  * materialisation window. A live-but-hung owner holds the lock until it dies;
  * the atomic reclaim then reaps it on the next launch (see manager.ts W-01
@@ -35,6 +45,12 @@ import { dirname, join } from "node:path"
 const OWNER_FILE = "owner.json"
 /** The reclaim guard suffix: a sibling dir serialising the reclaim window. */
 const RECLAIM_SUFFIX = ".reclaim"
+/**
+ * Grace window for an owner-less guard: a guard with no readable owner younger
+ * than this is treated as in-progress (a live process between mkdir and owner
+ * write); older than this it is considered orphaned and reclaimable.
+ */
+const OWNERLESS_GRACE_MS = 30_000
 
 export interface LockToken {
   /** Process id of the lock owner. */
@@ -44,9 +60,9 @@ export interface LockToken {
 }
 
 /**
- * Test-injection hooks for the lock protocol (B-01 round-2). These let tests
- * force deterministic interleavings of the atomic-reclaim window without
- * relying on wall-clock timing. Production callers omit `deps`.
+ * Test-injection hooks for the lock protocol (B-01). These let tests force
+ * deterministic interleavings and failure modes without relying on wall-clock
+ * timing. Production callers omit `deps`.
  */
 export interface LockDeps {
   /**
@@ -54,6 +70,16 @@ export interface LockDeps {
    * the guard has no readable owner. Defaults to reading `owner.json` from disk.
    */
   readOwner?: (ownerPath: string) => LockToken | undefined
+  /**
+   * Override owner.json writing. Defaults to `writeFileSync`. Tests throw from
+   * this hook to force an owner-write failure (ENOSPC / I/O).
+   */
+  writeOwner?: (ownerPath: string, token: LockToken) => void
+  /**
+   * Override the current time (ms epoch). Defaults to `Date.now()`. Tests use
+   * this to control the owner-less grace window without wall-clock sleeps.
+   */
+  now?: () => number
   /**
    * Hook invoked after the caller wins the reclaim guard, immediately before
    * it deletes the stale guard. Tests use this to hold the reclaim window open
@@ -65,45 +91,62 @@ export interface LockDeps {
 /**
  * Try to acquire the materialisation lock, waiting up to `timeoutMs` for a
  * currently held lock to be released. Returns the ownership token on success,
- * `null` on timeout.
+ * `null` on timeout or on a non-recoverable owner-write failure (degrade).
  *
  * A lock whose recorded owner pid is no longer alive is considered stale and
  * is reaped (removed) so a crash never wedges materialisation forever. The
- * reap is serialised via the atomic reclaim guard (B-01).
+ * reap is serialised via the atomic reclaim guard (B-01). An owner-less guard
+ * older than the grace window is reclaimed the same way; a fresh owner-less
+ * guard is waited on.
  */
 export async function acquireMaterializeLock(
   lockPath: string,
   timeoutMs: number,
   deps: LockDeps = {},
 ): Promise<LockToken | null> {
-  const deadline = Date.now() + timeoutMs
-  const token: LockToken = { pid: process.pid, time: Date.now() }
+  const deadline = (deps.now ?? Date.now)() + timeoutMs
+  const token: LockToken = { pid: process.pid, time: (deps.now ?? Date.now)() }
   const reclaimPath = `${lockPath}${RECLAIM_SUFFIX}`
   // Ensure the parent locks dir exists; the leaf create below stays
   // non-recursive so a concurrent holder still surfaces as EEXIST.
   mkdirSync(dirname(lockPath), { recursive: true })
   for (;;) {
     // Fast path: try to win the main guard atomically.
+    let created = false
     try {
       mkdirSync(lockPath)
-      writeFileSync(join(lockPath, OWNER_FILE), JSON.stringify(token))
-      return token
+      created = true
     } catch {
-      // The main guard is held by someone (or a race). Only reclaim a stale
-      // owner — and only under the atomic reclaim guard.
+      // EEXIST: the main guard is held by someone (or a race). Fall through to
+      // the stale/owner-less reclaim path below.
     }
 
-    if (Date.now() >= deadline) return null
+    if (created) {
+      // We won the atomic create. Write the owner token; if the write fails
+      // (ENOSPC / I/O), delete the guard we just created and degrade — never
+      // leave an empty, unreclaimable guard behind (B-01 round-3).
+      try {
+        const writeOwner = deps.writeOwner ?? defaultWriteOwner
+        writeOwner(join(lockPath, OWNER_FILE), token)
+        return token
+      } catch {
+        rmSync(lockPath, { recursive: true, force: true })
+        return null
+      }
+    }
 
-    if (!isStaleLock(lockPath, deps)) {
+    if ((deps.now ?? Date.now)() >= deadline) return null
+
+    if (!isReclaimable(lockPath, deps)) {
       await sleep(30)
       continue
     }
 
-    // The lock looks stale. Serialise the reclaim via the exclusive reclaim
-    // guard: only its winner may read owner, verify staleness, delete the old
-    // guard and drop the reclaim guard. Losers wait for the reclaim guard to
-    // disappear, then re-loop — they never delete.
+    // The lock looks reclaimable (stale owner, or an orphaned owner-less guard
+    // beyond grace). Serialise the reclaim via the exclusive reclaim guard:
+    // only its winner may read owner, verify, delete the old guard and drop the
+    // reclaim guard. Losers wait for the reclaim guard to disappear, then
+    // re-loop — they never delete.
     try {
       mkdirSync(reclaimPath)
     } catch {
@@ -113,30 +156,51 @@ export async function acquireMaterializeLock(
       continue
     }
 
-    // We own the reclaim guard. Re-read owner, verify it is still stale, then
-    // delete the old guard and drop the reclaim guard (B-01).
+    // We own the reclaim guard. Re-read owner, verify it is still reclaimable,
+    // then delete the old guard and drop the reclaim guard (B-01).
     try {
-      if (isStaleLock(lockPath, deps)) {
+      if (isReclaimable(lockPath, deps)) {
         await deps.beforeDeleteGuard?.(lockPath)
         rmSync(lockPath, { recursive: true, force: true })
       }
     } finally {
       rmSync(reclaimPath, { recursive: true, force: true })
     }
-    // Re-loop: the main guard is gone (or was not stale) — try to win it.
+    // Re-loop: the main guard is gone (or was not reclaimable) — try to win it.
   }
 }
 
-/** Whether the lock is held by an owner pid that no longer exists. */
-function isStaleLock(lockPath: string, deps: LockDeps): boolean {
+/** Default owner.json writer. */
+function defaultWriteOwner(ownerPath: string, token: LockToken): void {
+  writeFileSync(ownerPath, JSON.stringify(token))
+}
+
+/**
+ * Whether the guard at `lockPath` is reclaimable: either its recorded owner pid
+ * is no longer alive (stale), or it has no readable owner AND is older than the
+ * owner-less grace window (an orphaned guard from a crash between mkdir and
+ * owner write). A fresh owner-less guard (within grace) is treated as
+ * in-progress and NOT reclaimable.
+ */
+function isReclaimable(lockPath: string, deps: LockDeps): boolean {
   const owner = readOwner(lockPath, deps)
-  if (typeof owner?.pid !== "number") return false
-  // signal(0) is a pure existence probe; ESRCH means the pid is gone.
+  if (owner !== undefined) {
+    if (typeof owner.pid !== "number") return false
+    // signal(0) is a pure existence probe; ESRCH means the pid is gone.
+    try {
+      process.kill(owner.pid, 0)
+      return false
+    } catch {
+      return true
+    }
+  }
+  // Owner-less guard: reclaimable only if older than the grace window.
   try {
-    process.kill(owner.pid, 0)
-    return false
+    const mtimeMs = statSync(lockPath).mtimeMs
+    const now = (deps.now ?? Date.now)()
+    return now - mtimeMs > OWNERLESS_GRACE_MS
   } catch {
-    return true
+    return false
   }
 }
 

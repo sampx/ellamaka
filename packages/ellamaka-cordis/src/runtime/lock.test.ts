@@ -55,10 +55,17 @@ describe("materialize lock (real tmp paths)", () => {
     const lockPath = join(tmpHome(), "locks", "materialize.lock")
     const token = await acquireMaterializeLock(lockPath, 50)
     expect(token).not.toBeNull()
-    expect(await acquireMaterializeLock(lockPath, 50)).toBeNull() // still held
+    expect(existsSync(lockPath)).toBe(true)
+    // A second acquire while held returns null (mutual exclusion).
+    expect(await acquireMaterializeLock(lockPath, 50)).toBeNull()
+    // Release with the real token removes the guard.
     await releaseMaterializeLock(lockPath, token!)
-    expect(await acquireMaterializeLock(lockPath, 50)).not.toBeNull() // acquirable again
-    await releaseMaterializeLock(lockPath, (await acquireMaterializeLock(lockPath, 50))!)
+    expect(existsSync(lockPath)).toBe(false)
+    // A fresh acquire after release succeeds with its own token.
+    const token2 = await acquireMaterializeLock(lockPath, 50)
+    expect(token2).not.toBeNull()
+    await releaseMaterializeLock(lockPath, token2!)
+    expect(existsSync(lockPath)).toBe(false)
   })
 
   test("second acquire while held returns null (mutual exclusion)", async () => {
@@ -315,6 +322,95 @@ describe("materialize lock — atomic reclaim protocol (B-01)", () => {
       expect(bToken).not.toBeNull()
       await releaseMaterializeLock(lockPath, bToken!)
       expect(existsSync(lockPath)).toBe(false)
+    },
+    20_000,
+  )
+})
+
+/**
+ * Round-3 B-01: owner.json write failure and orphaned owner-less guard self-heal.
+ *
+ * If `mkdirSync(lockPath)` succeeds but writing `owner.json` fails, the old code
+ * swallowed both in one catch, leaving an empty guard that `readOwner()` reads
+ * as undefined and `isStaleLock()` never reclaims — wedging materialisation
+ * forever. The fix:
+ *  - separates the mkdir EEXIST case from the owner-write failure;
+ *  - on owner-write failure deletes the guard this process just created and
+ *    surfaces degrade (never leaves the empty guard behind);
+ *  - treats an owner-less guard older than a grace window as reclaimable under
+ *    the exclusive reclaim guard, and a fresh owner-less guard (within grace) as
+ *    in-progress and waited on.
+ *
+ * These tests are DETERMINISTIC: they inject `writeOwner` (to force the write
+ * failure) and `now` (an injectable clock for the grace window, so no wall-clock
+ * sleeps are needed).
+ */
+describe("materialize lock — owner-write failure and orphaned guard self-heal (B-01)", () => {
+  test(
+    "owner-write failure leaves no guard behind after the failed acquire",
+    async () => {
+      const lockPath = join(tmpHome(), "locks", "materialize.lock")
+      // Force the owner write to fail after the mkdir succeeds.
+      const deps: LockDeps = {
+        writeOwner: () => {
+          throw new Error("ENOSPC: no space left on device")
+        },
+      }
+      const token = await acquireMaterializeLock(lockPath, 50, deps)
+      // The acquire must surface degrade (null), not hang or return a token.
+      expect(token).toBeNull()
+      // The empty guard this process created must have been cleaned up.
+      expect(existsSync(lockPath)).toBe(false)
+      // The reclaim guard must also be gone.
+      expect(existsSync(`${lockPath}.reclaim`)).toBe(false)
+    },
+    20_000,
+  )
+
+  test(
+    "a stale owner-less guard beyond the grace window is reclaimable",
+    async () => {
+      const lockPath = join(tmpHome(), "locks", "materialize.lock")
+      // Seed an empty guard (no owner.json) whose mtime is OLDER than grace.
+      mkdirSync(lockPath, { recursive: true })
+      const old = new Date(Date.now() - 60_000)
+      const { utimesSync } = await import("node:fs")
+      utimesSync(lockPath, old, old)
+
+      // Inject a clock that reports "now" well past the guard's mtime.
+      const deps: LockDeps = {
+        now: () => Date.now(),
+      }
+      const token = await acquireMaterializeLock(lockPath, 200, deps)
+      // The orphaned owner-less guard is reclaimed and the lock is acquired.
+      expect(token).not.toBeNull()
+      expect(existsSync(join(lockPath, "owner.json"))).toBe(true)
+      await releaseMaterializeLock(lockPath, token!)
+      expect(existsSync(lockPath)).toBe(false)
+    },
+    20_000,
+  )
+
+  test(
+    "a fresh owner-less guard within the grace window is not reclaimed, only waited on",
+    async () => {
+      const lockPath = join(tmpHome(), "locks", "materialize.lock")
+      // Seed an empty guard (no owner.json) with a FRESH mtime (within grace).
+      mkdirSync(lockPath, { recursive: true })
+
+      // Inject a clock that reports "now" equal to the guard's mtime (fresh).
+      const deps: LockDeps = {
+        now: () => Date.now(),
+      }
+      // A short timeout: the fresh owner-less guard is treated as in-progress
+      // and waited on, so the acquire times out rather than reclaiming it.
+      const token = await acquireMaterializeLock(lockPath, 80, deps)
+      expect(token).toBeNull()
+      // The fresh owner-less guard must NOT have been deleted.
+      expect(existsSync(lockPath)).toBe(true)
+      expect(existsSync(join(lockPath, "owner.json"))).toBe(false)
+      // Clean up the seeded guard.
+      rmSync(lockPath, { recursive: true, force: true })
     },
     20_000,
   )
