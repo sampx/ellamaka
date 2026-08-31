@@ -1,4 +1,4 @@
-import * as Log from "@wopal/core/util/log"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import { Bonjour } from "bonjour-service"
 
 const log = Log.create({ service: "mdns" })

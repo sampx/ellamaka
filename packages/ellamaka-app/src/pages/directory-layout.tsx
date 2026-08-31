@@ -1,6 +1,6 @@
 import { DataProvider } from "@wopal/ui/context"
 import { showToast } from "@wopal/ui/toast"
-import { base64Encode } from "@wopal/core/util/encode"
+import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { createEffect, createMemo, createResource, type ParentProps, Show } from "solid-js"
 import { useLanguage } from "@/context/language"

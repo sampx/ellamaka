@@ -1,4 +1,4 @@
-import { Npm } from "@wopal/core/npm"
+import { Npm } from "@wopal/ellamaka-core/npm"
 import { Effect, Layer } from "effect"
 
 export const noop = Layer.mock(Npm.Service)({

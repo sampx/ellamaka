@@ -1,5 +1,5 @@
-import { NamedError } from "@wopal/core/util/error"
-import * as Log from "@wopal/core/util/log"
+import { NamedError } from "@wopal/ellamaka-core/util/error"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
 

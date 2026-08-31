@@ -1,4 +1,4 @@
-import { CrossSpawnSpawner } from "@wopal/core/cross-spawn-spawner"
+import { CrossSpawnSpawner } from "@wopal/ellamaka-core/cross-spawn-spawner"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"

@@ -1,4 +1,4 @@
-import { Flag } from "@wopal/core/flag/flag"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Fence from "@/server/shared/fence"

@@ -1,8 +1,8 @@
 import path from "path"
 import { writeHeapSnapshot } from "node:v8"
-import { Flag } from "@wopal/core/flag/flag"
-import { Global } from "@wopal/core/global"
-import * as Log from "@wopal/core/util/log"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
+import { Global } from "@wopal/ellamaka-core/global"
+import * as Log from "@wopal/ellamaka-core/util/log"
 
 const log = Log.create({ service: "heap" })
 const MINUTE = 60_000

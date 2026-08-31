@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 
 import { Identifier } from "@/id/id"
-import { withStatics } from "@wopal/core/schema"
+import { withStatics } from "@wopal/ellamaka-core/schema"
 
 const toolIdSchema = Schema.String.check(Schema.isStartsWith("tool")).pipe(Schema.brand("ToolID"))
 

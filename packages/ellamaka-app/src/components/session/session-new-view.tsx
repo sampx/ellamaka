@@ -5,7 +5,7 @@ import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { Icon } from "@wopal/ui/icon"
 import { Mark } from "@wopal/ui/logo"
-import { getDirectory, getFilename } from "@wopal/core/util/path"
+import { getDirectory, getFilename } from "@wopal/ellamaka-core/util/path"
 
 const MAIN_WORKTREE = "main"
 const CREATE_WORKTREE = "create"

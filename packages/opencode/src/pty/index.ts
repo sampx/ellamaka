@@ -3,15 +3,15 @@ import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
-import { lazy } from "@wopal/core/util/lazy"
+import { lazy } from "@wopal/ellamaka-core/util/lazy"
 import { Plugin } from "@/plugin"
 import { Shell } from "@/shell/shell"
 import type { Proc } from "#pty"
-import * as Log from "@wopal/core/util/log"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import { PtyID } from "./schema"
 import { PtyCommand } from "./command"
 import { Effect, Layer, Context, Schema, Types } from "effect"
-import { NonNegativeInt, PositiveInt } from "@wopal/core/schema"
+import { NonNegativeInt, PositiveInt } from "@wopal/ellamaka-core/schema"
 
 const log = Log.create({ service: "pty" })
 

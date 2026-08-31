@@ -10,8 +10,8 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@wopal/ui/toast"
-import { getFilename } from "@wopal/core/util/path"
-import { retry } from "@wopal/core/util/retry"
+import { getFilename } from "@wopal/ellamaka-core/util/path"
+import { retry } from "@wopal/ellamaka-core/util/retry"
 import { batch } from "solid-js"
 import { reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State, VcsCache } from "./types"

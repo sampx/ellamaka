@@ -1,6 +1,6 @@
 import { Provider } from "@/provider/provider"
-import { serviceUse } from "@wopal/core/effect/service-use"
-import * as Log from "@wopal/core/util/log"
+import { serviceUse } from "@wopal/ellamaka-core/effect/service-use"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"

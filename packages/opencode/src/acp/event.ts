@@ -1,5 +1,5 @@
 import type { AgentSideConnection } from "@agentclientprotocol/sdk"
-import * as Log from "@wopal/core/util/log"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import type {
   Event,
   EventMessagePartDelta,

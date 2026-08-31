@@ -1,7 +1,7 @@
 import { batch, createMemo, onCleanup } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
-import { Binary } from "@wopal/core/util/binary"
-import { retry } from "@wopal/core/util/retry"
+import { Binary } from "@wopal/ellamaka-core/util/binary"
+import { retry } from "@wopal/ellamaka-core/util/retry"
 import {
   clearSessionPrefetch,
   getSessionPrefetch,

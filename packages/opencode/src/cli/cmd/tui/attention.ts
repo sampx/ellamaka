@@ -19,7 +19,7 @@ import permissionSoundPath from "@wopal/ui/audio/staplebops-06.mp3" with { type:
 import errorSoundPath from "@wopal/ui/audio/nope-03.mp3" with { type: "file" }
 import doneSoundPath from "@wopal/ui/audio/bip-bop-01.mp3" with { type: "file" }
 import subagentDoneSoundPath from "@wopal/ui/audio/yup-01.mp3" with { type: "file" }
-import * as Log from "@wopal/core/util/log"
+import * as Log from "@wopal/ellamaka-core/util/log"
 
 type FocusState = "unknown" | "focused" | "blurred"
 

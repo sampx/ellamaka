@@ -1,26 +1,26 @@
-import * as Log from "@wopal/core/util/log"
-import { serviceUse } from "@wopal/core/effect/service-use"
+import * as Log from "@wopal/ellamaka-core/util/log"
+import { serviceUse } from "@wopal/ellamaka-core/effect/service-use"
 import path from "path"
 import os from "os"
 import { mergeDeep } from "remeda"
-import { Global } from "@wopal/core/global"
-import { NamedError } from "@wopal/core/util/error"
-import { Flag } from "@wopal/core/flag/flag"
+import { Global } from "@wopal/ellamaka-core/global"
+import { NamedError } from "@wopal/ellamaka-core/util/error"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { applyEdits, modify } from "jsonc-parser"
-import { InstallationLocal, InstallationVersion } from "@wopal/core/installation/version"
+import { InstallationLocal, InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { existsSync } from "fs"
 import { Account } from "@/account/account"
 import { isRecord } from "@/util/record"
 import type { ConsoleState } from "./console-state"
-import { AppFileSystem } from "@wopal/core/filesystem"
+import { AppFileSystem } from "@wopal/ellamaka-core/filesystem"
 import { InstanceState } from "@/effect/instance-state"
 import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { EffectFlock } from "@wopal/core/util/effect-flock"
+import { EffectFlock } from "@wopal/ellamaka-core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
-import { NonNegativeInt, PositiveInt, type DeepMutable } from "@wopal/core/schema"
+import { NonNegativeInt, PositiveInt, type DeepMutable } from "@wopal/ellamaka-core/schema"
 import { ConfigAgent } from "./agent"
 import { ConfigAttachment } from "./attachment"
 import { ConfigCommand } from "./command"
@@ -39,10 +39,10 @@ import { ConfigReference } from "./reference"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
 import { ConfigVariable } from "./variable"
-import { Npm } from "@wopal/core/npm"
+import { Npm } from "@wopal/ellamaka-core/npm"
 import { tryLoadWopalSpaceConfig, localPluginInstallDeps, collectPluginDeps, needsPluginDepInstall, writeDirDepFingerprint, writeInstallManifest, cleanPluginDepArtifacts, withPluginDepInstallLock, type InstallDependency } from "./wopal-space"
 import { withTransientReadRetry } from "@/util/effect-http-client"
-import { ConfigExperimental } from "@wopal/core/config/experimental"
+import { ConfigExperimental } from "@wopal/ellamaka-core/config/experimental"
 
 const log = Log.create({ service: "config" })
 
@@ -316,7 +316,7 @@ export const Info = Schema.Struct({
   ),
 }).annotate({ identifier: "Config" })
 
-// Uses the shared `DeepMutable` from `@wopal/core/schema`. See the definition
+// Uses the shared `DeepMutable` from `@wopal/ellamaka-core/schema`. See the definition
 // there for why the local variant is needed over `Types.DeepMutable` from
 // effect-smol (the upstream version collapses `unknown` to `{}`).
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>> & {

@@ -1,7 +1,7 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show } from "solid-js"
-import { Global } from "@wopal/core/global"
+import { Global } from "@wopal/ellamaka-core/global"
 import { BINARY_TITLE } from "../../../../../../../ellamaka/branding"
 
 const id = "internal:sidebar-footer"

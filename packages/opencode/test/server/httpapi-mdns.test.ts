@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import { Flag } from "@wopal/core/flag/flag"
-import * as Log from "@wopal/core/util/log"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
+import * as Log from "@wopal/ellamaka-core/util/log"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances } from "../fixture/fixture"

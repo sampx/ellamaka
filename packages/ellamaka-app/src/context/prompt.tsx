@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@wopal/ui/context"
-import { checksum } from "@wopal/core/util/encode"
+import { checksum } from "@wopal/ellamaka-core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"

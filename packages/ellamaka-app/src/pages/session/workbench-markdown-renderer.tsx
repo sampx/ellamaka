@@ -1,7 +1,7 @@
 import { useI18n } from "@wopal/ui/context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
-import { checksum } from "@wopal/core/util/encode"
+import { checksum } from "@wopal/ellamaka-core/util/encode"
 import { ComponentProps, createEffect, createResource, createSignal, onCleanup, splitProps } from "solid-js"
 import { isServer } from "solid-js/web"
 import { streamBlocks } from "./workbench-markdown-stream"

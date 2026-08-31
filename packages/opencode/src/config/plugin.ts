@@ -1,4 +1,4 @@
-import { Glob } from "@wopal/core/util/glob"
+import { Glob } from "@wopal/ellamaka-core/util/glob"
 import { Schema } from "effect"
 import { pathToFileURL } from "url"
 import { isPathPluginSpec, parsePluginSpecifier, resolvePathPluginTarget } from "@/plugin/shared"

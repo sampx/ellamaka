@@ -1,7 +1,7 @@
 import { Component, For, Match, Show, Switch } from "solid-js"
 import { FileIcon } from "@wopal/ui/file-icon"
 import { Icon } from "@wopal/ui/icon"
-import { getDirectory, getFilename } from "@wopal/core/util/path"
+import { getDirectory, getFilename } from "@wopal/ellamaka-core/util/path"
 
 export type AtOption =
   | { type: "agent"; name: string; display: string }

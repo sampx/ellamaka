@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-import { withStatics } from "@wopal/core/schema"
+import { withStatics } from "@wopal/ellamaka-core/schema"
 
 const projectIdSchema = Schema.String.pipe(Schema.brand("ProjectID"))
 

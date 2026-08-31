@@ -60,7 +60,7 @@ async function ensureDshRuntimeManifest() {
 }
 await ensureDshRuntimeManifest()
 
-import { Script } from "@wopal/script"
+import { Script } from "@wopal/ellamaka-script"
 import pkg from "../package.json"
 
 // Load migrations from migration directories

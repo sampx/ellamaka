@@ -9,7 +9,7 @@ import { List } from "@wopal/ui/list"
 import { showToast } from "@wopal/ui/toast"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { TextPart as SDKTextPart } from "@opencode-ai/sdk/v2/client"
-import { base64Encode } from "@wopal/core/util/encode"
+import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { useLanguage } from "@/context/language"
 import { completeFork } from "./dialog-fork-completion"
 

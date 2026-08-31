@@ -49,8 +49,8 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import { showToast } from "@wopal/ui/toast"
-import { Binary } from "@wopal/core/util/binary"
-import { getDirectory, getFilename } from "@wopal/core/util/path"
+import { Binary } from "@wopal/ellamaka-core/util/binary"
+import { getDirectory, getFilename } from "@wopal/ellamaka-core/util/path"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { normalize } from "@wopal/ui/session-diff"
 import { useFileComponent } from "@wopal/ui/context/file"

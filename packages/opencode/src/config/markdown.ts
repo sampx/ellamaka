@@ -1,4 +1,4 @@
-import { NamedError } from "@wopal/core/util/error"
+import { NamedError } from "@wopal/ellamaka-core/util/error"
 import matter from "gray-matter"
 import { Schema } from "effect"
 import { Filesystem } from "@/util/filesystem"

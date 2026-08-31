@@ -1,9 +1,9 @@
 import { EOL } from "os"
 import { Effect, Option } from "effect"
-import { Catalog } from "@wopal/core/catalog"
-import { LocationServiceMap } from "@wopal/core/location-layer"
-import { PluginBoot } from "@wopal/core/plugin/boot"
-import { AbsolutePath } from "@wopal/core/schema"
+import { Catalog } from "@wopal/ellamaka-core/catalog"
+import { LocationServiceMap } from "@wopal/ellamaka-core/location-layer"
+import { PluginBoot } from "@wopal/ellamaka-core/plugin/boot"
+import { AbsolutePath } from "@wopal/ellamaka-core/schema"
 import { effectCmd } from "../../effect-cmd"
 
 export const V2Command = effectCmd({

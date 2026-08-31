@@ -1,5 +1,5 @@
-import { Catalog } from "@wopal/core/catalog"
-import { PluginBoot } from "@wopal/core/plugin/boot"
+import { Catalog } from "@wopal/ellamaka-core/catalog"
+import { PluginBoot } from "@wopal/ellamaka-core/plugin/boot"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../../api"

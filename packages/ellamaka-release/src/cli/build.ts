@@ -18,7 +18,7 @@ process.chdir(dir)
 
 const generated = await import("../../../opencode/script/generate.ts")
 
-import { Script } from "@wopal/script"
+import { Script } from "@wopal/ellamaka-script"
 import pkg from "../../../opencode/package.json"
 
 // Release builds always use the release channel (latest). Development builds

@@ -1,4 +1,4 @@
-import { sampledChecksum } from "@wopal/core/util/encode"
+import { sampledChecksum } from "@wopal/ellamaka-core/util/encode"
 import {
   areFilesEqual,
   areOptionsEqual,

@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@wopal/core": "workspace:*",
+    "@wopal/ellamaka-core": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",
     "@wopal/ui": "workspace:*",
     "@sentry/solid": "catalog:",

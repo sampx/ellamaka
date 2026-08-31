@@ -3,8 +3,8 @@ export * as ConfigWopalSpaceSettings from "./wopal-space-settings"
 import path from "path"
 import { existsSync } from "fs"
 import { Effect } from "effect"
-import { Flag } from "@wopal/core/flag/flag"
-import { Global } from "@wopal/core/global"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
+import { Global } from "@wopal/ellamaka-core/global"
 import { detectWopalSpace } from "../../../ellamaka/detect"
 
 export interface WopalSpaceSettingsDeps {

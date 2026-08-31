@@ -1,10 +1,10 @@
 import path from "path"
 import { Effect } from "effect"
-import * as EffectLogger from "@wopal/core/effect/logger"
+import * as EffectLogger from "@wopal/ellamaka-core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import type * as Tool from "./tool"
 import { containsPath } from "../project/instance-context"
-import { AppFileSystem } from "@wopal/core/filesystem"
+import { AppFileSystem } from "@wopal/ellamaka-core/filesystem"
 
 type Kind = "file" | "directory"
 

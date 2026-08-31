@@ -6,7 +6,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@wopal/script": "workspace:*"
+    "@wopal/ellamaka-script": "workspace:*"
   },
   "devDependencies": {
     "@wopal/ellamaka-build": "workspace:*",

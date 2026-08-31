@@ -1,6 +1,6 @@
-import { Global } from "@wopal/core/global"
+import { Global } from "@wopal/ellamaka-core/global"
 import { Filesystem } from "@/util/filesystem"
-import { Flock } from "@wopal/core/util/flock"
+import { Flock } from "@wopal/ellamaka-core/util/flock"
 import { rename, rm } from "fs/promises"
 import { createSignal, type Setter } from "solid-js"
 import { createStore, unwrap } from "solid-js/store"

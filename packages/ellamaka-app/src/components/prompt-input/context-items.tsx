@@ -2,7 +2,7 @@ import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@wopal/ui/file-icon"
 import { IconButton } from "@wopal/ui/icon-button"
 import { Tooltip } from "@wopal/ui/tooltip"
-import { getDirectory, getFilename, getFilenameTruncated } from "@wopal/core/util/path"
+import { getDirectory, getFilename, getFilenameTruncated } from "@wopal/ellamaka-core/util/path"
 import type { ContextItem } from "@/context/prompt"
 
 type PromptContextItem = ContextItem & { key: string }

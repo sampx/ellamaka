@@ -2,7 +2,7 @@ import type { Argv } from "yargs"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { Installation } from "../../installation"
-import { InstallationVersion } from "@wopal/core/installation/version"
+import { InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
 
 export const UpgradeCommand = {

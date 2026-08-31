@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
-import { Module } from "@wopal/core/util/module"
+import { Module } from "@wopal/ellamaka-core/util/module"
 import { Filesystem } from "@/util/filesystem"
 import { tmpdir } from "../fixture/fixture"
 

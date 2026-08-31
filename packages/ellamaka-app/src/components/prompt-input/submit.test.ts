@@ -74,7 +74,7 @@ beforeAll(async () => {
     showToast: () => 0,
   }))
 
-  mock.module("@wopal/core/util/encode", () => ({
+  mock.module("@wopal/ellamaka-core/util/encode", () => ({
     base64Encode: (value: string) => value,
   }))
 

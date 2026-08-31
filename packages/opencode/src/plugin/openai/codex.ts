@@ -1,6 +1,6 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import * as Log from "@wopal/core/util/log"
-import { InstallationVersion } from "@wopal/core/installation/version"
+import * as Log from "@wopal/ellamaka-core/util/log"
+import { InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import os from "os"
 import { setTimeout as sleep } from "node:timers/promises"

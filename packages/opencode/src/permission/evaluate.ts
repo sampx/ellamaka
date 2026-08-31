@@ -1,1 +1,1 @@
-export { evaluate } from "@wopal/core/permission"
+export { evaluate } from "@wopal/ellamaka-core/permission"

@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { CrossSpawnSpawner } from "@wopal/core/cross-spawn-spawner"
+import { CrossSpawnSpawner } from "@wopal/ellamaka-core/cross-spawn-spawner"
 import { Config } from "@/config/config"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { testEffect } from "../lib/effect"

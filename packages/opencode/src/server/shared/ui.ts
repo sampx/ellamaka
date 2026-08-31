@@ -1,4 +1,4 @@
-import { AppFileSystem } from "@wopal/core/filesystem"
+import { AppFileSystem } from "@wopal/ellamaka-core/filesystem"
 import { Effect, Stream } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"

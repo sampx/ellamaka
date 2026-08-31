@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { Script } from "@wopal/script"
+import { Script } from "@wopal/ellamaka-script"
 import { $ } from "bun"
 import { fileURLToPath } from "url"
 

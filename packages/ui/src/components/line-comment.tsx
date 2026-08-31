@@ -1,5 +1,5 @@
 import { useFilteredList } from "@wopal/ui/hooks"
-import { getDirectory, getFilename } from "@wopal/core/util/path"
+import { getDirectory, getFilename } from "@wopal/ellamaka-core/util/path"
 import { createSignal, For, onMount, Show, splitProps, type JSX } from "solid-js"
 import { Button } from "./button"
 import { FileIcon } from "./file-icon"

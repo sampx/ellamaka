@@ -116,8 +116,8 @@ const { Bus } = await import("../../src/bus")
 const { Config } = await import("../../src/config/config")
 const { McpAuth } = await import("../../src/mcp/auth")
 const { McpOAuthProvider } = await import("../../src/mcp/oauth-provider")
-const { AppFileSystem } = await import("@wopal/core/filesystem")
-const { CrossSpawnSpawner } = await import("@wopal/core/cross-spawn-spawner")
+const { AppFileSystem } = await import("@wopal/ellamaka-core/filesystem")
+const { CrossSpawnSpawner } = await import("@wopal/ellamaka-core/cross-spawn-spawner")
 
 const mcpTest = testEffect(
   Layer.mergeAll(

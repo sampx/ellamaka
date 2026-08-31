@@ -1,4 +1,4 @@
-import { Global } from "@wopal/core/global"
+import { Global } from "@wopal/ellamaka-core/global"
 import { join } from "node:path"
 import {
   DEFAULT_DSH_RUNTIME_MANIFEST,

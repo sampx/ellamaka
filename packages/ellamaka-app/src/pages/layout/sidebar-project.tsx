@@ -1,6 +1,6 @@
 import { createMemo, For, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { base64Encode } from "@wopal/core/util/encode"
+import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { Button } from "@wopal/ui/button"
 import { ContextMenu } from "@wopal/ui/context-menu"
 import { HoverCard } from "@wopal/ui/hover-card"

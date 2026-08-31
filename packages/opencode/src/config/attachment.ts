@@ -1,7 +1,7 @@
 export * as ConfigAttachment from "./attachment"
 
 import { Schema } from "effect"
-import { PositiveInt } from "@wopal/core/schema"
+import { PositiveInt } from "@wopal/ellamaka-core/schema"
 
 export const Image = Schema.Struct({
   auto_resize: Schema.optional(Schema.Boolean).annotate({

@@ -1,4 +1,4 @@
-import { Global } from "@wopal/core/global"
+import { Global } from "@wopal/ellamaka-core/global"
 import { join } from "node:path"
 import type { Listener } from "../../server/server"
 import {

@@ -77,7 +77,7 @@ import { ImagePreview } from "@wopal/ui/image-preview"
 import { useQueries } from "@tanstack/solid-query"
 import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
-import { base64Encode } from "@wopal/core/util/encode"
+import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { displayName } from "@/pages/layout/helpers"
 
 interface PromptInputProps {

@@ -1,9 +1,9 @@
 import path from "path"
-import { serviceUse } from "@wopal/core/effect/service-use"
-import { Global } from "@wopal/core/global"
+import { serviceUse } from "@wopal/ellamaka-core/effect/service-use"
+import { Global } from "@wopal/ellamaka-core/global"
 import { Effect, Layer, Context, Option, Schema } from "effect"
-import { AppFileSystem } from "@wopal/core/filesystem"
-import { EffectFlock } from "@wopal/core/util/effect-flock"
+import { AppFileSystem } from "@wopal/ellamaka-core/filesystem"
+import { EffectFlock } from "@wopal/ellamaka-core/util/effect-flock"
 
 export const Tokens = Schema.Struct({
   accessToken: Schema.mutableKey(Schema.String),
