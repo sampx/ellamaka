@@ -60,7 +60,7 @@ async function ensureDshRuntimeManifest() {
 }
 await ensureDshRuntimeManifest()
 
-import { Script } from "@opencode-ai/script"
+import { Script } from "@wopal/script"
 import pkg from "../package.json"
 
 // Load migrations from migration directories

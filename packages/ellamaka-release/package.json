@@ -6,7 +6,7 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@opencode-ai/script": "workspace:*"
+    "@wopal/script": "workspace:*"
   },
   "devDependencies": {
     "@wopal/ellamaka-build": "workspace:*",

@@ -2,7 +2,7 @@ import type { Exporter, Message } from "@deepseek-ai/cordis"
 import { createPackageDshRuntimeApi, type DshRuntimeApi } from "./runtime/loader.js"
 
 /**
- * ellamaka-side log level names, matching `@opencode-ai/core/util/log`.
+ * ellamaka-side log level names, matching `@wopal/core/util/log`.
  * cordis uses numeric LoggerLevel (ERROR=0, INFO=1, WARN=2, DEBUG=3);
  * this string union is the ellamaka-side vocabulary.
  */

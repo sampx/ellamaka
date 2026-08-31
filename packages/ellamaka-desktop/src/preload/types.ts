@@ -1,4 +1,4 @@
-import type { DesktopMenuAction } from "@opencode-ai/ellamaka-app/desktop-menu"
+import type { DesktopMenuAction } from "@wopal/ellamaka-app/desktop-menu"
 
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 

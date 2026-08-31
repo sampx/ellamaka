@@ -11,7 +11,7 @@ mock.module("./workbench-markdown-renderer", () => ({
   WorkbenchMarkdown: (props: { text: string }) => <div data-slot="chat-markdown">{props.text}</div>,
 }))
 
-mock.module("@opencode-ai/ui/icon", () => ({
+mock.module("@wopal/ui/icon", () => ({
   Icon: (props: { name: string }) => <span data-slot="chat-icon" data-icon={props.name} />,
 }))
 
@@ -22,7 +22,7 @@ type FileDiffStubProps = {
   after?: { contents?: string }
 }
 
-mock.module("@opencode-ai/ui/context/file", () => ({
+mock.module("@wopal/ui/context/file", () => ({
   useFileComponent: () => (props: FileDiffStubProps) => (
     <div data-component="file-diff-block" data-mode={props.mode}>
       <span data-slot="file-diff-deletions">
@@ -78,7 +78,7 @@ function OpenCodeMessagePartStub(props: OpenCodeMessagePartStubProps) {
   )
 }
 
-mock.module("@opencode-ai/ui/collapsible", () => ({
+mock.module("@wopal/ui/collapsible", () => ({
   Collapsible: Object.assign(
     (props: { open?: boolean; onOpenChange?: (open: boolean) => void; children: JSX.Element }) => (
       <div data-component="collapsible" data-open={props.open}>

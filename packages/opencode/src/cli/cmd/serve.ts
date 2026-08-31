@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
-import { Flag } from "@opencode-ai/core/flag/flag"
+import { Flag } from "@wopal/core/flag/flag"
 import { BINARY_NAME } from "../../../../ellamaka/branding"
 import { mountDshEngine } from "./dsh-mount"
 

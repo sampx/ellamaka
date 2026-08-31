@@ -1,8 +1,8 @@
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Schema, Stream } from "effect"
-import { EventV2 } from "@opencode-ai/core/event"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
+import { EventV2 } from "@wopal/core/event"
+import { Location } from "@wopal/core/location"
+import { AbsolutePath } from "@wopal/core/schema"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 

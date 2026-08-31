@@ -1,8 +1,8 @@
 import { describe, expect, mock } from "bun:test"
 import { Effect, Layer } from "effect"
-import { AISDK } from "@opencode-ai/core/aisdk"
-import { PluginV2 } from "@opencode-ai/core/plugin"
-import { DeepInfraPlugin } from "@opencode-ai/core/plugin/provider/deepinfra"
+import { AISDK } from "@wopal/core/aisdk"
+import { PluginV2 } from "@wopal/core/plugin"
+import { DeepInfraPlugin } from "@wopal/core/plugin/provider/deepinfra"
 import { testEffect } from "../lib/effect"
 import { it, model } from "./provider-helper"
 

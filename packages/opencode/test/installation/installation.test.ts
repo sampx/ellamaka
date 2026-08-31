@@ -4,7 +4,7 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { Installation } from "../../src/installation"
 import { findEllamakaArtifact } from "../../src/installation"
-import { AppProcess } from "@opencode-ai/core/process"
+import { AppProcess } from "@wopal/core/process"
 import { testEffect } from "../lib/effect"
 import {
   readJsoncConfig,

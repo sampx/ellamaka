@@ -1,12 +1,12 @@
 import { Config } from "@/config/config"
 import { AppRuntime } from "@/effect/app-runtime"
-import { Flag } from "@opencode-ai/core/flag/flag"
+import { Flag } from "@wopal/core/flag/flag"
 import { Installation } from "@/installation"
-import { InstallationVersion, InstallationChannel } from "@opencode-ai/core/installation/version"
+import { InstallationVersion, InstallationChannel } from "@wopal/core/installation/version"
 import { GlobalBus } from "@/bus/global"
 import { existsSync, readFileSync } from "fs"
 import path from "path"
-import * as Log from "@opencode-ai/core/util/log"
+import * as Log from "@wopal/core/util/log"
 import semver from "semver"
 
 const log = Log.create({ service: "upgrade" })

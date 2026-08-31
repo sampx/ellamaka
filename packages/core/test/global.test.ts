@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Global } from "@opencode-ai/core/global"
+import { Global } from "@wopal/core/global"
 
 describe("global paths", () => {
   test("tmp path is under the system temp directory", () => {
@@ -31,7 +31,7 @@ describe("global env isolation", () => {
       await fs.writeFile(path.join(tmpHome, ".env"), `${sentinel}=${sentinelValue}\n`)
 
       // Create a throwaway test file that the subprocess will run.
-      // It must live inside this package so `@opencode-ai/core/global` resolves.
+      // It must live inside this package so `@wopal/core/global` resolves.
       const probeDir = path.join(process.cwd(), ".tmp")
       await fs.mkdir(probeDir, { recursive: true })
       const probeFile = path.join(probeDir, "child-env-probe.test.ts")
@@ -40,7 +40,7 @@ describe("global env isolation", () => {
         [
           `import { expect, test } from "bun:test"`,
           `import process from "process"`,
-          `import { Global } from "@opencode-ai/core/global"`,
+          `import { Global } from "@wopal/core/global"`,
           ``,
           `test("child probe", () => {`,
           `  expect(Global.Path.wopalHome).toBeDefined()`,

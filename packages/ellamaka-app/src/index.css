@@ -1,5 +1,5 @@
-@import "@opencode-ai/ui/styles/tailwind";
-@import "@opencode-ai/ui/v2/styles/tailwind.css";
+@import "@wopal/ui/styles/tailwind";
+@import "@wopal/ui/v2/styles/tailwind.css";
 @import "katex/dist/katex.min.css";
 
 @keyframes workbench-spinner-rotate {

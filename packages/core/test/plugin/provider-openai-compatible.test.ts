@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { PluginV2 } from "@opencode-ai/core/plugin"
-import { OpenAICompatiblePlugin } from "@opencode-ai/core/plugin/provider/openai-compatible"
+import { PluginV2 } from "@wopal/core/plugin"
+import { OpenAICompatiblePlugin } from "@wopal/core/plugin/provider/openai-compatible"
 import { it, model } from "./provider-helper"
 
 describe("OpenAICompatiblePlugin", () => {

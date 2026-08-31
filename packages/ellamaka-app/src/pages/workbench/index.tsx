@@ -20,8 +20,8 @@ import { DshSurface } from "./dsh-surface"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 import { reportWorkbenchError, type WorkbenchErrorDetail, WORKBENCH_ERROR_EVENT } from "./workbench-error"
 import { CliRepairDialog } from "./parts/cli-repair-dialog"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Toast } from "@opencode-ai/ui/toast"
+import { useDialog } from "@wopal/ui/context/dialog"
+import { Toast } from "@wopal/ui/toast"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()

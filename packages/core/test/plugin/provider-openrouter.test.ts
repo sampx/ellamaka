@@ -1,11 +1,11 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
-import { Catalog } from "@opencode-ai/core/catalog"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { PluginV2 } from "@opencode-ai/core/plugin"
-import { ProviderPlugins } from "@opencode-ai/core/plugin/provider"
-import { OpenRouterPlugin } from "@opencode-ai/core/plugin/provider/openrouter"
-import { ProviderV2 } from "@opencode-ai/core/provider"
+import { Catalog } from "@wopal/core/catalog"
+import { ModelV2 } from "@wopal/core/model"
+import { PluginV2 } from "@wopal/core/plugin"
+import { ProviderPlugins } from "@wopal/core/plugin/provider"
+import { OpenRouterPlugin } from "@wopal/core/plugin/provider/openrouter"
+import { ProviderV2 } from "@wopal/core/provider"
 import { expectPluginRegistered, it, model, provider } from "./provider-helper"
 
 describe("OpenRouterPlugin", () => {

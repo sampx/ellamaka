@@ -6,7 +6,7 @@
     "./*": "./*.ts"
   },
   "devDependencies": {
-    "@opencode-ai/script": "workspace:*",
+    "@wopal/script": "workspace:*",
     "@opentui/solid": "catalog:",
     "bun-types": "latest"
   },

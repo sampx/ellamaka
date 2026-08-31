@@ -1,4 +1,4 @@
-import { NamedError } from "@opencode-ai/core/util/error"
+import { NamedError } from "@wopal/core/util/error"
 import { errorFormat } from "@/util/error"
 import { BINARY_NAME } from "../../../ellamaka/branding"
 import { isRecord } from "@/util/record"

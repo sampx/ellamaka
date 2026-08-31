@@ -20,7 +20,7 @@ import {
   on,
 } from "solid-js"
 import { win32DisableProcessedInput, win32FlushInputBuffer, win32InstallCtrlCGuard } from "./win32"
-import { Flag } from "@opencode-ai/core/flag/flag"
+import { Flag } from "@wopal/core/flag/flag"
 import { BINARY_NAME, BINARY_TITLE } from "../../../../../ellamaka/branding"
 import semver from "semver"
 import { DialogProvider, useDialog } from "@tui/ui/dialog"

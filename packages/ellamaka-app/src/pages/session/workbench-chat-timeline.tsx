@@ -1,8 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show, type Accessor, type Component } from "solid-js"
 import type { AssistantMessage, Part, SessionStatus, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
-import { Icon } from "@opencode-ai/ui/icon"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Icon } from "@wopal/ui/icon"
+import { Spinner } from "@wopal/ui/spinner"
 import { useSync } from "@/context/sync"
 import { createRowStabilizer, projectTranscript, type TranscriptRow } from "./chat-transcript"
 import {

@@ -20,11 +20,11 @@ mock.module("./workbench-markdown-renderer", () => ({
   },
 }))
 
-mock.module("@opencode-ai/ui/icon", () => ({
+mock.module("@wopal/ui/icon", () => ({
   Icon: (props: { name: string }) => <span data-slot="chat-icon" data-icon={props.name} />,
 }))
 
-mock.module("@opencode-ai/ui/collapsible", () => ({
+mock.module("@wopal/ui/collapsible", () => ({
   Collapsible: Object.assign(
     (props: { open?: boolean; onOpenChange?: (open: boolean) => void; children: JSX.Element }) => (
       <div data-component="collapsible" data-open={props.open}>

@@ -1,4 +1,4 @@
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createSimpleContext } from "@wopal/ui/context"
 import { makePersisted } from "@solid-primitives/storage"
 import { batch, createEffect, createRenderEffect, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"

@@ -1,9 +1,9 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
-import { AgentV2 } from "@opencode-ai/core/agent"
-import { Config } from "@opencode-ai/core/config"
-import { ConfigAgentPlugin } from "@opencode-ai/core/config/plugin/agent"
-import { PermissionV2 } from "@opencode-ai/core/permission"
+import { AgentV2 } from "@wopal/core/agent"
+import { Config } from "@wopal/core/config"
+import { ConfigAgentPlugin } from "@wopal/core/config/plugin/agent"
+import { PermissionV2 } from "@wopal/core/permission"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(AgentV2.defaultLayer)
