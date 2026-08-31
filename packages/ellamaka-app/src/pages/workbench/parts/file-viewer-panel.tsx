@@ -14,6 +14,7 @@ import {
   createFileScroller,
   fileViewerRoute,
   resolveFileViewerState,
+  viewerTabKey,
   type FileScroller,
   type FileScrollPos,
   type OpenedFileEntry,
@@ -251,7 +252,7 @@ export function FileViewerSurface(props: {
             <Tabs.List class="flex-1 min-w-0 overflow-x-auto">
               <For each={props.files}>
                 {(file) => {
-                  const key = `${file.directory}\n${file.filePath}`
+                  const key = viewerTabKey(file)
                   return (
                     <Tabs.Trigger
                       value={key}
@@ -314,7 +315,7 @@ export function FileViewerSurface(props: {
         </div>
         <For each={props.files}>
           {(file) => {
-            const key = `${file.directory}\n${file.filePath}`
+            const key = viewerTabKey(file)
             return (
               <Tabs.Content value={key} class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
                 <FileViewerTabContent entry={file} />

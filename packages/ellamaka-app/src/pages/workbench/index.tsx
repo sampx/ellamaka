@@ -7,7 +7,12 @@ import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
 import { FileViewerSurface } from "./parts/file-viewer-panel"
-import { closeViewerTab, openViewerFile, type OpenedFileEntry } from "./parts/file-viewer-adapter"
+import {
+  viewerTabKey,
+  closeViewerTab,
+  openViewerFile,
+  type OpenedFileEntry,
+} from "./parts/file-viewer-adapter"
 import type { FileNode } from "@opencode-ai/sdk/v2"
 import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
@@ -45,7 +50,6 @@ function WorkbenchShell() {
   // workspace lane, so the layout never reflows when files are opened.
   const [viewerFiles, setViewerFiles] = createSignal<OpenedFileEntry[]>([])
   const [viewerActiveKey, setViewerActiveKey] = createSignal<string | undefined>(undefined)
-  const viewerKeyOf = (file: OpenedFileEntry) => `${file.directory}\n${file.filePath}`
   const handleFileClick = (file: FileNode) => {
     const entry: OpenedFileEntry = {
       directory: wb.activeTabPath,
@@ -53,7 +57,7 @@ function WorkbenchShell() {
       name: file.name,
     }
     setViewerFiles((tabs) => openViewerFile(tabs, entry))
-    setViewerActiveKey(viewerKeyOf(entry))
+    setViewerActiveKey(viewerTabKey(entry))
   }
   const closeViewerFile = (key: string) => {
     const result = closeViewerTab(viewerFiles(), viewerActiveKey() ?? "", key)

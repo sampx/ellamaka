@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { closeViewerTab, createFileScroller, fileViewerRoute, openViewerFile, resolveFileViewerState } from "./file-viewer-adapter"
+import { closeViewerTab, createFileScroller, fileViewerRoute, openViewerFile, resolveFileViewerState, viewerTabKey } from "./file-viewer-adapter"
 
 describe("fileViewerRoute", () => {
   test("changes the keyed router identity for a new file or directory", () => {
@@ -105,9 +105,9 @@ describe("closeViewerTab", () => {
   const a = { directory: "/space-a", filePath: "/space-a/main.ts" }
   const b = { directory: "/space-a", filePath: "/space-a/other.ts" }
   const c = { directory: "/space-a", filePath: "/space-a/third.ts" }
-  const keyA = "/space-a\n/space-a/main.ts"
-  const keyB = "/space-a\n/space-a/other.ts"
-  const keyC = "/space-a\n/space-a/third.ts"
+  const keyA = viewerTabKey(a)
+  const keyB = viewerTabKey(b)
+  const keyC = viewerTabKey(c)
 
   test("closing the active tab activates the right neighbour", () => {
     expect(closeViewerTab([a, b, c], keyA, keyA)).toEqual({ tabs: [b, c], activeKey: keyB })
@@ -123,6 +123,27 @@ describe("closeViewerTab", () => {
   })
 
   test("closing an unknown tab is a no-op", () => {
-    expect(closeViewerTab([a, b], keyB, "/unknown\n/x.ts")).toEqual({ tabs: [a, b], activeKey: keyB })
+    expect(closeViewerTab([a, b], keyB, viewerTabKey({ directory: "/unknown", filePath: "/x.ts" }))).toEqual({
+      tabs: [a, b],
+      activeKey: keyB,
+    })
+  })
+})
+
+describe("viewerTabKey", () => {
+  test("produces a CSS-attribute-selector-safe key for paths with spaces", () => {
+    // Regression: Kobalte Tabs.List locates the selected tab with
+    // querySelector(`[data-key="${key}"]`). A raw path with a space (e.g.
+    // `/Volumes/x/spaces/common .gitignore`) throws "not a valid selector".
+    const key = viewerTabKey({ directory: "/Volumes/U500G/spaces/common", filePath: "/Volumes/U500G/spaces/common .gitignore" })
+    expect(key).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(key).not.toContain("/")
+  })
+
+  test("is stable and unique per directory+path pair", () => {
+    const a = { directory: "/space-a", filePath: "/space-a/main.ts" }
+    expect(viewerTabKey(a)).toBe(viewerTabKey({ ...a }))
+    expect(viewerTabKey(a)).not.toBe(viewerTabKey({ directory: "/space-b", filePath: a.filePath }))
+    expect(viewerTabKey(a)).not.toBe(viewerTabKey({ directory: "/space-a", filePath: "/space-a/other.ts" }))
   })
 })

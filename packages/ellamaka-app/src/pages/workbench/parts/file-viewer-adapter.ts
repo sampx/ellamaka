@@ -47,6 +47,32 @@ export type OpenedFileEntry = {
 }
 
 /**
+ * Local URL-safe base64 (RFC 4648 §5) that does not depend on
+ * `@opencode-ai/core/util/encode`. Test suites elsewhere mock that module
+ * globally with a pass-through `base64Encode`, and Bun's `mock.module` leaks
+ * across test files in a full-suite run — a selector-safe key must never
+ * regress to the raw path under such a mock.
+ */
+function encodeTabKey(value: string): string {
+  const bytes = new TextEncoder().encode(value)
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+/**
+ * Selector-safe tab identity. Kobalte's Tabs.List locates the selected tab
+ * with `querySelector(\`[data-key="${key}"]\`)`, so keys containing spaces,
+ * quotes or backslashes produce an invalid CSS selector and crash the whole
+ * Workbench. Keys are therefore opaque base64 slugs derived from the
+ * directory+path pair (safe charset: letters, digits, `-`, `=`, `_`), while
+ * entries stay addressable by their raw parts.
+ */
+export function viewerTabKey(file: Pick<OpenedFileEntry, "directory" | "filePath">): string {
+  return encodeTabKey(`${file.directory}\n${file.filePath}`)
+}
+
+/**
  * Opens a file in the floating viewer's tab list. Clicking an already-open
  * file only activates its tab (no duplicates); a new file is appended and
  * activated.
@@ -68,14 +94,14 @@ export function closeViewerTab(
   activeKey: string,
   closedKey: string,
 ): { tabs: OpenedFileEntry[]; activeKey?: string } {
-  const keyOf = (tab: OpenedFileEntry) => `${tab.directory}\n${tab.filePath}`
-  const closed = tabs.find((tab) => keyOf(tab) === closedKey)
-  if (!closed) return { tabs, activeKey }
+  const closedIndex = tabs.findIndex((tab) => viewerTabKey(tab) === closedKey)
+  if (closedIndex === -1) return { tabs, activeKey }
+  const closed = tabs[closedIndex]!
   const next = tabs.filter((tab) => tab.directory !== closed.directory || tab.filePath !== closed.filePath)
   if (activeKey !== closedKey) return { tabs: next, activeKey }
-  const fallbackIndex = Math.min(tabs.indexOf(closed), next.length - 1)
+  const fallbackIndex = Math.min(closedIndex, next.length - 1)
   const fallback = next[fallbackIndex]
-  return { tabs: next, activeKey: fallback ? `${fallback.directory}\n${fallback.filePath}` : undefined }
+  return { tabs: next, activeKey: fallback ? viewerTabKey(fallback) : undefined }
 }
 
 /**
