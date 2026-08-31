@@ -30,26 +30,6 @@ export function PanelHeader(props: {
   const dialog = useDialog()
   const panelScope = () => scopeFromTab({ name: props.spaceName, path: props.spacePath })
 
-  const [headerMenu, setHeaderMenu] = createSignal<{ x: number; y: number } | undefined>(undefined)
-
-  const handleHeaderContextMenu = (e: MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setHeaderMenu({ x: e.clientX, y: e.clientY })
-  }
-
-  const closeHeaderMenu = () => setHeaderMenu(undefined)
-
-  const canAddPanel = () => {
-    const panels = wb.spaceState(props.spacePath)?.panels ?? []
-    return panels.length < 3
-  }
-
-  const addPanel = () => {
-    const id = wb.addPanel(props.spacePath)
-    if (id) wb.setActivePanel(props.spacePath, id)
-  }
-
   const canRemove = () => {
     if (props.panel.slotState === "empty" && props.panelCount <= 1) return false
     return true
@@ -85,7 +65,6 @@ export function PanelHeader(props: {
         "bg-v2-background-bg-layer-03 border-v2-border-border-strong": props.isActive,
         "bg-v2-background-bg-base border-v2-border-border-base": !props.isActive,
       }}
-      onContextMenu={handleHeaderContextMenu}
     >
       <Show when={props.isActive}>
         <div class="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-v2-icon-icon-accent pointer-events-none" />
@@ -181,28 +160,11 @@ export function PanelHeader(props: {
           }}
         />
       </Show>
-
-      <Show when={headerMenu()}>
-        {(menu) => (
-          <PanelHeaderMenu
-            x={menu().x}
-            y={menu().y}
-            canAddPanel={canAddPanel()}
-            addPanelLabel={t("workbench.panel.addPanel")}
-            addPanelHint={t("workbench.panel.addPanelHint")}
-            onAddPanel={() => {
-              addPanel()
-              closeHeaderMenu()
-            }}
-            onClose={closeHeaderMenu}
-          />
-        )}
-      </Show>
     </div>
   )
 }
 
-function PanelHeaderMenu(props: {
+export function PanelMenu(props: {
   x: number
   y: number
   canAddPanel: boolean

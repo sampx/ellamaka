@@ -18,7 +18,7 @@ import { sanitizeDirectory } from "../directory-utils"
 import { reportWorkbenchError } from "../workbench-error"
 import { DialogOverwritePanel, DialogCrossSpaceWarning } from "./session-tree-dialogs"
 import { handlePanelDrop, startSplitResize } from "./panel-services"
-import { PanelHeader } from "./panel-header"
+import { PanelHeader, PanelMenu } from "./panel-header"
 import {
   focusPanelPromptEditor,
   focusPromptEditor,
@@ -81,6 +81,23 @@ export function Panel(props: {
   const [mountedViews, setMountedViews] = createSignal(new Set<string>())
   const [terminalTitle, setTerminalTitle] = createSignal<string>()
   const [isTerminalMaximized, setIsTerminalMaximized] = createSignal(false)
+  const [panelMenu, setPanelMenu] = createSignal<{ x: number; y: number } | undefined>(undefined)
+
+  const canAddPanel = () => {
+    const panels = wb.spaceState(props.spacePath)?.panels ?? []
+    return panels.length < 3
+  }
+
+  const addPanel = () => {
+    const id = wb.addPanel(props.spacePath)
+    if (id) wb.setActivePanel(props.spacePath, id)
+  }
+
+  const handlePanelContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPanelMenu({ x: e.clientX, y: e.clientY })
+  }
 
   createEffect(() => {
     if (!props.panel.splitTerminal) {
@@ -346,6 +363,7 @@ export function Panel(props: {
       }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
+      onContextMenu={handlePanelContextMenu}
       data-panel-id={props.panel.id}
       data-component="panel"
     >
@@ -538,6 +556,22 @@ export function Panel(props: {
           }
         `}
       </style>
+      <Show when={panelMenu()}>
+        {(menu) => (
+          <PanelMenu
+            x={menu().x}
+            y={menu().y}
+            canAddPanel={canAddPanel()}
+            addPanelLabel={t("workbench.panel.addPanel")}
+            addPanelHint={t("workbench.panel.addPanelHint")}
+            onAddPanel={() => {
+              addPanel()
+              setPanelMenu(undefined)
+            }}
+            onClose={() => setPanelMenu(undefined)}
+          />
+        )}
+      </Show>
     </div>
   )
 }
