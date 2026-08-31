@@ -1,4 +1,5 @@
 import { ErrorBoundary, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -6,13 +7,15 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
-import { FileViewerSurface } from "./parts/file-viewer-panel"
+import { WorkbenchInspector } from "./parts/inspector-panel"
 import {
-  viewerTabKey,
-  closeViewerTab,
-  openViewerFile,
-  type OpenedFileEntry,
-} from "./parts/file-viewer-adapter"
+  closeSurfaceTab,
+  openSurfaceTab,
+  surfaceTabKey,
+  type FileSurfaceTab,
+  type SurfaceTab,
+} from "./parts/inspector-adapter"
+import { Persist, persisted } from "@/utils/persist"
 import type { FileNode } from "@opencode-ai/sdk/v2"
 import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
@@ -46,27 +49,36 @@ function WorkbenchShell() {
   const t: typeof language.t = (key, params) => language.t(key, params)
   let workbenchSurface: HTMLDivElement | undefined
 
-  // Opened file viewer state. Transient Workbench UI state (AGENTS.md §5.1):
-  // files are opened into a floating tabbed surface that overlays the
-  // workspace lane, so the layout never reflows when files are opened.
-  const [viewerFiles, setViewerFiles] = createSignal<OpenedFileEntry[]>([])
-  const [viewerActiveKey, setViewerActiveKey] = createSignal<string | undefined>(undefined)
+  // Generic right-hand surface state. Transient-by-session but persisted across
+  // reloads so reopened tabs survive a refresh (AGENTS.md §5.1: layout-ish UI
+  // state may persist; file contents themselves are re-fetched, never stored).
+  const [surfaceStore, setSurfaceStore] = persisted(
+    Persist.global("workbench.inspector", []),
+    createStore<{ tabs: SurfaceTab[]; activeKey?: string; expanded?: boolean }>({
+      tabs: [],
+      activeKey: undefined,
+      expanded: false,
+    }),
+  )
+  const surfaceTabs = () => surfaceStore.tabs
+  const surfaceActiveKey = () => surfaceStore.activeKey
   const handleFileClick = (file: FileNode) => {
-    const entry: OpenedFileEntry = {
+    const entry: FileSurfaceTab = {
+      kind: "file",
       directory: wb.activeTabPath,
       filePath: file.path,
       name: file.name,
     }
-    setViewerFiles((tabs) => openViewerFile(tabs, entry))
-    setViewerActiveKey(viewerTabKey(entry))
-    // Opening a file is an explicit intent to see content: re-expand the
-    // viewer when the user has collapsed it via the titlebar toggle.
+    setSurfaceStore("tabs", (tabs) => openSurfaceTab(tabs, entry))
+    setSurfaceStore("activeKey", surfaceTabKey(entry))
+    // Opening content is an explicit intent to see it: re-expand the surface
+    // when the user or a prior session had collapsed it.
     if (!wb.display().showFileViewer) wb.setDisplay("showFileViewer", true)
   }
-  const closeViewerFile = (key: string) => {
-    const result = closeViewerTab(viewerFiles(), viewerActiveKey() ?? "", key)
-    setViewerFiles(result.tabs)
-    setViewerActiveKey(result.activeKey)
+  const closeSurfaceTabByKey = (key: string) => {
+    const result = closeSurfaceTab(surfaceStore.tabs, surfaceActiveKey() ?? "", key)
+    setSurfaceStore("tabs", result.tabs)
+    setSurfaceStore("activeKey", result.activeKey)
   }
 
   const requestCliRepair = (cli: NonNullable<typeof runtime.cli>) => {
@@ -212,15 +224,15 @@ function WorkbenchShell() {
             <SpaceRail onFileClick={handleFileClick} />
             <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <Workspace />
-              <Show when={display().showFileViewer && viewerFiles().length > 0 && viewerActiveKey()}>
-                <FileViewerSurface
-                  files={viewerFiles()}
-                  activeKey={viewerActiveKey()!}
-                  onActiveKeyChange={setViewerActiveKey}
-                  onCloseFile={closeViewerFile}
+              <Show when={display().showFileViewer && surfaceTabs().length > 0 && surfaceActiveKey()}>
+                <WorkbenchInspector
+                  tabs={surfaceTabs()}
+                  activeKey={surfaceActiveKey()!}
+                  onActiveKeyChange={(key) => setSurfaceStore("activeKey", key)}
+                  onCloseTab={closeSurfaceTabByKey}
                   onClose={() => {
-                    setViewerFiles([])
-                    setViewerActiveKey(undefined)
+                    setSurfaceStore("tabs", [])
+                    setSurfaceStore("activeKey", undefined)
                   }}
                 />
               </Show>

@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test"
  */
 describe("FileViewerPanel load-on-mount (B-01)", () => {
   test("triggers file.load on the initial effect run (not deferred)", async () => {
-    const source = await Bun.file(new URL("./file-viewer-panel.tsx", import.meta.url)).text()
+    const source = await Bun.file(new URL("./inspector-panel.tsx", import.meta.url)).text()
 
     // The load effect must not defer past mount. `defer: true` would leave the
     // viewer permanent "empty" until the path changes, which never happens here.

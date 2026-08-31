@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import {
+  closeSurfaceTab,
   closeViewerTab,
   createFileScroller,
   fileViewerRoute,
+  openSurfaceTab,
   openViewerFile,
   resolveFileViewerState,
   submitFileComment,
+  surfaceTabKey,
   viewerTabKey,
-} from "./file-viewer-adapter"
+} from "./inspector-adapter"
+import type { SurfaceTab } from "./inspector-adapter"
 import type { LineComment } from "@/context/comments"
 import type { FileContextItem } from "@/context/prompt"
 
@@ -155,6 +159,37 @@ describe("viewerTabKey", () => {
     expect(viewerTabKey(a)).toBe(viewerTabKey({ ...a }))
     expect(viewerTabKey(a)).not.toBe(viewerTabKey({ directory: "/space-b", filePath: a.filePath }))
     expect(viewerTabKey(a)).not.toBe(viewerTabKey({ directory: "/space-a", filePath: "/space-a/other.ts" }))
+  })
+})
+
+describe("generic surface tabs", () => {
+  const fileTab: SurfaceTab = { kind: "file", directory: "/space-a", filePath: "/space-a/main.ts" }
+  const futureTab: SurfaceTab = { kind: "future", id: "future-1" }
+
+  test("surfaceTabKey keys per kind so distinct kinds never collide", () => {
+    const key = surfaceTabKey(fileTab)
+    expect(key).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(key).toBe(surfaceTabKey({ ...fileTab }))
+    expect(surfaceTabKey(futureTab)).not.toBe(key)
+  })
+
+  test("openSurfaceTab appends new tabs and dedupes by key", () => {
+    expect(openSurfaceTab<SurfaceTab>([], fileTab)).toEqual([fileTab])
+    expect(openSurfaceTab<SurfaceTab>([fileTab], futureTab)).toEqual([fileTab, futureTab])
+    expect(openSurfaceTab<SurfaceTab>([fileTab, futureTab], { ...fileTab })).toEqual([fileTab, futureTab])
+  })
+
+  test("closeSurfaceTab mirrors closeViewerTab semantics for mixed kinds", () => {
+    const keyFile = surfaceTabKey(fileTab)
+    const keyFuture = surfaceTabKey(futureTab)
+    expect(closeSurfaceTab([fileTab, futureTab], keyFile, keyFile)).toEqual({
+      tabs: [futureTab],
+      activeKey: keyFuture,
+    })
+    expect(closeSurfaceTab([fileTab, futureTab], keyFuture, keyFuture)).toEqual({
+      tabs: [fileTab],
+      activeKey: keyFile,
+    })
   })
 })
 

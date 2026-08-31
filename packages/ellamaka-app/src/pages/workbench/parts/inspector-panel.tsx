@@ -19,11 +19,13 @@ import {
   fileViewerRoute,
   resolveFileViewerState,
   submitFileComment,
-  viewerTabKey,
+  surfaceTabKey,
   type FileScroller,
   type FileScrollPos,
   type OpenedFileEntry,
-} from "./file-viewer-adapter"
+  type FileSurfaceTab,
+  type SurfaceTab,
+} from "./inspector-adapter"
 
 /**
  * Workbench file viewer panel (read-only).
@@ -353,11 +355,30 @@ function FileViewerTabContent(props: { entry: OpenedFileEntry }) {
   )
 }
 
-export function FileViewerSurface(props: {
-  files: OpenedFileEntry[]
+function isFileTab(tab: SurfaceTab): tab is FileSurfaceTab {
+  return tab.kind === "file"
+}
+
+/**
+ * Renders the content of one surface tab. New tab kinds plug in here: add the
+ * kind to `SurfaceTab`, then a Match branch dispatching to its component.
+ */
+function SurfaceTabContent(props: { tab: SurfaceTab }) {
+  const fileTab = createMemo(() => (isFileTab(props.tab) ? props.tab : undefined))
+  return (
+    <Switch>
+      <Match when={fileTab()}>
+        {(tab) => <FileViewerTabContent entry={tab()} />}
+      </Match>
+    </Switch>
+  )
+}
+
+export function WorkbenchInspector(props: {
+  tabs: SurfaceTab[]
   activeKey: string
   onActiveKeyChange: (key: string) => void
-  onCloseFile: (key: string) => void
+  onCloseTab: (key: string) => void
   onClose: () => void
 }) {
   const language = useLanguage()
@@ -365,18 +386,19 @@ export function FileViewerSurface(props: {
 
   return (
     <div
-      data-component="workbench-file-viewer-surface"
+      data-component="workbench-inspector-surface"
       class={`absolute z-40 flex flex-col overflow-hidden border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
         expanded() ? "inset-2" : "top-2 bottom-2 right-2 w-[480px] max-w-[50vw]"
       }`}
     >
       <Tabs value={props.activeKey} onChange={props.onActiveKeyChange} class="flex flex-col h-full min-h-0">
         <div class="flex h-9 shrink-0 items-center border-b border-v2-border-border-base bg-v2-background-bg-base">
-          <Show when={props.files.length > 0}>
+          <Show when={props.tabs.length > 0}>
             <Tabs.List class="flex-1 min-w-0 overflow-x-auto">
-              <For each={props.files}>
-                {(file) => {
-                  const key = viewerTabKey(file)
+              <For each={props.tabs}>
+                {(tab) => {
+                  const key = surfaceTabKey(tab)
+                  const fileTab = isFileTab(tab) ? tab : undefined
                   return (
                     <Tabs.Trigger
                       value={key}
@@ -392,11 +414,11 @@ export function FileViewerSurface(props: {
                             </svg>
                           }
                           aria-label={language.t("workbench.fileViewer.close")}
-                          onClick={() => props.onCloseFile(key)}
+                          onClick={() => props.onCloseTab(key)}
                         />
                       }
                     >
-                      <span class="text-12-medium truncate">{file.name ?? file.filePath}</span>
+                      <span class="text-12-medium truncate">{fileTab?.name ?? fileTab?.filePath ?? tab.kind}</span>
                     </Tabs.Trigger>
                   )
                 }}
@@ -437,12 +459,12 @@ export function FileViewerSurface(props: {
             />
           </div>
         </div>
-        <For each={props.files}>
-          {(file) => {
-            const key = viewerTabKey(file)
+        <For each={props.tabs}>
+          {(tab) => {
+            const key = surfaceTabKey(tab)
             return (
               <Tabs.Content value={key} class="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-                <FileViewerTabContent entry={file} />
+                <SurfaceTabContent tab={tab} />
               </Tabs.Content>
             )
           }}

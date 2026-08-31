@@ -51,6 +51,59 @@ export type OpenedFileEntry = {
 }
 
 /**
+ * A tab in the generic right-hand workbench surface. `file` is the only kind
+ * today; future content types (diffs, previews, ...) extend the union with a
+ * new `kind` and their own identity fields.
+ */
+export type FileSurfaceTab = { kind: "file" } & OpenedFileEntry
+
+export type SurfaceTab =
+  | FileSurfaceTab
+  | { kind: Exclude<string, "file">; id: string }
+
+/**
+ * Selector-safe tab identity for an arbitrary surface tab: the kind namespace
+ * plus the kind-specific identity, encoded the same way as file tab keys so
+ * every key stays safe inside Kobalte's attribute selectors.
+ */
+export function surfaceTabKey(tab: SurfaceTab): string {
+  if ("filePath" in tab) return `f-${viewerTabKey(tab)}`
+  const extra = tab as { id?: unknown }
+  return `k-${encodeTabKey(`${tab.kind}\n${String(extra.id)}`)}`
+}
+
+/**
+ * Opens a tab in the generic surface's tab list. Clicking an already-open tab
+ * only activates it (activation is derived by the caller); a new tab is
+ * appended. Dedupe is key-based so mixed kinds cannot collide.
+ */
+export function openSurfaceTab<T extends SurfaceTab>(tabs: T[], tab: T): T[] {
+  const key = surfaceTabKey(tab)
+  return tabs.some((candidate) => surfaceTabKey(candidate) === key) ? tabs : [...tabs, tab]
+}
+
+/**
+ * Removes a tab and resolves which tab becomes active after the close.
+ * Mirrors closeViewerTab for the generic union: closing the active tab
+ * activates its right neighbour (or the last tab after removal); closing a
+ * background tab keeps the current selection. Returns `undefined` activeKey
+ * when no tabs remain.
+ */
+export function closeSurfaceTab(
+  tabs: SurfaceTab[],
+  activeKey: string,
+  closedKey: string,
+): { tabs: SurfaceTab[]; activeKey?: string } {
+  const closedIndex = tabs.findIndex((tab) => surfaceTabKey(tab) === closedKey)
+  if (closedIndex === -1) return { tabs, activeKey }
+  const next = tabs.filter((tab) => surfaceTabKey(tab) !== closedKey)
+  if (activeKey !== closedKey) return { tabs: next, activeKey }
+  const fallbackIndex = Math.min(closedIndex, next.length - 1)
+  const fallback = next[fallbackIndex]
+  return { tabs: next, activeKey: fallback ? surfaceTabKey(fallback) : undefined }
+}
+
+/**
  * Local URL-safe base64 (RFC 4648 §5) that does not depend on
  * `@opencode-ai/core/util/encode`. Test suites elsewhere mock that module
  * globally with a pass-through `base64Encode`, and Bun's `mock.module` leaks
