@@ -1,6 +1,17 @@
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { Tabs } from "@opencode-ai/ui/tabs"
-import { For, Show, createEffect, createMemo, createSignal, Match, on, onCleanup, Switch } from "solid-js"
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+} from "solid-js"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -391,15 +402,43 @@ export function WorkbenchInspector(props: {
   width: number
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
+  pinned: boolean
+  onPinnedChange: (pinned: boolean) => void
   onCloseTab: (key: string) => void
   onClose: () => void
+  /** Outside presses hide the panel without touching its tabs. */
+  onDismiss: () => void
 }) {
   const language = useLanguage()
   const expanded = () => props.expanded
   const setExpanded = (next: boolean) => props.onExpandedChange(next)
+  const pinned = () => props.pinned
+  const setPinned = (next: boolean) => props.onPinnedChange(next)
 
   let resizing = false
   let rafId: number | null = null
+  let rootEl: HTMLDivElement | undefined
+
+  // Outside presses hide the panel (tabs survive). Registered in the capture
+  // phase so an outside press wins over any click handler on the target that
+  // would reopen it (e.g. a file-tree selection). The guard consults the
+  // composed path so presses inside the pierre shadow root count as "inside",
+  // and skips the topbar toggle, which owns its own show/hide semantics.
+  onMount(() => {
+    const onOutsidePointer = (event: MouseEvent) => {
+      if (pinned()) return
+      const root = rootEl
+      if (!root) return
+      const target = event.target
+      if (target instanceof Element && target.closest("[data-inspector-toggle]")) return
+      const path = event.composedPath()
+      if (path.includes(root)) return
+      props.onDismiss()
+    }
+    document.addEventListener("mousedown", onOutsidePointer, { capture: true })
+    onCleanup(() => document.removeEventListener("mousedown", onOutsidePointer, { capture: true }))
+  })
+
   onCleanup(() => {
     if (rafId !== null) cancelAnimationFrame(rafId)
   })
@@ -439,6 +478,7 @@ export function WorkbenchInspector(props: {
 
   return (
     <div
+      ref={rootEl}
       data-component="workbench-inspector-surface"
       class={`absolute z-40 flex flex-col overflow-hidden rounded-lg border border-v2-border-border-base bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)] ${
         expanded() ? "inset-2" : "top-2 bottom-2 right-2 w-[480px] max-w-[50vw]"
@@ -492,6 +532,26 @@ export function WorkbenchInspector(props: {
             </Tabs.List>
           </Show>
           <div class="ml-auto flex shrink-0 items-center gap-1 pr-2 pl-2">
+            <IconButtonV2
+              variant="ghost-muted"
+              size="small"
+              class="size-5 flex items-center justify-center p-0 shrink-0"
+              style={{ color: pinned() ? "var(--v2-icon-icon-accent)" : undefined }}
+              state={pinned() ? "pressed" : undefined}
+              icon={
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <Show
+                    when={pinned()}
+                    fallback={<path d="M12 17v5M9 3h6l1 7 3 3H5l3-3z" />}
+                  >
+                    <path d="M12 17v5M9 3h6l1 7 3 3H5l3-3zM12 17v5" />
+                  </Show>
+                </svg>
+              }
+              aria-label={language.t(pinned() ? "workbench.fileViewer.unpin" : "workbench.fileViewer.pin")}
+              title={language.t(pinned() ? "workbench.fileViewer.unpin" : "workbench.fileViewer.pin")}
+              onClick={() => setPinned(!pinned())}
+            />
             <IconButtonV2
               variant="ghost-muted"
               size="small"

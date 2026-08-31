@@ -5,6 +5,7 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useSpaceStore } from "../space-store"
+import { useWorkbenchSurface } from "../workbench-surface-context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useSessionStore } from "../session-store"
 import { DialogCloseTab } from "./workspace"
@@ -59,6 +60,7 @@ export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
   const spaceStore = useSpaceStore()
   const sessionStore = useSessionStore()
+  const surface = useWorkbenchSurface()
   const language = useLanguage()
   const dialog = useDialog()
   const notification = useNotification()
@@ -334,19 +336,24 @@ export function WorkbenchTitlebar() {
             </Show>
           </div>
 
-          {/* 文件查看面板 toggle (最右侧，使用 FileViewerPanelIcon) */}
+          {/* 文件查看面板 toggle (最右侧，使用 FileViewerPanelIcon)。
+              Mirrors the panel-header terminal icon convention: blue when the
+              inspector holds tabs, grey and inert when it does not. Visible
+              tabs stay intact across show/hide; the Shell owns the toggle.
+              data-inspector-toggle: the inspector outside-click dismiss must
+              treat presses here as the toggle's own click, not a dismissal. */}
           <IconButtonV2
             variant="ghost"
             size="small"
             class="text-v2-text-text-base hover:text-v2-text-text-strong"
-            style={{ color: wb.display().showFileViewer ? "var(--v2-icon-icon-accent)" : undefined }}
-            state={wb.display().showFileViewer ? "pressed" : undefined}
+            disabled={!surface.hasTabs()}
+            style={{ color: surface.hasTabs() ? "var(--v2-icon-icon-accent)" : undefined }}
+            state={surface.visible() ? "pressed" : undefined}
+            data-inspector-toggle="true"
             icon={<FileViewerPanelIcon class="size-4" />}
             aria-label={t(wb.display().showFileViewer ? "workbench.topbar.fileViewer.hide" : "workbench.topbar.fileViewer.show")}
             title={t(wb.display().showFileViewer ? "workbench.topbar.fileViewer.hide" : "workbench.topbar.fileViewer.show")}
-            onClick={() => {
-              wb.setDisplay("showFileViewer", !wb.display().showFileViewer)
-            }}
+            onClick={() => surface.toggleVisibility()}
           />
         </div>
       </div>

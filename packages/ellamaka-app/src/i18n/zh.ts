@@ -980,6 +980,8 @@ export const dict = {
   "workbench.fileViewer.closeAll": "关闭文件查看器",
   "workbench.fileViewer.expand": "全屏展开",
   "workbench.fileViewer.collapse": "收起面板",
+  "workbench.fileViewer.pin": "固定面板",
+  "workbench.fileViewer.unpin": "取消固定",
   "workbench.fileViewer.notePlaceholder": "为选中的行添加备注...",
   "workbench.fileViewer.submitNote": "将备注写入 chat 输入框",
   "workbench.fileViewer.line": "第 {{line}} 行",

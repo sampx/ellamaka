@@ -1020,6 +1020,8 @@ export const dict = {
   "workbench.fileViewer.closeAll": "Close file viewer",
   "workbench.fileViewer.expand": "Expand to full screen",
   "workbench.fileViewer.collapse": "Collapse panel",
+  "workbench.fileViewer.pin": "Pin panel",
+  "workbench.fileViewer.unpin": "Unpin panel",
   "workbench.fileViewer.notePlaceholder": "Add a note about the selected lines...",
   "workbench.fileViewer.submitNote": "Add note to chat input",
   "workbench.fileViewer.line": "Line {{line}}",

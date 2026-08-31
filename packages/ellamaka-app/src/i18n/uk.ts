@@ -645,6 +645,8 @@ export const dict = {
   "workbench.fileViewer.closeAll": "Закрити переглядач файлів",
   "workbench.fileViewer.expand": "Розгорнути на весь екран",
   "workbench.fileViewer.collapse": "Згорнути панель",
+  "workbench.fileViewer.pin": "Закріпити панель",
+  "workbench.fileViewer.unpin": "Відкріпити панель",
   "workbench.fileViewer.notePlaceholder": "Додайте нотатку про вибрані рядки...",
   "workbench.fileViewer.submitNote": "Додати нотатку до поля вводу чату",
   "workbench.fileViewer.line": "Рядок {{line}}",
