@@ -127,7 +127,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const canBack = createMemo(() => history.index > 0)
   const canForward = createMemo(() => history.index < history.stack.length - 1)
   const hasProjects = createMemo(() => layout.projects.list().length > 0)
-  const nav = createMemo(() => (useV2Titlebar() ? settings.general.showNavigation() : true))
+  const nav = createMemo(() => (useV2Titlebar() ? false : true))
   const updateState = createMemo<TitlebarUpdatePillState>(() => {
     const version = props.update?.version()
     return {
@@ -141,7 +141,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   })
   const v2RightState = createMemo<TitlebarV2RightState>(() => ({
     update: updateState(),
-    statusVisible: !params.dir && settings.general.showStatus(),
+    statusVisible: !params.dir && false,
     statusLabel: language.t("status.popover.trigger"),
   }))
 

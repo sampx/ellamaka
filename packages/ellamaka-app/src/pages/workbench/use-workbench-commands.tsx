@@ -5,9 +5,7 @@ import { useSessionStore } from "@/pages/workbench/session-store"
 import { useWorkbenchActions } from "@/pages/workbench/workbench-actions"
 import { useWorkbenchState } from "@/pages/workbench/view-store"
 import { scopeName, scopePath } from "@/pages/workbench/workbench-scope"
-import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
-import { useSettings } from "@/context/settings"
 import { createEffect, createMemo, on } from "solid-js"
 
 const withCategory = (category: string) => {
@@ -24,9 +22,7 @@ export const useWorkbenchCommands = () => {
   const wb = useWorkbenchState()
   const sessionStore = useSessionStore()
   const dialog = useDialog()
-  const layout = useLayout()
   const platform = usePlatform()
-  const settings = useSettings()
   const sessionCommand = withCategory(language.t("command.category.session"))
   const fileCommand = withCategory(language.t("command.category.file"))
   const contextCommand = withCategory(language.t("command.category.context"))
@@ -36,9 +32,6 @@ export const useWorkbenchCommands = () => {
   const mcpCommand = withCategory(language.t("command.category.mcp"))
   const agentCommand = withCategory(language.t("command.category.agent"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
-
-  const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  const shown = () => (desktopV2() ? settings.general.showFileTree() : true)
 
   const proxyAction = (id: string) => ({
     get disabled() { return !actions.canExecuteActivePanelAction(id) },
@@ -196,7 +189,9 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.settings.open"),
       keybind: "ctrl+comma",
       onSelect: () => {
-        void import("@/components/dialog-settings").then((x) => dialog.show(() => <x.DialogSettings />))
+        void import("@/components/dialog-settings").then((x) => (
+          dialog.show(() => <x.DialogSettings />)
+        ))
       },
     }),
     viewCommand({
@@ -210,16 +205,6 @@ export const useWorkbenchCommands = () => {
       title: language.t("command.review.toggle"),
       ...proxyAction("review.toggle"),
     }),
-    ...(shown()
-      ? [
-          viewCommand({
-            id: "fileTree.toggle",
-            title: language.t("command.fileTree.toggle"),
-            keybind: "mod+\\",
-            onSelect: () => layout.fileTree.toggle(), // layout.fileTree is globally accessible
-          }),
-        ]
-      : []),
     viewCommand({
       id: "input.focus",
       title: language.t("command.input.focus"),

@@ -34,26 +34,51 @@
 }
 
 /* 显式允许的垂直/水平精致滚动条 */
-.has-scrollbar::-webkit-scrollbar,
-.session-tree-scroll::-webkit-scrollbar {
+.has-scrollbar::-webkit-scrollbar {
   display: block;
   width: 6px;
   height: 6px;
 }
 
-.has-scrollbar::-webkit-scrollbar-track,
-.session-tree-scroll::-webkit-scrollbar-track {
+/* Sidebar trees (session + file): hide until hover. The scrollbar itself is
+   always laid out (6px, classic webkit pipeline) so the text never shifts;
+   only the thumb color switches via a custom property, which pseudo-elements
+   inherit — reliable where :hover-on-pseudo-element is not. */
+.workbench-tree-scroll {
+  --tree-thumb-color: transparent;
+}
+
+.workbench-tree-scroll:hover,
+.workbench-tree-scroll:focus-within {
+  --tree-thumb-color: rgb(140 140 160 / 35%);
+}
+
+.workbench-tree-scroll::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
   background: transparent;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb,
-.session-tree-scroll::-webkit-scrollbar-thumb {
+.workbench-tree-scroll::-webkit-scrollbar-thumb {
+  background: var(--tree-thumb-color);
+  border-radius: 4px;
+}
+
+.workbench-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(140 140 160 / 65%);
+}
+
+.has-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.has-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(140 140 160 / 35%);
   border-radius: 4px;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb:hover,
-.session-tree-scroll::-webkit-scrollbar-thumb:hover {
+.has-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgb(140 140 160 / 65%);
 }
 
