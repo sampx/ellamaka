@@ -7,6 +7,12 @@ import { getUserShell, loadShellEnv, mergeShellEnv, resolveShellPath } from "./s
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
 import type { SidecarSpawnFactory } from "./sidecar-supervisor"
+import {
+  captureSidecarExperimentalConfig,
+  getCapturedSidecarExperimentalConfig,
+  isSidecarOnlyOpencodeKey,
+  stripSidecarOpencodeEnv,
+} from "./sidecar-credentials"
 
 export type WslConfig = { enabled: boolean }
 
@@ -69,11 +75,20 @@ export function preferAppEnv() {
   const merged = mergeShellEnv(shellEnv, appEnv)
   const resolvedPath = resolveShellPath(shellEnv, appEnv.PATH)
   if (resolvedPath !== undefined) merged.PATH = resolvedPath
-  Object.assign(process.env, merged, {
-    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
-    OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
-    OPENCODE_CLIENT: "ellamaka-desktop",
-  })
+  // The login shell may carry sidecar-only OPENCODE_* values (e.g. a developer
+  // who exported them in their shell rc). Those belong to the sidecar process
+  // (delivered via createSidecarEnv), never to the Electron main process, so
+  // capture the user-configured experimental switches to forward to the sidecar
+  // (D-03: move into createSidecarEnv, never discard), then strip them from the
+  // merged env before writing back — and drop any that are already present in
+  // process.env (predicate-matched, so the root switch and any
+  // OPENCODE_EXPERIMENTAL_* engine flag are covered).
+  captureSidecarExperimentalConfig(merged)
+  const clean = stripSidecarOpencodeEnv(merged)
+  for (const key of Object.keys(process.env)) {
+    if (isSidecarOnlyOpencodeKey(key)) delete process.env[key]
+  }
+  Object.assign(process.env, clean)
 }
 
 export async function spawnLocalServer(
@@ -85,7 +100,7 @@ export async function spawnLocalServer(
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
-    env: createSidecarEnv(),
+    env: createSidecarEnv(password),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
     execArgv: ["--experimental-strip-types"],
@@ -240,13 +255,29 @@ export async function checkHealth(url: string, password?: string | null): Promis
   }
 }
 
-function createSidecarEnv(): Record<string, string> {
+/**
+ * Builds the explicit env for the sidecar utility process. Credentials and the
+ * engine switches are written here — never into the main process's
+ * process.env — so the sidecar child env carries exactly what the engine needs
+ * and no other process (agent terminal, etc.) inherits server credentials.
+ */
+export function createSidecarEnv(password: string): Record<string, string> {
   const env = Object.fromEntries(
     Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])),
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
-  return env
+  // Desktop defaults are applied first, then the user-configured experimental
+  // switches captured by preferAppEnv are overlaid so explicit user intent wins
+  // (e.g. OPENCODE_EXPERIMENTAL_LSP_TY set in the shell reaches the sidecar).
+  return Object.assign(env, {
+    OPENCODE_SERVER_USERNAME: "ellamaka",
+    OPENCODE_SERVER_PASSWORD: password,
+    OPENCODE_CLIENT: "ellamaka-desktop",
+    OPENCODE_DISABLE_EMBEDDED_WEB_UI: "true",
+    OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
+    OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+  }, getCapturedSidecarExperimentalConfig())
 }
 
 function delay(ms: number) {

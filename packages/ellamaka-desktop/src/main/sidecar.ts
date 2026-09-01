@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
 import { register } from "node:module"
+import { listenThenClearCredentials } from "./sidecar-credentials"
 
 if (typeof register === "function") {
   const loaderCode = `
@@ -84,7 +85,6 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -116,13 +116,21 @@ async function start(command: StartCommand) {
       parentPort.postMessage({ type: "sqlite", progress: { type: "Done" } })
     }
 
-    listener = await Server.listen({
-      port: command.port,
-      hostname: command.hostname,
-      username: "ellamaka",
-      password: command.password,
-      cors: ["oc://renderer"],
-    })
+    // Credentials were delivered via the utilityProcess.fork env and are
+    // captured by ServerAuth during Server.listen: listenerLayer provides a
+    // fresh ConfigProvider.fromEnv() on every listen, so the auth config
+    // snapshots process.env at that point. listenThenClearCredentials keeps the
+    // credentials present for the whole listen call, then deletes them so the
+    // engine PTY children (which forward ...process.env) never inherit them.
+    listener = await listenThenClearCredentials(() =>
+      Server.listen({
+        port: command.port,
+        hostname: command.hostname,
+        username: "ellamaka",
+        password: command.password,
+        cors: ["oc://renderer"],
+      }),
+    )
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -143,13 +151,6 @@ async function stop() {
 async function setLogLevel(level: "DEBUG" | "INFO" | "WARN" | "ERROR") {
   const { Log } = await import("virtual:opencode-server")
   Log.setLevel(level)
-}
-
-function prepareSidecarEnv(password: string) {
-  Object.assign(process.env, {
-    OPENCODE_SERVER_USERNAME: "ellamaka",
-    OPENCODE_SERVER_PASSWORD: password,
-  })
 }
 
 function ensureLoopbackNoProxy() {
