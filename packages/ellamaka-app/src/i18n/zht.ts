@@ -924,6 +924,5 @@ export const dict = {
   "workbench.chat.reasoning": "思考",
   "workbench.chat.compaction": "上下文已壓縮",
   "workbench.chat.retry": "重試 #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} 個檔案",
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
 } satisfies Partial<Record<Keys, string>>

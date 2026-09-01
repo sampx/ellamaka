@@ -941,7 +941,6 @@ export const dict = {
   "workbench.chat.reasoning": "思考",
   "workbench.chat.compaction": "上下文已压缩",
   "workbench.chat.retry": "重试 #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} 个文件",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "workbench.entry": "工作台",
   "workbench.singleton.title": "工作台已在其他标签页打开",

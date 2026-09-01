@@ -940,6 +940,5 @@ export const dict = {
   "workbench.chat.reasoning": "Размышление",
   "workbench.chat.compaction": "Контекст сжат",
   "workbench.chat.retry": "Повтор #{{attempt}}",
-  "workbench.chat.filesChanged": "файлов: {{count}}",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
 }

@@ -12,7 +12,6 @@ import {
   NarrativeBlock,
   ReasoningBlock,
   RetryOutcome,
-  TurnChangeSummary,
   TurnOutcome,
   UnknownPartBlock,
   UserMessageBlock,
@@ -291,10 +290,6 @@ function TranscriptRowView(props: {
     const r = row()
     return r.type === "assistant" ? r : undefined
   }
-  const diffRow = () => {
-    const r = row()
-    return r.type === "diff" ? r : undefined
-  }
   const errorRow = () => {
     const r = row()
     return r.type === "error" ? r : undefined
@@ -349,9 +344,6 @@ function TranscriptRowView(props: {
               }}
             </Index>
           )}
-        </Show>
-        <Show when={diffRow()}>
-          {(current) => <TurnChangeSummary message={current().message} />}
         </Show>
         <Show when={errorRow()}>
           {(current) => <TurnOutcome message={current().message} />}

@@ -109,7 +109,6 @@ import {
   InteractionBlock,
   NarrativeBlock,
   ReasoningBlock,
-  TurnChangeSummary,
   TurnOutcome,
   UserMessageBlock,
 } from "./chat-blocks"
@@ -474,19 +473,6 @@ describe("ReasoningBlock", () => {
     setPart("text", "line 1\nline 2\nline 3\nline 4\nline 5")
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
     expect(scrollTop).toBe(800)
-    host.remove()
-  })
-})
-
-describe("TurnChangeSummary", () => {
-  test("renders file count and diff stats", () => {
-    const u = userMessage("u1", {
-      summary: { diffs: [{ file: "a.ts", additions: 2, deletions: 1, status: "modified" }] },
-    })
-    const host = mount(() => <TurnChangeSummary message={u} />)
-    expect(host.querySelector("[data-component='chat-change-summary']")).not.toBeNull()
-    expect(host.textContent).toContain("a.ts")
-    expect(host.textContent).toContain("1")
     host.remove()
   })
 })

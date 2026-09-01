@@ -390,30 +390,6 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
 }
 
 /**
- * TurnChangeSummary renders the file-change summary at the end of a turn. It
- * shows the modified file count and add/delete line stats.
- */
-export function TurnChangeSummary(props: { message: UserMessage }) {
-  const language = useLanguage()
-  const diffs = createMemo(() => (props.message.summary?.diffs ?? []).filter((d) => typeof d.file === "string"))
-  const additions = createMemo(() => diffs().reduce((acc, d) => acc + (d.additions ?? 0), 0))
-  const deletions = createMemo(() => diffs().reduce((acc, d) => acc + (d.deletions ?? 0), 0))
-
-  return (
-    <Show when={diffs().length > 0}>
-      <div data-component="chat-change-summary" data-message-id={props.message.id}>
-        <span data-slot="chat-change-files">{language.t("workbench.chat.filesChanged", { count: diffs().length })}</span>
-        <span data-slot="chat-change-additions">+{additions()}</span>
-        <span data-slot="chat-change-deletions">-{deletions()}</span>
-        <For each={diffs()}>
-          {(diff) => <span data-slot="chat-change-file">{getFilename(diff.file)}</span>}
-        </For>
-      </div>
-    </Show>
-  )
-}
-
-/**
  * TurnOutcome renders an assistant error that cannot be attributed to a
  * specific activity block. It appears at the end of the reply.
  */

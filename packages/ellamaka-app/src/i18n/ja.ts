@@ -855,6 +855,5 @@ export const dict = {
   "workbench.chat.reasoning": "思考中",
   "workbench.chat.compaction": "コンテキストを圧縮しました",
   "workbench.chat.retry": "再試行 #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} 件のファイル",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
 }

@@ -927,6 +927,5 @@ export const dict = {
   "workbench.chat.reasoning": "กำลังคิด",
   "workbench.chat.compaction": "บีบอัดบริบทแล้ว",
   "workbench.chat.retry": "ลองอีกครั้ง #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} ไฟล์",
   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
 }

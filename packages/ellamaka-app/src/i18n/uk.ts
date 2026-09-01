@@ -643,7 +643,6 @@ export const dict = {
   "workbench.chat.reasoning": "Розмисел",
   "workbench.chat.compaction": "Контекст стиснуто",
   "workbench.chat.retry": "Повторення #{{attempt}}",
-  "workbench.chat.filesChanged": "файлів: {{count}}",
   "workbench.sidebar.filesTab": "Файли",
   "workbench.fileViewer.close": "Закрити файл",
   "workbench.fileViewer.closeAll": "Закрити переглядач файлів",

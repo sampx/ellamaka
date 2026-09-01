@@ -3,7 +3,6 @@ import type {
   Message,
   Part,
   SessionStatus,
-  SnapshotFileDiff,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import { isRenderablePart } from "./chat-render.utils"
@@ -45,7 +44,6 @@ export type TranscriptRow =
       /** Part id in this row that carries the turn-final agent meta footer. */
       metaPartID?: string
     }
-  | { type: "diff"; key: string; turnID: string; message: UserMessage; diffs: SnapshotFileDiff[] }
   | { type: "error"; key: string; turnID: string; message: AssistantMessage }
 
 /**
@@ -126,10 +124,6 @@ function assistantRowKey(messageID: string, firstPartID: string | undefined): st
   return `assistant:${messageID}:${firstPartID ?? "none"}`
 }
 
-function diffRowKey(turnID: string): string {
-  return `diff:${turnID}`
-}
-
 function errorRowKey(messageID: string): string {
   return `error:${messageID}`
 }
@@ -195,11 +189,6 @@ function buildTurnRows(
     }
   }
 
-  const diffs = (turn.user.summary?.diffs ?? []).filter((d) => typeof d.file === "string")
-  if (diffs.length > 0 && (status.type === "idle" || !active)) {
-    rows.push({ type: "diff", key: diffRowKey(turnID), turnID, message: turn.user, diffs })
-  }
-
   for (const message of turn.assistant) {
     if (isError(message) && !isAborted(message)) {
       rows.push({ type: "error", key: errorRowKey(message.id), turnID, message })
@@ -240,8 +229,6 @@ export function createRowStabilizer() {
         return `${row.type}:${message.id}:${time}:${row.parts.map(partFingerprint).join(",")}`
       case "assistant":
         return `${row.type}:${message.id}:${time}:${row.metaPartID ?? ""}:${row.parts.map(partFingerprint).join(",")}`
-      case "diff":
-        return `${row.type}:${message.id}:${time}:${row.diffs.map((d) => `${d.file}:${d.additions ?? ""}:${d.deletions ?? ""}`).join(",")}`
       case "error":
         return `${row.type}:${message.id}:${time}`
     }

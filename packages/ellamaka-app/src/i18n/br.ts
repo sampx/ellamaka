@@ -861,6 +861,5 @@ export const dict = {
   "workbench.chat.reasoning": "Pensando",
   "workbench.chat.compaction": "Contexto compactado",
   "workbench.chat.retry": "Tentativa #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} arquivos",
   "terminal.connectionLost.abnormalClose": "WebSocket fechado anormalmente: {{code}}",
 }

@@ -946,6 +946,5 @@ export const dict = {
   "workbench.chat.reasoning": "Düşünme",
   "workbench.chat.compaction": "Bağlam sıkıştırıldı",
   "workbench.chat.retry": "Yeniden deneme #{{attempt}}",
-  "workbench.chat.filesChanged": "{{count}} dosya",
   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
 } satisfies Partial<Record<Keys, string>>

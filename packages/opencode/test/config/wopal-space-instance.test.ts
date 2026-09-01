@@ -4,8 +4,73 @@ import fs from "fs/promises"
 import path from "path"
 import { loadWopalSpaceSettingsFiles, resolveWopalSpaceRoot } from "@/config/wopal-space-settings"
 import { tmpdir } from "../fixture/fixture"
+import { tryLoadWopalSpaceConfig } from "@/config/wopal-space"
+import type { WopalSpaceDeps } from "@/config/wopal-space"
+import type { Info } from "@/config/config"
 
 const deps = { readConfigFile: (_filepath: string) => Effect.succeed(undefined) }
+
+describe("WopalSpace config injection", () => {
+  // Real disk-backed settings loading: readConfigFile reads the actual file,
+  // loadConfig parses the ellamaka field JSON, and merge applies later-source
+  // values into the same result object the injection guard inspects.
+  function createMockDeps(): WopalSpaceDeps {
+    const result: Partial<Info> = {}
+    return {
+      installPluginDeps: () => Effect.succeed(undefined as any),
+      installPluginDepsWithFingerprint: () => Effect.succeed(undefined as any),
+      readConfigFile: (filepath) =>
+        Effect.promise(() => fs.readFile(filepath, "utf8").catch(() => undefined)),
+      loadConfig: (text) => Effect.succeed(JSON.parse(text) as Info),
+      getGlobal: () => Effect.succeed({} as Info),
+      merge: (_source, next) => {
+        if (next.snapshot !== undefined) result.snapshot = next.snapshot
+        return Effect.succeed(undefined)
+      },
+      mergePluginOrigins: () => Effect.succeed(undefined),
+      ensureGitignore: () => Effect.succeed(undefined),
+      applyPostMerge: () => {},
+      initContainers: () => {},
+      getResult: () => result as Info,
+    }
+  }
+
+  test("snapshot defaults to false in wopal-space mode when undefined", async () => {
+    await using tmp = await tmpdir()
+    await fs.mkdir(path.join(tmp.path, ".wopal", "config"), { recursive: true })
+    await fs.writeFile(path.join(tmp.path, ".wopal", ".git"), "")
+    await fs.writeFile(path.join(tmp.path, ".wopal", "config", "settings.jsonc"), JSON.stringify({ ellamaka: {} }))
+
+    const result = await Effect.runPromise(tryLoadWopalSpaceConfig(createMockDeps(), { directory: tmp.path }))
+    expect(result?.config.snapshot).toBe(false)
+  })
+
+  test("explicit snapshot true in space settings survives the injection guard", async () => {
+    await using tmp = await tmpdir()
+    await fs.mkdir(path.join(tmp.path, ".wopal", "config"), { recursive: true })
+    await fs.writeFile(path.join(tmp.path, ".wopal", ".git"), "")
+    await fs.writeFile(path.join(tmp.path, ".wopal", "config", "settings.jsonc"), JSON.stringify({ ellamaka: { snapshot: true } }))
+
+    const result = await Effect.runPromise(tryLoadWopalSpaceConfig(createMockDeps(), { directory: tmp.path }))
+    expect(result?.config.snapshot).toBe(true)
+  })
+
+  test("explicit snapshot false in space settings is preserved", async () => {
+    await using tmp = await tmpdir()
+    await fs.mkdir(path.join(tmp.path, ".wopal", "config"), { recursive: true })
+    await fs.writeFile(path.join(tmp.path, ".wopal", ".git"), "")
+    await fs.writeFile(path.join(tmp.path, ".wopal", "config", "settings.jsonc"), JSON.stringify({ ellamaka: { snapshot: false } }))
+
+    const result = await Effect.runPromise(tryLoadWopalSpaceConfig(createMockDeps(), { directory: tmp.path }))
+    expect(result?.config.snapshot).toBe(false)
+  })
+
+  test("non-space mode returns undefined and never injects defaults", async () => {
+    await using tmp = await tmpdir()
+    const result = await Effect.runPromise(tryLoadWopalSpaceConfig(createMockDeps(), { directory: tmp.path }))
+    expect(result).toBeUndefined()
+  })
+})
 
 describe("WopalSpace instance context", () => {
   test("ignores process env for a non-space directory", async () => {
