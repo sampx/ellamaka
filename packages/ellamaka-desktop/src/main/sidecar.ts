@@ -1,8 +1,11 @@
 import { drizzle } from "drizzle-orm/node-sqlite/driver"
 import * as http from "node:http"
 import * as tls from "node:tls"
+import { register } from "node:module"
 import { join } from "node:path"
 import { homedir } from "node:os"
+
+register(new URL("./source-ts-loader.js", import.meta.url), import.meta.url)
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -64,9 +67,9 @@ let dshToolsHost: { dispose(): Promise<void> } | undefined
  * mounts share the same status/anchor/runtime.
  */
 let dshLaunchState: {
-  status: import("virtual:opencode-server").Dsh.RuntimeStatus
-  anchor?: import("virtual:opencode-server").Dsh.InstallAnchor
-  runtime?: import("virtual:opencode-server").Dsh.DshRuntimeApi
+  status: import("virtual:opencode-server").DshRuntimeStatus
+  anchor?: import("virtual:opencode-server").DshInstallAnchor
+  runtime?: import("virtual:opencode-server").DshRuntimeApi
 } | undefined
 
 parentPort.on("message", (event) => {
@@ -164,12 +167,12 @@ function dshLaunch(command: StartCommand) {
  */
 async function mountDshIfPresent(command: StartCommand): Promise<void> {
   const { wopalHome, logFile, home } = dshLaunch(command)
-  const { Dsh } = await import("virtual:opencode-server")
+  const { bootDshWeb } = await import("virtual:opencode-server")
   try {
     const launch = await initDshLaunch(command)
     if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
     const runtime = launch.runtime
-    const host = await Dsh.bootDshWeb({
+    const host = await bootDshWeb({
       home,
       port: listener?.port ?? 0,
       installAnchor: launch.anchor.path,
@@ -205,12 +208,12 @@ async function mountDshIfPresent(command: StartCommand): Promise<void> {
  */
 async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
   const { logFile, home } = dshLaunch(command)
-  const { Dsh } = await import("virtual:opencode-server")
+  const { bootDshTools } = await import("virtual:opencode-server")
   try {
     const launch = await initDshLaunch(command)
     if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
     const runtime = launch.runtime
-    const host = await Dsh.bootDshTools({
+    const host = await bootDshTools({
       home,
       port: 0,
       installAnchor: launch.anchor.path,
@@ -236,15 +239,16 @@ async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
 async function initDshLaunch(command: StartCommand): Promise<NonNullable<typeof dshLaunchState>> {
   if (dshLaunchState) return dshLaunchState
   const { wopalHome, logFile } = dshLaunch(command)
-  const { Dsh } = await import("virtual:opencode-server")
-  const manifest = Dsh.DEFAULT_DSH_RUNTIME_MANIFEST
-  const status = await Dsh.initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
+  const { DEFAULT_DSH_RUNTIME_MANIFEST, initializeDshRuntime, resolveInstallAnchor, createDshRuntimeApi } =
+    await import("virtual:opencode-server")
+  const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+  const status = await initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
   if (status !== "ready") {
     dshLaunchState = { status }
     return dshLaunchState
   }
-  const anchor = Dsh.resolveInstallAnchor(wopalHome, manifest)
-  const runtime = Dsh.createDshRuntimeApi(anchor.path)
+  const anchor = resolveInstallAnchor(wopalHome, manifest)
+  const runtime = createDshRuntimeApi(anchor.path)
   dshLaunchState = { status, anchor, runtime }
   return dshLaunchState
 }
