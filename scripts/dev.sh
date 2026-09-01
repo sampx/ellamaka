@@ -1080,9 +1080,11 @@ registry_remove() {
 
 registry_update() {
   # Read fully before writing: redirecting a { ... } block onto the file would
-  # truncate it before the first grep runs, wiping every other entry.
+  # truncate it before the first grep runs, wiping every other entry. grep
+  # exits 1 on "no matching lines", which must not trip set -e — hence the ||
+  # true on the capture itself, not just the write.
   local existing=""
-  [ -f "$DEV_REGISTRY" ] && existing="$(grep -v "^$DEV_SCOPE " "$DEV_REGISTRY")"
+  [ -f "$DEV_REGISTRY" ] && existing="$(grep -v "^$DEV_SCOPE " "$DEV_REGISTRY" || true)"
   printf '%s\n%s %s\n' "$existing" "$DEV_SCOPE" "$root" | grep -v '^$' > "$DEV_REGISTRY" 2>/dev/null || true
 }
 
