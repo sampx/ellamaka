@@ -3,7 +3,7 @@ import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@wopal/ellamaka-core/flag/flag"
-import { BINARY_NAME } from "../../../../ellamaka/branding"
+import { BINARY_NAME } from "@wopal/ellamaka-brand/branding"
 import { mountDshEngine } from "./dsh-mount"
 
 export const ServeCommand = effectCmd({

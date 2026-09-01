@@ -5,7 +5,7 @@ import { existsSync } from "fs"
 import { Effect } from "effect"
 import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import { Global } from "@wopal/ellamaka-core/global"
-import { detectWopalSpace } from "../../../ellamaka/detect"
+import { detectWopalSpace } from "@wopal/ellamaka-brand/detect"
 
 export interface WopalSpaceSettingsDeps {
   readConfigFile: (filepath: string) => Effect.Effect<string | undefined, never, never>

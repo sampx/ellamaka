@@ -6,7 +6,7 @@ import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import open from "open"
 import { networkInterfaces } from "os"
-import { BINARY_NAME } from "../../../../ellamaka/branding"
+import { BINARY_NAME } from "@wopal/ellamaka-brand/branding"
 
 function getNetworkIPs() {
   const nets = networkInterfaces()

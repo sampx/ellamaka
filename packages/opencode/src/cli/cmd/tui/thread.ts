@@ -22,7 +22,7 @@ import {
 } from "@wopal/ellamaka-core/util/opencode-process"
 import { validateSession } from "./validate-session"
 import { flushStdout } from "./exit-flush"
-import { BINARY_NAME } from "../../../../../ellamaka/branding"
+import { BINARY_NAME } from "@wopal/ellamaka-brand/branding"
 
 declare global {
   const OPENCODE_WORKER_PATH: string

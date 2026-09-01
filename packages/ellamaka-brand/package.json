@@ -1,5 +1,5 @@
 {
-  "name": "@wopal/ellamaka-build",
+  "name": "@wopal/ellamaka-brand",
   "version": "2.0.4",
   "private": true,
   "type": "module",
@@ -7,7 +7,6 @@
     "./*": "./*.ts"
   },
   "devDependencies": {
-    "@wopal/ellamaka-script": "workspace:*",
     "@opentui/solid": "catalog:",
     "bun-types": "latest"
   },

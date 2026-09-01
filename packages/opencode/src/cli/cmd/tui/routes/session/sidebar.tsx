@@ -5,7 +5,7 @@ import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../context/tui-config"
 import { InstallationChannel, InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
-import { BINARY_TITLE } from "../../../../../../../ellamaka/branding"
+import { BINARY_TITLE } from "@wopal/ellamaka-brand/branding"
 
 import { getScrollAcceleration } from "../../util/scroll"
 import { WorkspaceLabel } from "../../component/workspace-label"

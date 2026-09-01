@@ -12,7 +12,7 @@ import { makeRuntime } from "@wopal/ellamaka-core/effect/runtime"
 import semver from "semver"
 import { InstallationChannel, InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { NpmConfig } from "@wopal/ellamaka-core/npm-config"
-import { BINARY_NAME } from "../../../ellamaka/branding"
+import { BINARY_NAME } from "@wopal/ellamaka-brand/branding"
 import os from "os"
 
 const log = Log.create({ service: "installation" })

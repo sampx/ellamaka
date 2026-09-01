@@ -5,7 +5,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
-import { BINARY_NAME, CHANNEL_RELEASE } from "@wopal/ellamaka-build/branding"
+import { BINARY_NAME, CHANNEL_RELEASE } from "@wopal/ellamaka-brand/branding"
 import { buildReleaseIdentityForBuild } from "../build-identity"
 import { filterTargets, type BuildTarget } from "../build-targets"
 
@@ -18,7 +18,7 @@ process.chdir(dir)
 
 const generated = await import("../../../opencode/script/generate.ts")
 
-import { Script } from "@wopal/ellamaka-script"
+import { Script } from "../build-env"
 import pkg from "../../../opencode/package.json"
 
 // Release builds always use the release channel (latest). Development builds

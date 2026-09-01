@@ -16,7 +16,7 @@ import { SkillCommand } from "./skill"
 import { SnapshotCommand } from "./snapshot"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
-import { VERSION_PREFIX } from "../../../../../ellamaka/branding"
+import { VERSION_PREFIX } from "@wopal/ellamaka-brand/branding"
 import { ReleaseInfoCommand } from "./release-info"
 import { V2Command } from "./v2"
 

@@ -8,7 +8,6 @@
         "@aws-sdk/client-s3": "3.933.0",
         "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
-        "@wopal/ellamaka-script": "workspace:*",
         "heap-snapshot-toolkit": "1.1.3",
         "typescript": "catalog:",
       },
@@ -47,15 +46,6 @@
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
-      },
-    },
-    "packages/ellamaka": {
-      "name": "@wopal/ellamaka-build",
-      "version": "2.0.4",
-      "devDependencies": {
-        "@opentui/solid": "catalog:",
-        "@wopal/ellamaka-script": "workspace:*",
-        "bun-types": "latest",
       },
     },
     "packages/ellamaka-app": {
@@ -125,6 +115,14 @@
         "vite": "catalog:",
         "vite-plugin-icons-spritesheet": "3.0.1",
         "vite-plugin-solid": "catalog:",
+      },
+    },
+    "packages/ellamaka-brand": {
+      "name": "@wopal/ellamaka-brand",
+      "version": "2.0.4",
+      "devDependencies": {
+        "@opentui/solid": "catalog:",
+        "bun-types": "latest",
       },
     },
     "packages/ellamaka-cli": {
@@ -292,23 +290,13 @@
       "name": "@wopal/ellamaka-release",
       "version": "2.0.4",
       "dependencies": {
-        "@wopal/ellamaka-script": "workspace:*",
-      },
-      "devDependencies": {
-        "@opentui/solid": "catalog:",
-        "@wopal/ellamaka-build": "workspace:*",
-        "bun-types": "latest",
-      },
-    },
-    "packages/ellamaka-script": {
-      "name": "@wopal/ellamaka-script",
-      "version": "2.0.4",
-      "dependencies": {
         "semver": "^7.6.3",
       },
       "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/semver": "^7.5.8",
+        "@opentui/solid": "catalog:",
+        "@types/semver": "catalog:",
+        "@wopal/ellamaka-brand": "workspace:*",
+        "bun-types": "latest",
       },
     },
     "packages/http-recorder": {
@@ -398,9 +386,9 @@
         "@standard-schema/spec": "1.0.0",
         "@types/ws": "8.18.1",
         "@wopal/cli-capability-schema": "^0.3.16",
+        "@wopal/ellamaka-brand": "workspace:*",
         "@wopal/ellamaka-cordis": "workspace:*",
         "@wopal/ellamaka-release": "workspace:*",
-        "@wopal/ellamaka-script": "workspace:*",
         "@wopal/llm": "workspace:*",
         "@wopal/ui": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
@@ -473,7 +461,6 @@
         "@types/yargs": "17.0.33",
         "@typescript/native-preview": "catalog:",
         "@wopal/ellamaka-core": "workspace:*",
-        "@wopal/ellamaka-script": "workspace:*",
         "@wopal/http-recorder": "workspace:*",
         "drizzle-kit": "catalog:",
         "drizzle-orm": "catalog:",
@@ -2410,7 +2397,7 @@
 
     "@wopal/ellamaka-app": ["@wopal/ellamaka-app@workspace:packages/ellamaka-app"],
 
-    "@wopal/ellamaka-build": ["@wopal/ellamaka-build@workspace:packages/ellamaka"],
+    "@wopal/ellamaka-brand": ["@wopal/ellamaka-brand@workspace:packages/ellamaka-brand"],
 
     "@wopal/ellamaka-cli": ["@wopal/ellamaka-cli@workspace:packages/ellamaka-cli"],
 
@@ -2421,8 +2408,6 @@
     "@wopal/ellamaka-desktop": ["@wopal/ellamaka-desktop@workspace:packages/ellamaka-desktop"],
 
     "@wopal/ellamaka-release": ["@wopal/ellamaka-release@workspace:packages/ellamaka-release"],
-
-    "@wopal/ellamaka-script": ["@wopal/ellamaka-script@workspace:packages/ellamaka-script"],
 
     "@wopal/http-recorder": ["@wopal/http-recorder@workspace:packages/http-recorder"],
 
@@ -4746,7 +4731,7 @@
 
     "@wopal/ellamaka-desktop/typescript": ["typescript@5.6.3", "https://registry.npmmirror.com/typescript/-/typescript-5.6.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw=="],
 
-    "@wopal/ellamaka-script/semver": ["semver@7.8.5", "https://registry.npmmirror.com/semver/-/semver-7.8.5.tgz", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
+    "@wopal/ellamaka-release/semver": ["semver@7.8.5", "https://registry.npmmirror.com/semver/-/semver-7.8.5.tgz", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 
     "@wopal/ui/@solid-primitives/resize-observer": ["@solid-primitives/resize-observer@2.1.3", "https://registry.npmmirror.com/@solid-primitives/resize-observer/-/resize-observer-2.1.3.tgz", { "dependencies": { "@solid-primitives/event-listener": "^2.4.3", "@solid-primitives/rootless": "^1.5.2", "@solid-primitives/static-store": "^0.1.2", "@solid-primitives/utils": "^6.3.2" }, "peerDependencies": { "solid-js": "^1.6.12" } }, "sha512-zBLje5E06TgOg93S7rGPldmhDnouNGhvfZVKOp+oG2XU8snA+GoCSSCz1M+jpNAg5Ek2EakU5UVQqL152WmdXQ=="],
 

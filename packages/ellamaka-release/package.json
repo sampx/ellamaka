@@ -7,11 +7,12 @@
     "./*": "./src/*.ts"
   },
   "dependencies": {
-    "@wopal/ellamaka-script": "workspace:*"
+    "semver": "^7.6.3"
   },
   "devDependencies": {
-    "@wopal/ellamaka-build": "workspace:*",
+    "@wopal/ellamaka-brand": "workspace:*",
     "@opentui/solid": "catalog:",
+    "@types/semver": "catalog:",
     "bun-types": "latest"
   },
   "scripts": {

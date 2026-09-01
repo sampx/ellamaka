@@ -5,7 +5,7 @@ import { InstallationVersion } from "@wopal/ellamaka-core/installation/version"
 import { hideBin } from "yargs/helpers"
 import { Log } from "./node"
 import type { Level } from "@wopal/ellamaka-core/util/log"
-import { BINARY_NAME } from "../../ellamaka/branding"
+import { BINARY_NAME } from "@wopal/ellamaka-brand/branding"
 
 Log.init({
   print: process.argv.includes("--print-logs"),
