@@ -845,5 +845,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
   "workbench.chat.question": "سؤال: ",
   "workbench.chat.answer": "إجابة: ",
+  "workbench.chat.reasoning": "تفكير",
+  "workbench.chat.compaction": "تم ضغط السياق",
+  "workbench.chat.retry": "إعادة المحاولة #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} ملفات",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
 }

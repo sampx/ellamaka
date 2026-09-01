@@ -305,6 +305,7 @@ export function NarrativeBlock(props: {
 const REASONING_PREVIEW_MAX = 140
 
 export function ReasoningBlock(props: { part: Part; message: AssistantMessage; defaultOpen?: boolean }) {
+  const language = useLanguage()
   if (props.part.type !== "reasoning") return null
   const running = () => typeof props.message.time.completed !== "number"
   const stored = () => chatExpansionState.get(props.part.sessionID, "reasoning", props.part.id)
@@ -367,7 +368,7 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
         <Collapsible.Trigger data-slot="chat-reasoning-trigger" aria-expanded={open()}>
           <div data-slot="chat-reasoning-header-left">
             <Icon name="brain" size="small" />
-            <span data-slot="chat-reasoning-label">思考</span>
+            <span data-slot="chat-reasoning-label">{language.t("workbench.chat.reasoning")}</span>
           </div>
           <Show when={!open() && previewText().length > 0}>
             <div data-slot="chat-reasoning-preview">{previewText()}</div>
@@ -393,6 +394,7 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
  * shows the modified file count and add/delete line stats.
  */
 export function TurnChangeSummary(props: { message: UserMessage }) {
+  const language = useLanguage()
   const diffs = createMemo(() => (props.message.summary?.diffs ?? []).filter((d) => typeof d.file === "string"))
   const additions = createMemo(() => diffs().reduce((acc, d) => acc + (d.additions ?? 0), 0))
   const deletions = createMemo(() => diffs().reduce((acc, d) => acc + (d.deletions ?? 0), 0))
@@ -400,7 +402,7 @@ export function TurnChangeSummary(props: { message: UserMessage }) {
   return (
     <Show when={diffs().length > 0}>
       <div data-component="chat-change-summary" data-message-id={props.message.id}>
-        <span data-slot="chat-change-files">{diffs().length} 个文件</span>
+        <span data-slot="chat-change-files">{language.t("workbench.chat.filesChanged", { count: diffs().length })}</span>
         <span data-slot="chat-change-additions">+{additions()}</span>
         <span data-slot="chat-change-deletions">-{deletions()}</span>
         <For each={diffs()}>
@@ -452,10 +454,11 @@ export function ChatTurnFrame(props: { turnID: string; children: JSX.Element }) 
  * compression boundaries.
  */
 export function CompactionDivider(props: { part: Part }) {
+  const language = useLanguage()
   if (props.part.type !== "compaction") return null
   return (
     <div data-component="chat-compaction" data-part-id={props.part.id}>
-      <span data-slot="chat-compaction-label">上下文已压缩</span>
+      <span data-slot="chat-compaction-label">{language.t("workbench.chat.compaction")}</span>
     </div>
   )
 }
@@ -464,11 +467,12 @@ export function CompactionDivider(props: { part: Part }) {
  * RetryOutcome renders a model retry record.
  */
 export function RetryOutcome(props: { part: Part }) {
+  const language = useLanguage()
   if (props.part.type !== "retry") return null
   return (
     <div data-component="chat-retry" data-part-id={props.part.id}>
       <Icon name="reset" size="small" />
-      <span data-slot="chat-retry-attempt">重试 #{props.part.attempt}</span>
+      <span data-slot="chat-retry-attempt">{language.t("workbench.chat.retry", { attempt: props.part.attempt })}</span>
     </div>
   )
 }

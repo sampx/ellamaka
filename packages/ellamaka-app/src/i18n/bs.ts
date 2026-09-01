@@ -934,5 +934,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
   "workbench.chat.question": "Pitanje: ",
   "workbench.chat.answer": "Odgovor: ",
+  "workbench.chat.reasoning": "Razmišljanje",
+  "workbench.chat.compaction": "Kontekst komprimovan",
+  "workbench.chat.retry": "Pokušaj #{{attempt}}",
+  "workbench.chat.filesChanged": "datoteka: {{count}}",
   "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
 }

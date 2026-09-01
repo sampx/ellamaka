@@ -856,5 +856,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Nie udało się utworzyć magazynu",
   "workbench.chat.question": "Pytanie: ",
   "workbench.chat.answer": "Odpowiedź: ",
+  "workbench.chat.reasoning": "Myślenie",
+  "workbench.chat.compaction": "Kontekst skompresowany",
+  "workbench.chat.retry": "Ponowienie #{{attempt}}",
+  "workbench.chat.filesChanged": "pliki: {{count}}",
   "terminal.connectionLost.abnormalClose": "WebSocket zamknięty nieprawidłowo: {{code}}",
 }

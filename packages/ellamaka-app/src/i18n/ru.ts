@@ -937,5 +937,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
   "workbench.chat.question": "Вопрос: ",
   "workbench.chat.answer": "Ответ: ",
+  "workbench.chat.reasoning": "Размышление",
+  "workbench.chat.compaction": "Контекст сжат",
+  "workbench.chat.retry": "Повтор #{{attempt}}",
+  "workbench.chat.filesChanged": "файлов: {{count}}",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
 }

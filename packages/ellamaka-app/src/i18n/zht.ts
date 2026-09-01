@@ -921,5 +921,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "建立儲存區失敗",
   "workbench.chat.question": "問題：",
   "workbench.chat.answer": "回答：",
+  "workbench.chat.reasoning": "思考",
+  "workbench.chat.compaction": "上下文已壓縮",
+  "workbench.chat.retry": "重試 #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} 個檔案",
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
 } satisfies Partial<Record<Keys, string>>

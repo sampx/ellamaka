@@ -869,5 +869,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Échec de la création du stockage",
   "workbench.chat.question": "Question : ",
   "workbench.chat.answer": "Réponse : ",
+  "workbench.chat.reasoning": "Réflexion",
+  "workbench.chat.compaction": "Contexte compressé",
+  "workbench.chat.retry": "Nouvelle tentative #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} fichiers",
   "terminal.connectionLost.abnormalClose": "WebSocket fermé anormalement : {{code}}",
 }

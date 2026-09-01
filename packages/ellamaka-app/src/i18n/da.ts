@@ -928,5 +928,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Kunne ikke oprette lager",
   "workbench.chat.question": "Spørgsmål: ",
   "workbench.chat.answer": "Svar: ",
+  "workbench.chat.reasoning": "Tænker",
+  "workbench.chat.compaction": "Kontekst komprimeret",
+  "workbench.chat.retry": "Forsøg #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} filer",
   "terminal.connectionLost.abnormalClose": "WebSocket lukkede unormalt: {{code}}",
 }

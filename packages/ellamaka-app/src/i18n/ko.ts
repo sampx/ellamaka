@@ -847,5 +847,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "저장소 생성 실패",
   "workbench.chat.question": "질문: ",
   "workbench.chat.answer": "답변: ",
+  "workbench.chat.reasoning": "생각 중",
+  "workbench.chat.compaction": "컨텍스트가 압축되었습니다",
+  "workbench.chat.retry": "재시도 #{{attempt}}",
+  "workbench.chat.filesChanged": "파일 {{count}}개",
   "terminal.connectionLost.abnormalClose": "WebSocket이 비정상적으로 닫힘: {{code}}",
 }

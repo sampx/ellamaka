@@ -924,5 +924,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "ไม่สามารถสร้างที่เก็บ",
   "workbench.chat.question": "คำถาม: ",
   "workbench.chat.answer": "คำตอบ: ",
+  "workbench.chat.reasoning": "กำลังคิด",
+  "workbench.chat.compaction": "บีบอัดบริบทแล้ว",
+  "workbench.chat.retry": "ลองอีกครั้ง #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} ไฟล์",
   "terminal.connectionLost.abnormalClose": "WebSocket ปิดอย่างผิดปกติ: {{code}}",
 }

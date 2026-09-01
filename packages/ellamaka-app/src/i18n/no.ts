@@ -935,5 +935,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Kunne ikke opprette lager",
   "workbench.chat.question": "Spørsmål: ",
   "workbench.chat.answer": "Svar: ",
+  "workbench.chat.reasoning": "Tenker",
+  "workbench.chat.compaction": "Kontekst komprimert",
+  "workbench.chat.retry": "Prøv igjen #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} filer",
   "terminal.connectionLost.abnormalClose": "WebSocket lukket unormalt: {{code}}",
 } satisfies Partial<Record<Keys, string>>

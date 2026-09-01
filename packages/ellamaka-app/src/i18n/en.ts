@@ -654,6 +654,10 @@ export const dict = {
   "terminal.connectionLost.title": "Connection Lost",
   "workbench.chat.question": "Question: ",
   "workbench.chat.answer": "Answer: ",
+  "workbench.chat.reasoning": "Thinking",
+  "workbench.chat.compaction": "Context compacted",
+  "workbench.chat.retry": "Retry #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} files",
   "terminal.connectionLost.abnormalClose": "WebSocket closed abnormally: {{code}}",
   "terminal.connectionLost.description":
     "The terminal connection was interrupted. This can happen when the server restarts.",

@@ -943,5 +943,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
   "workbench.chat.question": "Soru: ",
   "workbench.chat.answer": "Cevap: ",
+  "workbench.chat.reasoning": "Düşünme",
+  "workbench.chat.compaction": "Bağlam sıkıştırıldı",
+  "workbench.chat.retry": "Yeniden deneme #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} dosya",
   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
 } satisfies Partial<Record<Keys, string>>

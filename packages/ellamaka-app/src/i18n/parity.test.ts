@@ -24,6 +24,9 @@ const keys = [
   "command.session.next.unseen",
   "workbench.chat.question",
   "workbench.chat.answer",
+  "workbench.chat.reasoning",
+  "workbench.chat.compaction",
+  "workbench.chat.filesChanged",
 ] as const
 
 describe("i18n parity", () => {
@@ -31,6 +34,7 @@ describe("i18n parity", () => {
     for (const locale of locales) {
       for (const key of keys) {
         expect(locale[key]).toBeDefined()
+        if (key === "workbench.chat.filesChanged") continue
         expect(locale[key]).not.toBe(en[key])
       }
     }

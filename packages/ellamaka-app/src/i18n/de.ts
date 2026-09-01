@@ -870,5 +870,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
   "workbench.chat.question": "Frage: ",
   "workbench.chat.answer": "Antwort: ",
+  "workbench.chat.reasoning": "Denken",
+  "workbench.chat.compaction": "Kontext komprimiert",
+  "workbench.chat.retry": "Wiederholung #{{attempt}}",
+  "workbench.chat.filesChanged": "{{count}} Dateien",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
 } satisfies Partial<Record<Keys, string>>

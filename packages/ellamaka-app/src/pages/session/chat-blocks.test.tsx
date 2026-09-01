@@ -353,7 +353,7 @@ describe("ReasoningBlock", () => {
     const reasoning = host.querySelector("[data-component='chat-reasoning']")
     expect(reasoning).not.toBeNull()
     expect(reasoning?.hasAttribute("data-streaming")).toBe(false)
-    expect(host.textContent).toContain("思考")
+    expect(host.textContent).toContain("workbench.chat.reasoning")
     host.remove()
   })
 
@@ -486,6 +486,7 @@ describe("TurnChangeSummary", () => {
     const host = mount(() => <TurnChangeSummary message={u} />)
     expect(host.querySelector("[data-component='chat-change-summary']")).not.toBeNull()
     expect(host.textContent).toContain("a.ts")
+    expect(host.textContent).toContain("1")
     host.remove()
   })
 })
