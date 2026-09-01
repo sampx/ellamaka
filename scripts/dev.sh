@@ -537,7 +537,7 @@ start_backend() {
   local port="$1" debug="$2" debug_modules="$3" preload="$4"
   shift 4
   local plugin_modules=""
-  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") args=(serve --port "$port" --print-logs)
+  local -a env_args=(WOPAL_DEBUG_LOG_DIR="$DEV_DIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") args=(serve --port "$port" --print-logs)
   if [ "$debug" = true ]; then
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
     args+=(--log-level DEBUG)
@@ -713,7 +713,7 @@ cmd_tui() {
 
   if $attach; then
     mkdir -p "$DEV_DIR"
-    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") attach_args=() plugin_modules=""
+    local caller_pwd="$(pwd)" attach_env=(WOPAL_DEBUG_LOG_DIR="$DEV_DIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") attach_args=() plugin_modules=""
     if $debug; then
       attach_args+=(--log-level DEBUG)
       plugin_modules="$(plugin_debug_modules "$debug_modules")"
@@ -758,7 +758,7 @@ cmd_tui() {
   fi
 
   mkdir -p "$DEV_DIR"
-  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$LOGDIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") tui_args=() plugin_modules=""
+  local caller_pwd="$(pwd)" tui_env=(WOPAL_DEBUG_LOG_DIR="$DEV_DIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")") tui_args=() plugin_modules=""
   if $debug; then
     tui_args+=(--log-level DEBUG)
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
@@ -972,7 +972,7 @@ cmd_desktop() {
 
   mkdir -p "$DEV_DIR"
   local plugin_modules=""
-  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$LOGDIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
+  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$DEV_DIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
   if $cdp_debug; then
     desktop_env+=(ELAMAKA_DESKTOP_CDP=1)
   fi
@@ -1023,13 +1023,19 @@ cmd_desktop() {
     return 1
   fi
 
-  sidecar_url="$(grep -oE 'http://127\.0\.0\.1:[0-9]+' "$DESKTOP_LOG" 2>/dev/null | head -1)"
-  sidecar_port="${sidecar_url##*:}"
+  # The sidecar listens on an ephemeral port; the log only ever shows the
+  # vite renderer URL (localhost or 127.0.0.1, IPv4 or ::1). Probing the real
+  # listener of the desktop process is the only trustworthy source; falling
+  # back to 5173 wrote wrong ports into the ledger.
+  sidecar_port="-"
+  sidecar_port="$(lsof -nP -p "$(pgrep -P "$desktop_pid" 2>/dev/null | tr '\n' ',' | sed 's/,$//')" -iTCP -sTCP:LISTEN 2>/dev/null | grep -E '127\.0\.0\.1:|\[::1\]:' | grep -vE ':(5173|9222)$' | awk '{print $9}' | head -1 | sed 's/.*://')"
   if [[ ! "$sidecar_port" =~ ^[1-9][0-9]*$ ]]; then
-    sidecar_port="5173"
+    sidecar_port="-"
   fi
   write_record desktop "$sidecar_port,5173" "$desktop_pid" "$RECORD_PGID"
-  record_listener desktop-sidecar "$sidecar_port" || true
+  if [ "$sidecar_port" != "-" ]; then
+    record_listener desktop-sidecar "$sidecar_port" || true
+  fi
   record_listener desktop-vite 5173 || true
   if $cdp_debug; then
     record_listener desktop-devtools 9222 || true
@@ -1058,6 +1064,20 @@ show_service() {
 # Registry bookkeeping: one line "scope root" per known worktree. Every dev.sh
 # run upserts its own entry so global views can label buckets with real paths
 # even when they were written from a different directory.
+registry_remove() {
+  # No-op when the entry is absent; never touches other lines.
+  [ -n "${1:-}" ] || return 0
+  [ -f "$DEV_REGISTRY" ] || return 0
+  local tmp
+  tmp="$(mktemp "$DEV_REGISTRY.XXXXXX")"
+  grep -v "^$1 " "$DEV_REGISTRY" > "$tmp" 2>/dev/null || true
+  if [ -s "$tmp" ]; then
+    mv "$tmp" "$DEV_REGISTRY"
+  else
+    rm -f "$tmp" "$DEV_REGISTRY"
+  fi
+}
+
 registry_update() {
   # Read fully before writing: redirecting a { ... } block onto the file would
   # truncate it before the first grep runs, wiping every other entry.
@@ -1078,7 +1098,6 @@ registry_lookup() {
 # pidfile is deleted, an empty bucket directory is deleted. Prints nothing.
 sweep_bucket() {
   local dir="$1" scope="$2" label port pid pgid stamp tmp service
-  local pidfile="$pidfile"  # placeholder to avoid set -u complaints
   pidfile="$dir/ellamaka-dev.pid"
   [ -f "$pidfile" ] || { [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null; return 0; }
   tmp="$(mktemp "$pidfile.XXXXXX")"
@@ -1095,6 +1114,11 @@ sweep_bucket() {
     rm -f "$tmp" "$pidfile"
   fi
   [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null
+  # An emptied bucket drops out of the registry too, so status never
+  # resurrects a path whose ledger is already gone.
+  if [ ! -d "$dir" ] && [ -f "$DEV_REGISTRY" ]; then
+    registry_remove "$scope"
+  fi
   return 0
 }
 
