@@ -1181,8 +1181,10 @@ cmd_status() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-  mkdir -p "$DEV_DIR"
-  registry_update
+  # Nothing is created here on purpose: mkdir/registry_update used to run for
+  # EVERY command, resurrecting buckets and registry entries a sweep had just
+  # removed. Both happen lazily in write_record when an instance actually
+  # starts, so status/stop leave no trace.
   cmd="${1:-help}"
   shift 2>/dev/null || true
   case "$cmd" in
