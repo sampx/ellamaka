@@ -1094,29 +1094,34 @@ registry_lookup() {
   return 1
 }
 
-# Sweep stale records in one bucket: dead services lose their lines, an empty
-# pidfile is deleted, an empty bucket directory is deleted. Prints nothing.
+# Sweep stale records in one bucket: dead services lose their lines; a bucket
+# with no live records — including one that holds only leftover logs once its
+# pidfile is gone — is removed entirely, registry entry along with it.
+# Prints nothing.
 sweep_bucket() {
-  local dir="$1" scope="$2" label port pid pgid stamp tmp service
+  local dir="$1" scope="$2" label port pid pgid stamp tmp service live=false
   pidfile="$dir/ellamaka-dev.pid"
-  [ -f "$pidfile" ] || { [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null; return 0; }
+  if [ ! -f "$pidfile" ]; then
+    # No ledger: the bucket can hold nothing but leftover dev logs.
+    if [ -d "$dir" ]; then
+      rm -rf "$dir"
+      registry_remove "$scope"
+    fi
+    return 0
+  fi
   tmp="$(mktemp "$pidfile.XXXXXX")"
   while IFS=$' \t' read -r label port pid pgid stamp; do
     [ -n "$label" ] || continue
-    service="${label%%-*}"
     if record_is_current "$label" "$pid" "$stamp" && group_running "${pgid:-$(pgid_of "$pid")}"; then
       printf '%s %s %s %s %s\n' "$label" "$port" "$pid" "$pgid" "$stamp" >> "$tmp"
+      live=true
     fi
   done < "$pidfile"
-  if [ -s "$tmp" ]; then
+  if $live; then
     mv "$tmp" "$pidfile"
   else
     rm -f "$tmp" "$pidfile"
-  fi
-  [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null
-  # An emptied bucket drops out of the registry too, so status never
-  # resurrects a path whose ledger is already gone.
-  if [ ! -d "$dir" ] && [ -f "$DEV_REGISTRY" ]; then
+    rm -rf "$dir"
     registry_remove "$scope"
   fi
   return 0
