@@ -785,7 +785,7 @@ const STEP_OPERATION_LABELS: Record<string, string> = {
   "install-cli": "安装与配置基础组件",
   "github-auth": "配置 GitHub 认证",
   "ai-provider": "配置 AI Provider",
-  "ontology-setup": "准备能力本体并预装插件与 dsh 依赖",
+  "ontology-setup": "准备能力本体与运行时配置",
   "create-space": "创建或复用工作空间",
   "memory-config": "配置记忆系统",
   "done": "完成空间设置",
@@ -858,8 +858,7 @@ export function createOnboardingIpcHandlers(deps: OnboardingIpcDeps = {}) {
       case "ontology-setup": {
         // prepare-ontology result: ontologyPath/mode/availableTypes.
         // prepare-runtime runs right after it in the same execute call and, on
-        // success, pre-installs plugin deps + materialises the dsh closure, so
-        // settings + capabilities are materialised too → runtime.ready. A
+        // success, materialises settings + base capabilities → runtime.ready. A
         // prepare-runtime failure returns early from the step, so this snapshot
         // update only runs when both succeeded.
         if (data.mode) {
@@ -1151,11 +1150,11 @@ switch (step as string) {
             abortSignal,
           }))
           if (ontRes.status === "completed" || ontRes.status === "reused") {
-            // prepare-runtime pre-installs user-level plugin deps + materialises
-            // the dsh closure. A CLI failure is reported via the result (not a
+            // prepare-runtime materialises runtime config (settings, scripts,
+            // base capabilities). A CLI failure is reported via the result (not a
             // throw), so inspect it and surface the failure — the step must not
             // report success (and the completion gate must not trust
-            // runtime.ready) when dependency pre-installation failed.
+            // runtime.ready) when runtime preparation failed.
             let runtimeRes: OnboardingStepResult
             try {
               runtimeRes = normalizeSetupResult(await runSetupOperation({
@@ -1171,7 +1170,7 @@ switch (step as string) {
               logger.log(`[ontology-setup] prepare-runtime threw: ${msg}`)
               return {
                 status: "failed",
-                error: { code: "PREPARE_RUNTIME_FAILED", message: `依赖预装失败：${msg}` },
+                error: { code: "PREPARE_RUNTIME_FAILED", message: `运行时准备失败：${msg}` },
               }
             }
             if (runtimeRes.status === "failed") {
@@ -1179,7 +1178,7 @@ switch (step as string) {
                 status: "failed",
                 error: {
                   code: runtimeRes.error?.code ?? "PREPARE_RUNTIME_FAILED",
-                  message: runtimeRes.error?.message ?? "依赖预装失败",
+                  message: runtimeRes.error?.message ?? "运行时准备失败",
                   suggestion: runtimeRes.error?.suggestion,
                   details: runtimeRes.error?.details,
                 },

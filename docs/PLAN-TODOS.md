@@ -29,6 +29,7 @@
 | P3.5 | 动态装配 + 沙箱语义修正 | ✅ 完成 | 含 tool.provider hook、契约映射、插件侧实现 |
 | P3.5+ | DSH home 收口 | ✅ 完成 | 物化到 `$WOPAL_HOME/dsh` 唯一 home |
 | P4 | DSH Web 单端口统一 | ✅ 完成 | `/dsh/*` 同源挂载，dshPort 协议全链路移除 |
+| P5 | 运行时隔离 + 开关统一 + 物化生产化 | ✅ 完成 | `ELLAMAKA_DSH` 禁用开关、state 纯配置注入、Bridge/闭包交付边界、统一 Runtime Manager |
 
 ### P1 — 双引擎容器宿主 + 日志桥接 ✅
 
@@ -62,26 +63,36 @@
 
 > VirtualWebServer + Listener `/dsh` Node mount + iframe 前缀适配。官方 connection/HMR/modules/UI 插件保留原版。dev 双服务器拓扑三处修复（iframe src 派生、script accessor 包装、同源绝对 URL 覆盖）。dshPort 协议全链路移除。2026-08-29 用户验收通过（打包 CLI + desktop 构建验证成功）。
 
+### P5 — 运行时隔离 + 开关统一 + 物化生产化 ✅
+
+> 两个 Plan 完成（均在 poc 分支）：① onboarding/隔离批次（2026-08-30，`3911437ed5`）——`ELLAMAKA_DSH` 改禁用开关、dsh 运行时数据经纯配置注入收口 `$WOPAL_HOME/dsh/state`、物化引擎改 arborist、desktop 运行时兜底；② 生产物化批次（2026-09-01，`ee32ee1f`）——Bridge 编译随 CLI/Desktop 发布、构建期内嵌清单与传递锁（pacote 逐包下载）、统一 Runtime Manager、移除 PoC 旧链路（TS loader/源码副本），达成 DESIGN §8 全部 10 项验收基线。
+
 ---
 
 ## 当前真实状态
 
-### 已实施能力清单（截至 2026-08-29）
+### 已实施能力清单（截至 2026-09-01）
 
 - dsh 引擎单端口同源挂载（`/dsh/*`），CLI serve / TUI / desktop sidecar 三入口可用
 - dsh 工具（grep/glob/read/write/edit/str_replace_editor/bash）经 adapter 沙箱内运行，Workbench 渲染契约一致
 - 沙箱底座（workspace-write / read-only / danger-full-access）经 settings.jsonc 可配
 - 动态装配：dsh 插件加载/卸载 → 下一轮模型请求自动反映
 - DSH home 物化闭包 + kill switch
-- 打包二进制下 DSH 可用（`$WOPAL_HOME/dsh` 锚点解析 + loader polyfill）
+- `ELLAMAKA_DSH` 统一为禁用开关（默认开启），CLI 与 desktop sidecar 门控一致
+- dsh 运行时数据纯配置注入收口 `$WOPAL_HOME/dsh/state`（零 env，`~/.dsh` 不受影响）
+- 生产物化：Bridge 编译随宿主发布、运行时清单 + 内嵌锁、统一 Runtime Manager（DESIGN §8 十项验收基线达成）
+- 打包二进制下 DSH 可用（installAnchor 闭包解析）
 - CLI 命令 SIGINT/SIGTERM 优雅退出
 
 ### 进行中的 Plan
 
-| Plan | 项目 | 状态 | 说明 |
-|------|------|------|------|
-| `feature-dsh-onboarding-dependency-preinstall-orchestration-and-dsh-runtime-isolation` | ellamaka | 🔶 planning | onboarding 依赖预装编排 + dsh 运行时隔离 + 开关语义 + 运行时兜底（本 Plan） |
-| `feature-setup-preinstall-plugin-deps-and-materialise-dsh-closure-in-setup-operations` | wopal-cli | 🔶 planning | wopal-cli 预装用户级/空间级插件依赖 + 物化 dsh 闭包（前置依赖） |
+（无）
+
+### 已废弃方向
+
+| 事项 | 废弃时间 | 说明 |
+|------|----------|------|
+| wopal-cli 依赖预装（三层依赖 onboarding 提前物化） | 2026-09-01 | Plan 已删除；wopal-cli 不做预装，插件与 dsh 依赖统一由 ellamaka 运行时兜底安装（fingerprint 幂等），onboarding 编排保留现有兜底路径 |
 
 ### 待定事项（未排期，待讨论）
 
@@ -107,3 +118,6 @@
 | 2026-08-29 | 用户验收 P4：打包 CLI + desktop 构建验证成功；合并 main 全部修复进 poc 分支 |
 | 2026-08-29 | **文档清理重写**：已完成项写清（含此前遗漏的契约映射完成记录），未开始的后续 Plan（P6/P7/P8/P9 批次定义）全部清除，待重新讨论 |
 | 2026-08-30 | **设计定案**：dsh 运行时隔离（纯配置注入、零 env、`~/.dsh` 归官方 CLI 不做处理）、`ELLAMAKA_DSH` 改禁用开关（默认开启）、三层依赖 onboarding 预装 + 运行时兜底；设计文档归位（DESIGN-dsh-poc / DESKTOP-ONBOARDING / wopal-cli DESIGN / 产品级 DESIGN-onboarding）。登记两个 Plan：ellamaka（onboarding 编排 + 隔离）与 wopal-cli（预装能力，前置依赖） |
+| 2026-08-30 | ellamaka onboarding/隔离 Plan 实施完成（`3911437ed5`）：开关统一、state 隔离、arborist 物化、运行时兜底 |
+| 2026-09-01 | 生产物化 Plan 实施完成（`ee32ee1f`）：Bridge 随宿主发布、清单+内嵌锁、统一 Runtime Manager；main 优化反向集成进 poc 分支（`a8a4907f5e`） |
+| 2026-09-01 | **废弃 wopal-cli 依赖预装方向**：Plan 删除，wopal-cli 不做预装，三层依赖统一走 ellamaka 运行时兜底；文档全面同步（本文件 / DESKTOP-ONBOARDING / wopal-cli DESIGN / 产品 DESIGN-onboarding / ISSUE 路线图） |
