@@ -61,6 +61,9 @@ DESKTOP_LOG="$DEV_DIR/ellamaka-dev-desktop.log"
 SIDECAR_LOG="$DEV_DIR/ellamaka-dev-sidecar.log"
 PLUGIN_DEBUG_LOG="$LOGDIR/wopal-plugins-debug.log"
 SELF_PGID="$(ps -o pgid= -p "$$" | tr -d '[:space:]')"
+# Per-bucket project root used by is_service_process to judge cross-worktree
+# records against their own paths. Empty means "the current $root".
+SCOPE_ROOT=""
 
 usage() {
   cat <<EOF
@@ -220,31 +223,51 @@ cwd_of() {
 # match, i.e. the pre-existing behaviour.
 is_service_process() {
   local pid="$1" label="$2" command cwd expected
+  # Per-bucket project root: records belonging to another worktree must be
+  # judged against THEIR paths, not this script's $root. Without this, a
+  # status/stop run from one worktree would classify every other worktree's
+  # healthy processes as foreign and sweep their buckets out from under them.
+  # SCOPE_ROOT is "" (unset) for the current root, "-" when the target bucket's
+  # root is unknown, or an absolute path resolved from the registry.
+  local root_="${SCOPE_ROOT:-$root}"
+  local opencode_entry_="" opencode_dir_="" ellamaka_app_dir_="" desktop_dir_=""
+  if [ "$root_" != "-" ]; then
+    opencode_entry_="$root_/packages/opencode/src/index.ts"
+    opencode_dir_="$root_/packages/opencode"
+    ellamaka_app_dir_="$root_/packages/ellamaka-app"
+    desktop_dir_="$root_/packages/ellamaka-desktop"
+  fi
   command="$(ps -o command= -p "$pid" 2>/dev/null)"
   case "$label" in
     backend)
-      [[ "$command" == *"$opencode_entry"* ]] || return 1
-      expected="$opencode_dir"
+      if [ "$root_" = "-" ]; then
+        # Unknown root: fall back to a suffix match so a foreign worktree's
+        # backend still answers without a hardcoded absolute path.
+        [[ "$command" == *"packages/opencode/src/index.ts"* ]] || return 1
+      else
+        [[ "$command" == *"$opencode_entry_"* ]] || return 1
+      fi
+      expected="$opencode_dir_"
       ;;
     frontend)
       [[ "$command" == *"bun run dev"* || "$command" == *"vite"* ]] || return 1
-      expected="$ellamaka_app_dir"
+      expected="$ellamaka_app_dir_"
       ;;
-    desktop) [[ "$command" == *"electron-vite"* ]] ;;
+    desktop) [[ "$command" == *"electron-vite"* ]] || return 1 ;;
     desktop-sidecar)
       # utilityProcess.fork: an Electron Helper running the bundled sidecar as
       # a node.mojom.NodeService utility. cwd is inherited from the Electron
       # main process, which electron-vite starts in the desktop package dir.
       [[ "$command" == *"node.mojom.NodeService"* ]] || return 1
-      expected="$DESKTOP_DIR_ABS"
+      expected="$desktop_dir_"
       ;;
     desktop-vite|desktop-devtools)
       [[ "$command" == *"electron-vite"* ]] || return 1
-      expected="$DESKTOP_DIR_ABS"
+      expected="$desktop_dir_"
       ;;
     desktop-crashpad|desktop-crashpad-*)
       [[ "$command" == *crashpad* ]] || return 1
-      expected="$DESKTOP_DIR_ABS"
+      expected="$desktop_dir_"
       ;;
     *) return 1 ;;
   esac
@@ -252,7 +275,7 @@ is_service_process() {
   cwd="$(cwd_of "$pid")"
   [ -n "$cwd" ] || return 0
   # macOS resolves symlinked paths (/tmp -> /private/tmp) in lsof output while
-  # $root may still be the symlinked form, so compare resolved paths.
+  # the root may still be the symlinked form, so compare resolved paths.
   [ "$cwd" = "$expected" ] || [ "$(resolve_path "$cwd")" = "$(resolve_path "$expected")" ]
 }
 
@@ -486,9 +509,16 @@ stop_service() {
   local PROCESS_GROUPS=""
 
   while IFS=' ' read -r label port pid pgid stamp; do
-    [ -n "$pgid" ] || pgid="$(pgid_of "$pid")"
-    if record_is_current "$label" "$pid" "$stamp" && group_running "$pgid"; then
-      append_unique "$pgid"
+    # Identity first: only kill process groups that actually belong to this
+    # service. record_is_current answers "is this pid plausibly ours?" (command
+    # + cwd + start stamp); a stale record whose pid/pgid was recycled by an
+    # unrelated process must never be killed.
+    if record_is_current "$label" "$pid" "$stamp"; then
+      # Trust the live pid, not the recorded pgid: the process may have been
+      # reparented or the record written before the group settled. Re-read the
+      # current group and only kill it if it is still alive.
+      pgid="$(pgid_of "$pid")"
+      group_running "$pgid" && append_unique "$pgid"
     elif listener_matches_service "$label" "$port"; then
       # PID drifted (e.g. bun dead, vite child still listening) — kill the
       # real listener's process group so stop actually reclaims the port.
@@ -682,7 +712,7 @@ EOF
 # worktree's own scope differs.
 stop_everywhere() {
   local target="${1:-all}" dir scope label port pid pgid stamp service failed=false shown_root
-  local tmp
+  local tmp saved_scope_root
   for dir in "$LOGDIR"/dev/*/; do
     [ -d "$dir" ] || continue
     scope="$(basename "$dir")"
@@ -693,6 +723,11 @@ stop_everywhere() {
     fi
     local pidfile="$dir/ellamaka-dev.pid"
     [ -f "$pidfile" ] || { echo "   (no instances)"; continue; }
+    # Validate this bucket's records against its OWN project root, so a live
+    # instance in a sibling worktree is recognised and only it is killed.
+    saved_scope_root="$SCOPE_ROOT"
+    SCOPE_ROOT="$(registry_lookup "$scope")"
+    [ -n "$SCOPE_ROOT" ] || SCOPE_ROOT="-"
     while IFS=$' \t' read -r label port pid pgid stamp; do
       [ -n "$label" ] || continue
       service="${label%%-*}"
@@ -704,16 +739,22 @@ stop_everywhere() {
       # along with their parent service via prefix matching.
       case "$target" in
         all) ;;
-        backend) [[ "$service" = backend || "$label" == desktop-* ]] || continue ;;
+        backend) [ "$service" = backend ] || continue ;;
         frontend) [ "$service" = frontend ] || continue ;;
         desktop) [ "$service" = desktop ] || continue ;;
       esac
-      [ -n "$pgid" ] || pgid="$(pgid_of "$pid")"
-      if [[ "$pgid" =~ ^[1-9][0-9]*$ ]] && group_running "$pgid"; then
-        echo "   stopping $label (pid $pid, port $port)"
-        kill -TERM -"$pgid" 2>/dev/null || true
+      # Identity check BEFORE killing, mirroring stop_service: a recycled
+      # pid/pgid in a stale record must not translate into killing an
+      # unrelated process. Read the live pgid from the pid, not the record.
+      if record_is_current "$label" "$pid" "$stamp"; then
+        pgid="$(pgid_of "$pid")"
+        if [[ "$pgid" =~ ^[1-9][0-9]*$ ]] && group_running "$pgid"; then
+          echo "   stopping $label (pid $pid, port $port)"
+          kill -TERM -"$pgid" 2>/dev/null || true
+        fi
       fi
     done < "$pidfile"
+    SCOPE_ROOT="$saved_scope_root"
     sweep_bucket "$dir" "$scope"
   done
   echo
@@ -1133,8 +1174,18 @@ registry_lookup() {
 # with no live records — including one that holds only leftover logs once its
 # pidfile is gone — is removed entirely, registry entry along with it.
 # Prints nothing.
+#
+# Records are validated against the bucket's OWN project root (looked up from
+# the registry), never against this script's $root: a bucket whose root lives
+# in a different worktree must have its live processes recognised, otherwise
+# we would sweep a healthy sibling instance's logs and pidfile out from under
+# it. When the registry has no entry for the scope, validation falls back to
+# command-only matching (root "-") rather than misclassifying live processes.
 sweep_bucket() {
   local dir="$1" scope="$2" label port pid pgid stamp tmp service live=false
+  local saved_scope_root="$SCOPE_ROOT"
+  SCOPE_ROOT="$(registry_lookup "$scope")"
+  [ -n "$SCOPE_ROOT" ] || SCOPE_ROOT="-"
   pidfile="$dir/ellamaka-dev.pid"
   if [ ! -f "$pidfile" ]; then
     # No ledger: the bucket can hold nothing but leftover dev logs.
@@ -1142,6 +1193,7 @@ sweep_bucket() {
       rm -rf "$dir"
       registry_remove "$scope"
     fi
+    SCOPE_ROOT="$saved_scope_root"
     return 0
   fi
   tmp="$(mktemp "$pidfile.XXXXXX")"
@@ -1159,14 +1211,17 @@ sweep_bucket() {
     rm -rf "$dir"
     registry_remove "$scope"
   fi
+  SCOPE_ROOT="$saved_scope_root"
   return 0
 }
 
 # Show every bucket that still holds live instances. Buckets with nothing
 # running are swept silently — listing them only added noise; "(no instances
-# anywhere)" is the only empty-state output.
+# anywhere)" is the only empty-state output. Each bucket is validated against
+# its OWN project root and printed with the log directory it maps to.
 show_all_buckets() {
   local current_scope="$DEV_SCOPE" any=false scope dir pidfile label port pid pgid stamp alive
+  local shown_root marker log_dir bucket_scope_root saved_scope_root
   # Collect scopes: any bucket dir on disk, then registry-only strays.
   local scopes=""
   for dir in "$LOGDIR"/dev/*/; do
@@ -1184,14 +1239,20 @@ show_all_buckets() {
     sweep_bucket "$dir" "$scope"
     pidfile="$dir/ellamaka-dev.pid"
     [ -f "$pidfile" ] || continue
-    local shown_root marker="○"
+    marker="○"
+    shown_root="(unknown directory)"
+    bucket_scope_root="-"
     if shown_root="$(registry_lookup "$scope")"; then
+      bucket_scope_root="$shown_root"
       [ -d "$shown_root" ] || shown_root="$shown_root  (dir gone)"
-    else
-      shown_root="(unknown directory)"
     fi
     [ "$scope" = "$current_scope" ] && marker="●"
+    log_dir="$dir"
     echo "  $marker  $shown_root"
+    echo "          logs: $log_dir"
+    # Validate this bucket's records against its own root, not this script's.
+    saved_scope_root="$SCOPE_ROOT"
+    SCOPE_ROOT="$bucket_scope_root"
     while IFS=$' \t' read -r label port pid pgid stamp; do
       [ -n "$label" ] || continue
       if record_is_current "$label" "$pid" "$stamp" && group_running "${pgid:-$(pgid_of "$pid")}"; then
@@ -1201,6 +1262,7 @@ show_all_buckets() {
       fi
       printf '      %-9s port %-12s pid %-7s %s\n' "$label" "$port" "$pid" "$alive"
     done < "$pidfile"
+    SCOPE_ROOT="$saved_scope_root"
     any=true
   done
   $any || echo "  (no instances anywhere)"
