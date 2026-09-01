@@ -6,6 +6,10 @@
 export type FlyoutMode = "sessions" | "files"
 
 export const FLYOUT_HIDE_DELAY_MS = 150
+// Clicking a session closes the flyout after this delay so the second click of
+// a double-click still lands on the same row and keeps the native dblclick
+// event dispatchable (an immediate close would swallow it).
+export const FLYOUT_CLICK_CLOSE_DELAY_MS = 500
 
 // The flyout DOM stays mounted for the whole session; visibility is toggled
 // with CSS so the trees keep their scroll position, expansion state,
@@ -23,6 +27,10 @@ export interface FlyoutController {
   onFlyoutEnter: () => void
   onFlyoutLeave: () => void
   close: () => void
+  /** Close after a short delay so an in-flight double-click still lands. */
+  closeSoon: () => void
+  /** Immediate close reserved for double-click completion. */
+  requestClose: () => void
   destroy: () => void
 }
 
@@ -92,6 +100,14 @@ export function createFlyoutController(input: {
       }, FLYOUT_HIDE_DELAY_MS)
     },
     close,
+    closeSoon: () => {
+      cancelPending()
+      timer = schedule(() => {
+        timer = undefined
+        setOpen(false)
+      }, FLYOUT_CLICK_CLOSE_DELAY_MS)
+    },
+    requestClose: close,
     destroy: () => {
       cancelPending()
       open = false

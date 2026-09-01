@@ -30,6 +30,7 @@ export function SessionTree(props: {
   activeSpacePath: string
   onSpaceClick: (space: WopalSpace) => void
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()
@@ -274,6 +275,7 @@ export function SessionTree(props: {
             activeSessionId={activeSessionID}
             pinnedSessions={pinnedSessions}
             onSessionClick={props.onSessionClick}
+            onSessionDblClick={props.onSessionDblClick}
             onSessionContextMenu={showSessionMenu}
             setSelectedSessionId={setSelectedSessionID}
             mergeSessions={mergeSessions}

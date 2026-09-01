@@ -185,9 +185,17 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
   })
   onCleanup(() => flyout.destroy())
 
+  // The flyout stays open on click: closing it synchronously would swallow the
+  // second click of a double-click (the row's dblclick opens a new panel).
+  // closeSoon defers the hide past the OS double-click interval; requestClose
+  // fires when a double-click completes so the flyout hides immediately then.
   function handleFlyoutSessionClick(sessionId: string) {
-    flyout.close()
+    flyout.closeSoon()
     handleSessionClick(sessionId)
+  }
+
+  function handleFlyoutSessionDblClick(sessionId: string) {
+    flyout.requestClose()
   }
 
   // Flyout must not cover the titlebar or the status bar: it is clamped to the
@@ -370,7 +378,8 @@ export function SpaceRail(props: { onFileClick?: (file: FileNode) => void }) {
                 spaces={activeSpaces()}
                 activeSpacePath={wb.activeTabPath}
                 onSpaceClick={handleSpaceClick}
-                onSessionClick={handleFlyoutSessionClick}
+                onSessionClick={handleSessionClick}
+                onSessionDblClick={handleFlyoutSessionDblClick}
               />
             </Show>
           </div>
