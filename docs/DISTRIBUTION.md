@@ -108,12 +108,13 @@ CLI rc 与 stable 发布完全同构——同一 tag namespace、同一 R2 versi
 ### 3.2 设计原则
 
 1. **产品版本独立**：CLI 与 Desktop 是两个独立发布单元，各自使用标准 SemVer 2.0、tag、workflow、latest feed 和 changelog。
-2. **版本源唯一**：仓库 `package.json`（根 + 全部 workspace 包，版本恒等）是产品版本的唯一写入源；git tag 是发布产物记录。版本准备（bump）写入 package.json 并提交，发布系统只读取并断言二者一致，不凭空生成版本。
-3. **上游不是产品版本**：OpenCode version/commit 是 provenance 与 v1 兼容基线，不参与 Ellamaka 产品版本排序。
-4. **兼容性不是版本相等**：Desktop 不锁定外部 CLI 的精确产品版本；安装器读取 CLI `latest` 并验证其满足 Desktop 兼容约束。
-5. **一个排序真相源**：发布顺序只比较 `releaseIdentity.version`。upstream、build date、Git hash 和 artifact hash 都不参与排序。
-6. **提交后不可变**：有效 versioned manifest 是正式发布提交点；提交后同一个 `product + version` 只能对应一个 source tag、一个 Ellamaka commit 和一组固定 artifact hashes。
-7. **安全迁移**：新 manifest 在迁移期保留必要的顶层兼容字段；旧 `X.Y.Z-N` 只读不写。
+2. **产品锚点是版本真相源**：CLI 的版本唯一写入源是 `packages/ellamaka-cli/package.json`，Desktop 的是 `packages/ellamaka-desktop/package.json`。git tag 是发布产物记录，由锚点派生（bump 脚本写锚点 → 提交 → 打 tag）。CI 在任何发布构建前验证 tag 版本与锚点文件一致（anchor match gate），不一致即失败。
+3. **依赖包只做 base 镜像**：除两个产品锚点外的全部 workspace 包 version 字段只跟随 CLI 的 prerelease base（纯 `X.Y.Z`，从不出 `-rc.N`/`-beta.N`）。依赖包不发布、内部依赖走 `workspace:*`，其 version 只是版本演进的记录记号。
+4. **上游不是产品版本**：OpenCode version/commit 是 provenance 与 v1 兼容基线，不参与 Ellamaka 产品版本排序。
+5. **兼容性不是版本相等**：Desktop 不锁定外部 CLI 的精确产品版本；安装器读取 CLI `latest` 并验证其满足 Desktop 兼容约束。
+6. **一个排序真相源**：发布顺序只比较 `releaseIdentity.version`。upstream、build date、Git hash 和 artifact hash 都不参与排序。
+7. **提交后不可变**：有效 versioned manifest 是正式发布提交点；提交后同一个 `product + version` 只能对应一个 source tag、一个 Ellamaka commit 和一组固定 artifact hashes。
+8. **安全迁移**：新 manifest 在迁移期保留必要的顶层兼容字段；旧 `X.Y.Z-N` 只读不写。
 
 ### 3.3 OpenCode Upstream Lock
 
@@ -157,7 +158,7 @@ build.builtAt            ← UTC release-context assembly time
 artifacts                ← build outputs + SHA-256
 ```
 
-workflow input 不能作为 version 或 upstream 的第二真相源。输入若为兼容旧入口而暂时存在，只能断言它等于 tag/lock，不能覆盖二者。CLI 与 Desktop 各自生成并在自身 matrix 内共享 context，不要求两个产品复用同一 context 文件。
+workflow input 不能作为 version 或 upstream 的第二真相源。re-release 的 dispatch 输入只能被 anchor match gate 断言等于产品锚点文件（版本真相源），不能覆盖 tag 或锚点。CLI 与 Desktop 各自生成并在自身 matrix 内共享 context，不要求两个产品复用同一 context 文件。
 
 ---
 
@@ -183,10 +184,14 @@ channel 规则：
 - Desktop beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
 - 不进行隐式跨 channel 更新或比较。
 
-发布分为两个独立步骤：
+发布是一步制（脚本 `scripts/bump-release.sh`，与 wopal-cli 同构）：版本准备与发布触发在同一脚本内完成，`--dry-run` 承担预演职责：
 
-1. **bump**（本地版本准备，脚本 `scripts/bump-release.sh`）：读取 package.json 当前版本，按 `patch`/`minor`/`major` 或显式版本计算下一个版本，同步写入根与全部 workspace 包的 `version` 字段，刷新 `bun.lock`，提交并推送当前分支。此步骤只改版本声明，不可变发布语义不受影响。
-2. **release**（脚本 `scripts/release.sh`）：接收目标 product 和 product version（省略时读取 package.json 当前版本并做 branch-channel 校验），校验后创建 namespaced tag、推送当前分支、dispatch 对应 workflow。release 只读取版本、生成 tag 与发布产物，不再负责生成包版本号。
+1. 计算目标版本：读产品锚点当前版本，按 `--patch`/`--minor`/`--major`/`--rc`/`--beta` 或显式版本计算下一个版本。
+2. 写入锚点：CLI 发布时锚点写完整版本（含 `-rc.N`），其余全部 workspace 包（除两个产品锚点外）+ 根写 prerelease base；Desktop 发布只写 Desktop 锚点。
+3. 提交 bump、创建 namespaced tag（`ellamaka-cli-vX.Y.Z[-rc.N]` / `ellamaka-desktop-vX.Y.Z[-beta.N]`）、推送当前分支与 tag。tag push 触发目标 workflow（`push: tags`），不再手工 dispatch。
+4. 监听 workflow 至完成，成功后自动触发历史清理。
+
+failed attempt 的 re-release（幂等）：目标 tag 在远端已存在时——有有效 R2 manifest 则拒绝（发布不可变，请用更高版本）；无 manifest 则以该 tag 为 `--ref` 重新 `workflow_dispatch`，不重复 bump。
 
 分支渠道约束（branch-channel policy）：
 
@@ -195,17 +200,17 @@ channel 规则：
 - prerelease 的 base `X.Y.Z` 必须高于该产品已发布 prod/stable 的最高版本：已发布 `2.0.3` 时，prerelease 从 `2.0.4-rc.1` / `2.0.4-beta.1` 开始，`2.0.3-rc.1` / `2.0.3-beta.1` 被拒绝。
 - 版本单调：同类产品的全部发布（stable、rc、beta）处于同一单调递增序列。rc 占用 base slot 后，后续修复只能发更高版本（`2.0.5-rc.2`、`2.1.0`……），不能回退到已发 rc 的 base 之下。
 
-release 写入前校验：版本符合 SemVer 子集、version/channel 一致、branch-channel policy 满足、目标版本等于 package.json 当前版本（防止 bump 漏提交）、目标 namespaced tag 和 versioned path 状态、目标版本未列入 `release/withdrawn-versions.json` 且高于该产品已发布的最高标准版本、第一批标准版本高于 §10 的 migration floor。OpenCode baseline 始终由 upstream lock 随最终 source commit 确定，release 步骤不接收 OpenCode baseline/revision 作为输入。
+bump 写入前校验：版本符合 SemVer 子集、version/channel 一致、branch-channel policy 满足、目标版本未列入 `release/withdrawn-versions.json` 且高于该产品已发布的最高标准版本、第一批标准版本高于 §10 的 migration floor。OpenCode baseline 始终由 upstream lock 随最终 source commit 确定，发布不接收 OpenCode baseline/revision 作为版本输入。
 
 ### 4.2 发布流程
 
-**触发条件**：仅 `workflow_dispatch`。由 `scripts/release.sh` 创建并推送 namespaced tag 后，以该 tag 作为 `--ref` 触发目标 workflow（`publish-ellamaka-cli.yml` / `publish-ellamaka-desktop.yml`）；workflow 不监听 `push: tags`。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。
+**触发条件**：`push: tags`（前缀 `ellamaka-cli-v*` / `ellamaka-desktop-v*`）由 `scripts/bump-release.sh` 一步制发布触发；`workflow_dispatch` 仅用于 failed-attempt re-release（`--ref <tag>`）与 CI dev 构建（`publish=false`）。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。每个发布构建在最早阶段执行 anchor match gate：从 tag 解析的版本必须等于对应产品锚点 package.json 的 version，不一致即失败，任何构建都不会启动。
 
 CLI rc 与 stable 走完全相同的 release job：同一 versioned path（`ellamaka/v<version>/`）、同一 latest promotion、同一 Release 页面。`-rc.N` 仅作为版本字符串进入 tag、build 注入与 manifest，任何步骤都不区分 rc 与 stable。
 
 CLI 发布流程（release job）：
 
-1. 验证 tag 指向当前 checkout、version/channel 合法、`sources.opencode.gitCommit` 是当前 release commit 的祖先，并对每个冻结 component baseline 执行目录 drift check。
+1. anchor match gate 已断言 tag 版本等于 `packages/ellamaka-cli/package.json`（§4.1）；release context 生成时校验 `sources.opencode.gitCommit` 是当前 release commit 的祖先，并对每个冻结 component baseline 执行目录 drift check。
 2. 构建 CLI（`BINARY_NAME=ellamaka OPENCODE_VERSION=<ver> OPENCODE_RELEASE=true bun packages/ellamaka-release/src/cli/build.ts --arch primary --web-ui ellamaka-app`），产出 8 平台产物。
 3. 运行 `bun packages/ellamaka-release/src/cli/manifest.ts manifest` 生成 `manifest.json`、`checksums.txt`、`release-notes.md`。
 4. 按 manifest-last 提交点协议发布：staging 上传 → 回读校验 → 禁止覆盖写入 versioned path → 最后写 `manifest.json` 作为提交点（契约细节见 `DESIGN-distribution.md` §2.2）。
@@ -214,7 +219,7 @@ CLI 发布流程（release job）：
 
 Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb）。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
 
-**重试状态**：不存在 tag 且 versioned path 为空时可创建新 release；tag/partial objects 存在但没有有效 versioned manifest、latest/updater 或正式 Release 页面引用时，只有显式 `retry` 才能清理该 attempt 可证明 ownership 的对象，并允许从修复后的 commit 重建 tag、同版本重新 dispatch；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
+**重试状态**：tag 存在但没有有效 versioned manifest（failed attempt）时，`bump-release.sh` 以该 tag 为 `--ref` 重新 `workflow_dispatch`（tag 不移动、版本文件不重复 bump）；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
 
 ---
 
@@ -381,7 +386,7 @@ release cleanup 不得使用字符串比较、`sort -V`、文件修改时间或�
 
 cleanup 输出待删除对象与保护原因的审计清单后才执行。任何 cleanup 失败都不能阻止客户端继续读取上一次有效 aliases。
 
-**Retention 保留数量**（`release.sh` 发布成功后自动触发 cleanup 时使用的默认值）：
+**Retention 保留数量**（`bump-release.sh` 发布成功后自动触发 cleanup 时使用的默认值）：
 
 | 产品 | 渠道 | 保留数量 | 说明 |
 |------|------|---------|------|

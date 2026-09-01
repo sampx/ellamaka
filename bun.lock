@@ -37,7 +37,7 @@
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@wopal/effect-drizzle-sqlite",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -51,7 +51,7 @@
     },
     "packages/ellamaka": {
       "name": "@wopal/ellamaka-build",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "devDependencies": {
         "@opentui/solid": "catalog:",
         "@wopal/ellamaka-script": "workspace:*",
@@ -60,7 +60,7 @@
     },
     "packages/ellamaka-app": {
       "name": "@wopal/ellamaka-app",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@opencode-ai/sdk": "workspace:*",
@@ -146,7 +146,7 @@
     },
     "packages/ellamaka-cordis": {
       "name": "@wopal/ellamaka-cordis",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@deepseek-ai/cordis": "4.0.2",
         "@deepseek-ai/cordis-plugin-loader": "1.0.3",
@@ -174,7 +174,7 @@
     },
     "packages/ellamaka-core": {
       "name": "@wopal/ellamaka-core",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@ai-sdk/alibaba": "1.0.17",
         "@ai-sdk/amazon-bedrock": "4.0.107",
@@ -233,7 +233,7 @@
     },
     "packages/ellamaka-desktop": {
       "name": "@wopal/ellamaka-desktop",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.3",
       "dependencies": {
         "@zip.js/zip.js": "2.7.62",
         "drizzle-orm": "catalog:",
@@ -290,7 +290,7 @@
     },
     "packages/ellamaka-release": {
       "name": "@wopal/ellamaka-release",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@wopal/ellamaka-script": "workspace:*",
       },
@@ -302,7 +302,7 @@
     },
     "packages/ellamaka-script": {
       "name": "@wopal/ellamaka-script",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "semver": "^7.6.3",
       },
@@ -313,7 +313,7 @@
     },
     "packages/http-recorder": {
       "name": "@wopal/http-recorder",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@effect/platform-node": "catalog:",
         "effect": "catalog:",
@@ -326,7 +326,7 @@
     },
     "packages/llm": {
       "name": "@wopal/llm",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@smithy/eventstream-codec": "4.2.14",
         "@smithy/util-utf8": "4.2.2",
@@ -344,7 +344,7 @@
     },
     "packages/opencode": {
       "name": "@wopal/ellamaka",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@actions/core": "1.11.1",
         "@actions/github": "6.0.1",
@@ -485,7 +485,7 @@
     },
     "packages/plugin": {
       "name": "@opencode-ai/plugin",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@opencode-ai/sdk": "workspace:*",
         "effect": "catalog:",
@@ -513,7 +513,7 @@
     },
     "packages/sdk/js": {
       "name": "@opencode-ai/sdk",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "cross-spawn": "catalog:",
       },
@@ -528,7 +528,7 @@
     },
     "packages/ui": {
       "name": "@wopal/ui",
-      "version": "2.0.4-rc.1",
+      "version": "2.0.4",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@opencode-ai/sdk": "workspace:*",

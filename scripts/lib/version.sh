@@ -1,7 +1,71 @@
 #!/bin/bash
 # scripts/lib/version.sh — shared build version resolution for ellamaka
-# CLI / Desktop / sidecar builds. Sourced by scripts/build.sh and
-# scripts/dev.sh.
+# CLI / Desktop / sidecar builds. Sourced by scripts/build.sh,
+# scripts/dev.sh and scripts/bump-release.sh.
+#
+# Product version anchors (docs/DISTRIBUTION.md §3.2):
+#   CLI product     → packages/ellamaka-cli/package.json
+#   Desktop product → packages/ellamaka-desktop/package.json
+#   Dependents      → root package.json (mirrors the CLI prerelease base,
+#                     never carries -rc/-beta suffixes)
+
+# anchor_map <product> <project_root>
+#
+# Prints the package.json path that carries the product's version anchor.
+# Prints the root package.json for the dependents line ("deps").
+function anchor_map() {
+  local product="$1" project_root="${2:-$PROJECT_ROOT}"
+  case "$product" in
+    cli) echo "$project_root/packages/ellamaka-cli/package.json" ;;
+    desktop) echo "$project_root/packages/ellamaka-desktop/package.json" ;;
+    deps) echo "$project_root/package.json" ;;
+    *) echo "$project_root/package.json" ;;
+  esac
+}
+
+# current_version <cli|desktop|deps> [project_root]
+#
+# Reads the version anchor of the product (or the dependents line).
+# Prints "0.0.0" when unreadable.
+function current_version() {
+  local product="$1" project_root="${2:-$PROJECT_ROOT}"
+  local pkg
+  pkg=$(anchor_map "$product" "$project_root")
+  node -p "require('$pkg').version" 2>/dev/null || echo "0.0.0"
+}
+
+# bump_version <product> <patch|minor|major|rc|beta> [project_root]
+#
+# Prints the next version for the product's anchor. patch/minor/major bump
+# the base and drop any prerelease; rc/beta continue the same-kind sequence
+# on the current base, otherwise start a fresh -rc.1/-beta.1 on the next
+# patch.
+function bump_version() {
+  local product="$1" bump="$2" project_root="${3:-$PROJECT_ROOT}"
+  local core
+  core=$(current_version "$product" "$project_root")
+  node -e "
+    const v = process.argv[1]
+    const bump = process.argv[2]
+    const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-(beta|rc)\.(\d+))?\$/)
+    if (!m) { console.log(v); process.exit(0) }
+    const ma = Number(m[1]), mi = Number(m[2]), pa = Number(m[3])
+    const kind = m[4] || null
+    const n = m[5] ? Number(m[5]) : 0
+    if (bump === 'patch') console.log(ma + '.' + mi + '.' + (pa + 1))
+    else if (bump === 'minor') console.log(ma + '.' + (mi + 1) + '.0')
+    else if (bump === 'major') console.log((ma + 1) + '.0.0')
+    else if (bump === 'rc') {
+      if (kind === 'rc') console.log(ma + '.' + mi + '.' + pa + '-rc.' + (n + 1))
+      else console.log(ma + '.' + mi + '.' + (pa + 1) + '-rc.1')
+    }
+    else if (bump === 'beta') {
+      if (kind === 'beta') console.log(ma + '.' + mi + '.' + pa + '-beta.' + (n + 1))
+      else console.log(ma + '.' + mi + '.' + (pa + 1) + '-beta.1')
+    }
+    else console.log(v)
+  " "$core" "$bump"
+}
 
 # resolve_build_version <product> <suffix> [project_root]
 #
@@ -13,7 +77,7 @@
 # version (e.g. ellamaka-desktop-v2.0.4-beta.1 with highest stable v2.0.3 →
 # 2.0.4, not 2.0.5 — the unreleased patch slot must not be skipped). Local
 # builds are always identifiable by this suffix — release versions come from
-# release.sh/CI inputs and never pass through this function.
+# product anchors and never pass through this function.
 function resolve_build_version() {
   local product="$1" suffix="$2" project_root="${3:-$PROJECT_ROOT}"
   local version_tag timestamp
@@ -59,7 +123,7 @@ function resolve_build_version() {
 # bumps the dependency to ^<config floor> and refreshes bun.lock so the
 # compile-time schema types, runtime version check, and release gate all
 # agree. Idempotent: no-op when the dependency floor already covers the
-# config floor. Called by build.sh / dev.sh / release.sh before they
+# config floor. Called by build.sh / dev.sh / bump-release.sh before they
 # resolve MIN_WOPAL_CLI_VERSION, so the sync happens during development
 # and verification, not only at release time.
 function sync_min_wopal_cli_version() {
@@ -167,53 +231,11 @@ function resolve_min_wopal_cli_version() {
   " "$dep_floor" "$config_floor"
 }
 
-# current_version [project_root]
-#
-# Reads the root package.json version (the single version source per
-# docs/DISTRIBUTION.md §3.2). Prints "0.0.0" when unreadable.
-function current_version() {
-  local project_root="${1:-$PROJECT_ROOT}"
-  node -p "require('$project_root/package.json').version" 2>/dev/null || echo "0.0.0"
-}
-
-# bump_version <patch|minor|major|rc|beta> [project_root]
-#
-# Prints the next version for the given bump type, based on the current
-# package.json version. patch/minor/major bump the base and drop any
-# prerelease; rc/beta continue the same-kind prerelease sequence on the
-# current base, otherwise start a fresh -rc.1/-beta.1 on the next patch.
-function bump_version() {
-  local bump="$1" project_root="${2:-$PROJECT_ROOT}"
-  local core
-  core=$(current_version "$project_root")
-  node -e "
-    const v = process.argv[1]
-    const bump = process.argv[2]
-    const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:-(beta|rc)\.(\d+))?\$/)
-    if (!m) { console.log(v); process.exit(0) }
-    const ma = Number(m[1]), mi = Number(m[2]), pa = Number(m[3])
-    const kind = m[4] || null
-    const n = m[5] ? Number(m[5]) : 0
-    if (bump === 'patch') console.log(ma + '.' + mi + '.' + (pa + 1))
-    else if (bump === 'minor') console.log(ma + '.' + (mi + 1) + '.0')
-    else if (bump === 'major') console.log((ma + 1) + '.0.0')
-    else if (bump === 'rc') {
-      if (kind === 'rc') console.log(ma + '.' + mi + '.' + pa + '-rc.' + (n + 1))
-      else console.log(ma + '.' + mi + '.' + (pa + 1) + '-rc.1')
-    }
-    else if (bump === 'beta') {
-      if (kind === 'beta') console.log(ma + '.' + mi + '.' + pa + '-beta.' + (n + 1))
-      else console.log(ma + '.' + mi + '.' + (pa + 1) + '-beta.1')
-    }
-    else console.log(v)
-  " "$core" "$bump"
-}
-
 # highest_release_tag <product> <channel> [project_root]
 #
 # Prints the highest SemVer tag for the product/channel: stable-only tags
 # for stable/prod channels, -beta.N tags for beta, -rc.N tags for rc. Prints
-# nothing when no such tag exists. Used by release.sh to detect
+# nothing when no such tag exists. Used by bump-release.sh to detect
 # failed-attempt retries (highest tag without an effective manifest was
 # never released).
 function highest_release_tag() {

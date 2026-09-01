@@ -24,13 +24,13 @@ CLI 常用选项：
 
 Desktop 平台策略：本机 mac + `--platform mac`（默认）→ 本地构建；`--platform linux\|win` → dispatch GitHub Actions CI 并下载产物。CI 构建仅接受 `--channel beta\|prod`（`main` 仅本地）。
 
-### `release.sh` — 发布 CLI / Desktop 版本
+### `bump-release.sh` — 一步发布 CLI / Desktop 版本
 
 ```bash
-./scripts/release.sh <cli|desktop> [version] [--channel <beta|prod>] [--dry-run] [--no-cleanup]
+./scripts/bump-release.sh <cli|desktop> [--patch|--minor|--major|--rc|--beta] [--channel <beta|prod>] [--dry-run] [--no-push] [--no-watch] [--no-cleanup] [version]
 ```
 
-创建版本 tag 并 dispatch 发布 workflow。版本省略时自动推荐（渠道最高 tag 无有效 manifest 则重发，否则推荐下一版本）。`--dry-run` 只打印发布计划不执行。
+bump 产品锚点 → 提交 → 创建 namespaced tag → 推送（tag push 触发 workflow）→ watch。CLI 发布会同步依赖包 base（纯 x.y.z）。目标 tag 已在远端时：有 manifest 拒绝（不可变），无 manifest 以该 tag 重发（幂等）。`--dry-run` 只打印发布计划不执行。
 
 ### `withdraw-release.sh` — 整版撤回已发布版本
 
@@ -94,7 +94,7 @@ merge 前分析并预测冲突，输出 4 段报告：上游增量、ellamaka �
 被 `build.sh` / `dev.sh` / `release.sh` / `bump-release.sh` 等 source 的共享函数库：
 
 - `resolve_build_version <product> <suffix>` — 解析构建版本（下一 patch + 后缀 + 时间戳）
-- `current_version` / `bump_version <patch|minor|major|rc|beta>` — 版本源读取与 bump（package.json 是唯一版本源）
+- `current_version <cli|desktop|deps>` / `bump_version <product> <patch|minor|major|rc|beta>` — 版本源读取与 bump（产品锚点 package.json 是唯一版本源）
 - `sync_min_wopal_cli_version` — 同步 `@wopal/cli-capability-schema` 依赖下界
 - `resolve_min_wopal_cli_version` — 解析有效 `MIN_WOPAL_CLI_VERSION`
 - `highest_release_tag` / `highest_rc_tag` / `suggest_release_version` — 发布版本建议（stable/beta/rc 渠道）
@@ -102,7 +102,6 @@ merge 前分析并预测冲突，输出 4 段报告：上游增量、ellamaka �
 ## 推荐工作流
 
 - **日常开发**：`dev.sh serve` → 改代码 → `build.sh cli` 验证
-- **版本准备**：`bump-release.sh --rc`（写入全部 workspace 包 + bun.lock + commit + push）
-- **发布**：`release.sh cli` / `release.sh desktop --channel beta`
+- **发布**：`bump-release.sh cli --rc` / `bump-release.sh desktop --channel beta --beta`（一步制：bump → tag → push 触发 workflow）
 - **撤回**：`withdraw-release.sh <product>`
 - **上游合并**：`ellamaka-merge-prep.sh <tag>` → merge → `check-cleanup.sh --clean` → `bun typecheck && bun test`

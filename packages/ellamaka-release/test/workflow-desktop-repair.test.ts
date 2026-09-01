@@ -18,13 +18,20 @@ describe("desktop release repair", () => {
     expect(workflow).toContain("--publish never")
   })
 
-  test("triggers only by manual dispatch, not by tag push", async () => {
+  test("release triggered by desktop tag push, with dispatch as re-release/dev path", async () => {
     const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
 
     expect(workflow).toContain("workflow_dispatch:")
-    expect(workflow).not.toMatch(/\n  push:\s*\n\s*tags:\s*\n\s*-\s*"v\*"/)
-    expect(workflow).not.toContain('github.event_name == "push"')
-    expect(workflow).not.toContain("${GITHUB_REF_NAME#v}")
+    expect(workflow).toMatch(/\n  push:\s*\n\s*tags:\s*\[\s*"ellamaka-desktop-v\*"\s*\]/)
+    expect(workflow).toContain('github.event_name }}" = "push"')
+    expect(workflow).toContain("${GITHUB_REF_NAME#ellamaka-desktop-v}")
+  })
+
+  test("release builds gate version against the desktop anchor package.json", async () => {
+    const workflow = await source(".github/workflows/publish-ellamaka-desktop.yml")
+
+    expect(workflow).toContain("packages/ellamaka-desktop/package.json")
+    expect(workflow).toContain("Validate version matches package.json anchor")
   })
 
   test("isolates beta storage and fails closed on existing manifest", async () => {
@@ -70,13 +77,12 @@ describe("desktop release repair", () => {
     expect(updater).toContain('autoUpdater.allowPrerelease = CHANNEL === "beta"')
   })
 
-  test("tag helper dispatches workflows with namespaced product tags", async () => {
-    const script = await source("scripts/release.sh")
+  test("one-step bump helper pushes namespaced product tags that trigger workflows", async () => {
+    const script = await source("scripts/bump-release.sh")
 
-    // New namespaced product tag model (docs/DISTRIBUTION.md §4.1).
-    // release.sh takes a single cli|desktop subcommand + explicit version
-    // and builds TAG="${PRODUCT}-v${VERSION}" producing ellamaka-{cli,desktop}-vX.Y.Z.
-    // It no longer accepts implicit -N suffix iteration or --retag.
+    // One-step release model (docs/DISTRIBUTION.md §4.1): bump anchors,
+    // commit, create namespaced tag, push — push:tags triggers the workflow.
+    // failed-attempt re-release goes through workflow_dispatch --ref <tag>.
     expect(script).toContain("PRODUCT=\"ellamaka-cli\"")
     expect(script).toContain("PRODUCT=\"ellamaka-desktop\"")
     expect(script).toContain('TAG="${PRODUCT}-v${VERSION}"')
@@ -88,7 +94,9 @@ describe("desktop release repair", () => {
     expect(script).toContain("beta")
     expect(script).toContain("prod")
 
-    // Dispatch via gh workflow run (trigger authority owned by release.sh)
+    // push : tags 触发（一步制）；re-release 仍走 gh workflow run
+    expect(script).toContain('push "$REMOTE" "$BRANCH" "$TAG"')
+    expect(script).toContain("tag push 触发")
     expect(script).toContain("gh workflow run")
     expect(script).toContain("--ref")
     expect(script).toContain("dispatch_workflow")
@@ -97,7 +105,7 @@ describe("desktop release repair", () => {
 
     // Removed anti-patterns:
     // - No --retag (committed releases are immutable; failed attempts retry
-    //   via ensure_tag_releasable after controlled cleanup)
+    //   via re-release dispatch, tags are never moved)
     expect(script).not.toContain("--retag")
     // - No implicit -N auto-increment for prod
     expect(script).not.toContain("自动递增 -N")
@@ -105,8 +113,8 @@ describe("desktop release repair", () => {
     expect(script).not.toMatch(/VERSION="v\$PLAIN_VERSION"/)
   })
 
-  test("tag helper rejects withdrawn versions before mutation", async () => {
-    const script = await source("scripts/release.sh")
+  test("bump helper rejects withdrawn versions before mutation", async () => {
+    const script = await source("scripts/bump-release.sh")
 
     // Per docs/DISTRIBUTION.md §7.3, withdrawn-versions.json is the
     // permanent record of versions that must never be reused.
@@ -114,20 +122,18 @@ describe("desktop release repair", () => {
     expect(script).toContain("withdrawn")
   })
 
-  test("tag helper retries failed attempts and refuses committed tags", async () => {
-    const script = await source("scripts/release.sh")
+  test("bump helper retries failed attempts and refuses committed tags", async () => {
+    const script = await source("scripts/bump-release.sh")
 
-    // New failed-attempt retry protocol (§7.1 manifest-last):
-    // a tag whose manifest is absent is a failed attempt and can be retried;
-    // a tag with an effective manifest is immutable and must never be moved.
-    expect(script).toContain("ensure_tag_releasable")
+    // Failed-attempt retry protocol (§7.1 manifest-last): a tag whose
+    // manifest is absent is a failed attempt and may be re-dispatched on
+    // that tag; a tag with an effective manifest is immutable and refused.
     expect(script).toContain("has_effective_manifest")
     expect(script).toContain("highest_release_tag")
-    expect(script).toContain("check_version_matches_package")
     expect(script).toContain("check_branch_channel_policy")
-    // Committed releases are immutable: refuse to move a tag that has a
-    // valid manifest.
-    expect(script).toContain("已提交 release 不可移动")
+    // Committed releases are immutable: refuse to re-release a tag that has
+    // a valid manifest.
+    expect(script).toContain("已发布 release 不可变")
   })
 
   test("pins release workflows to Node 24-native official actions", async () => {
