@@ -1098,12 +1098,12 @@ sweep_bucket() {
   return 0
 }
 
-# Show every known bucket (registry + hash-only strays). This worktree is the
-# reference point; others are marked with a different bullet.
+# Show every bucket that still holds live instances. Buckets with nothing
+# running are swept silently — listing them only added noise; "(no instances
+# anywhere)" is the only empty-state output.
 show_all_buckets() {
-  local current_scope="$DEV_SCOPE" any=false scope dir pidfile root_pid label port pid pgid stamp alive
-  local roots=""
-  # Collect scopes: registry entries first, then any bucket dir on disk.
+  local current_scope="$DEV_SCOPE" any=false scope dir pidfile label port pid pgid stamp alive
+  # Collect scopes: any bucket dir on disk, then registry-only strays.
   local scopes=""
   for dir in "$LOGDIR"/dev/*/; do
     [ -d "$dir" ] || continue
@@ -1119,23 +1119,15 @@ show_all_buckets() {
     dir="$LOGDIR/dev/$scope"
     sweep_bucket "$dir" "$scope"
     pidfile="$dir/ellamaka-dev.pid"
-    local label port pid pgid stamp lines=0
-    [ -f "$pidfile" ] && lines=$(grep -c "" "$pidfile" 2>/dev/null || echo 0)
-    if [ "$lines" -eq 0 ] 2>/dev/null; then
-      echo "  ○  [$scope] (clean)"
-      continue
-    fi
-    any=true
-    local marker="○"
-    [ "$scope" = "$current_scope" ] && marker="●"
-    local shown_root
-    if shown_root="$(registry_lookup "$scope")" && [ -d "$shown_root" ]; then
-      echo "  $marker  [$scope] $shown_root"
-    elif shown_root="$(registry_lookup "$scope")"; then
-      echo "  $marker  [$scope] $shown_root  (dir gone)"
+    [ -f "$pidfile" ] || continue
+    local shown_root marker="○"
+    if shown_root="$(registry_lookup "$scope")"; then
+      [ -d "$shown_root" ] || shown_root="$shown_root  (dir gone)"
     else
-      echo "  $marker  [$scope] (unknown directory)"
+      shown_root="(unknown directory)"
     fi
+    [ "$scope" = "$current_scope" ] && marker="●"
+    echo "  $marker  $shown_root"
     while IFS=$' \t' read -r label port pid pgid stamp; do
       [ -n "$label" ] || continue
       if record_is_current "$label" "$pid" "$stamp" && group_running "${pgid:-$(pgid_of "$pid")}"; then
@@ -1145,17 +1137,15 @@ show_all_buckets() {
       fi
       printf '      %-9s port %-12s pid %-7s %s\n' "$label" "$port" "$pid" "$alive"
     done < "$pidfile"
+    any=true
   done
   $any || echo "  (no instances anywhere)"
 }
 
 cmd_status() {
-  local any=false
-  show_service backend backend && any=true || true
-  show_service frontend workbench && any=true || true
-  show_service desktop desktop && any=true || true
-  echo
-  echo "all worktrees:"
+  show_service backend backend || true
+  show_service frontend workbench || true
+  show_service desktop desktop || true
   show_all_buckets
 }
 
