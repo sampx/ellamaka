@@ -502,6 +502,10 @@ stop_service() {
 
   remove_service_records "$service"
   cleanup_service_logs "$service"
+  # The stop may have taken the bucket's last live record: drop an empty
+  # pidfile, its log leftovers, the bucket dir, and the registry entry too,
+  # instead of waiting for some future status to sweep them.
+  sweep_bucket "$DEV_DIR" "$DEV_SCOPE"
   echo "stopped $service"
 }
 
