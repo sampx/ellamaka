@@ -43,6 +43,7 @@ opencode_entry="$root/packages/opencode/src/index.ts"
 opencode_dir="$root/packages/opencode"
 opencode_preload="$opencode_dir/node_modules/@opentui/solid/scripts/preload.ts"
 ellamaka_app_dir="$root/packages/ellamaka-app"
+DESKTOP_DIR_ABS="$root/packages/ellamaka-desktop"
 
 # Each worktree gets its own pidfile and dev logs, keyed by a hash of the
 # worktree path: status/stop/restart are scoped to the directory the script
@@ -136,7 +137,10 @@ pgid_of() {
 }
 
 process_stamp() {
-  ps -o lstart= -p "$1" 2>/dev/null | tr -d '[:space:]'
+  # Locale-proof: a localized lstart ("二 9月/ 1 12:58:02") is unreadable by a
+  # different-locale reader and collides across processes started the same
+  # second, which once made WeChat pass as the desktop sidecar.
+  LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | tr -d '[:space:]'
 }
 
 # Gate every dsh dev startup path on manifest freshness (W-04): the embedded
@@ -227,6 +231,21 @@ is_service_process() {
       expected="$ellamaka_app_dir"
       ;;
     desktop) [[ "$command" == *"electron-vite"* ]] ;;
+    desktop-sidecar)
+      # utilityProcess.fork: an Electron Helper running the bundled sidecar as
+      # a node.mojom.NodeService utility. cwd is inherited from the Electron
+      # main process, which electron-vite starts in the desktop package dir.
+      [[ "$command" == *"node.mojom.NodeService"* ]] || return 1
+      expected="$DESKTOP_DIR_ABS"
+      ;;
+    desktop-vite|desktop-devtools)
+      [[ "$command" == *"electron-vite"* ]] || return 1
+      expected="$DESKTOP_DIR_ABS"
+      ;;
+    desktop-crashpad|desktop-crashpad-*)
+      [[ "$command" == *crashpad* ]] || return 1
+      expected="$DESKTOP_DIR_ABS"
+      ;;
     *) return 1 ;;
   esac
   [ -n "${expected:-}" ] || return 0
@@ -250,16 +269,17 @@ resolve_path() {
 
 record_is_current() {
   local label="$1" pid="$2" stamp="$3"
+  # Identity first, stamp second: a matching stamp alone is meaningless (two
+  # processes can start the same second; a foreign process can even inherit a
+  # recycled pid). Every record — including desktop sidecars/vite/crashpads —
+  # must answer "is this pid plausibly our service?" before anything else.
+  is_service_process "$pid" "$label" || return 1
   if [ -n "$stamp" ]; then
     [ "$(process_stamp "$pid")" = "$stamp" ] || return 1
     return 0
   fi
-  # No stamp (drift-fallback path): accept the pid only if its command matches
-  # this service type. The cwd gate that used to live here is gone — each
-  # worktree writes its own bucket under logs/dev/, so a pidfile record is
-  # already scoped by construction, and global views must be able to recognise
-  # sibling worktrees' instances.
-  is_service_process "$pid" "$label"
+  # No stamp (drift-fallback path): the command/cwd match above is the check.
+  return 0
 }
 
 rewrite_records() {
@@ -502,6 +522,10 @@ stop_service() {
 
   remove_service_records "$service"
   cleanup_service_logs "$service"
+  # The stop may have taken the bucket's last live record: drop an empty
+  # pidfile, its log leftovers, the bucket dir, and the registry entry too,
+  # instead of waiting for some future status to sweep them.
+  sweep_bucket "$DEV_DIR" "$DEV_SCOPE"
   echo "stopped $service"
 }
 
@@ -565,6 +589,10 @@ record_listener() {
   local label="$1" port="$2" pid pgid
   pid="$(listener_pid "$port")"
   [ -n "$pid" ] || return 1
+  # Never ledger a foreign listener: port 14013 belongs to whoever grabbed it
+  # (it was WeChat once). If the process does not match this service's
+  # command/cwd, refuse to write the record instead of making it unkillable.
+  is_service_process "$pid" "$label" || return 1
   pgid="$(pgid_of "$pid")"
   write_record "$label" "$port" "$pid" "$pgid"
 }
@@ -593,7 +621,11 @@ record_crashpads() {
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
     pgid="$(pgid_of "$pid")"
-    [ -n "$pgid" ] && write_record "desktop-crashpad-$pid" - "$pid" "$pgid"
+    [ -n "$pgid" ] || continue
+    # Same rule as record_listener: only ledger crashpads whose cwd/command
+    # identify them as ours; a same-second foreign crashpad must not ride in.
+    is_service_process "$pid" "desktop-crashpad" || continue
+    write_record "desktop-crashpad-$pid" - "$pid" "$pgid"
   done < <(pgrep -f 'ai\.ellamaka\.desktop\.local/Crashpad' 2>/dev/null || true)
 }
 
