@@ -43,7 +43,6 @@ export const dict = {
   "command.context.addSelection.description": "إضافة الأسطر المحددة من الملف الحالي",
   "command.input.focus": "التركيز على حقل الإدخال",
   "command.terminal.toggle": "تبديل المحطة الطرفية",
-  "command.fileTree.toggle": "تبديل شجرة الملفات",
   "command.review.toggle": "تبديل المراجعة",
   "command.terminal.new": "محطة طرفية جديدة",
   "command.terminal.new.description": "إنشاء علامة تبويب جديدة للمحطة الطرفية",
@@ -846,5 +845,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
   "workbench.chat.question": "سؤال: ",
   "workbench.chat.answer": "إجابة: ",
+  "workbench.chat.reasoning": "تفكير",
+  "workbench.chat.compaction": "تم ضغط السياق",
+  "workbench.chat.retry": "إعادة المحاولة #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
 }

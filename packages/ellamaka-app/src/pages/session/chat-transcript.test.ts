@@ -4,7 +4,6 @@ import type {
   Message,
   Part,
   SessionStatus,
-  SnapshotFileDiff,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import {
@@ -296,18 +295,6 @@ describe("projectTranscript", () => {
     expect((secondRow as Extract<TranscriptRow, { type: "assistant" }>).parts[0]).toBe(secondPart)
   })
 
-  test("emits a diff row from the user message summary", () => {
-    const diffs: SnapshotFileDiff[] = [{ file: "a.ts", additions: 2, deletions: 1, status: "modified" }]
-    const u1 = userMessage("u1", { summary: { diffs } })
-    const a1 = assistantMessage("a1", "u1")
-
-    const { rows } = projectTranscript({ messages: [u1, a1], getParts: () => [], status: idle })
-
-    const diffRows = rows.filter((r) => r.type === "diff")
-    expect(diffRows).toHaveLength(1)
-    expect(diffRows[0].diffs).toEqual(diffs)
-  })
-
   test("emits an error row for an assistant message with an error", () => {
     const u1 = userMessage("u1")
     const a1 = assistantMessage("a1", "u1", {
@@ -488,7 +475,6 @@ describe("rowKey", () => {
   test("returns a stable key for each row type", () => {
     const u1 = userMessage("u1")
     const a1 = assistantMessage("a1", "u1")
-    const diffs: SnapshotFileDiff[] = [{ file: "a.ts", additions: 1, deletions: 0 }]
 
     const userRow: TranscriptRow = { type: "user", key: "user:u1", turnID: "u1", message: u1, parts: [] }
     const assistantRow: TranscriptRow = {
@@ -498,12 +484,10 @@ describe("rowKey", () => {
       message: a1,
       parts: [],
     }
-    const diffRow: TranscriptRow = { type: "diff", key: "diff:u1", turnID: "u1", message: u1, diffs }
     const errorRow: TranscriptRow = { type: "error", key: "error:a1", turnID: "u1", message: a1 }
 
     expect(rowKey(userRow)).toBe("user:u1")
     expect(rowKey(assistantRow)).toBe("assistant:a1:p1")
-    expect(rowKey(diffRow)).toBe("diff:u1")
     expect(rowKey(errorRow)).toBe("error:a1")
   })
 })

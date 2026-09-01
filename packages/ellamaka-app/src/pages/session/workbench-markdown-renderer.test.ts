@@ -19,6 +19,8 @@ mock.module("@wopal/ui/context/i18n", () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
+const { suppressNativeMarkdownLinkStatus } = await import("./workbench-markdown-renderer")
+
 /**
  * WorkbenchMarkdown component behavior is verified end-to-end through the
  * chat timeline tests, which mock this renderer at the module boundary. These
@@ -75,6 +77,106 @@ describe("WorkbenchMarkdown streaming pipeline", () => {
   })
 })
 
+describe("WorkbenchMarkdown links", () => {
+  test("keeps Markdown links interactive without leaving an href for the browser status bar", () => {
+    const root = document.createElement("div")
+    root.innerHTML =
+      '<a href="/wopal-space/REGULATIONS.md">本体维护</a><a href="https://example.com/docs" target="_blank">文档</a>'
+
+    suppressNativeMarkdownLinkStatus(root)
+
+    const links = root.querySelectorAll("a")
+    expect(links).toHaveLength(2)
+    expect(links[0]?.getAttribute("href")).toBeNull()
+    expect(links[0]?.getAttribute("data-workbench-markdown-href")).toBe("/wopal-space/REGULATIONS.md")
+    expect(links[0]?.getAttribute("role")).toBe("link")
+    expect(links[0]?.getAttribute("tabindex")).toBe("0")
+    expect(links[1]?.getAttribute("href")).toBeNull()
+    expect(links[1]?.getAttribute("data-workbench-markdown-href")).toBe("https://example.com/docs")
+    expect(links[1]?.getAttribute("target")).toBe("_blank")
+  })
+})
+
+describe("WorkbenchMarkdown table layout", () => {
+  test("uses the full message reading lane for markdown tables", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toContain('[data-component="chat-narrative"] {\n  width: 100%;')
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] table \{[\s\S]*?display: table;[\s\S]*?width: 100%;[\s\S]*?max-width: 100%;/,
+    )
+  })
+
+  test("uses an airy row-divider treatment instead of boxed cells", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] th,[\s\S]*?\[data-slot="workbench-markdown-content"\] td \{[\s\S]*?border: 0;[\s\S]*?border-block-end: 1px solid var\(--border-base\);/,
+    )
+    expect(css).toContain(
+      '[data-slot="workbench-markdown-content"] th {\n  background: transparent;',
+    )
+    expect(css).toContain(
+      '[data-slot="workbench-markdown-content"] tbody tr:last-child td {\n  border-block-end: 0;',
+    )
+    expect(css).not.toContain('[data-slot="workbench-markdown-content"] tbody tr:hover td')
+  })
+
+  test("gives completed Mermaid diagrams their own stable, scroll-safe surface", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="workbench-markdown-content"\] \[data-component="markdown-mermaid"\] \{[\s\S]*?overflow: auto hidden;[\s\S]*?scrollbar-gutter: stable;[\s\S]*?border: 1px solid var\(--border-weaker-base\);/,
+    )
+  })
+})
+
+describe("Chat tool scrollbar geometry", () => {
+  test("reserves the tool scrollbar track while the pointer is away", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="chat-shell-command"\]::-webkit-scrollbar,[\s\S]*?\)::-webkit-scrollbar \{\n  display: block;\n  width: 8px;\n  height: 8px;/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-shell-command"\]::-webkit-scrollbar-thumb,[\s\S]*?\)::-webkit-scrollbar-thumb \{\n  background: transparent;/,
+    )
+    expect(css).toContain('scrollbar-color: transparent transparent;')
+    expect(css).not.toContain('[data-slot="chat-shell-command"]:hover::-webkit-scrollbar,')
+  })
+
+  test("marks every custom tool output as nested scrollable content", async () => {
+    const source = await Bun.file(new URL("./chat-tool-blocks.tsx", import.meta.url)).text()
+
+    for (const slot of ["chat-shell-command", "chat-shell-output", "chat-shell-error", "chat-context-output", "chat-generic-output"]) {
+      expect(source).toContain(`<pre data-slot="${slot}" data-scrollable="">`)
+    }
+    expect(source).toContain('<div data-component="chat-file-change-wrapper" data-scrollable="">')
+  })
+})
+
+describe("Chat tool header width", () => {
+  test("lets long tool details yield to the trailing status and keeps their tail visible", async () => {
+    const css = await Bun.file(new URL("../../index.css", import.meta.url)).text()
+
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-header"\]\s*\{[^}]*\bwidth: 100%;[^}]*\bmin-width: 0;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-trigger"\]\s*\{[^}]*\bflex: 1 1 auto;[^}]*\bmin-width: 0;[^}]*\boverflow: hidden;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-trailing"\]\s*\{[^}]*\bflex: 0 0 auto;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-tool-subtitle"\]\s*\{[^}]*\bdirection: rtl;[^}]*\btext-align: left;[^}]*\}/,
+    )
+    expect(css).toMatch(
+      /\[data-slot="chat-context-info-bar"\]\s*\{[^}]*\bbox-sizing: border-box;[^}]*\bwidth: 100%;[^}]*\}/,
+    )
+  })
+})
+
 describe("WorkbenchMarkdown highlight pipeline", () => {
   test("fnv1a is deterministic and content-sensitive", () => {
     expect(fnv1a("const a = 1")).toBe(fnv1a("const a = 1"))
@@ -114,6 +216,18 @@ describe("WorkbenchMarkdown highlight pipeline", () => {
     await deferredHighlight(container, undefined, { aborted: true })
 
     expect(container.querySelector("pre")?.classList.contains("shiki")).toBe(false)
+    container.remove()
+  })
+
+  test("leaves Mermaid fences for the completion-only SVG renderer", async () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    container.innerHTML = '<pre><code class="language-mermaid" data-lang="mermaid">flowchart LR\nA --> B</code></pre>'
+
+    await deferredHighlight(container)
+
+    expect(container.querySelector("pre")?.classList.contains("shiki")).toBe(false)
+    expect(container.querySelector("code")?.textContent).toContain("flowchart LR")
     container.remove()
   })
 

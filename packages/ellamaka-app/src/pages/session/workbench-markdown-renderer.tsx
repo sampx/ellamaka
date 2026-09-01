@@ -1,4 +1,5 @@
 import { useI18n } from "@wopal/ui/context/i18n"
+import { useTheme } from "@wopal/ui/theme/context"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
 import { checksum } from "@wopal/ellamaka-core/util/encode"
@@ -7,6 +8,7 @@ import { isServer } from "solid-js/web"
 import { streamBlocks } from "./workbench-markdown-stream"
 import { createIncrementalMarkdown } from "./markdown-incremental-dom"
 import { tryFastRender } from "./markdown-fast-path"
+import { deferredMermaid } from "./markdown-mermaid"
 import {
   deferredHighlight,
   fnv1a,
@@ -74,6 +76,7 @@ type CopyLabels = {
 }
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
+const markdownLinkHrefAttribute = "data-workbench-markdown-href"
 
 function codeUrl(text: string) {
   const href = text.trim().replace(/[),.;!?]+$/, "")
@@ -183,12 +186,54 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
+/**
+ * A native anchor's href makes Chromium show a URL in its status bar while
+ * hovered. Chat keeps links keyboard-accessible but delegates navigation so
+ * the transcript stays visually self-contained.
+ */
+export function suppressNativeMarkdownLinkStatus(root: ParentNode) {
+  const links = Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))
+  for (const link of links) {
+    const href = link.getAttribute("href")
+    if (!href) continue
+    link.setAttribute(markdownLinkHrefAttribute, href)
+    link.removeAttribute("href")
+    link.setAttribute("role", "link")
+    if (!link.hasAttribute("tabindex")) link.tabIndex = 0
+  }
+}
+
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
   markCodeLinks(root)
+  suppressNativeMarkdownLinkStatus(root)
+}
+
+function markdownLinkFromTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return
+  const link = target.closest<HTMLAnchorElement>(`a[${markdownLinkHrefAttribute}]`)
+  return link ?? undefined
+}
+
+function navigateMarkdownLink(link: HTMLAnchorElement, newWindow: boolean) {
+  const rawHref = link.getAttribute(markdownLinkHrefAttribute)
+  if (!rawHref) return
+  let href: string
+  try {
+    const url = new URL(rawHref, window.location.href)
+    if (!["http:", "https:", "mailto:"].includes(url.protocol)) return
+    href = url.href
+  } catch {
+    return
+  }
+  if (newWindow) {
+    window.open(href, "_blank", "noopener,noreferrer")
+    return
+  }
+  window.location.assign(href)
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -265,7 +310,28 @@ export function WorkbenchMarkdown(
 ) {
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "class", "classList"])
   const i18n = useI18n()
+  const theme = useTheme()
   const [root, setRoot] = createSignal<HTMLDivElement>()
+  const handleLinkClick = (event: MouseEvent) => {
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, link.getAttribute("target") === "_blank" || event.metaKey || event.ctrlKey || event.shiftKey)
+  }
+  const handleLinkAuxClick = (event: MouseEvent) => {
+    if (event.button !== 1) return
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, true)
+  }
+  const handleLinkKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Enter") return
+    const link = markdownLinkFromTarget(event.target)
+    if (!link) return
+    event.preventDefault()
+    navigateMarkdownLink(link, link.getAttribute("target") === "_blank")
+  }
   const [html] = createResource(
     () => ({
       text: local.text,
@@ -316,11 +382,20 @@ export function WorkbenchMarkdown(
   let pendingFrame: number | undefined
   let pendingContent: string | undefined
   let pendingLabels: { copy: string; copied: string } | undefined
+  let renderedContent = ""
 
   // Generation counter + abort signal: a newer render cancels any in-flight
   // highlight pass so concurrent passes never race on the same DOM nodes
   // (ported from kilocode, issue #6221).
   const highlightState = { gen: 0, signal: { aborted: false } }
+  const mermaidState = { signal: { aborted: false } }
+
+  function kickMermaid(container: HTMLDivElement, mode: "light" | "dark", streaming: boolean) {
+    mermaidState.signal.aborted = true
+    const signal = { aborted: false }
+    mermaidState.signal = signal
+    void deferredMermaid(container, { mode, streaming }, signal).catch(() => {})
+  }
 
   function kickHighlight(container: HTMLDivElement, labels: CopyLabels) {
     highlightState.signal.aborted = true
@@ -356,6 +431,8 @@ export function WorkbenchMarkdown(
     const container = root()
     const rendered = html.latest ?? html() ?? { content: "", blocks: [] }
     const content = local.text ? rendered.content : ""
+    const themeMode = theme.mode()
+    const streaming = local.streaming ?? false
     if (!container) return
     if (isServer) return
 
@@ -368,12 +445,22 @@ export function WorkbenchMarkdown(
       }
       incremental.reset()
       container.innerHTML = ""
+      renderedContent = ""
       return
     }
 
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
+    }
+
+    // Theme and locale updates should refresh only the deferred decorators.
+    // Re-applying the raw markdown here would temporarily replace a completed
+    // diagram with its source code before Mermaid can redraw it.
+    if (renderedContent === content && container.childNodes.length > 0) {
+      kickMermaid(container, themeMode, streaming)
+      kickHighlight(container, labels)
+      return
     }
 
     const fast = tryFastRender(container, content, local.streaming, decorate, setupCodeCopy, () => labels, copyCleanup)
@@ -386,11 +473,15 @@ export function WorkbenchMarkdown(
       }
       incremental.reset()
       copyCleanup = fast.copyCleanup
+      renderedContent = content
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, labels)
       return
     }
 
-    if (incremental.render(local.streaming ?? false, container, rendered.blocks, labels, undefined)) {
+    if (incremental.render(streaming, container, rendered.blocks, labels, undefined)) {
+      renderedContent = content
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, labels)
       return
     }
@@ -454,7 +545,9 @@ export function WorkbenchMarkdown(
         },
       })
 
+      renderedContent = next
       copyCleanup ??= setupCodeCopy(container, () => nextLabels)
+      kickMermaid(container, themeMode, streaming)
       kickHighlight(container, nextLabels)
     })
   })
@@ -468,6 +561,7 @@ export function WorkbenchMarkdown(
     }
     highlightState.signal.aborted = true
     highlightState.gen++
+    mermaidState.signal.aborted = true
     if (copyCleanup) copyCleanup()
   })
 
@@ -480,6 +574,9 @@ export function WorkbenchMarkdown(
         [local.class ?? ""]: !!local.class,
       }}
       ref={setRoot}
+      on:click={handleLinkClick}
+      on:auxclick={handleLinkAuxClick}
+      on:keydown={handleLinkKeyDown}
       {...others}
     />
   )

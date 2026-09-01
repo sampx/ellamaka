@@ -49,7 +49,6 @@ export const dict = {
   "command.context.addSelection.description": "Añadir las líneas seleccionadas del archivo actual",
   "command.input.focus": "Enfocar entrada",
   "command.terminal.toggle": "Alternar terminal",
-  "command.fileTree.toggle": "Alternar árbol de archivos",
   "command.review.toggle": "Alternar revisión",
   "command.terminal.new": "Nueva terminal",
   "command.terminal.new.description": "Crear una nueva pestaña de terminal",
@@ -942,5 +941,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Error al crear almacén",
   "workbench.chat.question": "Pregunta: ",
   "workbench.chat.answer": "Respuesta: ",
+  "workbench.chat.reasoning": "Pensando",
+  "workbench.chat.compaction": "Contexto compactado",
+  "workbench.chat.retry": "Reintento #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket cerrado anormalmente: {{code}}",
 }

@@ -43,7 +43,6 @@ export const dict = {
   "command.context.addSelection.description": "현재 파일에서 선택한 줄을 추가",
   "command.input.focus": "입력창 포커스",
   "command.terminal.toggle": "터미널 토글",
-  "command.fileTree.toggle": "파일 트리 토글",
   "command.review.toggle": "검토 토글",
   "command.terminal.new": "새 터미널",
   "command.terminal.new.description": "새 터미널 탭 생성",
@@ -848,5 +847,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "저장소 생성 실패",
   "workbench.chat.question": "질문: ",
   "workbench.chat.answer": "답변: ",
+  "workbench.chat.reasoning": "생각 중",
+  "workbench.chat.compaction": "컨텍스트가 압축되었습니다",
+  "workbench.chat.retry": "재시도 #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket이 비정상적으로 닫힘: {{code}}",
 }

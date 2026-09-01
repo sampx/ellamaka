@@ -1,4 +1,5 @@
-import { ErrorBoundary, Show, createEffect, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
 import { SessionStoreProvider, useSessionProjectionWriter, useSessionStore } from "./session-store"
@@ -6,6 +7,18 @@ import { WorkbenchTitlebar } from "./parts/top-bar"
 import { SpaceRail } from "./parts/sidebar"
 import { Workspace } from "./parts/workspace"
 import { StatusBar } from "./parts/status-bar"
+import { WorkbenchInspector } from "./parts/inspector-panel"
+import {
+  clampInspectorWidth,
+  closeSurfaceTab,
+  INSPECTOR_DEFAULT_WIDTH,
+  openSurfaceTab,
+  surfaceTabKey,
+  type FileSurfaceTab,
+  type SurfaceTab,
+} from "./parts/inspector-adapter"
+import { Persist, persisted } from "@/utils/persist"
+import type { FileNode } from "@opencode-ai/sdk/v2"
 import { sessionRemovalReasonFromEvent, shouldNotifySessionRemoval, shouldSyncSessionTitle, workbenchSessionEvent } from "./parts/panel-session-lifecycle"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -13,10 +26,12 @@ import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchRuntimeProvider, useWorkbenchRuntime } from "./workbench-runtime"
+import { WorkbenchPromptRegistryProvider } from "./workbench-prompt-registry"
 import { WorkbenchSidecarCleanupBinding } from "./workbench-sidecar-cleanup"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
 import { WorkbenchSessionDeepLink } from "./workbench-session-deep-link"
 import { DshSurface } from "./dsh-surface"
+import { WorkbenchSurfaceProvider } from "./workbench-surface-context"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 import { reportWorkbenchError, type WorkbenchErrorDetail, WORKBENCH_ERROR_EVENT } from "./workbench-error"
 import { CliRepairDialog } from "./parts/cli-repair-dialog"
@@ -37,6 +52,42 @@ function WorkbenchShell() {
   const dialog = useDialog()
   const t: typeof language.t = (key, params) => language.t(key, params)
   let workbenchSurface: HTMLDivElement | undefined
+
+  // Generic right-hand surface state. Transient-by-session but persisted across
+  // reloads so reopened tabs survive a refresh (AGENTS.md §5.1: layout-ish UI
+  // state may persist; file contents themselves are re-fetched, never stored).
+  const [surfaceStore, setSurfaceStore] = persisted(
+    Persist.global("workbench.inspector", []),
+    createStore<{ tabs: SurfaceTab[]; activeKey?: string; width: number; expanded: boolean; pinned: boolean }>({
+      tabs: [],
+      activeKey: undefined,
+      width: INSPECTOR_DEFAULT_WIDTH,
+      expanded: false,
+      pinned: false,
+    }),
+  )
+  // Clamped on read so a stale persisted width can never break the layout.
+  const surfaceWidth = () => clampInspectorWidth(surfaceStore.width, window.innerWidth)
+  const surfaceTabs = () => surfaceStore.tabs
+  const surfaceActiveKey = () => surfaceStore.activeKey
+  const handleFileClick = (file: FileNode) => {
+    const entry: FileSurfaceTab = {
+      kind: "file",
+      directory: wb.activeTabPath,
+      filePath: file.path,
+      name: file.name,
+    }
+    setSurfaceStore("tabs", (tabs) => openSurfaceTab(tabs, entry))
+    setSurfaceStore("activeKey", surfaceTabKey(entry))
+    // Opening content is an explicit intent to see it: re-expand the surface
+    // when the user or a prior session had collapsed it.
+    if (!wb.display().showFileViewer) wb.setDisplay("showFileViewer", true)
+  }
+  const closeSurfaceTabByKey = (key: string) => {
+    const result = closeSurfaceTab(surfaceStore.tabs, surfaceActiveKey() ?? "", key)
+    setSurfaceStore("tabs", result.tabs)
+    setSurfaceStore("activeKey", result.activeKey)
+  }
 
   const requestCliRepair = (cli: NonNullable<typeof runtime.cli>) => {
     void dialog.show(() => (
@@ -171,16 +222,41 @@ function WorkbenchShell() {
             </div>
           }
         >
-          <Show when={display().showTitlebar}>
-            <WorkbenchActiveDirectoryProvider>
-              {() => <WorkbenchTitlebar />}
-            </WorkbenchActiveDirectoryProvider>
-          </Show>
+          <WorkbenchPromptRegistryProvider>
+            <WorkbenchSurfaceProvider
+              hasTabs={() => surfaceTabs().length > 0}
+              visible={() => wb.display().showFileViewer}
+              toggleVisibility={() => wb.setDisplay("showFileViewer", !wb.display().showFileViewer)}
+            >
+            <Show when={display().showTitlebar}>
+              <WorkbenchActiveDirectoryProvider>
+                {() => <WorkbenchTitlebar />}
+              </WorkbenchActiveDirectoryProvider>
+            </Show>
           <DshSurface>
             <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-              <SpaceRail />
-              <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <SpaceRail onFileClick={handleFileClick} />
+              <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <Workspace />
+                <Show when={display().showFileViewer && surfaceTabs().length > 0 && surfaceActiveKey()}>
+                  <WorkbenchInspector
+                    tabs={surfaceTabs()}
+                    activeKey={surfaceActiveKey()!}
+                    onActiveKeyChange={(key) => setSurfaceStore("activeKey", key)}
+                    width={surfaceWidth()}
+                    onWidthChange={(width) => setSurfaceStore("width", width)}
+                    expanded={surfaceStore.expanded}
+                    onExpandedChange={(expanded) => setSurfaceStore("expanded", expanded)}
+                    pinned={surfaceStore.pinned}
+                    onPinnedChange={(pinned) => setSurfaceStore("pinned", pinned)}
+                    onCloseTab={closeSurfaceTabByKey}
+                    onClose={() => {
+                      setSurfaceStore("tabs", [])
+                      setSurfaceStore("activeKey", undefined)
+                    }}
+                    onDismiss={() => wb.setDisplay("showFileViewer", false)}
+                  />
+                </Show>
               </div>
             </div>
           </DshSurface>
@@ -188,6 +264,8 @@ function WorkbenchShell() {
             <StatusBar />
           </Show>
           <WorkbenchSessionDeepLink />
+          </WorkbenchSurfaceProvider>
+          </WorkbenchPromptRegistryProvider>
         </Show>
       </div>
       <Show when={runtime.status === "offline"}>

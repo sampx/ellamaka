@@ -1,4 +1,4 @@
-import { createMemo, createEffect, onCleanup, Show, batch, on } from "solid-js"
+import { createMemo, createEffect, createSignal, onCleanup, Show, batch, on } from "solid-js"
 import type { JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
@@ -15,7 +15,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { PromptProvider, usePrompt } from "@/context/prompt"
 import { FileProvider } from "@/context/file"
 import { TerminalProvider } from "@/context/terminal"
-import { CommentsProvider } from "@/context/comments"
+import { CommentsProvider, useComments } from "@/context/comments"
 import { LocalProvider, useLocal } from "@/context/local"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
@@ -40,7 +40,14 @@ import { panelChatRoute } from "./panel-chat-route"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import { Identifier } from "@/utils/id"
 import { nextFollowupToSend } from "./panel-chat-followup"
+import { useWorkbenchPromptRegistry } from "../workbench-prompt-registry"
 import { chatTranscriptNavigation } from "./panel-chat-resume-scroll"
+import {
+  initialChatFollowState,
+  shouldKeepChatAtLatest,
+  shouldRestoreChatFollowAfterCompletion,
+  transitionChatFollowState,
+} from "./panel-chat-follow-state"
 
 import { reportWorkbenchError } from "../workbench-error"
 
@@ -62,6 +69,8 @@ function PanelChatInner(props: {
   const sdk = useSDK()
   const serverSync = useServerSync()
   const prompt = usePrompt()
+  const comments = useComments()
+  const promptRegistry = useWorkbenchPromptRegistry()
   const language = useLanguage()
   const settings = useSettings()
   const actions = useWorkbenchActions()
@@ -72,6 +81,31 @@ function PanelChatInner(props: {
     providers.all().get(providerID)?.models[modelID]?.name
   const scope = createMemo(() => scopeFromTab({ name: props.spaceName, path: props.spacePath }))
 
+  // Expose this Panel's prompt/comments to the workbench-wide registry so the
+  // floating file viewer can submit line comments into the active Panel's
+  // prompt context. Registration must run on mount (no defer) — panel ids are
+  // stable, so a deferred `on` would never fire and the registry stays empty.
+  createEffect(
+    on(
+      () => props.panel.id,
+      (panelID) => {
+        if (!panelID) return
+        promptRegistry.registerPrompt(panelID, prompt)
+        promptRegistry.registerComments(panelID, comments)
+        onCleanup(() => {
+          promptRegistry.unregisterPrompt(panelID)
+          promptRegistry.unregisterComments(panelID)
+        })
+      },
+    ),
+  )
+  createEffect(() => {
+    const state = wb.spaceState(props.spacePath)
+    const isActive = state?.activePanelID === props.panel.id
+    if (!isActive) return
+    promptRegistry.setActivePanel(props.panel.id)
+  })
+
   const panels = () => wb.spaceState(props.spacePath)?.panels ?? []
   const canSplit = createMemo(() => {
     const list = panels()
@@ -79,7 +113,13 @@ function PanelChatInner(props: {
   })
 
   const composer = createSessionComposerState()
-  const autoScroll = createAutoScroll({ working: () => true, overflowAnchor: "dynamic" })
+  const sessionWorking = createMemo(() => sync.data.session_working(props.session.id))
+  const [followState, setFollowState] = createSignal(initialChatFollowState)
+  const autoScroll = createAutoScroll({
+    working: sessionWorking,
+    overflowAnchor: "dynamic",
+    onUserInteracted: () => setFollowState((current) => transitionChatFollowState(current, "pause")),
+  })
   let navigateUserMessage: UserMessageNavigator | undefined
 
   // Followups are transient Panel UI state. The server owns delivered
@@ -132,6 +172,7 @@ function PanelChatInner(props: {
   let scroller: HTMLDivElement | undefined
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
+  let completionFollowFrame: number | undefined
 
   const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
 
@@ -157,11 +198,39 @@ function PanelChatInner(props: {
     })
   }
 
+  const pauseFollowLatest = () => {
+    setFollowState((current) => transitionChatFollowState(current, "pause"))
+    autoScroll.pause()
+  }
+
   const resumeScroll = () => {
+    setFollowState((current) => transitionChatFollowState(current, "resume"))
     autoScroll.forceScrollToBottom()
     const el = scroller
     if (el) scheduleScrollState(el)
   }
+
+  const lockFollowingLatest = () => {
+    if (!shouldKeepChatAtLatest(followState())) return
+    autoScroll.forceScrollToBottom()
+    if (scroller) scheduleScrollState(scroller)
+  }
+
+  createEffect(
+    on(sessionWorking, (working, previousWorking) => {
+      if (!shouldRestoreChatFollowAfterCompletion({ previousWorking, working, state: followState() })) return
+      lockFollowingLatest()
+      if (completionFollowFrame !== undefined) cancelAnimationFrame(completionFollowFrame)
+      completionFollowFrame = requestAnimationFrame(() => {
+        completionFollowFrame = requestAnimationFrame(() => {
+          completionFollowFrame = undefined
+          // The last live turn is mounted into Virtua after Idle. Reassert the
+          // user's explicit follow intent after Virtua has measured that move.
+          lockFollowingLatest()
+        })
+      })
+    }),
+  )
 
   createEffect(() => {
     if (typeof window === "undefined") return
@@ -173,7 +242,6 @@ function PanelChatInner(props: {
       if (!navigation) return
 
       if (navigation === "latest") {
-        if (!ui.scroll.overflow || ui.scroll.bottom) return
         event.preventDefault()
         resumeScroll()
         return
@@ -199,12 +267,9 @@ function PanelChatInner(props: {
     if (root) scheduleScrollState(root)
   }
 
-  let scrollMark = 0
-  const markUserScroll = () => { scrollMark += 1 }
-  const hasScrollGesture = () => scrollMark > 0
-
   onCleanup(() => {
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
+    if (completionFollowFrame !== undefined) cancelAnimationFrame(completionFollowFrame)
   })
 
   let inputRef: HTMLDivElement | undefined
@@ -565,15 +630,11 @@ function PanelChatInner(props: {
             setScrollRef={setScrollRef}
             setContentRef={setContentRef}
             onScheduleScrollState={scheduleScrollState}
-            onAutoScrollHandleScroll={autoScroll.handleScroll}
-            onMarkScrollGesture={() => {}}
-            hasScrollGesture={hasScrollGesture}
-            onUserScroll={markUserScroll}
+            onUserScroll={pauseFollowLatest}
             onHistoryScroll={historyLoader.onScrollerScroll}
             onAutoScrollInteraction={autoScroll.handleInteraction}
-            shouldAnchorBottom={() => !autoScroll.userScrolled()}
             onResumeScroll={resumeScroll}
-            onPauseAutoScroll={autoScroll.pause}
+            onPauseAutoScroll={pauseFollowLatest}
             actions={{ revert, fork: forkMessage, canSplit: canSplit() }}
             actionLabels={{
               fork: language.t("ui.message.forkMessage"),

@@ -15,6 +15,16 @@ mock.module("@wopal/ui/icon", () => ({
   Icon: (props: { name: string }) => <span data-slot="chat-icon" data-icon={props.name} />,
 }))
 
+const showDialog = mock((_content: () => JSX.Element) => undefined)
+
+mock.module("@opencode-ai/ui/context/dialog", () => ({
+  useDialog: () => ({ show: showDialog }),
+}))
+
+mock.module("@/context/language", () => ({
+  useLanguage: () => ({ t: (key: string) => key }),
+}))
+
 type FileDiffStubProps = {
   mode?: string
   fileDiff?: { deletionLines?: string[]; additionLines?: string[] }
@@ -99,7 +109,6 @@ import {
   InteractionBlock,
   NarrativeBlock,
   ReasoningBlock,
-  TurnChangeSummary,
   TurnOutcome,
   UserMessageBlock,
 } from "./chat-blocks"
@@ -196,6 +205,35 @@ describe("UserMessageBlock", () => {
     const host = mount(() => <UserMessageBlock message={u} parts={parts} />)
     expect(host.querySelector("[data-slot='chat-user-attachment']")).not.toBeNull()
     expect(host.textContent).toContain("a.ts")
+    host.remove()
+  })
+
+  test("renders image attachments as clickable thumbnails that open a preview", () => {
+    const u = userMessage("u-image")
+    const imageURL = "data:image/png;base64,iVBORw0KGgo="
+    const parts: Part[] = [
+      textPart("p-image", "u-image", "look at this"),
+      {
+        id: "image-1",
+        sessionID: "s",
+        messageID: "u-image",
+        type: "file",
+        mime: "image/png",
+        url: imageURL,
+        filename: "terminal.png",
+      },
+    ]
+    const host = mount(() => <UserMessageBlock message={u} parts={parts} />)
+    const image = host.querySelector("[data-slot='chat-user-image-attachment']") as HTMLButtonElement
+
+    expect(image).not.toBeNull()
+    expect(image.querySelector("img")?.getAttribute("src")).toBe(imageURL)
+    expect(image.querySelector("img")?.getAttribute("alt")).toBe("terminal.png")
+    const text = host.querySelector("[data-slot='chat-user-text']")
+    expect(image.compareDocumentPosition(text!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    image.click()
+    expect(showDialog).toHaveBeenCalledTimes(1)
     host.remove()
   })
 
@@ -314,7 +352,7 @@ describe("ReasoningBlock", () => {
     const reasoning = host.querySelector("[data-component='chat-reasoning']")
     expect(reasoning).not.toBeNull()
     expect(reasoning?.hasAttribute("data-streaming")).toBe(false)
-    expect(host.textContent).toContain("思考")
+    expect(host.textContent).toContain("workbench.chat.reasoning")
     host.remove()
   })
 
@@ -348,6 +386,7 @@ describe("ReasoningBlock", () => {
     const preview = host.querySelector("[data-slot='chat-reasoning-preview']")
     expect(preview).not.toBeNull()
     expect(preview?.textContent).toContain("internal reasoning")
+    expect(preview?.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -434,18 +473,6 @@ describe("ReasoningBlock", () => {
     setPart("text", "line 1\nline 2\nline 3\nline 4\nline 5")
     await new Promise((resolve) => window.requestAnimationFrame(resolve))
     expect(scrollTop).toBe(800)
-    host.remove()
-  })
-})
-
-describe("TurnChangeSummary", () => {
-  test("renders file count and diff stats", () => {
-    const u = userMessage("u1", {
-      summary: { diffs: [{ file: "a.ts", additions: 2, deletions: 1, status: "modified" }] },
-    })
-    const host = mount(() => <TurnChangeSummary message={u} />)
-    expect(host.querySelector("[data-component='chat-change-summary']")).not.toBeNull()
-    expect(host.textContent).toContain("a.ts")
     host.remove()
   })
 })
@@ -577,7 +604,7 @@ describe("ContextToolBlock", () => {
     host.remove()
   })
 
-  test("exposes the full absolute path of a read file on hover via the title attribute", () => {
+  test("does not expose a native hover tooltip for a shortened read path", () => {
     const a = assistantMessage("a-read-title", "u1")
     const part = toolPart("t-read-title", "a-read-title", "read", "c-read-title", {
       input: { filePath: "/repo/deep/nested/big.ts" },
@@ -587,7 +614,7 @@ describe("ContextToolBlock", () => {
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
     expect(subtitle).not.toBeNull()
     expect(subtitle.textContent).toBe("deep/nested/big.ts")
-    expect(subtitle.getAttribute("title")).toBe("/repo/deep/nested/big.ts")
+    expect(subtitle.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -602,7 +629,7 @@ describe("ContextToolBlock", () => {
     const subtitle = host.querySelector("[data-slot='chat-tool-subtitle']") as HTMLElement
     expect(subtitle).not.toBeNull()
     expect(subtitle.textContent).toBe("src/early.ts")
-    expect(subtitle.getAttribute("title")).toBe("/repo/src/early.ts")
+    expect(subtitle.getAttribute("title")).toBeNull()
     host.remove()
   })
 
@@ -832,7 +859,7 @@ describe("FileChangeBlock", () => {
     expect(trigger).not.toBeNull()
     expect(trigger.querySelector("[data-slot='chat-tool-title']")?.textContent).toBe("edit")
     expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("src/b.ts")
-    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBe("/repo/src/b.ts")
+    expect(trigger.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBeNull()
     expect(host.querySelector("[data-component='chat-file-change-wrapper']")).not.toBeNull()
     expect(host.querySelector("[data-renderer='opencode-message-part']")).not.toBeNull()
     host.remove()
@@ -974,6 +1001,18 @@ describe("GenericToolBlock", () => {
     expect(args).toContain("verbose=true")
     // The primary label stays separate and never swallows the params.
     expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.textContent).toBe("search")
+    host.remove()
+  })
+
+  test("does not attach native hover tooltips to generic tool labels or arguments", () => {
+    const a = assistantMessage("a-generic-no-tooltip", "u1")
+    const part = toolPart("t-generic-no-tooltip", "a-generic-no-tooltip", "memory_manage", "c-generic-no-tooltip", {
+      input: { command: "search", category: "experience", limit: 5 },
+    })
+    const host = mount(() => <GenericToolBlock part={part} message={a} />)
+
+    expect(host.querySelector("[data-slot='chat-tool-subtitle']")?.getAttribute("title")).toBeNull()
+    expect(host.querySelectorAll("[data-slot='chat-tool-arg'][title]")).toHaveLength(0)
     host.remove()
   })
 

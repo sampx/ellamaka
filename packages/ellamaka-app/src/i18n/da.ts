@@ -49,7 +49,6 @@ export const dict = {
   "command.context.addSelection.description": "Tilføj markerede linjer fra den aktuelle fil",
   "command.input.focus": "Fokuser inputfelt",
   "command.terminal.toggle": "Skift terminal",
-  "command.fileTree.toggle": "Skift filtræ",
   "command.review.toggle": "Skift gennemgang",
   "command.terminal.new": "Ny terminal",
   "command.terminal.new.description": "Opret en ny terminalfane",
@@ -929,5 +928,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Kunne ikke oprette lager",
   "workbench.chat.question": "Spørgsmål: ",
   "workbench.chat.answer": "Svar: ",
+  "workbench.chat.reasoning": "Tænker",
+  "workbench.chat.compaction": "Kontekst komprimeret",
+  "workbench.chat.retry": "Forsøg #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket lukkede unormalt: {{code}}",
 }

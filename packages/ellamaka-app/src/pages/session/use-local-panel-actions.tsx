@@ -78,7 +78,9 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
   const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  const shown = () => (desktopV2() ? settings.general.showFileTree() : true)
+  // Legacy file-tree setting was removed; the previous default (false on
+  // desktop v2) keeps the same shown behavior.
+  const shown = () => !desktopV2()
 
   const messages = () => {
     const id = getSessionID()

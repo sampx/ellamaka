@@ -43,7 +43,6 @@ export const dict = {
   "command.context.addSelection.description": "現在のファイルから選択した行を追加",
   "command.input.focus": "入力欄にフォーカス",
   "command.terminal.toggle": "ターミナルの切り替え",
-  "command.fileTree.toggle": "ファイルツリーを切り替え",
   "command.review.toggle": "レビューの切り替え",
   "command.terminal.new": "新しいターミナル",
   "command.terminal.new.description": "新しいターミナルタブを作成",
@@ -853,5 +852,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "ストアの作成に失敗しました",
   "workbench.chat.question": "質問：",
   "workbench.chat.answer": "回答：",
+  "workbench.chat.reasoning": "思考中",
+  "workbench.chat.compaction": "コンテキストを圧縮しました",
+  "workbench.chat.retry": "再試行 #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
 }

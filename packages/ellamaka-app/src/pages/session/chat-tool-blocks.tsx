@@ -42,7 +42,6 @@ function ToolBlockHeader(props: {
   title: string
   titleColor?: string
   subtitle?: string
-  subtitleTitle?: string
   args?: string[]
   status: string
   open: boolean
@@ -74,11 +73,11 @@ function ToolBlockHeader(props: {
           {props.title}
         </span>
         <Show when={props.subtitle}>
-          <span data-slot="chat-tool-subtitle" title={props.subtitleTitle}>{props.subtitle}</span>
+          <span data-slot="chat-tool-subtitle">{props.subtitle}</span>
         </Show>
         <For each={props.args}>
           {(arg) => (
-            <span data-slot="chat-tool-arg" title={arg}>{arg}</span>
+            <span data-slot="chat-tool-arg">{arg}</span>
           )}
         </For>
         <span data-slot="chat-tool-chevron" aria-hidden="true">
@@ -181,7 +180,7 @@ export function ContextToolBlock(props: {
           </span>
           <span data-slot="chat-tool-title">read</span>
           <Show when={subtitle()}>
-            <span data-slot="chat-tool-subtitle" title={rawPath()}>{displayPath()}</span>
+            <span data-slot="chat-tool-subtitle">{displayPath()}</span>
           </Show>
           <span data-slot="chat-tool-status" data-status={props.part.state.status}>
             {toolStatusLabel(props.part.state.status)}
@@ -210,7 +209,7 @@ export function ContextToolBlock(props: {
         />
         <Collapsible.Content>
           <Show when={output()}>
-            <pre data-slot="chat-context-output">{output()}</pre>
+            <pre data-slot="chat-context-output" data-scrollable="">{output()}</pre>
           </Show>
         </Collapsible.Content>
       </Collapsible>
@@ -289,7 +288,7 @@ export function ShellActivityBlock(props: { part: ToolPart; message: AssistantMe
         />
         <Collapsible.Content>
           <div data-slot="chat-shell-command-region">
-            <pre data-slot="chat-shell-command">$ {command()}</pre>
+            <pre data-slot="chat-shell-command" data-scrollable="">$ {command()}</pre>
             <button
               type="button"
               data-action="chat-shell-copy"
@@ -302,12 +301,12 @@ export function ShellActivityBlock(props: { part: ToolPart; message: AssistantMe
           </div>
           <Show when={output()}>
             <div data-slot="chat-shell-output-region">
-              <pre data-slot="chat-shell-output">{output()}</pre>
+              <pre data-slot="chat-shell-output" data-scrollable="">{output()}</pre>
             </div>
           </Show>
           <Show when={error()}>
             <div data-slot="chat-shell-error-region">
-              <pre data-slot="chat-shell-error">{error()}</pre>
+              <pre data-slot="chat-shell-error" data-scrollable="">{error()}</pre>
             </div>
           </Show>
         </Collapsible.Content>
@@ -379,7 +378,6 @@ export function FileChangeBlock(props: {
           icon="code-lines"
           title={title()}
           subtitle={subtitle()}
-          subtitleTitle={filePath()}
           status={props.part.state.status}
           open={open()}
           toggle={(_event: MouseEvent) => setOpen(!open())}
@@ -395,7 +393,7 @@ export function FileChangeBlock(props: {
             {(renderer) => {
               const Renderer = renderer()
               return (
-                <div data-component="chat-file-change-wrapper">
+                <div data-component="chat-file-change-wrapper" data-scrollable="">
                   <Renderer
                     part={props.part}
                     message={props.message}
@@ -536,7 +534,7 @@ export function GenericToolBlock(props: { part: ToolPart; message: AssistantMess
         />
         <Collapsible.Content>
           <Show when={output()}>
-            <pre data-slot="chat-generic-output">{output()}</pre>
+            <pre data-slot="chat-generic-output" data-scrollable="">{output()}</pre>
           </Show>
         </Collapsible.Content>
       </Collapsible>

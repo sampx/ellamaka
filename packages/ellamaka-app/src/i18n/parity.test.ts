@@ -24,6 +24,8 @@ const keys = [
   "command.session.next.unseen",
   "workbench.chat.question",
   "workbench.chat.answer",
+  "workbench.chat.reasoning",
+  "workbench.chat.compaction",
 ] as const
 
 describe("i18n parity", () => {

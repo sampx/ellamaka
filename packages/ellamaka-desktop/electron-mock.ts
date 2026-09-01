@@ -20,6 +20,9 @@ mock.module("electron", () => ({
     startLogging: () => Promise.resolve(),
     stopLogging: () => Promise.resolve(),
   },
+  utilityProcess: {
+    fork: () => ({}),
+  },
   shell: {
     openPath: () => Promise.resolve(""),
     openExternal: () => Promise.resolve(),

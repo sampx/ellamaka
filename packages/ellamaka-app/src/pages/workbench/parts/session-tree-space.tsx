@@ -157,6 +157,7 @@ function DateLocationItem(props: {
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
   onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
   setSelectedSessionId: (id: string) => void
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
@@ -213,6 +214,7 @@ function DateLocationItem(props: {
                 activeSessionId={props.activeSessionId}
                 pinnedSessions={props.pinnedSessions}
                 onSessionClick={props.onSessionClick}
+                onSessionDblClick={props.onSessionDblClick}
                 onContextMenu={(event) => {
                   const sessionData = props.group.sessions.find((candidate) => candidate.id === session.id)
                   if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, "general-date")
@@ -246,6 +248,7 @@ function ProjectLocationItem(props: {
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
   onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
   setSelectedSessionId: (id: string) => void
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
@@ -314,6 +317,7 @@ function ProjectLocationItem(props: {
                 activeSessionId={props.activeSessionId}
                 pinnedSessions={props.pinnedSessions}
                 onSessionClick={props.onSessionClick}
+                onSessionDblClick={props.onSessionDblClick}
                 onContextMenu={(event) => {
                   const sessionData = props.location.sessions.find((candidate) => candidate.id === session.id)
                   if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, props.location.kind)
@@ -337,6 +341,7 @@ export function SessionTreeSpace(props: {
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
   onSessionContextMenu: (e: MouseEvent, session: MergedSession, spacePath: string, sessionData: GroupSession, locationKind: SessionTreeLocation["kind"]) => void
   setSelectedSessionId: (id: string) => void
   mergeSessions: (serverSessions: GroupSession[]) => MergedSession[]
@@ -394,6 +399,7 @@ export function SessionTreeSpace(props: {
                     activeSessionId={props.activeSessionId}
                     pinnedSessions={props.pinnedSessions}
                     onSessionClick={props.onSessionClick}
+                    onSessionDblClick={props.onSessionDblClick}
                     onSessionContextMenu={props.onSessionContextMenu}
                     setSelectedSessionId={props.setSelectedSessionId}
                     mergeSessions={props.mergeSessions}
@@ -455,6 +461,7 @@ export function SessionTreeSpace(props: {
                                 activeSessionId={props.activeSessionId}
                                 pinnedSessions={props.pinnedSessions}
                                 onSessionClick={props.onSessionClick}
+                                onSessionDblClick={props.onSessionDblClick}
                                 onContextMenu={(event) => {
                                   const sessionData = location.sessions.find((candidate) => candidate.id === session.id)
                                   if (sessionData) props.onSessionContextMenu(event, session, props.space.path, sessionData, location.kind)
@@ -507,6 +514,7 @@ export function SessionTreeSpace(props: {
                           activeSessionId={props.activeSessionId}
                           pinnedSessions={props.pinnedSessions}
                           onSessionClick={props.onSessionClick}
+                          onSessionDblClick={props.onSessionDblClick}
                           onSessionContextMenu={props.onSessionContextMenu}
                           setSelectedSessionId={props.setSelectedSessionId}
                           mergeSessions={props.mergeSessions}

@@ -47,7 +47,6 @@ export const dict = {
   "command.context.addSelection.description": "Ausgewählte Zeilen aus der aktuellen Datei hinzufügen",
   "command.input.focus": "Eingabefeld fokussieren",
   "command.terminal.toggle": "Terminal umschalten",
-  "command.fileTree.toggle": "Dateibaum umschalten",
   "command.review.toggle": "Überprüfung umschalten",
   "command.terminal.new": "Neues Terminal",
   "command.terminal.new.description": "Neuen Terminal-Tab erstellen",
@@ -871,5 +870,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
   "workbench.chat.question": "Frage: ",
   "workbench.chat.answer": "Antwort: ",
+  "workbench.chat.reasoning": "Denken",
+  "workbench.chat.compaction": "Kontext komprimiert",
+  "workbench.chat.retry": "Wiederholung #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
 } satisfies Partial<Record<Keys, string>>

@@ -5,6 +5,7 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 import { useLanguage } from "@/context/language"
 import { useWorkbenchState } from "../view-store"
 import { useSpaceStore } from "../space-store"
+import { useWorkbenchSurface } from "../workbench-surface-context"
 import { useDialog } from "@wopal/ui/context/dialog"
 import { useSessionStore } from "../session-store"
 import { DialogCloseTab } from "./workspace"
@@ -34,14 +35,12 @@ function PinIcon(props: { class?: string }) {
   )
 }
 
-// 拆分面板图标 (Split Panel Box with Plus Icon)
-function SplitPanelIcon(props: { class?: string }) {
+// 文件查看面板图标 (Panel Right style)
+function FileViewerPanelIcon(props: { class?: string }) {
   return (
     <svg class={props.class ?? "size-4"} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <line x1="12" y1="3" x2="12" y2="21" />
-      <path d="M16 9v6" />
-      <path d="M13 12h6" />
+      <line x1="15" y1="3" x2="15" y2="21" />
     </svg>
   )
 }
@@ -62,6 +61,7 @@ export function WorkbenchTitlebar() {
   const wb = useWorkbenchState()
   const spaceStore = useSpaceStore()
   const sessionStore = useSessionStore()
+  const surface = useWorkbenchSurface()
   const language = useLanguage()
   const dialog = useDialog()
   const notification = useNotification()
@@ -182,13 +182,8 @@ export function WorkbenchTitlebar() {
     setTabMenu({ x: e.clientX, y: e.clientY, tab })
   }
 
-  const currentSpacePanelsCount = () => {
-    const space = wb.spaceState(activePath())
-    return space?.panels.length ?? 0
-  }
-
   return (
-    <header class="relative z-40 flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base select-none">
+    <header class="relative z-50 flex shrink-0 flex-col bg-v2-background-bg-base border-b border-v2-border-border-base select-none">
       <div data-tauri-drag-region class="workbench-macos-window-chrome shrink-0" />
       <div data-tauri-drag-region class="workbench-titlebar-toolbar relative flex h-10 items-center justify-between px-3">
         {/* Brand Logo - Left side */}
@@ -294,7 +289,7 @@ export function WorkbenchTitlebar() {
           <div
             class="relative"
             ref={(el) => { spaceMenuRef = el }}
-            onMouseEnter={() => spaceMenuFlyout.onTriggerEnter()}
+            onMouseEnter={() => spaceMenuFlyout.onTriggerEnter("sessions")}
             onMouseLeave={() => spaceMenuFlyout.onTriggerLeave()}
           >
             <ButtonV2
@@ -310,7 +305,7 @@ export function WorkbenchTitlebar() {
                 if (showSpaceMenu()) {
                   spaceMenuFlyout.close()
                 } else {
-                  spaceMenuFlyout.onTriggerEnter()
+                  spaceMenuFlyout.onTriggerEnter("sessions")
                 }
               }}
             >
@@ -364,19 +359,24 @@ export function WorkbenchTitlebar() {
             </Show>
           </div>
 
-          {/* 拆分面板 按钮 (最右侧，使用 SplitPanelIcon) */}
+          {/* 文件查看面板 toggle (最右侧，使用 FileViewerPanelIcon)。
+              Mirrors the panel-header terminal icon convention: blue when the
+              inspector holds tabs, grey and inert when it does not. Visible
+              tabs stay intact across show/hide; the Shell owns the toggle.
+              data-inspector-toggle: the inspector outside-click dismiss must
+              treat presses here as the toggle's own click, not a dismissal. */}
           <IconButtonV2
             variant="ghost"
             size="small"
             class="text-v2-text-text-base hover:text-v2-text-text-strong"
-            icon={<SplitPanelIcon class="size-4" />}
-            aria-label={t("workbench.topbar.splitPanel")}
-            title={t("workbench.topbar.splitPanelHint")}
-            disabled={currentSpacePanelsCount() >= 3}
-            onClick={() => {
-              const id = wb.addPanel(activePath())
-              if (id) wb.setActivePanel(activePath(), id)
-            }}
+            disabled={!surface.hasTabs()}
+            style={{ color: surface.hasTabs() ? "var(--v2-icon-icon-accent)" : undefined }}
+            state={surface.visible() ? "pressed" : undefined}
+            data-inspector-toggle="true"
+            icon={<FileViewerPanelIcon class="size-4" />}
+            aria-label={t(wb.display().showFileViewer ? "workbench.topbar.fileViewer.hide" : "workbench.topbar.fileViewer.show")}
+            title={t(wb.display().showFileViewer ? "workbench.topbar.fileViewer.hide" : "workbench.topbar.fileViewer.show")}
+            onClick={() => surface.toggleVisibility()}
           />
         </div>
       </div>

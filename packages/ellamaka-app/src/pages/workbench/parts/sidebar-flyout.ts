@@ -1,12 +1,18 @@
-// Hover flyout behavior for the collapsed SpaceRail: hovering the sessions
-// activity icon temporarily reveals the session tree as an overlay, moving out
-// hides it again. Clicking the icon still toggles the pinned sidebar and must
-// suppress the flyout while pinned open.
+// Hover flyout behavior for the collapsed SpaceRail: hovering the sessions or
+// files activity icon temporarily reveals the matching tree as an overlay,
+// moving out hides it again. Clicking an icon still toggles the pinned sidebar
+// and must suppress the flyout while pinned open.
+
+export type FlyoutMode = "sessions" | "files"
 
 export const FLYOUT_HIDE_DELAY_MS = 150
+// Clicking a session closes the flyout after this delay so the second click of
+// a double-click still lands on the same row and keeps the native dblclick
+// event dispatchable (an immediate close would swallow it).
+export const FLYOUT_CLICK_CLOSE_DELAY_MS = 500
 
 // The flyout DOM stays mounted for the whole session; visibility is toggled
-// with CSS so the session tree keeps its scroll position, expansion state,
+// with CSS so the trees keep their scroll position, expansion state,
 // and loaded data across hovers. Never unmount to hide.
 export function flyoutVisibilityClass(open: boolean): string {
   return open ? "opacity-100" : "opacity-0 invisible pointer-events-none"
@@ -14,25 +20,32 @@ export function flyoutVisibilityClass(open: boolean): string {
 
 export interface FlyoutController {
   isOpen: () => boolean
-  onTriggerEnter: () => void
+  mode: () => FlyoutMode
+  show: (mode: FlyoutMode) => void
+  onTriggerEnter: (mode: FlyoutMode) => void
   onTriggerLeave: () => void
   onFlyoutEnter: () => void
   onFlyoutLeave: () => void
   close: () => void
+  /** Close after a short delay so an in-flight double-click still lands. */
+  closeSoon: () => void
+  /** Immediate close reserved for double-click completion. */
+  requestClose: () => void
   destroy: () => void
 }
 
 export function createFlyoutController(input: {
   pinned: () => boolean
-  onChange?: () => void
+  onChange?: (mode: FlyoutMode) => void
   setTimeoutFn?: typeof setTimeout
   clearTimeoutFn?: typeof clearTimeout
 }): FlyoutController {
   const schedule = input.setTimeoutFn ?? setTimeout
   const cancel = input.clearTimeoutFn ?? clearTimeout
-  const notify = () => input.onChange?.()
+  const notify = () => input.onChange?.(mode)
 
   let open = false
+  let mode: FlyoutMode = "sessions"
   let timer: ReturnType<typeof setTimeout> | undefined
 
   const cancelPending = () => {
@@ -47,6 +60,16 @@ export function createFlyoutController(input: {
     notify()
   }
 
+  const show = (next: FlyoutMode) => {
+    if (input.pinned()) return
+    if (mode !== next) {
+      mode = next
+      notify()
+    }
+    cancelPending()
+    setOpen(true)
+  }
+
   const close = () => {
     cancelPending()
     setOpen(false)
@@ -54,11 +77,9 @@ export function createFlyoutController(input: {
 
   return {
     isOpen: () => open && !input.pinned(),
-    onTriggerEnter: () => {
-      if (input.pinned()) return
-      cancelPending()
-      setOpen(true)
-    },
+    mode: () => mode,
+    show,
+    onTriggerEnter: show,
     onTriggerLeave: () => {
       if (!open) return
       cancelPending()
@@ -79,6 +100,14 @@ export function createFlyoutController(input: {
       }, FLYOUT_HIDE_DELAY_MS)
     },
     close,
+    closeSoon: () => {
+      cancelPending()
+      timer = schedule(() => {
+        timer = undefined
+        setOpen(false)
+      }, FLYOUT_CLICK_CLOSE_DELAY_MS)
+    },
+    requestClose: close,
     destroy: () => {
       cancelPending()
       open = false

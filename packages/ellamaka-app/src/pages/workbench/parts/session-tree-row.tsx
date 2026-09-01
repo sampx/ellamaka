@@ -74,6 +74,7 @@ export function SessionTreeRow(props: {
   activeSessionId: () => string | undefined
   pinnedSessions: () => Set<string>
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
   onContextMenu: (e: MouseEvent) => void
   setSelectedSessionId: (id: string) => void
   registerRowRef?: (sessionId: string, el: HTMLButtonElement | null) => void
@@ -139,6 +140,7 @@ export function SessionTreeRow(props: {
   }
 
   const handleSessionDblClick = () => {
+    props.onSessionDblClick?.(props.session.id)
     const binding = wb.findSessionBinding(props.session.id)
     if (binding) {
       handleSessionClick()

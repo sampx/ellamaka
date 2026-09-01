@@ -34,26 +34,51 @@
 }
 
 /* 显式允许的垂直/水平精致滚动条 */
-.has-scrollbar::-webkit-scrollbar,
-.session-tree-scroll::-webkit-scrollbar {
+.has-scrollbar::-webkit-scrollbar {
   display: block;
   width: 6px;
   height: 6px;
 }
 
-.has-scrollbar::-webkit-scrollbar-track,
-.session-tree-scroll::-webkit-scrollbar-track {
+/* Sidebar trees (session + file): hide until hover. The scrollbar itself is
+   always laid out (6px, classic webkit pipeline) so the text never shifts;
+   only the thumb color switches via a custom property, which pseudo-elements
+   inherit — reliable where :hover-on-pseudo-element is not. */
+.workbench-tree-scroll {
+  --tree-thumb-color: transparent;
+}
+
+.workbench-tree-scroll:hover,
+.workbench-tree-scroll:focus-within {
+  --tree-thumb-color: rgb(140 140 160 / 35%);
+}
+
+.workbench-tree-scroll::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+  height: 6px;
   background: transparent;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb,
-.session-tree-scroll::-webkit-scrollbar-thumb {
+.workbench-tree-scroll::-webkit-scrollbar-thumb {
+  background: var(--tree-thumb-color);
+  border-radius: 4px;
+}
+
+.workbench-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(140 140 160 / 65%);
+}
+
+.has-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.has-scrollbar::-webkit-scrollbar-thumb {
   background: rgb(140 140 160 / 35%);
   border-radius: 4px;
 }
 
-.has-scrollbar::-webkit-scrollbar-thumb:hover,
-.session-tree-scroll::-webkit-scrollbar-thumb:hover {
+.has-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgb(140 140 160 / 65%);
 }
 
@@ -235,13 +260,17 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 [data-component="workbench-chat"] {
   --workbench-chat-readable-width: 98ch;
   --workbench-chat-gutter: 20px;
+
+  /* Tool rows reserve 6px before their icon. Make the prose and composer use
+     that same optical content guide instead of starting at the bare row edge. */
+  --workbench-chat-content-inset: 6px;
 }
 
 [data-component="workbench-chat"] [data-component="session-prompt-dock"] > div {
   box-sizing: border-box;
   width: 100%;
   max-width: var(--workbench-chat-readable-width);
-  padding-inline: var(--workbench-chat-gutter);
+  padding-inline: calc(var(--workbench-chat-gutter) + var(--workbench-chat-content-inset));
 }
 
 [data-component="chat-content"] {
@@ -449,6 +478,166 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   color: var(--text-weak);
 }
 
+/* Image attachments stay visually tied to the user's bubble while retaining
+   their own thumbnail affordance. The full image remains available on demand
+   so a large screenshot never widens the transcript lane. */
+[data-slot="chat-user-image-attachment"] {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 82%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-raised-base);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 16%);
+  cursor: zoom-in;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+[data-slot="chat-user-image-attachment"] img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-slot="chat-user-image-attachment"]:hover {
+  transform: translateY(-2px) scale(1.025);
+  border-color: var(--border-base);
+  box-shadow: 0 10px 22px rgb(0 0 0 / 22%);
+}
+
+[data-slot="chat-user-image-attachment"]:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 3px;
+}
+
+/* The shared viewer is intentionally adapted into a square chat card. Small
+   images keep a comfortable minimum; zoom can grow the card before overflow
+   moves into the viewer body. */
+[data-component="chat-image-preview"] {
+  --chat-image-preview-size: min(520px, calc(100vw - 48px), calc(100vh - 48px));
+  --chat-image-preview-controls-top: min(calc(50% + 220px), calc(100vh - 60px));
+}
+
+[data-component="chat-image-preview"] [data-component="image-preview"] {
+  --chat-image-preview-max-height: var(--chat-image-preview-size);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-container"] {
+  width: var(--chat-image-preview-size);
+  max-width: var(--chat-image-preview-size);
+  height: var(--chat-image-preview-size);
+  max-height: var(--chat-image-preview-size);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-content"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 94%, transparent);
+  box-shadow:
+    0 20px 48px rgb(0 0 0 / 34%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 13%, transparent);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-header"] {
+  display: none;
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-body"] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  padding: 16px;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+[data-component="chat-image-preview"] [data-slot="image-preview-image"] {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 7px;
+}
+
+/* Once the source image is measured, zoom owns its rendered width. The square
+   frame grows with the image to a safe cap, then the enlarged image scrolls. */
+[data-component="chat-image-preview"][data-zoom-ready="true"] [data-component="image-preview"] [data-slot="image-preview-image"] {
+  width: var(--chat-image-preview-image-width);
+  max-width: none;
+  max-height: none;
+}
+
+[data-slot="chat-image-preview-controls"] {
+  position: fixed;
+  z-index: 51;
+  top: var(--chat-image-preview-controls-top);
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 84%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 90%, transparent);
+  box-shadow:
+    0 12px 28px rgb(0 0 0 / 24%),
+    inset 0 1px 0 color-mix(in srgb, var(--text-strong) 12%, transparent);
+  color: var(--text-base);
+  transform: translateX(-50%);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+
+[data-slot="chat-image-preview-controls"] button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+[data-slot="chat-image-preview-controls"] button:hover:not(:disabled) {
+  background: var(--surface-raised-base-hover);
+}
+
+[data-slot="chat-image-preview-controls"] button:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 2px;
+}
+
+[data-slot="chat-image-preview-controls"] button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+[data-slot="chat-image-preview-zoom-level"] {
+  min-width: 48px;
+  padding-inline: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+}
+
 [data-component="chat-agent-response"] {
   display: flex;
   flex-direction: column;
@@ -468,6 +657,9 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 }
 
 [data-component="chat-narrative"] {
+  width: 100%;
+  padding-inline: var(--workbench-chat-content-inset);
+  box-sizing: border-box;
   font-size: var(--font-size-base);
   line-height: 1.65;
   color: var(--text-strong);
@@ -541,7 +733,7 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   height: 0;
   margin: 18px 0;
   border: 0;
-  border-top: 1px solid var(--border-weaker-base);
+  border-top: 1px solid var(--border-base);
 }
 
 [data-slot="workbench-markdown-content"] blockquote {
@@ -587,7 +779,10 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 }
 
 [data-slot="workbench-markdown-content"] table {
-  width: max-content;
+  /* Keep the table formatting context: a block-level outer box can be full
+     width while its rows still shrink to their intrinsic content width. */
+  display: table;
+  width: 100%;
   max-width: 100%;
   margin: 0 0 14px;
   border-collapse: collapse;
@@ -596,16 +791,31 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="workbench-markdown-content"] th,
 [data-slot="workbench-markdown-content"] td {
-  padding: 6px 8px;
-  border: 1px solid var(--border-weaker-base);
+  padding: 9px 12px;
+  border: 0;
+  border-block-end: 1px solid var(--border-base);
   text-align: left;
   vertical-align: top;
 }
 
 [data-slot="workbench-markdown-content"] th {
-  background: var(--surface-weak);
+  background: transparent;
   color: var(--text-strong);
   font-weight: 600;
+}
+
+/* Let the table begin and end on the same vertical guides as the prose. The
+   horizontal dividers retain the row structure without the heavy grid. */
+[data-slot="workbench-markdown-content"] :is(th, td):first-child {
+  padding-inline-start: 0;
+}
+
+[data-slot="workbench-markdown-content"] :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+[data-slot="workbench-markdown-content"] tbody tr:last-child td {
+  border-block-end: 0;
 }
 
 /* KaTeX supplies semantic MathML alongside its visual HTML. Keep both the
@@ -689,11 +899,17 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
    The height is capped so a long snippet never floods the transcript. Scoped to
    the Workbench markdown slot so the official Session page keeps shared styles. */
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] {
+  /* The native <pre> margin combines with the following heading's larger
+     top margin, making the space after a block visibly heavier than before
+     it. Keep the block spacing on its wrapper so every adjacent Markdown
+     element shares the paragraph rhythm. */
+  margin-block: 12px;
   border-radius: 12px;
 }
 
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] pre,
 [data-slot="workbench-markdown-content"] [data-component="markdown-code"] .shiki {
+  margin: 0;
   background: var(--background-base) !important;
   border: 1px solid var(--border-weaker-base);
   border-radius: 12px;
@@ -711,6 +927,36 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
      resizing the block mid-stream, which is the render flicker source. */
   padding: 12px 16px !important;
   tab-size: 4;
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-code"] + :is(h1, h2, h3, h4) {
+  margin-block-start: 12px;
+}
+
+/* Mermaid keeps the original fenced source hidden inside markdown-code, so
+   copy and error fallback remain identical to ordinary code blocks. The SVG
+   gets its own calm, responsive surface rather than inheriting Shiki's code
+   presentation. Horizontal overflow is intentional for wide diagrams, and
+   the reserved gutter keeps the chat lane from shifting on hover. */
+[data-slot="workbench-markdown-content"] [data-component="markdown-mermaid"] {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 16px;
+  overflow: auto hidden;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 12px;
+  background: var(--background-base);
+}
+
+[data-slot="workbench-markdown-content"] [data-component="markdown-mermaid"] svg {
+  display: block;
+  flex: none;
+  max-width: none;
+  height: auto;
 }
 
 /* Shiki dual-theme switch: codeToHtml emits github-light colors as the inline
@@ -899,6 +1145,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   min-height: 30px;
   padding: 2px 0;
   font-size: var(--font-size-base);
@@ -908,10 +1155,12 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-trigger"] {
   display: inline-flex;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   max-width: 100%;
+  min-width: 0;
   min-height: 26px;
   padding: 3px 6px;
   font-size: var(--font-size-base);
@@ -923,6 +1172,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   cursor: pointer;
   text-align: left;
   outline: none;
+  overflow: hidden;
   white-space: nowrap;
   transition: background-color 150ms ease, color 150ms ease;
 }
@@ -966,6 +1216,8 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
   min-height: 30px;
   padding: 3px 6px;
   font-size: var(--font-size-base);
@@ -983,10 +1235,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 /* Read info bar subtitle truncates to a single line with an ellipsis, so long
-   relative paths never wrap. The full absolute path is exposed on hover via
-   the title attribute. */
+   relative paths never wrap. Direction is reversed so the useful path tail
+   stays visible when the available width is tight. */
 [data-slot="chat-context-info-bar"] [data-slot="chat-tool-subtitle"] {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -994,9 +1246,9 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 }
 
 /* File-change (edit/write/patch) trigger subtitle aligns with the read info
-   bar: a single-line ellipsized relative path with the full path on hover. */
+   bar: a single-line ellipsized relative path that keeps its tail visible. */
 [data-component="chat-file-change"] [data-slot="chat-tool-subtitle"] {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1013,13 +1265,15 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
 
 [data-slot="chat-tool-subtitle"] {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   font-size: var(--font-size-small);
   font-weight: 400;
   color: var(--text-weak);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 [data-slot="chat-tool-arg"] {
@@ -1199,9 +1453,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   background: transparent !important;
 }
 
-/* Move horizontal scrolling to the outer container so the scrollbar is always
-   visible at the bottom of the visible area, not at the end of a long file.
-   NOTE: scrollbar-width must be thin (not none) for horizontal scroll to work. */
+/* Move horizontal scrolling to the outer container so the scrollbar remains at
+   the bottom of the visible area instead of the end of a long file. Reserve
+   the track even while its thumb is transparent: appearing scrollbars must
+   never alter a diff's line wrapping. */
 [data-component="chat-file-change-wrapper"]
   :is(
     [data-component="edit-tool"] [data-component="edit-content"],
@@ -1210,8 +1465,9 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   ) {
   overflow: auto !important;
   max-height: 400px !important;
+  scrollbar-gutter: stable;
   scrollbar-width: thin !important;
-  scrollbar-color: var(--border-weak-base) transparent;
+  scrollbar-color: transparent transparent !important;
 }
 
 /* The File component inside must not clip - let content expand to natural width */
@@ -1220,18 +1476,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   min-width: max-content;
 }
 
-/* Show scrollbars on hover for the outer container */
-[data-component="chat-file-change-wrapper"]
-  :is(
-    [data-component="edit-tool"] [data-component="edit-content"],
-    [data-component="write-tool"] [data-component="write-content"],
-    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
-  ):hover {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-weak-base) transparent;
-}
-
-/* Webkit scrollbar for outer container */
+/* Keep the WebKit file-diff scrollbar geometry fixed. */
 [data-component="chat-file-change-wrapper"]
   :is(
     [data-component="edit-tool"] [data-component="edit-content"],
@@ -1257,7 +1502,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
     [data-component="write-tool"] [data-component="write-content"],
     [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
   )::-webkit-scrollbar-thumb {
-  background: var(--border-weak-base);
+  background: transparent;
   border-radius: 4px;
 }
 
@@ -1270,9 +1515,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   background: var(--border-base);
 }
 
-/* Unified scrollbar policy for all tool block content: scrollbars stay hidden
-   until the content region is hovered, then a slim track appears. Keeps every
-   expanded block visually consistent and the transcript calm by default. */
+/* Every scrollable tool body reserves one stable 8px track. The global
+   scrollbar reset hides all native tracks, so explicitly restore this track
+   here and hide only its thumb until hover. That prevents hover from changing
+   the available inline width of pre-wrapped terminal output. */
 [data-slot="chat-shell-command"],
 [data-slot="chat-shell-output"],
 [data-slot="chat-shell-error"],
@@ -1284,8 +1530,10 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
     [data-component="write-tool"] [data-component="write-content"],
     [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
   ) {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  -ms-overflow-style: auto;
+  scrollbar-gutter: stable;
 }
 
 [data-slot="chat-shell-command"]:hover,
@@ -1299,8 +1547,17 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
     [data-component="write-tool"] [data-component="write-content"],
     [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
   ):hover {
-  scrollbar-width: thin;
   scrollbar-color: var(--border-weak-base) transparent;
+}
+
+/* File diffs need !important to override upstream accordion styles. */
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  ):hover {
+  scrollbar-color: var(--border-weak-base) transparent !important;
 }
 
 [data-slot="chat-shell-command"]::-webkit-scrollbar,
@@ -1314,37 +1571,38 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
     [data-component="write-tool"] [data-component="write-content"],
     [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
   )::-webkit-scrollbar {
-  display: none;
-}
-
-[data-slot="chat-shell-command"]:hover::-webkit-scrollbar,
-[data-slot="chat-shell-output"]:hover::-webkit-scrollbar,
-[data-slot="chat-shell-error"]:hover::-webkit-scrollbar,
-[data-slot="chat-context-output"]:hover::-webkit-scrollbar,
-[data-slot="chat-generic-output"]:hover::-webkit-scrollbar,
-[data-component="chat-file-change-wrapper"]
-  :is(
-    [data-component="edit-tool"] [data-component="edit-content"],
-    [data-component="write-tool"] [data-component="write-content"],
-    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
-  ):hover::-webkit-scrollbar {
   display: block;
   width: 8px;
   height: 8px;
 }
 
-[data-slot="chat-shell-command"]:hover::-webkit-scrollbar-track,
-[data-slot="chat-shell-output"]:hover::-webkit-scrollbar-track,
-[data-slot="chat-shell-error"]:hover::-webkit-scrollbar-track,
-[data-slot="chat-context-output"]:hover::-webkit-scrollbar-track,
-[data-slot="chat-generic-output"]:hover::-webkit-scrollbar-track,
+[data-slot="chat-shell-command"]::-webkit-scrollbar-track,
+[data-slot="chat-shell-output"]::-webkit-scrollbar-track,
+[data-slot="chat-shell-error"]::-webkit-scrollbar-track,
+[data-slot="chat-context-output"]::-webkit-scrollbar-track,
+[data-slot="chat-generic-output"]::-webkit-scrollbar-track,
 [data-component="chat-file-change-wrapper"]
   :is(
     [data-component="edit-tool"] [data-component="edit-content"],
     [data-component="write-tool"] [data-component="write-content"],
     [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
-  ):hover::-webkit-scrollbar-track {
+  )::-webkit-scrollbar-track {
   background: transparent;
+}
+
+[data-slot="chat-shell-command"]::-webkit-scrollbar-thumb,
+[data-slot="chat-shell-output"]::-webkit-scrollbar-thumb,
+[data-slot="chat-shell-error"]::-webkit-scrollbar-thumb,
+[data-slot="chat-context-output"]::-webkit-scrollbar-thumb,
+[data-slot="chat-generic-output"]::-webkit-scrollbar-thumb,
+[data-component="chat-file-change-wrapper"]
+  :is(
+    [data-component="edit-tool"] [data-component="edit-content"],
+    [data-component="write-tool"] [data-component="write-content"],
+    [data-component="apply-patch-tool"] [data-component="apply-patch-file-diff"]
+  )::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
 }
 
 [data-slot="chat-shell-command"]:hover::-webkit-scrollbar-thumb,
@@ -1581,22 +1839,6 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-[data-component="chat-change-summary"] {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--font-size-small);
-  color: var(--text-weak);
-}
-
-[data-slot="chat-change-additions"] {
-  color: var(--text-diff-add-base);
-}
-
-[data-slot="chat-change-deletions"] {
-  color: var(--text-diff-delete-base);
 }
 
 [data-component="chat-outcome"] {

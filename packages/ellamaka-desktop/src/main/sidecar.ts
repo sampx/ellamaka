@@ -4,6 +4,7 @@ import * as tls from "node:tls"
 import { register } from "node:module"
 import { join } from "node:path"
 import { homedir } from "node:os"
+import { listenThenClearCredentials } from "./sidecar-credentials"
 
 register(new URL("./source-ts-loader.js", import.meta.url), import.meta.url)
 
@@ -88,7 +89,6 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -120,13 +120,21 @@ async function start(command: StartCommand) {
       parentPort.postMessage({ type: "sqlite", progress: { type: "Done" } })
     }
 
-    listener = await Server.listen({
-      port: command.port,
-      hostname: command.hostname,
-      username: "ellamaka",
-      password: command.password,
-      cors: ["oc://renderer"],
-    })
+    // Credentials were delivered via the utilityProcess.fork env and are
+    // captured by ServerAuth during Server.listen: listenerLayer provides a
+    // fresh ConfigProvider.fromEnv() on every listen, so the auth config
+    // snapshots process.env at that point. listenThenClearCredentials keeps the
+    // credentials present for the whole listen call, then deletes them so the
+    // engine PTY children (which forward ...process.env) never inherit them.
+    listener = await listenThenClearCredentials(() =>
+      Server.listen({
+        port: command.port,
+        hostname: command.hostname,
+        username: "ellamaka",
+        password: command.password,
+        cors: ["oc://renderer"],
+      }),
+    )
     // Optional dsh engine (single-process, DESIGN-dsh-poc §2.1/§3.4). The
     // unified Runtime Manager (consumed via `virtual:opencode-server`, which
     // the opencode sidecar bundle exports) gates on `ELLAMAKA_DSH` itself
@@ -271,13 +279,6 @@ async function stop() {
 async function setLogLevel(level: "DEBUG" | "INFO" | "WARN" | "ERROR") {
   const { Log } = await import("virtual:opencode-server")
   Log.setLevel(level)
-}
-
-function prepareSidecarEnv(password: string) {
-  Object.assign(process.env, {
-    OPENCODE_SERVER_USERNAME: "ellamaka",
-    OPENCODE_SERVER_PASSWORD: password,
-  })
 }
 
 function ensureLoopbackNoProxy() {

@@ -30,6 +30,7 @@ export function SessionTree(props: {
   activeSpacePath: string
   onSpaceClick: (space: WopalSpace) => void
   onSessionClick: (sessionId: string) => void
+  onSessionDblClick?: (sessionId: string) => void
 }) {
   const sdk = useServerSDK()
   const language = useLanguage()
@@ -263,7 +264,7 @@ export function SessionTree(props: {
   }
 
   return (
-    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 session-tree-scroll transition-colors [will-change:scroll-position]">
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-1.5 workbench-tree-scroll transition-colors [will-change:scroll-position]">
       <For each={props.spaces}>
         {(space) => (
           <SessionTreeSpace
@@ -274,6 +275,7 @@ export function SessionTree(props: {
             activeSessionId={activeSessionID}
             pinnedSessions={pinnedSessions}
             onSessionClick={props.onSessionClick}
+            onSessionDblClick={props.onSessionDblClick}
             onSessionContextMenu={showSessionMenu}
             setSelectedSessionId={setSelectedSessionID}
             mergeSessions={mergeSessions}

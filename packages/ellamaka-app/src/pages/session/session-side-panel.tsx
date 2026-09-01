@@ -59,7 +59,9 @@ export function SessionSidePanel(props: {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  const shown = createMemo(() => (desktopV2() ? settings.general.showFileTree() : true))
+  // Legacy file-tree setting was removed; the previous default (false on
+  // desktop v2) keeps the same shown/fileOpen behavior.
+  const shown = createMemo(() => !desktopV2())
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const fileOpen = createMemo(() => isDesktop() && shown() && layout.fileTree.opened())

@@ -64,8 +64,6 @@ export const dict = {
 
   "command.terminal.toggle": "切换终端",
 
-  "command.fileTree.toggle": "切换文件树",
-
   "command.review.toggle": "切换审查",
 
   "command.terminal.new": "新建终端",
@@ -940,6 +938,9 @@ export const dict = {
   "error.childStore.storeCreateFailed": "创建存储失败",
   "workbench.chat.question": "问题：",
   "workbench.chat.answer": "回答：",
+  "workbench.chat.reasoning": "思考",
+  "workbench.chat.compaction": "上下文已压缩",
+  "workbench.chat.retry": "重试 #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "workbench.entry": "工作台",
   "workbench.singleton.title": "工作台已在其他标签页打开",
@@ -976,6 +977,18 @@ export const dict = {
   "workbench.panel.splitTerminal.resize": "拖动调整拆分终端高度",
   "workbench.panel.splitTerminal.loading": "正在启动拆分终端...",
   "workbench.sidebar.spaces": "会话",
+  "workbench.sidebar.files": "文件",
+  "workbench.sidebar.filesTab": "文件",
+  "workbench.fileViewer.close": "关闭文件",
+  "workbench.fileViewer.closeAll": "关闭文件查看器",
+  "workbench.fileViewer.expand": "全屏展开",
+  "workbench.fileViewer.collapse": "收起面板",
+  "workbench.fileViewer.pin": "固定面板",
+  "workbench.fileViewer.unpin": "取消固定",
+  "workbench.fileViewer.notePlaceholder": "为选中的行添加备注...",
+  "workbench.fileViewer.submitNote": "将备注写入 chat 输入框",
+  "workbench.fileViewer.line": "第 {{line}} 行",
+  "workbench.fileViewer.lines": "第 {{start}}-{{end}} 行",
   "workbench.sidebar.sessions": "助理",
   "workbench.sidebar.refreshing": "正在刷新会话列表...",
   "workbench.sidebar.refreshed": "会话列表已刷新",
@@ -1084,6 +1097,8 @@ export const dict = {
   "workbench.sidebar.activeSpace": "当前激活空间：{{name}}",
   "workbench.sidebar.maintenanceDesc": "配置与同步空间诊断结构。",
   "workbench.sidebar.resizeHandle": "拖动调整宽度",
-  "workbench.topbar.splitPanel": "拆分面板",
-  "workbench.topbar.splitPanelHint": "拆分面板 (最多3个)",
+  "workbench.topbar.fileViewer.show": "显示文件查看面板",
+  "workbench.topbar.fileViewer.hide": "收起文件查看面板",
+  "workbench.panel.addPanel": "拆分面板",
+  "workbench.panel.addPanelHint": "在此空间中新增一个面板（最多3个）",
 } satisfies Partial<Record<Keys, string>>

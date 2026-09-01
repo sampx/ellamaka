@@ -618,6 +618,38 @@ describe("file/index Filesystem patterns", () => {
         }
       }),
     )
+
+    it.instance(
+      "resolves symlinks pointing into the tree: dir symlinks are directories, file symlinks are files",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          yield* Effect.promise(() => fs.mkdir(path.join(test.directory, "real-dir")))
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "real-dir", "inner.txt"), "", "utf-8"))
+          yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "real-file.txt"), "", "utf-8"))
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(test.directory, "real-dir"), path.join(test.directory, "link-to-dir")),
+          )
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(test.directory, "real-file.txt"), path.join(test.directory, "link-to-file")),
+          )
+          // A dangling symlink matches no target: it must stay a file entry
+          // rather than crash the listing.
+          yield* Effect.promise(() =>
+            fs.symlink(path.join(test.directory, "missing-target"), path.join(test.directory, "link-to-nowhere")),
+          )
+
+          const nodes = yield* list()
+          expect(nodes.find((node) => node.name === "link-to-dir")?.type).toBe("directory")
+          expect(nodes.find((node) => node.name === "link-to-file")?.type).toBe("file")
+          expect(nodes.find((node) => node.name === "link-to-nowhere")?.type).toBe("file")
+
+          // The dir symlink is listable like any other directory.
+          const inner = yield* list("link-to-dir")
+          expect(inner.map((node) => node.name)).toEqual(["inner.txt"])
+        }),
+      { git: true },
+    )
   })
 
   describe("search()", () => {

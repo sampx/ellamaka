@@ -52,7 +52,6 @@ export const dict = {
   "command.context.addSelection.description": "Legg til valgte linjer fra gjeldende fil",
   "command.input.focus": "Fokuser inndata",
   "command.terminal.toggle": "Veksle terminal",
-  "command.fileTree.toggle": "Veksle filtre",
   "command.review.toggle": "Veksle gjennomgang",
   "command.terminal.new": "Ny terminal",
   "command.terminal.new.description": "Opprett en ny terminalfane",
@@ -936,5 +935,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Kunne ikke opprette lager",
   "workbench.chat.question": "Spørsmål: ",
   "workbench.chat.answer": "Svar: ",
+  "workbench.chat.reasoning": "Tenker",
+  "workbench.chat.compaction": "Kontekst komprimert",
+  "workbench.chat.retry": "Prøv igjen #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket lukket unormalt: {{code}}",
 } satisfies Partial<Record<Keys, string>>

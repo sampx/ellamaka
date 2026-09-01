@@ -3,12 +3,16 @@ import type { JSX } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Icon } from "@wopal/ui/icon"
 import { Collapsible } from "@wopal/ui/collapsible"
+import { useDialog } from "@wopal/ui/context/dialog"
 import { getFilename } from "@wopal/ellamaka-core/util/path"
 import { useLanguage } from "@/context/language"
 import { agentColor } from "@/utils/agent"
 import { agentDisplayName, formatTurnDuration } from "./chat-render.utils"
 import { chatExpansionState } from "./chat-expansion-state"
 import { WorkbenchMarkdown } from "./workbench-markdown-renderer"
+import { ChatImagePreview } from "./chat-image-preview"
+
+export { ChatImagePreview } from "./chat-image-preview"
 
 export type ChatUserActions = {
   fork?: (input: { sessionID: string; messageID: string; target: "current" | "split" }) => Promise<void> | void
@@ -67,6 +71,11 @@ export function UserMessageBlock(props: {
   const [busy, setBusy] = createSignal(false)
   const [forkOpen, setForkOpen] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
+  const dialog = useDialog()
+
+  const openImagePreview = (url: string, filename?: string) => {
+    dialog.show(() => <ChatImagePreview src={url} alt={filename} />)
+  }
 
   const run = (action: (() => Promise<void> | void) | undefined) => {
     if (!action || busy()) return
@@ -94,20 +103,35 @@ export function UserMessageBlock(props: {
 
   return (
     <div data-component="chat-user-message" data-message-id={props.message.id}>
-      <Show when={text()}>
-        <div data-slot="chat-user-text">{text()}</div>
-      </Show>
       <Show when={files().length > 0}>
         <div data-slot="chat-user-attachments">
           <For each={files()}>
             {(file) => (
-              <span data-slot="chat-user-attachment" data-file={file.url}>
-                <Icon name="file-tree" size="small" />
-                {file.filename ?? getFilename(file.url)}
-              </span>
+              <Show
+                when={file.mime.startsWith("image/")}
+                fallback={
+                  <span data-slot="chat-user-attachment" data-file={file.url}>
+                    <Icon name="file-tree" size="small" />
+                    {file.filename ?? getFilename(file.url)}
+                  </span>
+                }
+              >
+                <button
+                  type="button"
+                  data-slot="chat-user-image-attachment"
+                  data-file={file.url}
+                  aria-label={`Preview image ${file.filename ?? getFilename(file.url)}`}
+                  on:click={() => openImagePreview(file.url, file.filename ?? getFilename(file.url))}
+                >
+                  <img src={file.url} alt={file.filename ?? getFilename(file.url)} />
+                </button>
+              </Show>
             )}
           </For>
         </div>
+      </Show>
+      <Show when={text()}>
+        <div data-slot="chat-user-text">{text()}</div>
       </Show>
       <Show when={agents().length > 0}>
         <div data-slot="chat-user-agents">
@@ -281,6 +305,7 @@ export function NarrativeBlock(props: {
 const REASONING_PREVIEW_MAX = 140
 
 export function ReasoningBlock(props: { part: Part; message: AssistantMessage; defaultOpen?: boolean }) {
+  const language = useLanguage()
   if (props.part.type !== "reasoning") return null
   const running = () => typeof props.message.time.completed !== "number"
   const stored = () => chatExpansionState.get(props.part.sessionID, "reasoning", props.part.id)
@@ -343,12 +368,10 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
         <Collapsible.Trigger data-slot="chat-reasoning-trigger" aria-expanded={open()}>
           <div data-slot="chat-reasoning-header-left">
             <Icon name="brain" size="small" />
-            <span data-slot="chat-reasoning-label">思考</span>
+            <span data-slot="chat-reasoning-label">{language.t("workbench.chat.reasoning")}</span>
           </div>
           <Show when={!open() && previewText().length > 0}>
-            <div data-slot="chat-reasoning-preview" title={props.part.type === "reasoning" ? props.part.text : ""}>
-              {previewText()}
-            </div>
+            <div data-slot="chat-reasoning-preview">{previewText()}</div>
           </Show>
         </Collapsible.Trigger>
         <Collapsible.Content
@@ -363,29 +386,6 @@ export function ReasoningBlock(props: { part: Part; message: AssistantMessage; d
         </Collapsible.Content>
       </Collapsible>
     </div>
-  )
-}
-
-/**
- * TurnChangeSummary renders the file-change summary at the end of a turn. It
- * shows the modified file count and add/delete line stats.
- */
-export function TurnChangeSummary(props: { message: UserMessage }) {
-  const diffs = createMemo(() => (props.message.summary?.diffs ?? []).filter((d) => typeof d.file === "string"))
-  const additions = createMemo(() => diffs().reduce((acc, d) => acc + (d.additions ?? 0), 0))
-  const deletions = createMemo(() => diffs().reduce((acc, d) => acc + (d.deletions ?? 0), 0))
-
-  return (
-    <Show when={diffs().length > 0}>
-      <div data-component="chat-change-summary" data-message-id={props.message.id}>
-        <span data-slot="chat-change-files">{diffs().length} 个文件</span>
-        <span data-slot="chat-change-additions">+{additions()}</span>
-        <span data-slot="chat-change-deletions">-{deletions()}</span>
-        <For each={diffs()}>
-          {(diff) => <span data-slot="chat-change-file">{getFilename(diff.file)}</span>}
-        </For>
-      </div>
-    </Show>
   )
 }
 
@@ -430,10 +430,11 @@ export function ChatTurnFrame(props: { turnID: string; children: JSX.Element }) 
  * compression boundaries.
  */
 export function CompactionDivider(props: { part: Part }) {
+  const language = useLanguage()
   if (props.part.type !== "compaction") return null
   return (
     <div data-component="chat-compaction" data-part-id={props.part.id}>
-      <span data-slot="chat-compaction-label">上下文已压缩</span>
+      <span data-slot="chat-compaction-label">{language.t("workbench.chat.compaction")}</span>
     </div>
   )
 }
@@ -442,11 +443,12 @@ export function CompactionDivider(props: { part: Part }) {
  * RetryOutcome renders a model retry record.
  */
 export function RetryOutcome(props: { part: Part }) {
+  const language = useLanguage()
   if (props.part.type !== "retry") return null
   return (
     <div data-component="chat-retry" data-part-id={props.part.id}>
       <Icon name="reset" size="small" />
-      <span data-slot="chat-retry-attempt">重试 #{props.part.attempt}</span>
+      <span data-slot="chat-retry-attempt">{language.t("workbench.chat.retry", { attempt: props.part.attempt })}</span>
     </div>
   )
 }

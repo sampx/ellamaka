@@ -12,7 +12,6 @@ import {
   NarrativeBlock,
   ReasoningBlock,
   RetryOutcome,
-  TurnChangeSummary,
   TurnOutcome,
   UnknownPartBlock,
   UserMessageBlock,
@@ -73,13 +72,9 @@ export type WorkbenchChatTimelineProps = {
   setScrollRef?: (el: HTMLDivElement | undefined) => void
   setContentRef?: (el: HTMLDivElement) => void
   onScheduleScrollState?: (el: HTMLDivElement) => void
-  onAutoScrollHandleScroll?: () => void
-  onMarkScrollGesture?: (target?: EventTarget | null) => void
-  hasScrollGesture?: () => boolean
   onUserScroll?: () => void
   onHistoryScroll?: () => void
   onAutoScrollInteraction?: (event: MouseEvent) => void
-  shouldAnchorBottom?: () => boolean
   onResumeScroll?: () => void
   onPauseAutoScroll?: () => void
   actions?: ChatUserActions
@@ -295,10 +290,6 @@ function TranscriptRowView(props: {
     const r = row()
     return r.type === "assistant" ? r : undefined
   }
-  const diffRow = () => {
-    const r = row()
-    return r.type === "diff" ? r : undefined
-  }
   const errorRow = () => {
     const r = row()
     return r.type === "error" ? r : undefined
@@ -353,9 +344,6 @@ function TranscriptRowView(props: {
               }}
             </Index>
           )}
-        </Show>
-        <Show when={diffRow()}>
-          {(current) => <TurnChangeSummary message={current().message} />}
         </Show>
         <Show when={errorRow()}>
           {(current) => <TurnOutcome message={current().message} />}
@@ -557,6 +545,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const [scrollTop, setScrollTop] = createSignal(0)
   let virtualizer: VirtualizerHandle | undefined
+  let pointerScrollPending = false
 
   // Derive the active turn from the current viewport anchor. Prefer the
   // Virtualizer's findItemIndex(viewport scrollTop); fall back to a row-height
@@ -588,19 +577,37 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     props.setScrollRef?.(el)
   }
 
+  const nestedScrollable = (target: EventTarget | null) => {
+    const root = scroller()
+    const element = target instanceof Element ? target : undefined
+    const nested = element?.closest("[data-scrollable]")
+    return !!nested && nested !== root
+  }
+
+  const startPointerScroll = (event: PointerEvent) => {
+    if (event.button !== undefined && event.button !== 0) return
+    if (nestedScrollable(event.target)) return
+    pointerScrollPending = true
+  }
+
+  const stopPointerScroll = () => {
+    pointerScrollPending = false
+  }
+
+  const pauseForWheelScroll = (event: WheelEvent) => {
+    if (event.deltaY >= 0 || nestedScrollable(event.target)) return
+    props.onUserScroll?.()
+  }
+
   const handleScroll = () => {
     const el = scroller()
     if (!el) return
     setScrollTop(el.scrollTop)
-    // `on*` props are stored as functions by SolidJS; non-`on` function props
-    // (hasScrollGesture, loadOlder) are auto-invoked as getters.
     props.onScheduleScrollState?.(el)
     props.onHistoryScroll?.()
-    const gesture = props.hasScrollGesture as unknown
-    if (typeof gesture === "function" ? gesture() : gesture) {
+    if (pointerScrollPending) {
+      pointerScrollPending = false
       props.onUserScroll?.()
-      props.onAutoScrollHandleScroll?.()
-      props.onMarkScrollGesture?.(el)
     }
     if (el.scrollTop < 200 && props.historyMore && !props.historyLoading) {
       const task = props.loadOlder
@@ -722,6 +729,10 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
         data-component="chat-scroller"
         ref={bindScroller}
         onScroll={handleScroll}
+        on:pointerdown={startPointerScroll}
+        on:pointerup={stopPointerScroll}
+        on:pointercancel={stopPointerScroll}
+        on:wheel={pauseForWheelScroll}
         on:click={(event) => props.onAutoScrollInteraction?.(event)}
         style="flex:1; height:100%; overflow:auto; min-width:0;"
       >

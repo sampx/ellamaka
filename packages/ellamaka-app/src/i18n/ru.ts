@@ -49,7 +49,6 @@ export const dict = {
   "command.context.addSelection.description": "Добавить выбранные строки из текущего файла",
   "command.input.focus": "Фокус на поле ввода",
   "command.terminal.toggle": "Переключить терминал",
-  "command.fileTree.toggle": "Переключить дерево файлов",
   "command.review.toggle": "Переключить обзор",
   "command.terminal.new": "Новый терминал",
   "command.terminal.new.description": "Создать новую вкладку терминала",
@@ -938,5 +937,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
   "workbench.chat.question": "Вопрос: ",
   "workbench.chat.answer": "Ответ: ",
+  "workbench.chat.reasoning": "Размышление",
+  "workbench.chat.compaction": "Контекст сжат",
+  "workbench.chat.retry": "Повтор #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
 }

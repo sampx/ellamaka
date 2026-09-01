@@ -53,7 +53,6 @@ export const dict = {
   "command.context.addSelection.description": "加入目前檔案中選取的行",
   "command.input.focus": "聚焦輸入框",
   "command.terminal.toggle": "切換終端機",
-  "command.fileTree.toggle": "切換檔案樹",
   "command.review.toggle": "切換審查",
   "command.terminal.new": "新增終端機",
   "command.terminal.new.description": "建立新的終端機標籤頁",
@@ -922,5 +921,8 @@ export const dict = {
   "error.childStore.storeCreateFailed": "建立儲存區失敗",
   "workbench.chat.question": "問題：",
   "workbench.chat.answer": "回答：",
+  "workbench.chat.reasoning": "思考",
+  "workbench.chat.compaction": "上下文已壓縮",
+  "workbench.chat.retry": "重試 #{{attempt}}",
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
 } satisfies Partial<Record<Keys, string>>
