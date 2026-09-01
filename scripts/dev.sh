@@ -16,13 +16,17 @@ resolve() {
 find_space_root() {
   local curr="$1"
   while [ "$curr" != "/" ] && [ -n "$curr" ]; do
-    if [ -d "$curr/.wopal-space" ]; then
+    # A directory that merely holds a .wopal-space does not count: dev.sh used
+    # to mkdir -p $space/.wopal-space/logs, which made any worktree look like a
+    # space root on the next run and split the shared ledger in two. Only a
+    # real space (REGULATIONS.md present) may anchor the logs.
+    if [ -f "$curr/.wopal-space/REGULATIONS.md" ]; then
       echo "$curr"
       return 0
     fi
     if [[ "$curr" == *"/.worktrees/"* ]] || [[ "$curr" == *"/.worktrees"* ]]; then
       local base="${curr%%/.worktrees*}"
-      if [ -n "$base" ] && [ -d "$base/.wopal-space" ]; then
+      if [ -n "$base" ] && [ -f "$base/.wopal-space/REGULATIONS.md" ]; then
         echo "$base"
         return 0
       fi
@@ -43,10 +47,12 @@ ellamaka_app_dir="$root/packages/ellamaka-app"
 # Each worktree gets its own pidfile and dev logs, keyed by a hash of the
 # worktree path: status/stop/restart are scoped to the directory the script
 # runs in, and separate worktrees can run dev instances side by side without
-# stealing each other's records.
+# stealing each other's records. A central registry maps each scope hash back
+# to its project root so global views can label buckets with real paths.
 LOGDIR="$space/.wopal-space/logs"
 DEV_SCOPE="$(printf '%s' "$root" | md5 -q | cut -c1-10)"
 DEV_DIR="$LOGDIR/dev/$DEV_SCOPE"
+DEV_REGISTRY="$LOGDIR/dev/registry"
 PIDFILE="$DEV_DIR/ellamaka-dev.pid"
 BACKEND_LOG="$DEV_DIR/ellamaka-dev-backend.log"
 FRONTEND_LOG="$DEV_DIR/ellamaka-dev-frontend.log"
@@ -246,10 +252,13 @@ record_is_current() {
   local label="$1" pid="$2" stamp="$3"
   if [ -n "$stamp" ]; then
     [ "$(process_stamp "$pid")" = "$stamp" ] || return 1
+    return 0
   fi
-  # A live stamp match alone does not mean "ours": every worktree shares this
-  # pidfile, so the record may describe a sibling worktree's instance. Only a
-  # process actually rooted in THIS worktree may claim it.
+  # No stamp (drift-fallback path): accept the pid only if its command matches
+  # this service type. The cwd gate that used to live here is gone — each
+  # worktree writes its own bucket under logs/dev/, so a pidfile record is
+  # already scoped by construction, and global views must be able to recognise
+  # sibling worktrees' instances.
   is_service_process "$pid" "$label"
 }
 
@@ -590,21 +599,38 @@ record_crashpads() {
 cmd_stop() {
   local target="${1:-all}" failed=false
   case "$target" in
-    backend|frontend|desktop|all) ;;
+    backend|frontend|desktop|all|--everywhere) ;;
     -h|--help)
       cat <<EOF
-Usage: $self stop [target]
+Usage: $self stop [target] [--everywhere]
 
 Targets:
   backend    Stop only the backend server (keep Workbench alive)
   frontend   Stop only the Workbench dev server (keep backend alive)
   desktop    Stop only the Electron desktop app (keep backend/Workbench alive)
-  all        Stop all dev instances (default)
+  all        Stop all dev instances in THIS worktree (default)
+
+--everywhere
+             Stop dev instances in every worktree registered in the space.
+             With a target (e.g. "stop backend --everywhere") only that
+             service is stopped in each worktree.
 EOF
       return 0
       ;;
     *) target="all" ;;
   esac
+
+  # --everywhere may appear in any position.
+  local args=() t everywhere=false
+  for t in "$target" "$@"; do
+    if [ "$t" = "--everywhere" ]; then everywhere=true; else args+=("$t"); fi
+  done
+  target="${args[0]:-all}"
+
+  if $everywhere; then
+    stop_everywhere "$target"
+    return
+  fi
 
   case "$target" in
     backend|frontend|desktop) stop_service "$target" ;;
@@ -615,6 +641,50 @@ EOF
       if $failed; then return 1; fi
       ;;
   esac
+}
+
+# Stop matching services in every registered worktree bucket, not just this
+# one. Walks the ledger of scope directories, kills each live record's process
+# group, then sweeps dead records. Scoped records stay readable even when this
+# worktree's own scope differs.
+stop_everywhere() {
+  local target="${1:-all}" dir scope label port pid pgid stamp service failed=false shown_root
+  local tmp
+  for dir in "$LOGDIR"/dev/*/; do
+    [ -d "$dir" ] || continue
+    scope="$(basename "$dir")"
+    if shown_root="$(registry_lookup "$scope")" && [ -d "$shown_root" ]; then
+      echo "== $shown_root =="
+    else
+      echo "== [$scope] =="
+    fi
+    local pidfile="$dir/ellamaka-dev.pid"
+    [ -f "$pidfile" ] || { echo "   (no instances)"; continue; }
+    while IFS=$' \t' read -r label port pid pgid stamp; do
+      [ -n "$label" ] || continue
+      service="${label%%-*}"
+      case "$service" in
+        backend|frontend|desktop) ;;
+        *) continue ;;
+      esac
+      # Respect the requested target; crashpad/sidecar/vite sub-records ride
+      # along with their parent service via prefix matching.
+      case "$target" in
+        all) ;;
+        backend) [[ "$service" = backend || "$label" == desktop-* ]] || continue ;;
+        frontend) [ "$service" = frontend ] || continue ;;
+        desktop) [ "$service" = desktop ] || continue ;;
+      esac
+      [ -n "$pgid" ] || pgid="$(pgid_of "$pid")"
+      if [[ "$pgid" =~ ^[1-9][0-9]*$ ]] && group_running "$pgid"; then
+        echo "   stopping $label (pid $pid, port $port)"
+        kill -TERM -"$pgid" 2>/dev/null || true
+      fi
+    done < "$pidfile"
+    sweep_bucket "$dir" "$scope"
+  done
+  echo
+  echo "all instances stopped (run any worktree's 'dev.sh status' to confirm)"
 }
 
 cmd_tui() {
@@ -985,20 +1055,113 @@ show_service() {
   return 0
 }
 
+# Registry bookkeeping: one line "scope root" per known worktree. Every dev.sh
+# run upserts its own entry so global views can label buckets with real paths
+# even when they were written from a different directory.
+registry_update() {
+  # Read fully before writing: redirecting a { ... } block onto the file would
+  # truncate it before the first grep runs, wiping every other entry.
+  local existing=""
+  [ -f "$DEV_REGISTRY" ] && existing="$(grep -v "^$DEV_SCOPE " "$DEV_REGISTRY")"
+  printf '%s\n%s %s\n' "$existing" "$DEV_SCOPE" "$root" | grep -v '^$' > "$DEV_REGISTRY" 2>/dev/null || true
+}
+
+registry_lookup() {
+  local scope="$1" line
+  [ -f "$DEV_REGISTRY" ] || return 1
+  line="$(grep "^$scope " "$DEV_REGISTRY" | tail -1 | cut -d' ' -f2-)"
+  [ -n "$line" ] && { printf '%s' "$line"; return 0; }
+  return 1
+}
+
+# Sweep stale records in one bucket: dead services lose their lines, an empty
+# pidfile is deleted, an empty bucket directory is deleted. Prints nothing.
+sweep_bucket() {
+  local dir="$1" scope="$2" label port pid pgid stamp tmp service
+  local pidfile="$pidfile"  # placeholder to avoid set -u complaints
+  pidfile="$dir/ellamaka-dev.pid"
+  [ -f "$pidfile" ] || { [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null; return 0; }
+  tmp="$(mktemp "$pidfile.XXXXXX")"
+  while IFS=$' \t' read -r label port pid pgid stamp; do
+    [ -n "$label" ] || continue
+    service="${label%%-*}"
+    if record_is_current "$label" "$pid" "$stamp" && group_running "${pgid:-$(pgid_of "$pid")}"; then
+      printf '%s %s %s %s %s\n' "$label" "$port" "$pid" "$pgid" "$stamp" >> "$tmp"
+    fi
+  done < "$pidfile"
+  if [ -s "$tmp" ]; then
+    mv "$tmp" "$pidfile"
+  else
+    rm -f "$tmp" "$pidfile"
+  fi
+  [ -d "$dir" ] && [ -z "$(ls "$dir" 2>/dev/null)" ] && rmdir "$dir" 2>/dev/null
+  return 0
+}
+
+# Show every known bucket (registry + hash-only strays). This worktree is the
+# reference point; others are marked with a different bullet.
+show_all_buckets() {
+  local current_scope="$DEV_SCOPE" any=false scope dir pidfile root_pid label port pid pgid stamp alive
+  local roots=""
+  # Collect scopes: registry entries first, then any bucket dir on disk.
+  local scopes=""
+  for dir in "$LOGDIR"/dev/*/; do
+    [ -d "$dir" ] || continue
+    scopes+=" $(basename "$dir")"
+  done
+  if [ -f "$DEV_REGISTRY" ]; then
+    while read -r scope _; do
+      case " $scopes " in *" $scope "*) ;; *) scopes+=" $scope" ;; esac
+    done < "$DEV_REGISTRY"
+  fi
+  for scope in $scopes; do
+    [ -n "$scope" ] || continue
+    dir="$LOGDIR/dev/$scope"
+    sweep_bucket "$dir" "$scope"
+    pidfile="$dir/ellamaka-dev.pid"
+    local label port pid pgid stamp lines=0
+    [ -f "$pidfile" ] && lines=$(grep -c "" "$pidfile" 2>/dev/null || echo 0)
+    if [ "$lines" -eq 0 ] 2>/dev/null; then
+      echo "  ○  [$scope] (clean)"
+      continue
+    fi
+    any=true
+    local marker="○"
+    [ "$scope" = "$current_scope" ] && marker="●"
+    local shown_root
+    if shown_root="$(registry_lookup "$scope")" && [ -d "$shown_root" ]; then
+      echo "  $marker  [$scope] $shown_root"
+    elif shown_root="$(registry_lookup "$scope")"; then
+      echo "  $marker  [$scope] $shown_root  (dir gone)"
+    else
+      echo "  $marker  [$scope] (unknown directory)"
+    fi
+    while IFS=$' \t' read -r label port pid pgid stamp; do
+      [ -n "$label" ] || continue
+      if record_is_current "$label" "$pid" "$stamp" && group_running "${pgid:-$(pgid_of "$pid")}"; then
+        alive="alive"
+      else
+        alive="DEAD"
+      fi
+      printf '      %-9s port %-12s pid %-7s %s\n' "$label" "$port" "$pid" "$alive"
+    done < "$pidfile"
+  done
+  $any || echo "  (no instances anywhere)"
+}
+
 cmd_status() {
   local any=false
   show_service backend backend && any=true || true
   show_service frontend workbench && any=true || true
   show_service desktop desktop && any=true || true
-  if ! $any; then
-    echo "no dev instances running"
-    return 0
-  fi
-  echo "  pidfile $PIDFILE"
+  echo
+  echo "all worktrees:"
+  show_all_buckets
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   mkdir -p "$DEV_DIR"
+  registry_update
   cmd="${1:-help}"
   shift 2>/dev/null || true
   case "$cmd" in
