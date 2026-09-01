@@ -17,7 +17,7 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 - DISTRIBUTION: `docs/DISTRIBUTION.md`
 - Upstream Merge logs: `docs/UPSTREAM-MERGE-LOG.md`
 - Config Reference: `docs/references/ellamaka-config-mechanism.md`
-- `.gitattributes` — fork-specific file merge protection (`merge=ours`)
+- `.gitattributes` — merge-strategy history notes; all `merge=ours` rules removed 2026-09-01 (upstream tracking ended; the driver silently discarded one side of conflicted files)
 - opencode package rules: `packages/opencode/AGENTS.md`
 - ellamaka-app package rules: `packages/ellamaka-app/AGENTS.md`
 - desktop package rules: `packages/ellamaka-desktop/AGENTS.md`
@@ -99,7 +99,7 @@ Tests cannot run from repo root. Run `./scripts/dev.sh help` and `./scripts/buil
 - When new modules need access to upstream internal capabilities, prefer callback/closure injection over directly exposing upstream Service type boundaries.
 - Extract shared helpers when reusing upstream logic; do not copy large upstream flows.
 - Do not perform unrelated formatting, import reordering, dependency reordering, or object key reordering on upstream files.
-- `.gitattributes` configures `merge=ours` protection for fork-specific files. Upstream merges automatically preserve ellamaka versions; do not delete or modify these rules.
+- `.gitattributes` no longer carries any `merge=ours` rules (removed 2026-09-01: upstream tracking has ended, and the driver silently discarded main-side changes — including a security fix — during conflict resolution). Conflicts must surface and be resolved explicitly, file by file; do not re-add merge strategy drivers.
 
 ### HTTP API and SDK Contract
 

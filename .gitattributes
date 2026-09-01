@@ -1,12 +1,16 @@
-# Fork-specific files — always keep ellamaka's version during upstream merges
-.github/TEAM_MEMBERS merge=ours
-README.md merge=ours
-README.zh-CN.md merge=ours
-AGENTS.md merge=ours
-AGENTS.zh-CN.md merge=ours
-.github/workflows/publish-ellamaka-cli.yml merge=ours
-scripts/** merge=ours
-docs/** merge=ours
-.husky/** merge=ours
-packages/ellamaka-app/** merge=ours
-packages/ellamaka-desktop/** merge=ours
+# Merge strategy attributes — history
+
+# 2024-2026: This file protected fork-specific files during opencode upstream
+# merges via `merge=ours` (driver configured in .git/config).
+
+# 2026-08-31: ellamaka stopped tracking upstream OpenCode (see AGENTS.md §6),
+# so the protection target no longer exists.
+
+# 2026-09-01: All `merge=ours` rules REMOVED. During the poc-ellamaka-cordis
+# integration the driver silently discarded 31 files' main-side changes,
+# including the sidecar credential-leak security fix (2caaae2b4c), without any
+# conflict report. Silent one-sided resolution is unacceptable; conflicts must
+# surface and be resolved explicitly.
+
+# Do NOT re-add merge=ours rules. If fork-specific files ever need protection
+# again, handle it per-merge with explicit checkout/verify steps instead.
