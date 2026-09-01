@@ -292,6 +292,7 @@ write_record() {
     return 1
   }
   mkdir -p "$DEV_DIR"
+  registry_update
   tmp="$(mktemp "$PIDFILE.XXXXXX")"
   if [ -f "$PIDFILE" ]; then
     while IFS=$' \t' read -r line_label line_port line_pid line_pgid line_stamp; do
