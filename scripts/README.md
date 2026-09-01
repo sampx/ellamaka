@@ -68,25 +68,6 @@ bun run scripts/scalar-doc.ts
 
 在独立端口提供 Scalar UI，并把 API 请求代理到 ellamaka，支持 "Try it out" 调试。默认 `http://localhost:4100`，代理到 `http://127.0.0.1:4097`。
 
-## 上游合并
-
-### `ellamaka-merge-prep.sh` — 合并前预检报告
-
-```bash
-./scripts/ellamaka-merge-prep.sh <target-tag> [--from <commit>] [--json]
-```
-
-merge 前分析并预测冲突，输出 4 段报告：上游增量、ellamaka 自定义、merge 模拟（`git merge-tree` 冲突分类）、裁剪缺口。只读分析，不碰工作区。
-
-### `check-cleanup.sh` — 合并后清理上游残留
-
-```bash
-./scripts/check-cleanup.sh          # 仅报告
-./scripts/check-cleanup.sh --clean # 报告并删除（rm -rf）
-```
-
-检查并清理上游 OpenCode merge 后不应保留的残留文件/目录（白名单见 `docs/BRANDING.md §0`）。默认只报告，`--clean` 才删除。
-
 ## 共享库
 
 ### `lib/version.sh` — 版本解析
@@ -104,4 +85,3 @@ merge 前分析并预测冲突，输出 4 段报告：上游增量、ellamaka �
 - **日常开发**：`dev.sh serve` → 改代码 → `build.sh cli` 验证
 - **发布**：`bump-release.sh cli --rc` / `bump-release.sh desktop --channel beta --beta`（一步制：bump → tag → push 触发 workflow）
 - **撤回**：`withdraw-release.sh <product>`
-- **上游合并**：`ellamaka-merge-prep.sh <tag>` → merge → `check-cleanup.sh --clean` → `bun typecheck && bun test`
