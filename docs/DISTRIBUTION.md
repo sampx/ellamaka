@@ -36,7 +36,7 @@ Release identity 必须回答四个互不混淆的问题：
 
 ## 2. Release Backbone
 
-ellamaka 是 OpenCode 的 fork，构建体系通过 `@wopal/ellamaka-script` 包引入上游脚本，`packages/ellamaka-release/src/cli/build.ts` 注入品牌（`BINARY_NAME=ellamaka`）与裁剪。对上游的裁剪仅限于：
+ellamaka 是 OpenCode 的 fork，构建与发布体系由 `@wopal/ellamaka-release` 包集中承载：`packages/ellamaka-release/src/cli/build.ts` 注入品牌（`BINARY_NAME=ellamaka`，import 自 `@wopal/ellamaka-brand`）与裁剪，构建期版本/渠道解析由同包 `build-env` 模块提供。对上游的裁剪仅限于：
 
 - **平台裁剪**：`--arch primary` 构建 8 个平台（5 native + 3 baseline），排除 musl、Windows arm64 变体；baseline 兼容不支持 AVX2 的老 x64 CPU。
 - **发布位置**：binary 分发从 GitHub Release 迁移到 Cloudflare R2。
@@ -64,11 +64,11 @@ Contract：
 2. `manifest.json` 是 installer 的机器可读入口，其中 `url` 指向 R2 自定义域名；`checksumsUrl` 指向同版本 `checksums.txt`。
 3. `checksums.txt` 与 `release-notes.md` 作为元数据文件与 artifacts 一同发布到 R2。
 4. 归档格式与 wopal-cli 对齐：macOS / Linux 使用 `.tar.gz`，Windows 使用 `.zip`。
-5. release build 的 channel 对外固定为 `latest`（`packages/ellamaka/branding.ts:CHANNEL_RELEASE`）；本地开发 channel 保持 `main`（`CHANNEL_DEV`）。
+5. release build 的 channel 对外固定为 `latest`（`@wopal/ellamaka-brand` 的 `branding.ts:CHANNEL_RELEASE`）；本地开发 channel 保持 `main`（`CHANNEL_DEV`）。
 
 ### 2.2 构建接口
 
-`@wopal/ellamaka-script` 的 `Script` 类仍作为 CLI 构建接口使用，但注入的是已经由 release context 验证的 Ellamaka CLI 产品版本：
+`@wopal/ellamaka-release` 的 `build-env` 模块（原 `@wopal/ellamaka-script` 的 `Script`，2026-09-01 收编）仍作为 CLI 构建接口使用，但注入的是已经由 release context 验证的 Ellamaka CLI 产品版本：
 
 | 环境变量 | 作用 | 约束 |
 | -------- | ---- | ---- |

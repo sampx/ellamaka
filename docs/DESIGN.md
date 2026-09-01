@@ -1,7 +1,7 @@
 # Ellamaka
 
 > **状态**: Active
-> **更新时间**: 2026-08-03
+> **更新时间**: 2026-09-01
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 
 ## 1. Role
@@ -41,6 +41,23 @@ ellamaka 继承上游 OpenCode 全部 agent runtime、TUI/Web、session、tool�
 | Runtime API 与 SDK        | Effect HttpApi schema → OpenAPI → 生成 SDK；Wopal CLI adapter 将空间控制能力映射为 Runtime API    | §7.1（本文件）    |
 
 上游文件改动遵循：新文件优先、提前返回 guard、回调注入、禁止格式化重排。完整策略和合并保护文件清单见 **BRANDING.md §9**。
+
+## 2.1 品牌与构建包结构
+
+ellamaka 的品牌身份与构建发布分属两个包，沿运行时/构建期边界划分：
+
+| 包 | 职责 | 消费方 |
+|---|---|---|
+| `@wopal/ellamaka-brand`（`packages/ellamaka-brand/`） | 品牌真相源：branding 常量（BINARY_NAME、BINARY_TITLE、channel 常量、UI_UPSTREAM_URL）、logo/wordmark、TUI tips、WopalSpace 目录检测 | opencode 运行时（全部走包路径 import）；`ellamaka-release` 构建期（读 BINARY_NAME/CHANNEL_RELEASE） |
+| `@wopal/ellamaka-release`（`packages/ellamaka-release/`） | 构建与发布唯一枢纽：构建编排（`src/cli/build.ts`）、构建期版本/渠道解析（`src/build-env.ts`）、发布身份模型（`src/identity.ts`）、构建目标矩阵、release context、manifest、gitee、cleanup、inventory、upstream lock | 构建脚本与 CI workflow；`opencode` 的 release-info 命令运行时读取 identity 模型 |
+
+边界纪律：
+
+- 运行时（opencode）只依赖 `ellamaka-brand`；对 `ellamaka-release` 的唯一运行时依赖是 `identity` 模型（`ellamaka debug release-info`），该模型是构建期与运行期共享的纯数据契约，位于 release 包是因为它的 schema 与 manifest/构建流水线同源演进。
+- `ellamaka-release` 不被任何运行时热路径引用；它依赖 `ellamaka-brand`（构建期读品牌常量），方向单一，无环。
+- 品牌常量消费一律走包路径 `@wopal/ellamaka-brand/branding` 等导出，禁止相对路径跨包引用。
+
+历史上本结构由三个包承载（`packages/ellamaka`/`@wopal/ellamaka-build`、`@wopal/ellamaka-script`、`@wopal/ellamaka-release`），2026-09-01 收编定案：`ellamaka-build` 更名 `ellamaka-brand`，`ellamaka-script` 的 `Script` 收编为 `ellamaka-release` 的 `build-env` 模块。
 
 ## 3. Configuration Contract
 

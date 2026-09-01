@@ -1,7 +1,7 @@
 # ellamaka — 品牌化与定制设计
 
 > **状态**: Active
-> **更新时间**: 2026-08-03
+> **更新时间**: 2026-09-01
 > **上级架构**: `../../../docs/products/wopal-space/DESIGN-wopalspace.md`
 > **配套文档**: `./DESIGN.md`（架构概览）、`./DISTRIBUTION.md`（分发与版本身份契约）、`./BRANDING.md`（品牌化真相源）
 
@@ -80,7 +80,9 @@
 
 ### 实现逻辑
 
-独立文件 `packages/ellamaka/branding.ts`，零侵入上游源码。消费者通过相对 import 引用，品牌值不在上游文件中出现。
+独立文件 `packages/ellamaka-brand/branding.ts`（包 `@wopal/ellamaka-brand`），零侵入上游源码。消费者一律通过包路径 import（`@wopal/ellamaka-brand/branding`），禁止相对路径跨包引用，品牌值不在上游文件中出现。
+
+> 包沿革：品牌常量最初位于 `packages/ellamaka/branding.ts`（包名 `@wopal/ellamaka-build`）。2026-09-01 包结构定案（见 DESIGN.md §2.1）：目录与包名统一为 `ellamaka-brand`，名实相符——该包只承载运行时品牌身份，不含构建逻辑；构建与发布归属 `@wopal/ellamaka-release`。
 
 ---
 
@@ -132,11 +134,13 @@ Core `Global` 只负责 `WOPAL_HOME` 路径布局，不将 `.env` 文件写入 `
 
 **上游 `script/build.ts` 零侵入**。ellamaka 通过独立 copy 文件 `packages/ellamaka-release/src/cli/build.ts` 实现 5 类定制：
 
-1. **品牌注入**：`BINARY_NAME` 替换硬编码 `"opencode"`，`CHANNEL_RELEASE`/`CHANNEL_DEV` 替换上游渠道
+1. **品牌注入**：`BINARY_NAME` 替换硬编码 `"opencode"`，`CHANNEL_RELEASE`/`CHANNEL_DEV`（import 自 `@wopal/ellamaka-brand/branding`）替换上游渠道
 2. **平台裁剪**：`--arch primary` 构建 7 个 P1 目标（4 个 native + 3 个 x64 baseline），排除 musl、Linux arm64 和 Windows arm64 变体
 3. **路径适配**：import 路径加 `../opencode/` 前缀，指向引擎源码
 4. **单平台构建**：`--single` 仅构建当前平台
-5. **Web UI 选择**：`--web-ui ellamaka-app|app|none` 选择嵌入 ellamaka UI、上游 UI 或不嵌入 UI
+5. **Web UI 选择**：`--web-ui ellamaka-app|none` 选择嵌入 ellamaka UI 或不嵌入 UI
+
+构建期版本/渠道解析由 `@wopal/ellamaka-release` 的 `build-env` 模块提供（原 `@wopal/ellamaka-script` 的 `Script`，2026-09-01 收编，见 DESIGN.md §2.1）。
 
 ### 要求
 
@@ -213,7 +217,7 @@ CLI 入口中间件先清除继承的 `WOPAL_SPACE`/`WOPAL_SPACE_ROOT`，再执�
 
 ### 实现逻辑
 
-独立文件 `packages/ellamaka/detect.ts` 提供纯目录检测。CLI 入口将结果转换成单进程兼容 env。Sidecar 直接将当前 directory 的检测结果传给 PluginInput，不把空间状态写入进程 env。
+独立文件 `packages/ellamaka-brand/detect.ts` 提供纯目录检测。CLI 入口将结果转换成单进程兼容 env。Sidecar 直接将当前 directory 的检测结果传给 PluginInput，不把空间状态写入进程 env。
 
 ---
 
@@ -552,7 +556,7 @@ ellamaka 已放弃跟踪上游，后续如需参考 OpenCode 对应模块代码�
 | `docs/UPSTREAM-MERGE-LOG.md`                                                             | 合并历史记录         |
 | `scripts/`                                                                               | ellamaka 自有脚本    |
 | `.github/workflows/publish-ellamaka-cli.yml`                                                 | ellamaka CI          |
-| `packages/ellamaka/`                                                                     | ellamaka 品牌包      |
+| `packages/ellamaka-brand/`                                                               | ellamaka 品牌包      |
 
 ### 合并冲突热点（历史记录，不再执行）
 
@@ -611,7 +615,7 @@ TUI 首页 tips 系统和 sidebar 版本署名中不再出现 `OpenCode` 引用�
 
 ### 14.1 Tips 列表
 
-原创 tips 列表定义在 `packages/ellamaka/tips.ts`，导出 `ELLAMAKA_TIPS`。tips-view.tsx 通过 import 引用，不再内联定义。
+原创 tips 列表定义在 `packages/ellamaka-brand/tips.ts`（包 `@wopal/ellamaka-brand`），导出 `ELLAMAKA_TIPS`。tips-view.tsx 通过 import 引用，不再内联定义。
 
 **策展原则**：
 
@@ -622,7 +626,7 @@ TUI 首页 tips 系统和 sidebar 版本署名中不再出现 `OpenCode` 引用�
 
 ### 14.2 Sidebar 版本署名
 
-sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中的 `OpenCode` → `BINARY_TITLE`（`Ellamaka`）。通过 import `BINARY_TITLE` from `packages/ellamaka/branding` 注入。
+sidebar footer（`footer.tsx`）和 sidebar 缺省署名（`sidebar.tsx`）中的 `OpenCode` → `BINARY_TITLE`（`Ellamaka`）。通过 import `BINARY_TITLE` from `@wopal/ellamaka-brand/branding` 注入。
 
 ---
 
