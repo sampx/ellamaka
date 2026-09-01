@@ -21,14 +21,20 @@ $SCRIPT — 发布一个 CLI 或 Desktop 版本
   --no-cleanup            发布成功后跳过历史清理 workflow（默认自动触发）
   -h, --help              显示本帮助
 
-版本省略时自动推荐：若渠道最高版本的 tag 无有效 manifest（failed attempt），
-推荐重发该版本；否则推荐下一个版本。交互确认后可覆盖。
+版本省略时读取 package.json 当前版本（版本源唯一，见 docs/DISTRIBUTION.md
+§3.2）；显式版本必须与 package.json 一致（防止 bump 漏提交）。版本准备由
+scripts/bump-release.sh 完成，本脚本只读取版本、创建 tag 并 dispatch。
+
+分支渠道约束（branch-channel policy）：
+  main 分支可发布全部版本；非 main 分支（poc-* 等）只允许 prerelease ——
+  CLI X.Y.Z-rc.N、Desktop X.Y.Z-beta.N，且 prerelease base 必须高于该产品
+  已发布 prod/stable 的最高版本。
 
 示例:
-  $SCRIPT cli                    # 自动推荐版本
-  $SCRIPT cli 2.0.3
+  $SCRIPT cli                    # 版本来自 package.json
+  $SCRIPT cli 2.0.4-rc.1         # 显式版本（须与 package.json 一致）
   $SCRIPT desktop --channel beta # beta 渠道
-  $SCRIPT cli 2.0.3 --dry-run    # 只打印计划
+  $SCRIPT cli --dry-run          # 只打印计划
 EOF
   exit 0
 }
@@ -88,7 +94,7 @@ source "$REPO_ROOT/scripts/lib/version.sh"
 
 if [ "$SUBCOMMAND" = "cli" ]; then
   if $CHANNEL_SET; then
-    die "--channel 仅用于 desktop；cli 固定 stable 渠道"
+    die "--channel 仅用于 desktop；cli 固定 stable 渠道（rc 候选同流发布）"
   fi
   PRODUCT="ellamaka-cli"
   LABEL="CLI"
@@ -109,8 +115,10 @@ fi
 validate_semver() {
   local v="$1"
   if [ "$SUBCOMMAND" = "cli" ]; then
-    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "CLI 版本号格式无效: $v (CLI 只发布 stable X.Y.Z)"
-    return 0
+    if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+      return 0
+    fi
+    die "CLI 版本号格式无效: $v (期望 X.Y.Z 或 X.Y.Z-rc.N)"
   fi
   if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     return 0
@@ -244,19 +252,67 @@ check_workspace_clean() {
   esac
 }
 
-check_remote_main() {
-  git -C "$REPO_ROOT" fetch origin main 2>/dev/null || true
-  local remote_main unpushed
-  remote_main=$(git -C "$REPO_ROOT" rev-parse "origin/main" 2>/dev/null || echo "")
-  if [ -z "$remote_main" ]; then
-    die "origin/main 不存在，请先 git push origin main"
+check_remote_branch() {
+  local branch remote_branch unpushed
+  branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
+  git -C "$REPO_ROOT" fetch origin "$branch" 2>/dev/null || true
+  remote_branch=$(git -C "$REPO_ROOT" rev-parse "origin/$branch" 2>/dev/null || echo "")
+  if [ -z "$remote_branch" ]; then
+    die "origin/$branch 不存在，请先 git push origin $branch"
   fi
-  unpushed=$(git -C "$REPO_ROOT" rev-list --count HEAD "^origin/main" 2>/dev/null)
+  unpushed=$(git -C "$REPO_ROOT" rev-list --count HEAD "^origin/$branch" 2>/dev/null)
   if [ "$unpushed" -gt 0 ]; then
-    echo "local main 有 $unpushed 个 commit 未推送至 origin/main:"
-    git -C "$REPO_ROOT" log --oneline "origin/main..HEAD"
-    die "请先 git push origin main"
+    echo "local $branch 有 $unpushed 个 commit 未推送至 origin/$branch:"
+    git -C "$REPO_ROOT" log --oneline "origin/$branch..HEAD"
+    die "请先 git push origin $branch"
   fi
+}
+
+# check_branch_channel_policy <version>
+#
+# Branch-channel policy (docs/DISTRIBUTION.md §4.1): non-main branches may
+# only release prereleases (CLI -rc.N, Desktop -beta.N), and the prerelease
+# base must be strictly above the highest released prod/stable version of
+# the product.
+check_branch_channel_policy() {
+  local version="$1" branch
+  branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
+  [ "$branch" = "main" ] && return 0
+
+  local is_prerelease=false
+  if [ "$SUBCOMMAND" = "cli" ]; then
+    [[ "$version" =~ -rc\.[0-9]+$ ]] && is_prerelease=true
+  else
+    [[ "$version" =~ -beta\.[0-9]+$ ]] && is_prerelease=true
+  fi
+  if ! $is_prerelease; then
+    die "分支 $branch 不是 main：只允许发布 prerelease（CLI X.Y.Z-rc.N / Desktop X.Y.Z-beta.N），禁止裸 X.Y.Z"
+  fi
+
+  local base highest_stable
+  base="${version%%-*}"
+  highest_stable=$(highest_release_tag "$PRODUCT" "stable" "$REPO_ROOT")
+  if [ -n "$highest_stable" ]; then
+    node -e "
+      const cmp = (a, b) => {
+        const pa = a.split('.').map(Number), pb = b.split('.').map(Number)
+        for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i]
+        return 0
+      }
+      process.exit(cmp(process.argv[1], process.argv[2]) > 0 ? 0 : 1)
+    " "$base" "$highest_stable" || die "prerelease base $base 必须高于已发布 stable 最高版本 $highest_stable"
+  fi
+}
+
+# check_version_matches_package <version>
+#
+# The package.json version is the single version source (docs/DISTRIBUTION.md
+# §3.2). The release version must equal it — a mismatch means the bump was
+# not committed.
+check_version_matches_package() {
+  local version="$1" pkg_version
+  pkg_version=$(current_version "$REPO_ROOT")
+  [ "$version" = "$pkg_version" ] || die "版本 $version 与 package.json 版本 $pkg_version 不一致；请先运行 scripts/bump-release.sh 完成版本准备并提交"
 }
 
 check_min_wopal_cli_released() {
@@ -344,8 +400,8 @@ poll_run() {
 echo "→ 检查工作区..."
 check_workspace_clean
 
-echo "→ 检查 remote main..."
-check_remote_main
+echo "→ 检查 remote 分支..."
+check_remote_branch
 
 if command -v jq >/dev/null 2>&1 && [ -f "$REPO_ROOT/.ci/versions.json" ]; then
   export MIN_WOPAL_CLI_VERSION=$(jq -r .minWopalCli "$REPO_ROOT/.ci/versions.json")
@@ -353,26 +409,10 @@ fi
 check_min_wopal_cli_released
 check_dep_floor_synced
 
-# 版本解析：自动推荐优先 failed-attempt 重发
+# 版本解析：package.json 是唯一版本源；显式版本必须与之一致
 if [ -z "$VERSION" ]; then
-  retry="$(highest_release_tag "$PRODUCT" "$CHANNEL" "$REPO_ROOT")"
-  if [ -n "$retry" ] && ! has_effective_manifest "$retry"; then
-    VERSION="$retry"
-    echo "⚠️  检测到 failed attempt：${PRODUCT}-v${retry} 无有效 manifest（未发布成功）"
-    echo "→ 自动推荐重发版本: $VERSION"
-  else
-    VERSION="$(suggest_release_version "$PRODUCT" "$CHANNEL" "$REPO_ROOT")"
-    if [ -z "$VERSION" ]; then
-      die "无法自动建议版本号，请显式输入"
-    fi
-    echo "→ 自动推荐版本: $VERSION"
-  fi
-  if ! $DRY_RUN; then
-    read -r -p "  版本号（Enter 确认，或输入其他）: " answer || true
-    if [ -n "$answer" ]; then
-      VERSION="$answer"
-    fi
-  fi
+  VERSION="$(current_version "$REPO_ROOT")"
+  echo "→ 版本来自 package.json: $VERSION"
 fi
 
 validate_semver "$VERSION"
@@ -385,6 +425,8 @@ else
     die "Desktop beta 版本必须指定 --channel beta"
   fi
 fi
+check_version_matches_package "$VERSION"
+check_branch_channel_policy "$VERSION"
 check_withdrawn "$VERSION"
 check_migration_floor "$VERSION"
 
@@ -415,8 +457,9 @@ echo "→ 创建 tag: $TAG"
 git -C "$REPO_ROOT" tag -d "$TAG" 2>/dev/null || true
 git -C "$REPO_ROOT" tag -a "$TAG" -m "Release $TAG"
 
-echo "→ 推送 main 和 tag"
-git -C "$REPO_ROOT" push origin main "$TAG"
+BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
+echo "→ 推送 $BRANCH 和 tag"
+git -C "$REPO_ROOT" push origin "$BRANCH" "$TAG"
 
 if [ "$HAVE_GH" = false ]; then
   echo "ℹ️  gh CLI 不可用或未认证，跳过 dispatch + watch。tag 已推送，可手动触发 workflow。"

@@ -123,7 +123,8 @@ describe("desktop release repair", () => {
     expect(script).toContain("ensure_tag_releasable")
     expect(script).toContain("has_effective_manifest")
     expect(script).toContain("highest_release_tag")
-    expect(script).toContain("suggest_release_version")
+    expect(script).toContain("check_version_matches_package")
+    expect(script).toContain("check_branch_channel_policy")
     // Committed releases are immutable: refuse to move a tag that has a
     // valid manifest.
     expect(script).toContain("已提交 release 不可移动")

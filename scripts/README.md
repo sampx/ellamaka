@@ -91,16 +91,18 @@ merge 前分析并预测冲突，输出 4 段报告：上游增量、ellamaka �
 
 ### `lib/version.sh` — 版本解析
 
-被 `build.sh` / `dev.sh` / `release.sh` 等 source 的共享函数库：
+被 `build.sh` / `dev.sh` / `release.sh` / `bump-release.sh` 等 source 的共享函数库：
 
 - `resolve_build_version <product> <suffix>` — 解析构建版本（下一 patch + 后缀 + 时间戳）
+- `current_version` / `bump_version <patch|minor|major|rc|beta>` — 版本源读取与 bump（package.json 是唯一版本源）
 - `sync_min_wopal_cli_version` — 同步 `@wopal/cli-capability-schema` 依赖下界
 - `resolve_min_wopal_cli_version` — 解析有效 `MIN_WOPAL_CLI_VERSION`
-- `highest_release_tag` / `suggest_release_version` — 发布版本建议
+- `highest_release_tag` / `highest_rc_tag` / `suggest_release_version` — 发布版本建议（stable/beta/rc 渠道）
 
 ## 推荐工作流
 
 - **日常开发**：`dev.sh serve` → 改代码 → `build.sh cli` 验证
+- **版本准备**：`bump-release.sh --rc`（写入全部 workspace 包 + bun.lock + commit + push）
 - **发布**：`release.sh cli` / `release.sh desktop --channel beta`
 - **撤回**：`withdraw-release.sh <product>`
 - **上游合并**：`ellamaka-merge-prep.sh <tag>` → merge → `check-cleanup.sh --clean` → `bun typecheck && bun test`

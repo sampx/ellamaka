@@ -376,11 +376,10 @@ release cleanup 不得使用字符串比较、`sort -V`、文件修改时间或�
 
 1. 分别读取 CLI latest（含 rc）、Desktop stable latest、Desktop beta latest 和 updater feed。
 2. 校验引用的 product/channel/version 与目标 versioned manifest 一致。
-3. 将所有 latest/updater 直接引用的 release 标记为 protected。
-4. 只在同一 product/channel 内用标准 SemVer 评估明确的 retention 候选；legacy release 由 legacy reader 分类，但不与新 release 混排后自动删除。
-5. 未知目录、schema 错误、悬空引用或 hash 不一致的对象全部保留并使 cleanup 失败。
+3. 只在同一 product/channel 内用标准 SemVer 评估明确的 retention 候选；legacy release 由 legacy reader 分类，但不与新 release 混排后自动删除。
+4. 未知目录、schema 错误、悬空引用或 hash 不一致的对象全部保留并使 cleanup 失败。
 
-cleanup 输出待删除对象与保护原因的审计清单后才执行。mutable latest aliases 和正式 product tags 不属于 retention cleanup 的删除候选。任何 cleanup 失败都不能阻止客户端继续读取上一次有效 aliases。
+cleanup 输出待删除对象与保护原因的审计清单后才执行。任何 cleanup 失败都不能阻止客户端继续读取上一次有效 aliases。
 
 **Retention 保留数量**（`release.sh` 发布成功后自动触发 cleanup 时使用的默认值）：
 
@@ -391,7 +390,7 @@ cleanup 输出待删除对象与保护原因的审计清单后才执行。mutabl
 | `ellamaka-desktop` | stable | 3 | 保留最新 3 个 stable 版本 |
 | `ellamaka-desktop` | beta | 2 | 保留最新 2 个 beta 版本 |
 
-保留数量按同一 product/channel 内标准 SemVer 降序计数；CLI rc 在 stable 桶之外单独按 `-rc.N` 序列计数。latest/updater 引用的 protected 版本不计入保留名额且永不删除；legacy 版本 fail-closed 保留。超出保留数量的版本进入删除候选。`cleanup-releases.yml` 的 `keep-stable`/`keep-beta`/`keep-rc` inputs 可覆盖这些默认值。
+保留数量按同一 product/channel 内标准 SemVer 降序计数，从最老的版本开始删除，直到只剩保留数量个。CLI rc 在 stable 桶之外单独按 `-rc.N` 序列计数。latest 别名通常指向最新版本，天然在保留名额内；作为防御，latest 指向的版本即使落在保留名额之外也永不删除。legacy 版本 fail-closed 保留。`cleanup-releases.yml` 的 `keep-stable`/`keep-beta`/`keep-rc` inputs 可覆盖这些默认值。
 
 ### 7.3 Failed Attempt and Whole-Version Withdrawal
 

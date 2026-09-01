@@ -11,6 +11,7 @@ export type Flags = {
   mode: "retention" | "withdraw"
   keepStable: number
   keepBeta: number
+  keepRc: number
   dryRun: boolean
   withdrawVersion: string | null
   fallback: string | null
@@ -83,6 +84,7 @@ export function parseArgs(
     mode: "retention",
     keepStable: 5,
     keepBeta: 2,
+    keepRc: 2,
     dryRun: false,
     withdrawVersion: null,
     fallback: null,
@@ -103,7 +105,7 @@ export function parseArgs(
       }
       flags.product = value as Flags["product"]
       productSeen = true
-    } else if (a === "--keep-stable" || a === "--keep-beta") {
+    } else if (a === "--keep-stable" || a === "--keep-beta" || a === "--keep-rc") {
       const value = args[++i]
       const missing = requireValue(a, value)
       if (missing) return { error: missing, exitCode: 2 }
@@ -115,7 +117,8 @@ export function parseArgs(
         return { error: `Error: ${a} must be a finite non-negative integer`, exitCode: 2 }
       }
       if (a === "--keep-stable") flags.keepStable = n
-      else flags.keepBeta = n
+      else if (a === "--keep-beta") flags.keepBeta = n
+      else flags.keepRc = n
     } else if (a === "--dry-run") {
       flags.dryRun = true
     } else if (a === "--withdraw") {

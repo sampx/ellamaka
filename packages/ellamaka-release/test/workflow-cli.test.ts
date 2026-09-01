@@ -13,7 +13,7 @@ function count(text: string, needle: string) {
 
 describe("publish-ellamaka workflow", () => {
   test("triggers only by manual dispatch, not by tag push", () => {
-    // tag-release.sh owns trigger authority; workflows must not listen to
+    // release.sh owns trigger authority; workflows must not listen to
     // push:tags, otherwise --desktop still fires CLI run (wasted runner quota
     // + user confusion). Cancel-after-trigger is the anti-pattern we removed.
     // The trigger block lives under `on:` at top level — match it precisely,
