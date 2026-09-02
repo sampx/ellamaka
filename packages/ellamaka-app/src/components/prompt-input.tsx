@@ -1180,12 +1180,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     autoAccept: () => accepting(),
     mode: () => store.mode,
     working,
-    sandboxMode: sandboxVisible()
-      ? () => {
-          const id = sandboxSessionID()
-          return id ? sandboxSaved.session[id] : undefined
-        }
-      : undefined,
+    // Always provide the accessor. Config/plugin visibility loads
+    // asynchronously; gating it here would freeze `undefined` for this
+    // PromptInput instance even after the sandbox control appears.
+    sandboxMode: () => {
+      const id = sandboxSessionID()
+      return id ? sandboxSaved.session[id] : undefined
+    },
     editor: () => editorRef,
     queueScroll,
     promptLength,
