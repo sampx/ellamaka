@@ -116,6 +116,16 @@ EOF
   exit 0
 }
 
+# Show a path relative to the space root when it lives under it (keeps status
+# / serve / desktop output short); absolute paths stay absolute otherwise.
+space_rel_path() {
+  local p="$1"
+  case "$p" in
+    "$space/"*) p="${p#"$space"/}" ;;
+  esac
+  printf '%s' "$p"
+}
+
 is_running() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
 backend_healthy() {
@@ -900,15 +910,15 @@ cmd_serve() {
 
   if $backend_only; then
     echo "  backend :$PORT (backend-only)"
-    echo "  pidfile $PIDFILE"
-    echo "  logs    $BACKEND_LOG"
+    echo "  pidfile $(space_rel_path "$PIDFILE")"
+    echo "  logs    $(space_rel_path "$BACKEND_LOG")"
     return 0
   fi
 
   start_frontend "$APP_PORT" "$PORT" || { stop_service backend || true; return 1; }
   echo "  backend :$PORT, workbench :$APP_PORT"
-  echo "  pidfile $PIDFILE"
-  echo "  logs    $BACKEND_LOG / $FRONTEND_LOG"
+  echo "  pidfile $(space_rel_path "$PIDFILE")"
+  echo "  logs    $(space_rel_path "$BACKEND_LOG") / $(space_rel_path "$FRONTEND_LOG")"
   echo "  → http://127.0.0.1:$APP_PORT/workbench"
 
   if $cdp_debug; then
@@ -1117,9 +1127,9 @@ cmd_desktop() {
   record_crashpads
 
   echo "  Electron ready (${elapsed}s)"
-  echo "  pidfile: $PIDFILE"
-  echo "  desktop log: $DESKTOP_LOG"
-  echo "  sidecar log: $SIDECAR_LOG"
+  echo "  pidfile: $(space_rel_path "$PIDFILE")"
+  echo "  desktop log: $(space_rel_path "$DESKTOP_LOG")"
+  echo "  sidecar log: $(space_rel_path "$SIDECAR_LOG")"
 }
 
 # Registry bookkeeping: one line "scope root" per known worktree. Every dev.sh
