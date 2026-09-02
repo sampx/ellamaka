@@ -136,6 +136,21 @@ export function rowKey(row: TranscriptRow): string {
   return row.key
 }
 
+/**
+ * Resolves a mounted viewport row to the user turn that owns it. Assistant
+ * segments, tool rows and outcome rows can share a turn id, so the stable row
+ * key is used to preserve the exact viewport position before walking backwards.
+ */
+export function nearestUserTurnID(rows: TranscriptRow[], rowKey: string | undefined): string | undefined {
+  if (!rowKey) return undefined
+  const anchorIndex = rows.findIndex((row) => row.key === rowKey)
+  for (let index = anchorIndex; index >= 0; index--) {
+    const row = rows[index]
+    if (row?.type === "user") return row.turnID
+  }
+  return undefined
+}
+
 function buildTurnRows(
   turn: ChatTurn,
   getParts: (id: string) => Part[],

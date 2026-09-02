@@ -4,7 +4,7 @@ import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useSync } from "@/context/sync"
-import { createRowStabilizer, projectTranscript, type TranscriptRow } from "./chat-transcript"
+import { createRowStabilizer, nearestUserTurnID, projectTranscript, type TranscriptRow } from "./chat-transcript"
 import {
   ChatTurnFrame,
   CompactionDivider,
@@ -547,14 +547,53 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
   let virtualizer: VirtualizerHandle | undefined
   let pointerScrollPending = false
 
+  const viewportRowKey = () => {
+    const root = scroller()
+    if (!root) return undefined
+
+    const viewport = root.getBoundingClientRect()
+    const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-row-type][data-turn-id]"))
+    const visible = rows.find((row) => {
+      const rect = row.getBoundingClientRect()
+      return rect.bottom > viewport.top + 1 && rect.top < viewport.bottom
+    })
+    return visible?.dataset.rowKey
+  }
+
   // Derive the active turn from the current viewport anchor. Prefer the
-  // Virtualizer's findItemIndex(viewport scrollTop); fall back to a row-height
-  // estimate when the Virtualizer is not available (e.g. test seam).
+  // mounted DOM anchor when possible so the directly-rendered live tail is
+  // included. The Virtualizer index only covers virtual history and therefore
+  // cannot identify the active user message while a turn is streaming.
   const activeUserMessageID = createMemo(() => {
     if (props.activeUserMessageIDOverride) return props.activeUserMessageIDOverride
+    // Keep the memo reactive to scrolling even when the DOM-anchor branch is
+    // available. The anchor is measured imperatively, so without this read a
+    // PgUp/PgDn event could reuse the previous viewport's active turn.
+    const viewportOffset = scrollTop()
+    const direct = directRows()
+    // Streaming rows live outside the Virtualizer. At the bottom, their
+    // newest user row is the authoritative anchor and avoids forcing a layout
+    // measurement on every token delta.
+    if (props.scroll.bottom) {
+      for (let i = direct.length - 1; i >= 0; i--) {
+        if (direct[i]?.type === "user") return direct[i].turnID
+      }
+    }
+
+    const allRows = projection().rows
+    // When the user has scrolled up, a running direct row can still be visible
+    // even though the virtual history's index points at the preceding turn.
+    // Consult the mounted anchor only in that mixed direct/virtual state.
+    if (direct.some((row) => row.type === "user")) {
+      const domRowKey = viewportRowKey()
+      if (domRowKey) {
+        const nearestUser = nearestUserTurnID(allRows, domRowKey)
+        if (nearestUser) return nearestUser
+      }
+    }
+
     const rows = virtualRows()
     if (rows.length === 0) return visibleUserMessages()[0]?.id
-    const viewportOffset = scrollTop()
     let candidateIndex = 0
     if (virtualizer && typeof virtualizer.findItemIndex === "function") {
       candidateIndex = virtualizer.findItemIndex(viewportOffset)

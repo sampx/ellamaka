@@ -435,6 +435,7 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
     fileCommand({
       id: "tab.close",
       title: language.t("command.tab.close"),
+      keybind: "mod+w",
       disabled: !closableTab(),
       onSelect: closeTab,
     }),

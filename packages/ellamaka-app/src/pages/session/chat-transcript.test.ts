@@ -9,6 +9,7 @@ import type {
 import {
   ASSISTANT_SEGMENT_PARTS,
   createRowStabilizer,
+  nearestUserTurnID,
   projectTranscript,
   rowKey,
   type ChatTurn,
@@ -489,5 +490,19 @@ describe("rowKey", () => {
     expect(rowKey(userRow)).toBe("user:u1")
     expect(rowKey(assistantRow)).toBe("assistant:a1:p1")
     expect(rowKey(errorRow)).toBe("error:a1")
+  })
+})
+
+describe("nearestUserTurnID", () => {
+  test("walks assistant rows back to their owning user turn", () => {
+    const u1 = userMessage("u1")
+    const a1 = assistantMessage("a1", "u1")
+    const u2 = userMessage("u2")
+    const a2 = assistantMessage("a2", "u2")
+    const { rows } = projectTranscript({ messages: [u1, a1, u2, a2], getParts: () => [], status: idle })
+
+    expect(nearestUserTurnID(rows, "user:u2")).toBe("u2")
+    expect(nearestUserTurnID(rows, "assistant:a2:none")).toBe("u2")
+    expect(nearestUserTurnID(rows, "missing")).toBeUndefined()
   })
 })
