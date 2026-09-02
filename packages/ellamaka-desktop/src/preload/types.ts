@@ -83,8 +83,6 @@ export type ElectronAPI = {
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getWindowConfig: () => Promise<WindowConfig>
   consumeInitialDeepLinks: () => Promise<string[]>
-  getDefaultServerUrl: () => Promise<string | null>
-  setDefaultServerUrl: (url: string | null) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
   setDisplayBackend: (backend: LinuxDisplayBackend | null) => Promise<void>
   parseMarkdownCommand: (markdown: string) => Promise<string>

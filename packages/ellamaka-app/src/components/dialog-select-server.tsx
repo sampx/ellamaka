@@ -13,7 +13,6 @@ import { createEffect, createMemo, createResource, onCleanup, Show } from "solid
 import { createStore, reconcile } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
 import { serverSwitchRedirect } from "@/utils/server-switch-route"
@@ -43,36 +42,6 @@ function showRequestError(language: ReturnType<typeof useLanguage>, err: unknown
     title: language.t("common.requestFailed"),
     description: err instanceof Error ? err.message : String(err),
   })
-}
-
-function useDefaultServer() {
-  const language = useLanguage()
-  const platform = usePlatform()
-  const [defaultKey, defaultUrlActions] = createResource(
-    async () => {
-      try {
-        const key = await platform.getDefaultServer?.()
-        if (!key) return null
-        return key
-      } catch (err) {
-        showRequestError(language, err)
-        return null
-      }
-    },
-    { initialValue: null },
-  )
-
-  const canDefault = createMemo(() => !!platform.getDefaultServer && !!platform.setDefaultServer)
-  const setDefault = async (key: ServerConnection.Key | null) => {
-    try {
-      await platform.setDefaultServer?.(key)
-      defaultUrlActions.mutate(key)
-    } catch (err) {
-      showRequestError(language, err)
-    }
-  }
-
-  return { defaultKey, canDefault, setDefault }
 }
 
 function useServerPreview() {
@@ -177,9 +146,7 @@ export function DialogSelectServer() {
   const navigate = useNavigate()
   const dialog = useDialog()
   const server = useServer()
-  const platform = usePlatform()
   const language = useLanguage()
-  const { defaultKey, canDefault, setDefault } = useDefaultServer()
   const { previewStatus } = useServerPreview()
   const checkServerHealth = useCheckServerHealth()
   const [store, setStore] = createStore({
@@ -499,11 +466,8 @@ export function DialogSelectServer() {
     resetEdit()
   })
 
-  async function handleRemove(url: ServerConnection.Key) {
+  function handleRemove(url: ServerConnection.Key) {
     server.remove(url)
-    if ((await platform.getDefaultServer?.()) === url) {
-      void platform.setDefaultServer?.(null)
-    }
   }
 
   return (
@@ -555,13 +519,6 @@ export function DialogSelectServer() {
                     dimmed={store.status[key]?.healthy === false}
                     status={store.status[key]}
                     class="flex items-center gap-3 min-w-0 flex-1"
-                    badge={
-                      <Show when={defaultKey() === ServerConnection.key(i)}>
-                        <span class="text-text-base bg-surface-base text-14-regular px-1.5 rounded-xs">
-                          {language.t("dialog.server.status.default")}
-                        </span>
-                      </Show>
-                    }
                     showCredentials
                   />
                   <div class="flex items-center justify-center gap-4 pl-4">
@@ -589,20 +546,6 @@ export function DialogSelectServer() {
                             >
                               <DropdownMenu.ItemLabel>{language.t("dialog.server.menu.edit")}</DropdownMenu.ItemLabel>
                             </DropdownMenu.Item>
-                            <Show when={canDefault() && defaultKey() !== key}>
-                              <DropdownMenu.Item onSelect={() => setDefault(key)}>
-                                <DropdownMenu.ItemLabel>
-                                  {language.t("dialog.server.menu.default")}
-                                </DropdownMenu.ItemLabel>
-                              </DropdownMenu.Item>
-                            </Show>
-                            <Show when={canDefault() && defaultKey() === key}>
-                              <DropdownMenu.Item onSelect={() => setDefault(null)}>
-                                <DropdownMenu.ItemLabel>
-                                  {language.t("dialog.server.menu.defaultRemove")}
-                                </DropdownMenu.ItemLabel>
-                              </DropdownMenu.Item>
-                            </Show>
                             <DropdownMenu.Separator />
                             <DropdownMenu.Item
                               onSelect={() => handleRemove(ServerConnection.key(i))}

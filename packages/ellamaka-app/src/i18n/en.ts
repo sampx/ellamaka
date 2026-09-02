@@ -335,20 +335,11 @@ export const dict = {
   "dialog.server.add.password": "Password (optional)",
   "dialog.server.add.passwordPlaceholder": "password",
   "dialog.server.edit.title": "Edit server",
-  "dialog.server.default.title": "Default server",
-  "dialog.server.default.description":
-    "Connect to this server on app launch instead of starting a local server. Requires restart.",
-  "dialog.server.default.none": "No server selected",
-  "dialog.server.default.set": "Set current server as default",
-  "dialog.server.default.clear": "Clear",
   "dialog.server.action.remove": "Remove server",
 
   "dialog.server.menu.edit": "Edit",
-  "dialog.server.menu.default": "Set as default",
-  "dialog.server.menu.defaultRemove": "Remove default",
   "dialog.server.menu.delete": "Delete",
   "dialog.server.current": "Current Server",
-  "dialog.server.status.default": "Default",
   "server.row.noUsername": "no username",
 
   "dialog.project.edit.title": "Edit project",

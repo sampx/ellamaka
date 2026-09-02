@@ -321,20 +321,11 @@ export const dict = {
   "dialog.server.add.username": "ชื่อผู้ใช้ (ไม่บังคับ)",
   "dialog.server.add.password": "รหัสผ่าน (ไม่บังคับ)",
   "dialog.server.edit.title": "แก้ไขเซิร์ฟเวอร์",
-  "dialog.server.default.title": "เซิร์ฟเวอร์เริ่มต้น",
-  "dialog.server.default.description":
-    "เชื่อมต่อกับเซิร์ฟเวอร์นี้เมื่อเปิดแอปแทนการเริ่มเซิร์ฟเวอร์ในเครื่อง ต้องรีสตาร์ท",
-  "dialog.server.default.none": "ไม่ได้เลือกเซิร์ฟเวอร์",
-  "dialog.server.default.set": "ตั้งเซิร์ฟเวอร์ปัจจุบันเป็นค่าเริ่มต้น",
-  "dialog.server.default.clear": "ล้าง",
   "dialog.server.action.remove": "เอาเซิร์ฟเวอร์ออก",
 
   "dialog.server.menu.edit": "แก้ไข",
-  "dialog.server.menu.default": "ตั้งเป็นค่าเริ่มต้น",
-  "dialog.server.menu.defaultRemove": "เอาค่าเริ่มต้นออก",
   "dialog.server.menu.delete": "ลบ",
   "dialog.server.current": "เซิร์ฟเวอร์ปัจจุบัน",
-  "dialog.server.status.default": "ค่าเริ่มต้น",
 
   "dialog.project.edit.title": "แก้ไขโปรเจกต์",
   "dialog.project.edit.name": "ชื่อ",

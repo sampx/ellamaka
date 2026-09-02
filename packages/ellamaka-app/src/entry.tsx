@@ -12,8 +12,6 @@ import pkg from "../package.json"
 import { appVersion, resolvePlatformVersion } from "./context/app-version"
 import { ServerConnection } from "./context/server"
 
-const DEFAULT_SERVER_URL_KEY = "opencode.settings.dat:defaultServerUrl"
-
 const getLocale = () => {
   if (typeof navigator !== "object") return "en" as const
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
@@ -29,31 +27,6 @@ const getRootNotFoundError = () => {
   const locale = getLocale()
   return locale === "zh" ? (zh[key] ?? en[key]) : en[key]
 }
-
-const getStorage = (key: string) => {
-  if (typeof localStorage === "undefined") return null
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-const setStorage = (key: string, value: string | null) => {
-  if (typeof localStorage === "undefined") return
-  try {
-    if (value !== null) {
-      localStorage.setItem(key, value)
-      return
-    }
-    localStorage.removeItem(key)
-  } catch {
-    return
-  }
-}
-
-const readDefaultServerUrl = () => getStorage(DEFAULT_SERVER_URL_KEY)
-const writeDefaultServerUrl = (url: string | null) => setStorage(DEFAULT_SERVER_URL_KEY, url)
 
 const notify: Platform["notify"] = async (title, description, href) => {
   if (!("Notification" in window)) return
@@ -107,12 +80,6 @@ const getCurrentUrl = () => {
   return location.origin
 }
 
-const getDefaultUrl = () => {
-  const lsDefault = readDefaultServerUrl()
-  if (lsDefault) return lsDefault
-  return getCurrentUrl()
-}
-
 const clearAuthToken = () => {
   const params = new URLSearchParams(location.search)
   if (!params.has("auth_token")) return
@@ -130,11 +97,6 @@ const platform: Platform = {
   forward,
   restart,
   notify,
-  getDefaultServer: async () => {
-    const stored = readDefaultServerUrl()
-    return stored ? ServerConnection.Key.make(stored) : null
-  },
-  setDefaultServer: writeDefaultServerUrl,
 }
 
 if (import.meta.env.VITE_SENTRY_DSN) {
@@ -172,7 +134,7 @@ if (root instanceof HTMLElement) {
       <PlatformProvider value={platform}>
         <AppBaseProviders>
           <AppInterface
-            defaultServer={ServerConnection.Key.make(getDefaultUrl())}
+            defaultServer={ServerConnection.Key.make(getCurrentUrl())}
             servers={[server]}
             disableHealthCheck
           />

@@ -175,8 +175,6 @@ describe("IPC channel registry (unregister coverage)", () => {
     "await-initialization",
     "get-window-config",
     "consume-initial-deep-links",
-    "get-default-server-url",
-    "set-default-server-url",
     "get-display-backend",
     "set-display-backend",
     "parse-markdown",

@@ -29,8 +29,6 @@ const api: ElectronAPI = {
   },
   getWindowConfig: () => ipcRenderer.invoke("get-window-config"),
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
-  getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
-  setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
   setDisplayBackend: (backend) => ipcRenderer.invoke("set-display-backend", backend),
   parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),

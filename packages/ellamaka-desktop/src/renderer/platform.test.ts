@@ -28,8 +28,6 @@ describe("desktop renderer platform", () => {
       "checkUpdate",
       "updateAndRestart",
       "fetch",
-      "getDefaultServer",
-      "setDefaultServer",
       "getDisplayBackend",
       "setDisplayBackend",
       "parseMarkdown",

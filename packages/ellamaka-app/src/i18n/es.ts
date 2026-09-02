@@ -321,20 +321,11 @@ export const dict = {
   "dialog.server.add.username": "Nombre de usuario (opcional)",
   "dialog.server.add.password": "Contraseña (opcional)",
   "dialog.server.edit.title": "Editar servidor",
-  "dialog.server.default.title": "Servidor predeterminado",
-  "dialog.server.default.description":
-    "Conectar a este servidor al iniciar la app en lugar de iniciar un servidor local. Requiere reinicio.",
-  "dialog.server.default.none": "Ningún servidor seleccionado",
-  "dialog.server.default.set": "Establecer servidor actual como predeterminado",
-  "dialog.server.default.clear": "Limpiar",
   "dialog.server.action.remove": "Eliminar servidor",
 
   "dialog.server.menu.edit": "Editar",
-  "dialog.server.menu.default": "Establecer como predeterminado",
-  "dialog.server.menu.defaultRemove": "Quitar predeterminado",
   "dialog.server.menu.delete": "Eliminar",
   "dialog.server.current": "Servidor actual",
-  "dialog.server.status.default": "Predeterminado",
 
   "dialog.project.edit.title": "Editar proyecto",
   "dialog.project.edit.name": "Nombre",
