@@ -2,7 +2,6 @@ import {
   batch,
   createEffect,
   createMemo,
-  createResource,
   For,
   on,
   onCleanup,
@@ -126,8 +125,6 @@ export default function Layout(props: ParentProps) {
   const command = useCommand()
   const theme = useTheme()
   const language = useLanguage()
-  const newDesign = createMemo(() => settings.general.newLayoutDesigns())
-  const initialDirectory = decode64(params.dir)
   const location = useLocation()
   const route = createMemo(() => {
     const slug = params.dir
@@ -152,7 +149,6 @@ export default function Layout(props: ParentProps) {
   const currentDir = createMemo(() => route().dir)
 
   const [state, setState] = createStore({
-    autoselect: !initialDirectory && !newDesign(),
     busyWorkspaces: {} as Record<string, boolean>,
     hoverProject: undefined as string | undefined,
     scrollSessionKey: undefined as string | undefined,
@@ -322,15 +318,6 @@ export default function Layout(props: ParentProps) {
   createEffect(() => {
     if (!layout.sidebar.opened()) return
     setHoverProject(undefined)
-  })
-
-  createEffect(() => {
-    if (!state.autoselect) return
-    const dir = params.dir
-    if (!dir) return
-    const directory = decode64(dir)
-    if (!directory) return
-    setState("autoselect", false)
   })
 
   const editorOpen = editor.editorOpen
@@ -552,24 +539,6 @@ export default function Layout(props: ParentProps) {
     if (!root) return
 
     return projects.find((p) => p.worktree === root)
-  })
-
-  const [autoselecting] = createResource(async () => {
-    await ready.promise
-    await layout.ready.promise
-    if (!untrack(() => state.autoselect)) return
-
-    const list = layout.projects.list()
-    const last = server.projects.last()
-
-    if (list.length === 0) {
-      if (!last) return
-      await openProject(last, true)
-    } else {
-      const next = list.find((project) => project.worktree === last) ?? list[0]
-      if (!next) return
-      await openProject(next.worktree, true)
-    }
   })
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
@@ -1139,21 +1108,6 @@ export default function Layout(props: ParentProps) {
         onSelect: () => cycleTheme(1),
       },
     ]
-
-    if (!newDesign())
-      Array.from({ length: 9 }, (_, i) => {
-        const index = i
-        const number = index + 1
-        commands.push({
-          id: `project.${number}`,
-          category: language.t("command.category.project"),
-          title: `Open Project {number}`,
-          keybind: `mod+${number}`,
-          disabled: layout.projects.list().length <= index,
-          hidden: true,
-          onSelect: () => navigateToProjectIndex(index),
-        })
-      })
 
     for (const [id] of availableThemeEntries()) {
       commands.push({
@@ -1818,7 +1772,7 @@ export default function Layout(props: ParentProps) {
   createEffect(() => {
     document.documentElement.style.setProperty(
       "--dialog-left-margin",
-      newDesign() ? "0px" : `${layout.sidebar.opened() ? layout.sidebar.width() : 48}px`,
+      "0px",
     )
   })
 
@@ -2358,215 +2312,21 @@ export default function Layout(props: ParentProps) {
         mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
       }
     />
-  )
+ )
 
   return (
-    <Show
-      when={!newDesign()}
-      fallback={
-        <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-          {autoselecting() ?? ""}
-          <Titlebar update={titlebarUpdate} />
-          <main
-            class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
-            classList={{
-              "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": !!params.id || !params.dir,
-            }}
-          >
-            <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-              {props.children}
-            </Show>
-          </main>
-          {import.meta.env.DEV && <DebugBar />}
-          <Toast.Region />
-        </div>
-      }
-    >
-      <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
-        {autoselecting() ?? ""}
-        <Titlebar update={titlebarUpdate} />
-        <Show when={updateVersion() !== undefined}>
-          <UpdateAvailableToast version={updateVersion() ?? ""} install={installUpdate} language={language} />
-        </Show>
-        <div class="flex-1 min-h-0 min-w-0 flex">
-          <div class="flex-1 min-h-0 relative">
-            <div class="size-full relative overflow-x-hidden">
-              <nav
-                aria-label={language.t("sidebar.nav.projectsAndSessions")}
-                data-component="sidebar-nav-desktop"
-                classList={{
-                  "hidden xl:block": true,
-                  "absolute inset-y-0 left-0": true,
-                  "z-10": true,
-                }}
-                style={{ width: `${side()}px` }}
-                ref={(el) => {
-                  setState("nav", el)
-                }}
-                onMouseEnter={() => {
-                  disarm()
-                }}
-                onMouseLeave={() => {
-                  aim.reset()
-                  if (!sidebarHovering()) return
-
-                  arm()
-                }}
-              >
-                <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
-              </nav>
-
-              <Show when={layout.sidebar.opened()}>
-                <div
-                  class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
-                  style={{ left: `${side()}px` }}
-                  onPointerDown={() => setState("sizing", true)}
-                >
-                  <ResizeHandle
-                    direction="horizontal"
-                    size={layout.sidebar.width()}
-                    min={244}
-                    max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
-                    onResize={(w) => {
-                      setState("sizing", true)
-                      if (sizet !== undefined) clearTimeout(sizet)
-                      sizet = window.setTimeout(() => setState("sizing", false), 120)
-                      layout.sidebar.resize(w)
-                    }}
-                  />
-                </div>
-              </Show>
-
-              <div
-                class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
-                style={{ left: "calc(4rem + 12px)" }}
-              />
-
-              <div class="xl:hidden">
-                <div
-                  classList={{
-                    "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
-                    "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
-                    "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
-                  }}
-                  onClick={(e) => {
-                    if (e.target === e.currentTarget) layout.mobileSidebar.hide()
-                  }}
-                />
-                <nav
-                  aria-label={language.t("sidebar.nav.projectsAndSessions")}
-                  data-component="sidebar-nav-mobile"
-                  classList={{
-                    "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
-                    "translate-x-0": layout.mobileSidebar.opened(),
-                    "-translate-x-full": !layout.mobileSidebar.opened(),
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {sidebarContent(true)}
-                </nav>
-              </div>
-
-              <div
-                classList={{
-                  "absolute inset-0": true,
-                  "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
-                  "z-20": true,
-                  "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
-                    !state.sizing,
-                }}
-                style={{
-                  "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
-                }}
-              >
-                <main
-                  classList={{
-                    "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
-                  }}
-                >
-                  <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-                    {props.children}
-                  </Show>
-                </main>
-              </div>
-
-              <div
-                classList={{
-                  "hidden xl:flex absolute inset-y-0 left-16 z-30": true,
-                  "opacity-100 translate-x-0 pointer-events-auto": state.peeked && !layout.sidebar.opened(),
-                  "opacity-0 -translate-x-2 pointer-events-none": !state.peeked || layout.sidebar.opened(),
-                  "transition-[opacity,transform] motion-reduce:transition-none": true,
-                  "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                  "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-                }}
-                onMouseMove={disarm}
-                onMouseEnter={() => {
-                  disarm()
-                  aim.reset()
-                }}
-                onPointerDown={disarm}
-                onMouseLeave={() => {
-                  arm()
-                }}
-              >
-                <Show when={peekProject()}>
-                  <SidebarPanel project={peekProject} merged={false} />
-                </Show>
-              </div>
-
-              <div
-                classList={{
-                  "hidden xl:block pointer-events-none absolute inset-y-0 right-0 z-25 overflow-hidden": true,
-                  "opacity-100 translate-x-0": state.peeked && !layout.sidebar.opened(),
-                  "opacity-0 -translate-x-2": !state.peeked || layout.sidebar.opened(),
-                  "transition-[opacity,transform] motion-reduce:transition-none": true,
-                  "duration-180 ease-out": state.peeked && !layout.sidebar.opened(),
-                  "duration-120 ease-in": !state.peeked || layout.sidebar.opened(),
-                }}
-                style={{ left: `calc(4rem + ${panel()}px)` }}
-              >
-                <div class="h-full w-px" style={{ "box-shadow": "var(--shadow-sidebar-overlay)" }} />
-              </div>
-            </div>
-          </div>
-          {import.meta.env.DEV && <DebugBar />}
-        </div>
-        <Toast.Region />
-      </div>
-    </Show>
+    <div class="relative bg-v2-background-bg-deep flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
+      <Titlebar update={titlebarUpdate} />
+      <main
+        class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict bg-v2-background-bg-base"
+        classList={{
+          "m-2 mt-0 rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": !!params.id || !params.dir,
+        }}
+      >
+        {props.children}
+      </main>
+      {import.meta.env.DEV && <DebugBar />}
+      <Toast.Region />
+    </div>
   )
-}
-
-function UpdateAvailableToast(props: {
-  version: string
-  install: () => void
-  language: ReturnType<typeof useLanguage>
-}) {
-  let toastId: number | undefined
-
-  onMount(() => {
-    toastId = showToast({
-      persistent: true,
-      icon: "download",
-      title: props.language.t("toast.update.title"),
-      description: props.language.t("toast.update.description", { version: props.version }),
-      actions: [
-        {
-          label: props.language.t("toast.update.action.installRestart"),
-          onClick: props.install,
-        },
-        {
-          label: props.language.t("toast.update.action.notYet"),
-          onClick: "dismiss",
-        },
-      ],
-    })
-  })
-
-  onCleanup(() => {
-    if (toastId === undefined) return
-    toaster.dismiss(toastId)
-  })
-
-  return null
 }

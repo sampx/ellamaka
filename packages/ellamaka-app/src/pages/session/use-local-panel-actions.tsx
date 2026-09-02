@@ -11,7 +11,6 @@ import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -49,7 +48,6 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
   const platform = usePlatform()
   const prompt = usePrompt()
   const sdk = useSDK()
-  const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
   const layout = useLayout()
@@ -77,10 +75,8 @@ export const useLocalPanelActions = (actions: LocalPanelActionContext) => {
   })
   const activeFileTab = tabState.activeFileTab
   const closableTab = tabState.closableTab
-  const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  // Legacy file-tree setting was removed; the previous default (false on
-  // desktop v2) keeps the same shown behavior.
-  const shown = () => !desktopV2()
+  const desktopWorkbench = () => platform.platform === "desktop"
+  const shown = () => !desktopWorkbench()
 
   const messages = () => {
     const id = getSessionID()

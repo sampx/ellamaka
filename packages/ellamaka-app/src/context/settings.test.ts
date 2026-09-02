@@ -19,4 +19,25 @@ describe("migrateSettings", () => {
 
     expect(migrateSettings(value)).toBe(value)
   })
+
+  test("removes the retired new-layout preference while preserving other settings", () => {
+    expect(
+      migrateSettings({
+        general: {
+          autoSave: false,
+          newLayoutDesigns: false,
+        },
+        keybinds: {
+          "settings.open": "ctrl+comma",
+        },
+      }),
+    ).toEqual({
+      general: {
+        autoSave: false,
+      },
+      keybinds: {
+        "settings.open": "ctrl+comma",
+      },
+    })
+  })
 })
