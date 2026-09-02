@@ -383,7 +383,9 @@ dsh-adapter（`.wopal/plugins/dsh-adapter`）把工具容器中的工具投影�
 
 **escalation 策略**：`ellamaka.dsh.sandbox.escalation: "ask" | "never"`（默认 `ask`）。`never` 时 adapter 向每个 facade seed `approval/policy` session 事件（dsh 原生 fold 语义，LAST 优先），approval 服务在 waterfall 之前确定性拒绝，answerer 零调用。沙箱关闭（full-access）时 escalation 字段不广告，无需处理。
 
-**沙箱三态切换**：Workbench chat 输入框 composer 底栏 `ComposerSandboxControl` 下拉（Read Only / Workspace Write / Full Access），经既有 `global.config.update` 端点最小 patch 全局配置中 dsh-adapter 插件 spec 的 inline `sandbox` 选项。映射：`read-only`/`workspace-write` → `{enabled: true, mode}`；`full-access` → `{enabled: false}`。显示条件：仅当配置含 dsh-adapter 插件时渲染。新会话生效（adapter 按 sessionID 缓存 facade）。不使用 dsh permission-presets。
+**沙箱三态切换（per-session）**：Workbench chat composer 底栏 `ComposerSandboxControl` 下拉（只读 / 工作区写入 / 完全访问），选择按会话存浏览器 storage（workspace 存储，按 sessionID 分桶），不改写任何 settings 文件。选择随消息携带：提交时经 `FollowupDraft.sandboxMode` 进入 prompt payload，`UserMessage.sandboxMode` 持久化（fork/queue 继承），`SessionTools.resolve` 透传进 `Tool.Context.extra`；adapter 在每次 `tools.execute()` 读取 `extra.sandboxMode`，有值即 append `sandbox/mode` 事件（LAST-wins，立即生效）。无选择回落空间默认（§5.2）。`full-access` 映射事件值 `danger-full-access`（§4.4）。显示条件：dock composer 且空间配置含 dsh-adapter 插件。不使用 dsh permission-presets。
+
+**fold 不变量**：显式选择必须总是追加事件，即使该值等于空间默认。事件日志按 LAST-wins 折叠，"恢复默认"只能靠显式写入默认值；把"等于默认"优化成"不追加"会让会话滞留在上一次的 override 上。`extra.sandboxMode` 缺失才是"沿用当前折叠值"的唯一信号。
 
 ---
 
@@ -487,6 +489,14 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 1. **运行中容器热挂载成立**：`loader.create({ name, config })` 向已启动容器挂载插件，服务立即可读；`loader.remove(id)` 卸载，effects 干净反解；root include 的 `entry.update()` 事务性插拔（按 entry id diff，自动 mount/unmount）同样成立。**无需重启容器，无需 patch 官方 Loader**。
 2. **编译二进制内运行时依赖解析成立**：约 150 行 BFS 解析器（abridged packument + semver range + hoist 去重）在源码（991ms）与 `bun --compile` 二进制（1065ms）内均正确解析传递树，无忙循环。§3.4.7 的 Arborist 忙循环约束只针对官方闭包的大树求解，不阻塞用户插件的小树解析。
 3. **实现契约**：include `entry.update()` 是浅合并——更新 patches 必须先展开旧 config（否则 `path` 字段丢失报 `extension "" not supported`）；裸包名解析经 `loader.internal.import` 缝隙 + `profiles/node_modules` symlink parent-walk（`add` 后必须重跑 heal）；`mountRootInclude` 由 `dsh-app-boot` 导出；root config 扩展名仅 `.json/.yaml/.yml`。
+
+### 6.7 生成 SDK 的双文件一致性（2026-09-02 事故固化）
+
+hey-api 生成的客户端由两个文件共同决定一个字段的线上行为：`types.gen.ts`（类型层）与 `sdk.gen.ts`（运行时 `buildClientParams` 映射层）。**类型存在 ≠ 运行时发送**：HttpApi 新增 payload 字段后若只再生成类型（或生成中断留下半新状态），`sdk.gen.ts` 映射缺键会让客户端在编码时静默丢弃该字段——无报错、无日志，前端各层全部有值，死在最后一公里。验收方式：对新增字段 grep 两个文件都要命中；或跑 `bun script/build.ts` 全量再生成并 diff。
+
+### 6.8 权限规则的合并顺序语义（2026-09-02 事故固化）
+
+Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter 键声明序经合并后的位置。同一名 agent 的配置可来自多副本（`~/.wopal` home + 空间 `.wopal`），经 `mergeDeep` 按插入序合并：后加载副本的键保留其声明位置，显式 `x: ask` 可能被先声明但在合并序中靠后的 `"*": allow` 通配压过，静默放行。**不变量**：需要收窄通配的显式规则，必须保证其在合并后的最终规则表中位于通配之后；最稳妥的写法是 frontmatter 不声明通配（引擎 defaults 已提供 `"*": allow` 兜底），只写显式例外。验收方式：`GET /agent` 查看活实例合并后的规则表，确认显式规则位于相关通配之后。
 
 ---
 
