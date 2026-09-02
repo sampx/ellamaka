@@ -61,3 +61,4 @@ PoC 不合并 main，直到供应链实施验收。顺序从核心到外围：�
 | 2026-09-02 | 设计文档精简重写（删附录过程记录）；§9 插件供应链定稿；spike 验证热挂载与运行时依赖解析（§6.6）；供应链 Plan 创建并提交审阅 |
 | 2026-09-02 | §10 workbench × dsh 前端插件互通方向定稿（走方向二，WC 一包多面 + 同源数据通道）；验证步骤 V1-V5 与平台改造清单列入设计，目标入 TODO 队列 |
 | 2026-09-02 | 供应链 Plan 全周期完成：实施 6 Task + rook 审查（8 Blocker 修复：全栈重放/semver 0.x/传递树/锁内写/profile 别名/悬空 symlink/Desktop watcher/路径穿越）+ Wopal 自审 PASS + 用户实机验证（hello 插件热挂载 + settings 页 GUI）；§9 验收达成进入维护态。审批桥接 Plan 同日归档。§9 供应链 + §10 前置实证（dsh.client 自动手写 bundle）完成 |
+| 2026-09-03 | 界面改造（无 Plan，用户直接授权）：DSH 从 titlebar 临时按钮迁入「助理」tab（§3.3.1）——health 增加 `dsh` 字段 + SDK 重生成；dshVisible 派生化修复激活标记/点击语义/持久化三问题；iframe keep-alive 化；`ELLAMAKA_DSH=0` 回落原生助理。四场景实机验证通过 |

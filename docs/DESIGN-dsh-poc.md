@@ -108,6 +108,15 @@ DSH 前端在隔离 iframe 内加载。`VirtualWebServer` 在 index tap 链末�
 
 `DshIframe` 的 src 从活跃 server 的 `http.url` 派生为 `<url>/dsh/`，不写死相对路径。原因：ellamaka-app 的 dev 模式由 Vite 服务前端（默认 3000），后端 serve 独立监听（默认 4097）；相对 `/dsh/` 在 `:3000/workbench` 页面会解析到前端 origin。派生后 dev 下指向 `http://127.0.0.1:4097/dsh/`、Desktop 下指向 sidecar 本地地址，两侧都命中后端 `/dsh` 挂载点。
 
+### 3.3.1 助理 tab 承载（当前形态）
+
+DSH iframe 的宿主是 workbench 的「助理」tab（General 空间 tab），不再是 titlebar 临时按钮 + 整屏 overlay：
+
+- **派生可见性**：`dshVisible = dshEnabled && 激活 tab 是 General`。`dshEnabled` 来自 `/global/health` 的 `dsh` 字段（真值源 `ELLAMAKA_DSH` kill switch）。没有独立可见性信号，激活高亮、点击语义、持久化（`activeTabPath` 已持久化）三者天然一致。
+- **keep-alive**：iframe 与原生工作区双层持久挂载，仅切 `display`；切 tab 不重载 iframe，DSH 会话状态保留（Space Keep-Alive 同款不变量）。
+- **覆盖范围**：iframe 盖掉助理 tab 内容区全部（含 SpaceRail），dsh 界面自带侧栏；tab 名保持「助理」。
+- **回落**：`ELLAMAKA_DSH=0` 时助理 tab 显示原生 General 会话空间，与 DSH 引入前行为一致；General 引擎作用域（`provisionGeneral`、会话投影、后台任务会话）不受影响。
+
 ### 3.4 DSH home、运行时隔离与依赖物化
 
 #### 3.4.1 交付边界
