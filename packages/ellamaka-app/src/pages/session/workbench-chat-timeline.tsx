@@ -5,6 +5,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useSync } from "@/context/sync"
 import { createRowStabilizer, nearestUserTurnID, projectTranscript, type TranscriptRow } from "./chat-transcript"
+import { resolveTurnAnchor } from "./turn-anchor"
 import {
   ChatTurnFrame,
   CompactionDivider,
@@ -544,6 +545,8 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
 
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const [scrollTop, setScrollTop] = createSignal(0)
+  const [jumpTargetTurnID, setJumpTargetTurnID] = createSignal<string | undefined>()
+  let jumpHistorySuppressUntil = 0
   let virtualizer: VirtualizerHandle | undefined
   let pointerScrollPending = false
 
@@ -570,6 +573,10 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     // available. The anchor is measured imperatively, so without this read a
     // PgUp/PgDn event could reuse the previous viewport's active turn.
     const viewportOffset = scrollTop()
+    // An in-flight programmatic jump owns the anchor until the scroll lands;
+    // deriving it from the stale viewport made rapid PgUp repeat or skip.
+    const pendingJump = jumpTargetTurnID()
+    if (pendingJump) return pendingJump
     const direct = directRows()
     // Streaming rows live outside the Virtualizer. At the bottom, their
     // newest user row is the authoritative anchor and avoids forcing a layout
@@ -642,13 +649,19 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     const el = scroller()
     if (!el) return
     setScrollTop(el.scrollTop)
+    if (jumpTargetTurnID()) setJumpTargetTurnID(undefined)
     props.onScheduleScrollState?.(el)
     props.onHistoryScroll?.()
     if (pointerScrollPending) {
       pointerScrollPending = false
       props.onUserScroll?.()
     }
-    if (el.scrollTop < 200 && props.historyMore && !props.historyLoading) {
+    if (
+      el.scrollTop < 200 &&
+      props.historyMore &&
+      !props.historyLoading &&
+      Date.now() > jumpHistorySuppressUntil
+    ) {
       const task = props.loadOlder
       if (typeof task === "function") void task()
     }
@@ -657,19 +670,24 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
   const jumpToPrompt = (userMessageID: string) => {
     // Pause auto-scroll so the jump is not overridden by bottom-following.
     props.onPauseAutoScroll?.()
+    setJumpTargetTurnID(userMessageID)
+    // A jump can land near the top where handleScroll would page in older
+    // history mid-flight. Virtua's shift-mode reflow during that load is a
+    // visible second jump, so hold the loader off until the jump settles.
+    jumpHistorySuppressUntil = Date.now() + 400
     const index = virtualRows().findIndex((row) => row.turnID === userMessageID)
     if (index !== -1 && virtualizer) {
+      // Re-measure mounted rows first so scrollToIndex works from real
+      // heights instead of the 60px estimate; the stale-estimate second
+      // correction after the jump was the visible full-viewport flicker.
+      if (typeof virtualizer.measure === "function") virtualizer.measure()
       virtualizer.scrollToIndex(index, { align: "start" })
-      // Virtua mounts rows asynchronously after the scroll; give it one frame
-      // before checking the DOM anchor so the first click lands too.
-      requestAnimationFrame(() => {
-        const anchor = document.querySelector(`[data-turn-id="${userMessageID}"]`)
-        anchor?.scrollIntoView({ block: "start" })
-      })
       return
     }
-    // Fall back to the live tail DOM anchor.
-    const anchor = document.querySelector(`[data-turn-id="${userMessageID}"]`)
+    // Fall back to the live tail DOM anchor, scoped to this panel's scroller.
+    // A document-wide query can match the same turn in another keep-alive
+    // panel and scroll the wrong container.
+    const anchor = resolveTurnAnchor(scroller(), userMessageID)
     anchor?.scrollIntoView({ block: "start" })
   }
 
