@@ -38,3 +38,12 @@ export type {
   ResolveOptions,
   ResolveSpec,
 } from "./plugins/resolver.js"
+export {
+  AlreadyInstalledError,
+  installPackage,
+  listInstalled,
+  manifestIsBundle,
+  NotInstalledError,
+  removePackage,
+} from "./plugins/installer.js"
+export type { ExtractLike, InstallOptions, InstallResult, InstallSpec } from "./plugins/installer.js"

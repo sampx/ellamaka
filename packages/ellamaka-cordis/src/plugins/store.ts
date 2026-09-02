@@ -125,7 +125,7 @@ export async function writeStore(dshHome: string, store: DshPluginStoreV1): Prom
 }
 
 /** Locked atomic write (caller must already hold the plugins mutex). */
-function writeStoreLocked(dshHome: string, store: DshPluginStoreV1): void {
+export function writeStoreLocked(dshHome: string, store: DshPluginStoreV1): void {
   const dir = pluginsDir(dshHome)
   mkdirSync(dir, { recursive: true })
   // Write to a tmp sibling in the SAME directory, then rename: rename within
@@ -140,7 +140,7 @@ function writeStoreLocked(dshHome: string, store: DshPluginStoreV1): void {
 }
 
 /** Run `fn` while holding the cross-process plugins mutex. */
-async function withPluginsLock<T>(dshHome: string, fn: () => Promise<T> | T): Promise<T> {
+export async function withPluginsLock<T>(dshHome: string, fn: () => Promise<T> | T): Promise<T> {
   const lockPath = pluginsLockFile(dshHome)
   const timeoutMs = 30_000
   const token: LockToken | null = await acquireMaterializeLock(lockPath, timeoutMs)
