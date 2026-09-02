@@ -1235,6 +1235,11 @@ show_all_buckets() {
     fi
     [ "$scope" = "$current_scope" ] && marker="●"
     log_dir="${dir#"$space"/}"   # space-relative; stays absolute only if outside space
+    # Display the worktree path relative to the space root too; keep the
+    # "(unknown directory)" and "(dir gone)" annotations untouched.
+    case "$shown_root" in
+      "$space/"*) shown_root="${shown_root#"$space"/}" ;;
+    esac
     echo "  $marker  $shown_root"
     echo "          logs: $log_dir"
     # Validate this bucket's records against its own root, not this script's.
