@@ -4029,6 +4029,7 @@ export type GlobalHealthResponses = {
       actualVersion?: string
       reason?: string
     }
+    dsh?: boolean
   }
 }
 

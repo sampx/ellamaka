@@ -11,6 +11,7 @@ const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
   cli: CliHealthSchema,
+  dsh: Schema.optional(Schema.Boolean),
 })
 
 const GlobalEventSchema = Schema.Struct({

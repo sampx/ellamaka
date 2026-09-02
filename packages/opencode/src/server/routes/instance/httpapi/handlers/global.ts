@@ -6,6 +6,7 @@ import { Installation } from "@/installation"
 import { CliContract } from "@/wopal/cli-contract"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@wopal/ellamaka-core/installation/version"
+import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import * as Log from "@wopal/ellamaka-core/util/log"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -75,7 +76,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion, cli: yield* cliContract.inspect() }
+      return {
+        healthy: true as const,
+        version: InstallationVersion,
+        cli: yield* cliContract.inspect(),
+        dsh: Flag.ELLAMAKA_DSH,
+      }
     })
 
     const cliRepair = Effect.fn("GlobalHttpApi.cliRepair")(function* () {
