@@ -60,23 +60,41 @@ export function shippedPresetRoot(installAnchor?: string): string {
  * mount (never afterwards — user edits win), so the disable list lives in the
  * user-owned profile file, not in code.
  *
- * The tool container is a pure tool backend: the dsh-adapter drives its
- * tools with a lightweight per-call context (no live dsh sessions, no agent
- * loops). Every row below is agent-loop infrastructure — it needs live
- * sessions or serves the dsh chat surface — and is disabled so the container
- * stays session-free and its tool surface stays clean. Re-enable a row only
- * when adopting the corresponding capability together with its full runtime
+ * The tool container is a pure tool backend: the dsh-adapter drives its tools
+ * with a lightweight per-call context (no live dsh sessions, no agent loops).
+ * The rows below are agent-loop infrastructure — they need live sessions or
+ * serve the dsh chat surface — and are disabled so the container stays
+ * session-free and its tool surface stays clean. Re-enable a row only when
+ * adopting the corresponding capability together with its full runtime
  * context.
+ *
+ * `approval` is intentionally NOT disabled: dsh's sandbox escalation
+ * (`sandbox_permissions`) resolves its one-shot approval through the native
+ * ApprovalService. The adapter's per-call facade satisfies the plugin's
+ * runtime preconditions (open turn via turn/start..turn/end, appendable
+ * events for the approval/asked + approval/decided audit pair), and the
+ * adapter registers the `approval/request` answerer that bridges the ask to
+ * ellamaka Permission. An absent answerer still fails closed
+ * (`unavailable`), and a `never` escalation policy rejects in-service.
  */
 const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profile.
 #
 # The tool container is a pure tool backend: the dsh-adapter drives its tools
 # with a lightweight per-call context (no live dsh sessions, no agent loops).
-# Every row below is agent-loop infrastructure — it needs live sessions or
-# serves the dsh chat surface — and is disabled so the container stays
+# The rows below are agent-loop infrastructure — they need live sessions or
+# serve the dsh chat surface — and are disabled so the container stays
 # session-free and its tool surface stays clean. Re-enable a row only when
 # adopting the corresponding capability together with its full runtime
 # context.
+#
+# \`approval\` is intentionally NOT disabled: dsh's sandbox escalation
+# (\`sandbox_permissions\`) resolves its one-shot approval through the native
+# ApprovalService. The adapter's per-call facade satisfies the plugin's
+# runtime preconditions (open turn via turn/start..turn/end, appendable
+# events for the approval/asked + approval/decided audit pair), and the
+# adapter registers the \`approval/request\` answerer that bridges the ask to
+# ellamaka Permission. An absent answerer still fails closed
+# (\`unavailable\`), and a \`never\` escalation policy rejects in-service.
 
 # --- session & agent-loop core ---
 # Session lifecycle belongs to ellamaka; the container must stay session-free.
@@ -110,9 +128,14 @@ const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profi
 - { id: typert-loader, disabled: true }
 - { id: typert-gateway, disabled: true }
 
-# --- interactive surface (questions, approval, permission presets) ---
+# --- interactive surface (questions, permission presets) ---
+# 'approval' is ENABLED (not listed below): dsh's native escalation
+# choreography (approveEscalation) resolves 'sandbox_permissions' asks
+# through it. The per-call facade carries the open turn
+# (turn/start..turn/end from the adapter) and the audit-pair sink
+# (session.append), and the host bridges 'approval/request' to ellamaka
+# Permission — a rejected/missing answerer fails closed.
 - { id: user-questions, disabled: true }
-- { id: approval, disabled: true }
 - { id: permission, disabled: true }
 
 # --- subagent delegation (agent-loop stack; ellamaka has native subagents) ---

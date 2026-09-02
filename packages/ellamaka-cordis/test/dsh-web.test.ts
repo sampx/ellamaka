@@ -486,4 +486,145 @@ describe("dsh tools profile", () => {
       await ctx.fiber.dispose()
     }
   }, 60_000)
+
+  // Task 2 (Plan feature-dsh-dsh-escalation-approval-bridge-and-sandbox-mode-ui):
+  // the approval plugin is re-enabled in the tool container so dsh's native
+  // escalation choreography runs against a per-call facade. The host (adapter
+  // / assembly layer) bridges `approval/request` to ellamaka Permission; these
+  // tests verify the container side: service presence, the end-to-end ask flow
+  // through a registered answerer, and the deterministic `never` short-circuit.
+  test("mountDshTools composes the approval service into the tool container", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const approval = ctx.get("approval") as { request(req: unknown): Promise<string> } | undefined
+      expect(approval).toBeDefined()
+      expect(typeof approval?.request).toBe("function")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshTools resolves escalation through an approval/request answerer", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-esc-ws-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const approval = ctx.get("approval") as { request(req: unknown): Promise<string> }
+      expect(approval).toBeDefined()
+
+      // The host-side answerer: resolve everything as allowed-once.
+      ctx.on("approval/request", (_req, next) => {
+        void next
+        return Promise.resolve("allowed-once")
+      })
+
+      const session = {
+        header: { id: "esc-session-1", cwd: workspace },
+        events: [{ type: "sandbox/mode", data: { mode: "workspace-write" } }, { type: "turn/start", data: {} }],
+        append(type: string, data: unknown) {
+          this.events.push({ type, data })
+        },
+      }
+      // ApproveEscalation's ordered fail-closed sequence: the strictly-wider
+      // check passes (workspace-write -> danger-full-access), the approval
+      // channel resolves, the answerer maps to allowed-once, and the granted
+      // mode comes back.
+      const granted = await approval.request({
+        agent: { session },
+        toolName: "bash",
+        callId: "esc-call-1",
+        reason: "escalate sandbox to danger-full-access: write outside the workspace",
+        signal: new AbortController().signal,
+      })
+      expect(granted).toBe("allowed-once")
+
+      // The audit pair landed on the facade inside the open turn.
+      const types = session.events.map((event: { type: string }) => event.type)
+      expect(types).toContain("approval/asked")
+      expect(types).toContain("approval/decided")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshTools rejects escalation without an open turn (fail-closed precondition)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-esc-ws2-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const approval = ctx.get("approval") as { request(req: unknown): Promise<string> }
+      const session = {
+        header: { id: "esc-session-2", cwd: workspace },
+        events: [{ type: "sandbox/mode", data: { mode: "workspace-write" } }],
+        append(type: string, data: unknown) {
+          this.events.push({ type, data })
+        },
+      }
+      // No turn/start: the service must refuse before appending anything.
+      await expect(
+        approval.request({
+          agent: { session },
+          toolName: "bash",
+          callId: "esc-call-2",
+          reason: "escalate sandbox to danger-full-access: no turn",
+        }),
+      ).rejects.toThrow("outside an open turn")
+      expect(session.events.map((event: { type: string }) => event.type)).not.toContain("approval/asked")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
+
+  test("mountDshTools never policy rejects escalation before answerer dispatch", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-esc-ws3-"))
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const approval = ctx.get("approval") as { request(req: unknown): Promise<string> }
+      let answered = 0
+      ctx.on("approval/request", (_req, next) => {
+        answered += 1
+        void next
+        return Promise.resolve("allowed-once")
+      })
+
+      const session = {
+        header: { id: "esc-session-3", cwd: workspace },
+        // The adapter seeds the policy override for `escalation: "never"`:
+        // the LAST approval/policy event is the session's effective policy.
+        events: [
+          { type: "sandbox/mode", data: { mode: "workspace-write" } },
+          { type: "approval/policy", data: { policy: "never" } },
+          { type: "turn/start", data: {} },
+        ],
+        append(type: string, data: unknown) {
+          this.events.push({ type, data })
+        },
+      }
+      const outcome = await approval.request({
+        agent: { session },
+        toolName: "bash",
+        callId: "esc-call-3",
+        reason: "escalate sandbox to danger-full-access: never policy",
+      })
+      expect(outcome).toBe("rejected")
+      // Service-level short-circuit: no answerer saw the ask.
+      expect(answered).toBe(0)
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 30_000)
 })
