@@ -47,3 +47,12 @@ export {
   removePackage,
 } from "./plugins/installer.js"
 export type { ExtractLike, InstallOptions, InstallResult, InstallSpec } from "./plugins/installer.js"
+export {
+  PLUGIN_ENTRY_ID_PREFIX,
+  PLUGIN_LAYER_DIRNAME,
+  composePluginLayers,
+  healPluginsModuleFallback,
+  pluginLayerPatch,
+  pluginPackageDir,
+} from "./plugins/compose.js"
+export type { PluginLayerPatch } from "./plugins/compose.js"

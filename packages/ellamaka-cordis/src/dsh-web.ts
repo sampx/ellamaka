@@ -29,6 +29,8 @@ import {
   createPackageDshRuntimeApi,
   type DshRuntimeApi,
 } from "./runtime/loader.js"
+import { composePluginLayers, healPluginsModuleFallback, type PluginLayerPatch } from "./plugins/compose.js"
+import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
 const WEB_PROFILE_NAME = "web"
@@ -201,6 +203,13 @@ export interface DshHost {
   readonly port?: number
   /** The URL of the dsh web UI; absent when no webserver mounts. */
   readonly url?: string
+  /** The host context the dsh tree mounted onto (hot-reload composition). */
+  readonly ctx?: Context
+  /**
+   * The root include entry the boot composition mounted. Hot reload replays
+   * `entry.update` on this handle (Plugin Runtime Service, D-02/D-03).
+   */
+  readonly includeEntry?: Entry
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -377,6 +386,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // profile's plugin rows resolve against this installation's dependency
   // closure (matches how the dsh launcher boots a profile).
   healProfilesModuleFallback(installAnchor, resolvedHome)
+  // Plugin supply chain heal (D-05): one symlink per installed user plugin
+  // under the same profiles/node_modules fallback, so a bare plugin-layer
+  // name resolves by parent-walk. Self-owned — the official closure heal is
+  // untouched; this only adds the user install area's links.
+  healPluginsModuleFallback(resolvedHome)
 
   // The tool-container profile seeds its default patch layer (disable the
   // agent-loop-only plugins) on first mount. The file is user-owned: once the
@@ -406,9 +420,14 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
 
   // Load the profile (bundle layers + user patch layer).
   const profile = loadProfile("ellamaka", profileName, installAnchor, resolvedHome)
-  // Compose the effective patch list: bundle layers + profile layer + extras.
+  // The plugin layer (D-04): composed from the store — the single source of
+  // truth — so boot and hot reload share one composition (D-03). Store order
+  // is layer order; profiles never carry a bundles manifest for plugins.
+  const pluginLayers: PluginLayerPatch[] = composePluginLayers(resolvedHome, profileName)
+  // Compose the effective patch list: bundle layers + plugin layer + profile layer + extras.
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
+    ...(pluginLayers.length > 0 ? [{ insert: pluginLayers }] : []),
     ...profile.patches,
     ...extraPatches,
     ...stateHomePatches,
@@ -441,8 +460,24 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     // node_modules walk reaches the materialised closure regardless of a
     // symlinked layout.
     const closureRequire = createClosureRequire(installAnchor)
+    // Plugin supply chain resolution (D-05): the closure require fails for
+    // user-installed plugins (they live under `plugins/`, not the closure),
+    // so the chain falls back to a require anchored INSIDE the profiles dir —
+    // its parent-walk hits `profiles/node_modules/<pkg>` (the healed plugin
+    // symlinks). An unresolved name throws the ORIGINAL closure error.
+    const profilesRequire = createRequire(join(resolvedHome, "profiles", "anchor.js"))
     loader.internal = {
-      import: async (name: string) => closureRequire(name),
+      import: async (name: string) => {
+        try {
+          return closureRequire(name)
+        } catch (error) {
+          try {
+            return profilesRequire(name)
+          } catch {
+            throw error
+          }
+        }
+      },
     }
   }
   // Intrinsic host setup: the launch environment snapshot and the cmdline
@@ -483,7 +518,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
 
   if (!requireWebServer) {
-    return { dispose }
+    return { ctx, includeEntry, dispose }
   }
 
   const webServer = ctx.get("webServer")
@@ -494,6 +529,8 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   return {
     port: boundPort,
     url: `http://127.0.0.1:${boundPort}`,
+    ctx,
+    includeEntry,
     dispose,
   }
 }
