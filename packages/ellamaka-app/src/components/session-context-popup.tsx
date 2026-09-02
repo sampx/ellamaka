@@ -21,6 +21,7 @@ import { getSessionContextMetrics } from "@/components/session/session-context-m
 export function SessionContextPopup(props: {
   sessionId?: string
   directory?: string
+  placement?: "top" | "bottom" | "left" | "right" | "top-start" | "top-end" | "bottom-start" | "bottom-end"
   children?: JSX.Element
 }) {
   const sync = useSync()
@@ -84,7 +85,7 @@ export function SessionContextPopup(props: {
       <Popover
         open={open()}
         onOpenChange={setOpen}
-        placement="bottom-start"
+        placement={props.placement ?? "bottom-start"}
         gutter={4}
         trigger={props.children ?? defaultTrigger}
         class="w-72"

@@ -1,7 +1,7 @@
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/components/icon.jsx"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/components/icon-button-v2.jsx"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Show, For, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, For, createMemo, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSessionStore } from "../session-store"
 import { useWorkbenchState } from "../view-store"
@@ -10,6 +10,7 @@ import { scopeFromTab } from "../workbench-scope"
 import { getPanelHeaderViews } from "./panel-header-views"
 import { listViews } from "../view-registry"
 import { DialogClosePanel } from "./session-tree-dialogs"
+import { SessionContextHeaderTrigger } from "./session-context-header-trigger"
 import { reportWorkbenchError } from "../workbench-error"
 import type { WorkbenchPanel } from "../view-store"
 
@@ -111,6 +112,50 @@ export function PanelHeader(props: {
         {(view) => {
           const spacePath = props.spacePath
           const isActiveView = () => props.panel.viewMode === view.id
+          // Context 视图按钮替换为 context 占用百分比触发器：hover 显示
+          // tokens 摘要，点击行为不变（切换到 Context 视图）。会话未绑定时退回原按钮。
+          if (view.id === "context") {
+            const content = (
+              <Show
+                when={props.panel.boundSessionId}
+                keyed
+                fallback={
+                  <button
+                    type="button"
+                    class="h-5 inline-flex items-center justify-center gap-1 px-1.5 rounded-md text-10-medium transition-all select-none cursor-pointer"
+                    classList={{
+                      "text-v2-text-text-faint cursor-not-allowed": view.disabled,
+                      "cursor-pointer": !view.disabled,
+                      "bg-v2-overlay-simple-overlay-pressed text-v2-text-text-strong font-semibold shadow-xs": isActiveView() && !view.disabled,
+                      "text-v2-text-text-muted hover:text-v2-text-text-base hover:bg-v2-overlay-simple-overlay-hover font-normal": !isActiveView() && !view.disabled,
+                    }}
+                    disabled={view.disabled}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (view.disabled) return
+                      wb.setPanelViewMode(spacePath, props.panel.id, view.id)
+                    }}
+                  >
+                    <span>{view.label}</span>
+                  </button>
+                }
+              >
+                {(sessionId) => (
+                  <SessionContextHeaderTrigger
+                    sessionId={sessionId}
+                    directory={props.panel.directory}
+                    active={isActiveView()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (view.disabled) return
+                      wb.setPanelViewMode(spacePath, props.panel.id, view.id)
+                    }}
+                  />
+                )}
+              </Show>
+            )
+            return content
+          }
           return (
             <button
               type="button"

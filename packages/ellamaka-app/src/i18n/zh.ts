@@ -388,6 +388,8 @@ export const dict = {
   "context.usage.cost": "成本",
   "context.usage.clickToView": "点击查看上下文",
   "context.usage.view": "查看上下文用量",
+  "context.usage.tooltip": "{{tokens}} Token（占上下文 {{percent}}%）",
+  "context.usage.tooltipNoLimit": "{{tokens}} Token",
 
   "language.en": "English",
   "language.zh": "简体中文",

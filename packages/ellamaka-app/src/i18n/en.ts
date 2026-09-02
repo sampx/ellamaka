@@ -392,6 +392,8 @@ export const dict = {
   "context.usage.cost": "Cost",
   "context.usage.clickToView": "Click to view context",
   "context.usage.view": "View context usage",
+  "context.usage.tooltip": "{{tokens}} tokens ({{percent}}% of context)",
+  "context.usage.tooltipNoLimit": "{{tokens}} tokens",
 
   "language.en": "English",
   "language.zh": "简体中文",
