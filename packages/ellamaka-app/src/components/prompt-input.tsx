@@ -76,10 +76,19 @@ import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
 import { ImagePreview } from "@wopal/ui/image-preview"
 import { useQueries } from "@tanstack/solid-query"
-import { useQueryOptions } from "@/context/server-sync"
+import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { displayName } from "@/pages/layout/helpers"
+import {
+  SANDBOX_PRESETS,
+  patchDshAdapterSandbox,
+  presetToSandbox,
+  readDshAdapterSandbox,
+  sandboxToPreset,
+  hasDshAdapterPlugin,
+  type SandboxPreset,
+} from "./prompt-input/sandbox-control"
 
 interface PromptInputProps {
   class?: string
@@ -143,6 +152,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
+  const serverSync = useServerSync()
   const { params, tabs, view } = useSessionLayout()
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
@@ -304,6 +314,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const buttons = createMemo(() => motion(buttonsSpring()))
   const shell = createMemo(() => motion(1 - buttonsSpring()))
   const control = createMemo(() => ({ height: "28px", ...buttons() }))
+
+  // Sandbox tri-state control: visible only for dock composers in spaces whose
+  // global config loads the dsh-adapter plugin. Reads/writes the adapter's
+  // inline `sandbox` option via the existing global.config.update endpoint;
+  // the backend disposes instances so new sessions pick up the change.
+  const sandboxPlugin = createMemo(() => serverSync.data.config.plugin)
+  const sandboxVisible = createMemo(
+    () => props.variant === "dock" && hasDshAdapterPlugin(sandboxPlugin() as Parameters<typeof hasDshAdapterPlugin>[0]),
+  )
+  const sandboxPreset = createMemo(() => sandboxToPreset(readDshAdapterSandbox(sandboxPlugin() as Parameters<typeof readDshAdapterSandbox>[0])))
+  const sandboxSelect = (preset: SandboxPreset) => {
+    const plugins = sandboxPlugin() as Parameters<typeof patchDshAdapterSandbox>[0]
+    if (!plugins) return
+    const next = patchDshAdapterSandbox(plugins, presetToSandbox(preset))
+    if (!next) return
+    void serverSync.updateConfig({ plugin: next })
+  }
 
   const commentCount = createMemo(() => {
     if (store.mode === "shell") return 0
@@ -1620,6 +1647,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       style={control()}
                     />
                   </Show>
+                  <Show when={sandboxVisible()}>
+                    <ComposerSandboxControl
+                      preset={sandboxPreset}
+                      disabled={() => serverSync.data.reload === "pending"}
+                      onSelect={sandboxSelect}
+                      t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+                      style={control()}
+                    />
+                  </Show>
                 </div>
                 <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
@@ -2165,6 +2201,39 @@ function ComposerVariantControl(props: {
         variant="ghost"
       />
     </TooltipKeybind>
+  )
+}
+
+function ComposerSandboxControl(props: {
+  preset: () => SandboxPreset
+  disabled: () => boolean
+  onSelect: (preset: SandboxPreset) => void
+  t: (key: string) => string
+  style?: JSX.CSSProperties
+}) {
+  return (
+    <div class="relative">
+      <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
+        <Icon name="shield" size="small" />
+      </div>
+      <Select
+        size="normal"
+        options={SANDBOX_PRESETS}
+        current={props.preset()}
+        value={(x) => x}
+        label={(x) => props.t(`prompt.sandbox.${x}`)}
+        onSelect={(value) => {
+          if (!value || value === props.preset()) return
+          props.onSelect(value)
+        }}
+        disabled={props.disabled()}
+        class="max-w-[150px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
+        valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
+        triggerStyle={props.style}
+        triggerProps={{ "data-action": "prompt-sandbox" }}
+        variant="ghost"
+      />
+    </div>
   )
 }
 

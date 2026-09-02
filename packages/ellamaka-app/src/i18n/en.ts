@@ -271,6 +271,10 @@ export const dict = {
 
   "prompt.popover.emptyResults": "No matching results",
   "prompt.popover.emptyCommands": "No matching commands",
+  "prompt.sandbox.label": "Sandbox",
+  "prompt.sandbox.read-only": "Read Only",
+  "prompt.sandbox.workspace-write": "Workspace Write",
+  "prompt.sandbox.full-access": "Full Access",
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.dropzone.file.label": "Drop to @mention file",
   "prompt.slash.badge.custom": "custom",
