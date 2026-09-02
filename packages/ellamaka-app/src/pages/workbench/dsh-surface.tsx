@@ -1,5 +1,5 @@
 /** @jsx h */
-import { Show, type JSX } from "solid-js"
+import { type JSX } from "solid-js"
 import h from "solid-js/h"
 import { useServer } from "@/context/server"
 import { useWorkbenchState } from "./view-store"
@@ -35,16 +35,33 @@ export function DshIframe(props: { src?: string }): JSX.Element {
 }
 
 /**
- * The DSH surface: shows the DSH iframe when the DSH view is visible, and the
- * regular Workbench content (children) otherwise.
+ * Visibility styles for the keep-alive swap. Both layers stay mounted; only
+ * display toggles, so the iframe never reloads and DSH session state survives
+ * tab switches. Visible layer participates in layout (`contents`); hidden
+ * layer drops out of layout (`none`) so the iframe cannot intercept input.
+ */
+export function dshSurfaceStyle(visible: boolean): { display: string } {
+  return { display: visible ? "contents" : "none" }
+}
+
+/**
+ * The DSH surface replaces the Assistant (general) tab content. The iframe is
+ * mounted once and kept alive (visibility toggle only) so DSH session state
+ * survives tab switches, mirroring the Space Keep-Alive invariant. It covers
+ * the full content area below the titlebar, including the SpaceRail — the DSH
+ * UI ships its own sidebar.
  */
 export function DshSurface(props: { children: JSX.Element }): JSX.Element {
   const wb = useWorkbenchState()
   const server = useServer()
   const src = () => dshIframeSrc(server.current?.http.url)
+  const visible = () => wb.dshVisible
   return (
-    <Show when={!wb.dshVisible} fallback={<DshIframe src={src()} />}>
-      {props.children}
-    </Show>
+    <>
+      <div style={dshSurfaceStyle(visible())}>
+        <DshIframe src={src()} />
+      </div>
+      <div style={dshSurfaceStyle(!visible())}>{props.children}</div>
+    </>
   )
 }

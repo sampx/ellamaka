@@ -26,6 +26,7 @@ import { WorkbenchSingletonGuard } from "./singleton-guard"
 import { useWorkbenchCommands } from "./use-workbench-commands"
 import { WorkbenchActionsProvider, useWorkbenchActions } from "./workbench-actions"
 import { WorkbenchRuntimeProvider, useWorkbenchRuntime } from "./workbench-runtime"
+import { WorkbenchDshFlagBinding } from "./workbench-dsh-flag-binding"
 import { WorkbenchPromptRegistryProvider } from "./workbench-prompt-registry"
 import { WorkbenchSidecarCleanupBinding } from "./workbench-sidecar-cleanup"
 import { WorkbenchActiveDirectoryProvider } from "./workbench-directory-provider"
@@ -340,6 +341,7 @@ export default function Workbench() {
           <WorkbenchRuntimeProvider>
             <WorkbenchActionsProvider>
               <WorkbenchSidecarCleanupBinding />
+              <WorkbenchDshFlagBinding />
               <SpaceStoreProvider>
                 <ViewRegistryProvider>
                   <ErrorBoundary

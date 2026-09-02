@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import { render } from "solid-js/web"
 import h from "solid-js/h"
-import { DshIframe, dshIframeSrc } from "./dsh-surface"
+import { DshIframe, dshIframeSrc, dshSurfaceStyle } from "./dsh-surface"
 
 /**
  * The DSH iframe embeds the DSH web UI under the backend origin's `/dsh/` path
@@ -38,5 +38,19 @@ describe("DshIframe", () => {
     expect(iframe!.getAttribute("src")).toBe("http://localhost:4097/dsh/")
 
     host.remove()
+  })
+})
+
+
+/**
+ * DshSurface keep-alive contract (DESIGN-dsh-poc §10): the DSH iframe is the
+ * Assistant tab's content, so both layers must stay mounted and only the
+ * display style toggles — unmounting would reload the iframe and destroy DSH
+ * session state, violating the Space Keep-Alive invariant.
+ */
+describe("dshSurfaceStyle keep-alive", () => {
+  test("visible layer participates in layout, hidden layer drops out", () => {
+    expect(dshSurfaceStyle(true)).toEqual({ display: "contents" })
+    expect(dshSurfaceStyle(false)).toEqual({ display: "none" })
   })
 })

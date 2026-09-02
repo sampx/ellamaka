@@ -5,6 +5,7 @@ import { createStore } from "solid-js/store"
 import {
   clonePersistedWorkbench,
   createWorkbenchStore,
+  GENERAL_TAB_PATH,
   PERSISTED_DEFAULTS,
   type PersistedWorkbench,
   type WorkbenchSessionBinding,
@@ -112,7 +113,10 @@ export function initWorkbenchState() {
     const [refreshVersion, setRefreshVersion] = createSignal(0)
     const [persistentHint, setPersistentHintValue] = createSignal("")
     const [statusMessage, setStatusMessageValue] = createSignal("")
-    const [dshVisible, setDshVisible] = createSignal(false)
+    // DSH availability mirrors the server-side `ELLAMAKA_DSH` kill switch as
+    // reported by /global/health (`dsh` field). Undefined until the first
+    // health probe resolves.
+    const [dshEnabled, setDshEnabled] = createSignal<boolean | undefined>(undefined)
     let persistentHintTimer: ReturnType<typeof setTimeout> | undefined
     let statusMessageTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -285,8 +289,16 @@ export function initWorkbenchState() {
       setStatusMessage,
       get persistentHint() { return persistentHint() },
       setPersistentHint,
-      get dshVisible() { return dshVisible() },
-      setDshVisible,
+      get dshEnabled() { return dshEnabled() },
+      setDshEnabled,
+      // DSH replaces the Assistant (general) tab content when enabled. Derived
+      // from the active tab path so the tab highlight, click semantics, and
+      // persistence (activeTabPath is persisted) stay truthful — no separate
+      // visibility signal to desynchronize (DESIGN-dsh-poc §10).
+      get dshVisible() {
+        if (!dshEnabled()) return false
+        return (workbench.activeTabPath ?? GENERAL_TAB_PATH) === GENERAL_TAB_PATH
+      },
       get diagnostics() { return diagnosticsList() },
       pushDiagnostic,
       removeDiagnostic,

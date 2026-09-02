@@ -192,22 +192,6 @@ export function WorkbenchTitlebar() {
             <img src="/favicon-96x96.png" class="w-5 h-5 object-contain" alt="Icon" />
             <img src="/ellamaka-text-logo.png?v=2" class="h-5 w-auto object-contain ellamaka-logo-invert" alt="Logo" />
           </div>
-          
-          {/* DSH Button placeholder */}
-          <div style={{ "-webkit-app-region": "no-drag" }}>
-            <button
-              class="px-2 py-1 rounded transition-colors border flex items-center gap-1 border-v2-brand-brand-base text-v2-brand-brand-base"
-              classList={{
-                "bg-v2-brand-brand-base text-white": wb.dshVisible,
-                "hover:bg-v2-surface-surface-base-hover": !wb.dshVisible,
-              }}
-              onClick={() => {
-                wb.setDshVisible(!wb.dshVisible)
-              }}
-            >
-              <span class="text-[13px] font-semibold">DSH</span>
-            </button>
-          </div>
         </div>
 
         {/* Space Tabs Bar */}
@@ -298,10 +282,6 @@ export function WorkbenchTitlebar() {
               class="h-7 px-2.5 text-11-medium text-v2-text-text-muted hover:text-v2-text-text-strong gap-1.5"
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
-                // 从 DSH 全屏视图切回空间视图：DSH 视图独占 SpaceRail，点空间菜单应先退出
-                if (wb.dshVisible) {
-                  wb.setDshVisible(false)
-                }
                 if (showSpaceMenu()) {
                   spaceMenuFlyout.close()
                 } else {

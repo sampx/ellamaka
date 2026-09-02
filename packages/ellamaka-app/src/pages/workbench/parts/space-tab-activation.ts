@@ -1,8 +1,8 @@
-// 切换 Space Tab 的统一入口：DSH 视图独占 SpaceRail，切到空间标签应先退出 DSH 视图。
+// 切换 Space Tab 的统一入口。DSH 视图由激活 tab 派生（dshVisible = dshEnabled
+// && 激活 tab 是 General），点空间 tab 只需 setActive，DSH 内容自动让位。
 export function activateSpaceTab(
-  wb: { dshVisible: boolean; setDshVisible: (v: boolean) => void; setActive: (path: string) => void },
+  wb: { setActive: (path: string) => void },
   path: string,
 ) {
-  if (wb.dshVisible) wb.setDshVisible(false)
   wb.setActive(path)
 }
