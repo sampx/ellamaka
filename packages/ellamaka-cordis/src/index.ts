@@ -21,3 +21,20 @@ export type {
   DshPluginSource,
   DshPluginStoreV1,
 } from "./plugins/store.js"
+export {
+  DEFAULT_RESOLVER_REGISTRY,
+  NoVersionError,
+  packumentUrl,
+  pickVersion,
+  resolveTree,
+  satisfiesRange,
+  UnsupportedSpecError,
+} from "./plugins/resolver.js"
+export type {
+  Packument,
+  PackumentVersion,
+  ResolvedPackage,
+  ResolvedTree,
+  ResolveOptions,
+  ResolveSpec,
+} from "./plugins/resolver.js"

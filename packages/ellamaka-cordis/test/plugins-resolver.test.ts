@@ -1,0 +1,109 @@
+import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import { NoVersionError, resolveTree, UnsupportedSpecError, type FetchLike } from "../src/plugins/resolver"
+
+/** Load a recorded packument fixture (real registry data, trimmed fields). */
+function fixture(name: string): unknown {
+  return JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "packuments", `${name}.json`), "utf-8"))
+}
+
+/** A fetch injected with the real recorded packuments (fully offline). */
+function offlineFetch(): FetchLike {
+  const docs = new Map<string, unknown>([
+    ["is-odd", fixture("is-odd")],
+    ["is-number", fixture("is-number")],
+    ["chalk", fixture("chalk")],
+    ["@sindresorhus/is", fixture("sindresorhus-is")],
+  ])
+  return async (url) => {
+    const parsed = new URL(url)
+    // Scoped names arrive percent-encoded (`@scope%2fpkg`).
+    const name = decodeURIComponent(parsed.pathname.slice(1))
+    const doc = docs.get(name)
+    if (!doc) throw new Error(`404 for ${name} at ${url}`)
+    return { ok: true, status: 200, json: async () => doc }
+  }
+}
+
+describe("dsh plugin dependency resolver", () => {
+  test("resolveTree('is-odd@3.0.1') yields the exact root plus its dependency, flat hoisted", async () => {
+    const tree = await resolveTree({ kind: "registry", name: "is-odd", version: "3.0.1" }, { fetch: offlineFetch() })
+    expect(tree.root).toEqual({ name: "is-odd", version: "3.0.1" })
+    const keys = [...tree.packages.keys()].sort()
+    expect(keys).toEqual(["is-number@6.0.0", "is-odd@3.0.1"])
+    expect(tree.packages.get("is-odd@3.0.1")?.dependencies).toEqual(["is-number@6.0.0"])
+    expect(tree.packages.get("is-number@6.0.0")?.dependencies).toEqual([])
+  })
+
+  test("resolveTree('chalk@^5') resolves to the highest 5.x", async () => {
+    const tree = await resolveTree({ kind: "registry", name: "chalk", version: "^5" }, { fetch: offlineFetch() })
+    expect(tree.root.version.startsWith("5.")).toBe(true)
+    expect([...tree.packages.keys()]).toContain(`chalk@${tree.root.version}`)
+  })
+
+  test("resolveTree('chalk@5') resolves the exact version 5.6.2", async () => {
+    const tree = await resolveTree({ kind: "registry", name: "chalk", version: "5" }, { fetch: offlineFetch() })
+    expect(tree.root.version).toBe("5.6.2")
+  })
+
+  test("resolveTree('chalk@~5.3') respects the tilde minor pin", async () => {
+    const tree = await resolveTree({ kind: "registry", name: "chalk", version: "~5.3" }, { fetch: offlineFetch() })
+    expect(tree.root.version).toBe("5.3.0")
+  })
+
+  test("resolveTree('chalk@latest') follows the dist-tag", async () => {
+    const tree = await resolveTree({ kind: "registry", name: "chalk", version: "latest" }, { fetch: offlineFetch() })
+    expect(tree.root.version).toBe("6.0.0")
+  })
+
+  test("scoped names split correctly", async () => {
+    const tree = await resolveTree(
+      { kind: "registry", name: "@sindresorhus/is", version: "7.0.1" },
+      { fetch: offlineFetch() },
+    )
+    expect(tree.root.name).toBe("@sindresorhus/is")
+    expect(tree.root.version).toBe("7.0.1")
+  })
+
+  test("the same package required by multiple parents shares one copy (hoist)", async () => {
+    // is-odd 2.0.0 -> is-number@^4.0.0; simulate a synthetic parent requiring
+    // the same is-number version by resolving two specs against one fetch.
+    const tree = await resolveTree({ kind: "registry", name: "is-odd", version: "3.0.1" }, { fetch: offlineFetch() })
+    const isNumberCopies = [...tree.packages.keys()].filter((k) => k.startsWith("is-number@"))
+    expect(isNumberCopies).toHaveLength(1)
+  })
+
+  test("a range with no satisfying version throws NoVersionError naming the parent chain", async () => {
+    try {
+      await resolveTree({ kind: "registry", name: "is-odd", version: "99.0.0" }, { fetch: offlineFetch() })
+      throw new Error("expected NoVersionError")
+    } catch (error) {
+      expect(error).toBeInstanceOf(NoVersionError)
+      expect((error as Error).message).toContain("is-odd")
+      expect((error as Error).message).toContain("99.0.0")
+    }
+  })
+
+  test("git and file specs are rejected with UnsupportedSpecError", () => {
+    expect(() =>
+      resolveTree({ kind: "registry", name: "is-odd", version: "github:foo/is-odd#main" }),
+    ).toThrow(UnsupportedSpecError)
+    expect(() => resolveTree({ kind: "registry", name: "is-odd", version: "file:../is-odd" })).toThrow(
+      UnsupportedSpecError,
+    )
+  })
+
+  test("fetch failures propagate with the registry URL", async () => {
+    const failingFetch: FetchLike = async (url) => {
+      throw new Error(`network down at ${url}`)
+    }
+    try {
+      await resolveTree({ kind: "registry", name: "is-odd", version: "3.0.1" }, { fetch: failingFetch })
+      throw new Error("expected the fetch error to propagate")
+    } catch (error) {
+      expect((error as Error).message).toContain("registry.npmjs.org")
+      expect((error as Error).message).toContain("network down")
+    }
+  })
+})
