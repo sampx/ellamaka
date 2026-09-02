@@ -67,6 +67,7 @@ import {
   promptLength,
 } from "./prompt-input/history"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
+import { compactSession } from "./prompt-input/compact"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
@@ -265,6 +266,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return paths
   })
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const canCompact = createMemo(() => {
+    const model = local.model.current()
+    return !!params.id && !!model
+  })
+  const compact = () => {
+    const model = local.model.current()
+    void compactSession({
+      client: sdk.client,
+      sessionID: params.id,
+      model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
+    })
+  }
   const working = createMemo(() => sync.data.session_working(params.id ?? ""))
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
@@ -1619,6 +1632,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     />
                   </Show>
                 </div>
+                <Tooltip placement="top" value={language.t("prompt.action.compact")}>
+                  <IconButton
+                    data-action="prompt-compact"
+                    type="button"
+                    icon="collapse"
+                    variant="ghost"
+                    class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+                    disabled={!canCompact()}
+                    tabIndex={canCompact() ? undefined : -1}
+                    aria-label={language.t("prompt.action.compact")}
+                    onClick={compact}
+                  />
+                </Tooltip>
                 <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
                     data-action="prompt-submit"
