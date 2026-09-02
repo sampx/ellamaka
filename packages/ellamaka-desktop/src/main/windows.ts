@@ -6,9 +6,7 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } f
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
-import { PINCH_ZOOM_ENABLED_KEY } from "./constants"
 import { exportDebugLogs, write as writeLog } from "./logging"
-import { getStore } from "./store"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowShowGuard } from "./window-show-guard"
 import { mainWindowChrome } from "./window-chrome"
@@ -46,10 +44,7 @@ let relaunchHandler = () => {
 }
 const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const titlebarOverlayWindows = new WeakSet<BrowserWindow>()
-const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
 const titlebarHeight = 40
-const maxZoomLevel = 10
-const minZoomLevel = 0.2
 
 export function setRelaunchHandler(handler: () => void) {
   relaunchHandler = handler
@@ -98,20 +93,6 @@ export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = 
 export function updateTitlebar(win: BrowserWindow) {
   if (process.platform !== "win32" || !titlebarOverlayWindows.has(win)) return
   win.setTitleBarOverlay(overlay(titlebarThemes.get(win), win.webContents.getZoomFactor()))
-}
-
-export function setPinchZoomEnabled(enabled: boolean) {
-  getStore().set(PINCH_ZOOM_ENABLED_KEY, enabled)
-  for (const win of BrowserWindow.getAllWindows()) {
-    pinchZoomEnabled.set(win, enabled)
-    win.webContents.send("pinch-zoom-enabled-changed", enabled)
-    if (!enabled && win.webContents.getZoomFactor() !== 1) win.webContents.setZoomFactor(1)
-    updateZoom(win)
-  }
-}
-
-export function getPinchZoomEnabled() {
-  return getStore().get(PINCH_ZOOM_ENABLED_KEY) === true
 }
 
 export function setDockIcon() {
@@ -421,23 +402,13 @@ function isRendererUrl(value?: string, html = false) {
   return url.origin === new URL(devUrl).origin
 }
 
-function wireZoom(win: BrowserWindow) {
-  pinchZoomEnabled.set(win, getPinchZoomEnabled())
+export function wireZoom(win: BrowserWindow) {
   win.webContents.setZoomFactor(1)
-  win.webContents.on("zoom-changed", (event, zoomDirection) => {
+  win.webContents.on("zoom-changed", (event) => {
     event.preventDefault()
-    if (pinchZoomEnabled.get(win)) {
-      win.webContents.setZoomFactor(clampZoom(win.webContents.getZoomFactor() + (zoomDirection === "in" ? 0.2 : -0.2)))
-      updateZoom(win)
-      return
-    }
     if (win.webContents.getZoomFactor() !== 1) win.webContents.setZoomFactor(1)
     updateZoom(win)
   })
-}
-
-function clampZoom(value: number) {
-  return Math.min(Math.max(value, minZoomLevel), maxZoomLevel)
 }
 
 function updateZoom(win: BrowserWindow) {

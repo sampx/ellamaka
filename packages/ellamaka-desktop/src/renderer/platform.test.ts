@@ -32,8 +32,6 @@ describe("desktop renderer platform", () => {
       "setDisplayBackend",
       "parseMarkdown",
       "webviewZoom",
-      "getPinchZoomEnabled",
-      "setPinchZoomEnabled",
       "runDesktopMenuAction",
       "checkAppExists",
       "readClipboardImage",

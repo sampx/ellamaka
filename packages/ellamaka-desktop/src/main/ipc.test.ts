@@ -204,8 +204,6 @@ describe("IPC channel registry (unregister coverage)", () => {
     "show-window",
     "get-zoom-factor",
     "set-zoom-factor",
-    "get-pinch-zoom-enabled",
-    "set-pinch-zoom-enabled",
     "set-titlebar",
     "run-desktop-menu-action",
     "save-recent-model",

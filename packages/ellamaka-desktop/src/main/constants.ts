@@ -6,5 +6,4 @@ export const CHANNEL: Channel = raw === "local" || raw === "main" || raw === "be
 
 export const SETTINGS_STORE = "ellamaka.settings"
 export const WSL_ENABLED_KEY = "wslEnabled"
-export const PINCH_ZOOM_ENABLED_KEY = "pinchZoomEnabled"
 export const UPDATER_ENABLED = app.isPackaged && (CHANNEL === "beta" || CHANNEL === "prod")

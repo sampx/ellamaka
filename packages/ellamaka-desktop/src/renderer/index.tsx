@@ -20,7 +20,7 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, onMo
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
-import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
+import { resetZoom, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { DesktopRouter } from "./desktop-router"
@@ -219,10 +219,6 @@ const createPlatform = (releaseVersion: () => string): Platform => {
     parseMarkdown: (markdown: string) => window.api.parseMarkdownCommand(markdown),
 
     webviewZoom,
-
-    getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
-
-    setPinchZoomEnabled,
 
     runDesktopMenuAction,
 
