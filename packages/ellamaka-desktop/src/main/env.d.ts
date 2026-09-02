@@ -88,14 +88,39 @@ declare module "virtual:opencode-server" {
       request(req: unknown, res: unknown): void
       upgrade(req: unknown, socket: unknown, head: unknown): void
     }
+    ctx: unknown
+    includeEntry: DshPluginIncludeEntry
+    stackContext: unknown
     dispose(): Promise<void>
   }
 
   export interface DshToolsHost {
     ctx: unknown
+    includeEntry: DshPluginIncludeEntry
+    stackContext: unknown
     dispose(): Promise<void>
+  }
+
+  /** The include entry handle the Plugin Runtime Service replays patches on. */
+  export interface DshPluginIncludeEntry {
+    id: string
+    update(options: unknown): Promise<void>
+  }
+
+  export interface DshPluginServiceOptions {
+    home: string
+    containers: Array<{
+      profile: string
+      ctx?: unknown
+      includeEntry: DshPluginIncludeEntry
+      stackContext?: unknown
+    }>
+    intervalMs?: number
   }
 
   export const bootDshWeb: (opts: DshWebHostOptions) => Promise<DshWebHost>
   export const bootDshTools: (opts: DshWebHostOptions) => Promise<DshToolsHost>
+  export const startDshPluginService: (options: DshPluginServiceOptions) => {
+    stop(): Promise<void>
+  }
 }

@@ -18,3 +18,9 @@ export { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
 export type { DshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
 export { bootDshWeb, bootDshTools } from "@wopal/ellamaka-cordis/dsh-web"
 export type { DshWebHost, DshToolsHost } from "@wopal/ellamaka-cordis/dsh-web"
+export { startDshPluginService } from "@wopal/ellamaka-cordis/plugins/runtime"
+export type {
+  DshPluginContainer,
+  DshPluginServiceHandle,
+  DshPluginServiceOptions,
+} from "@wopal/ellamaka-cordis/plugins/runtime"

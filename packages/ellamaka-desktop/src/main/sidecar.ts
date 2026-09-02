@@ -56,8 +56,23 @@ type Listener = {
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
-let dshHost: { dispose(): Promise<void> } | undefined
-let dshToolsHost: { dispose(): Promise<void> } | undefined
+let dshHost:
+  | {
+      dispose(): Promise<void>
+      ctx?: unknown
+      includeEntry?: { id: string; update(options: unknown): Promise<void> }
+      stackContext?: unknown
+    }
+  | undefined
+let dshToolsHost:
+  | {
+      dispose(): Promise<void>
+      ctx?: unknown
+      includeEntry?: { id: string; update(options: unknown): Promise<void> }
+      stackContext?: unknown
+    }
+  | undefined
+let dshPluginService: { stop(): Promise<void> } | undefined
 
 /**
  * The dsh runtime initialised once per launch (W-02). The manager's
@@ -148,6 +163,7 @@ async function start(command: StartCommand) {
     // sidecar (B-06).
     await mountDshIfPresent(command)
     await mountDshToolsIfPresent(command)
+    await startDshPluginWatcher(command)
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -194,6 +210,9 @@ async function mountDshIfPresent(command: StartCommand): Promise<void> {
       upgrade: (req, socket, head) => host.webServer.upgrade(req, socket, head),
     })
     dshHost = {
+      ctx: host.ctx,
+      includeEntry: host.includeEntry,
+      stackContext: host.stackContext,
       dispose: async () => {
         unmount?.()
         await host.dispose()
@@ -228,7 +247,12 @@ async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
       logFile,
       runtime,
     })
-    dshToolsHost = { dispose: () => host.dispose() }
+    dshToolsHost = {
+      ctx: host.ctx,
+      includeEntry: host.includeEntry,
+      stackContext: host.stackContext,
+      dispose: () => host.dispose(),
+    }
     ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
   } catch (error) {
     // A broken closure must never exit the sidecar (B-06).
@@ -261,9 +285,44 @@ async function initDshLaunch(command: StartCommand): Promise<NonNullable<typeof 
   return dshLaunchState
 }
 
+/**
+ * Start the Plugin Runtime Service (D-02, rook B-07): watch the plugin store
+ * and hot-replay include patches into BOTH running containers, so dsh plugin
+ * add/remove/enable/disable executed while the Desktop app runs take effect
+ * without a restart. Only mounts when both containers are up; a failed start
+ * degrades without crashing the sidecar (B-06).
+ */
+async function startDshPluginWatcher(command: StartCommand): Promise<void> {
+  if (!dshHost?.includeEntry || !dshToolsHost?.includeEntry) return
+  const { home } = dshLaunch(command)
+  try {
+    const { startDshPluginService } = await import("virtual:opencode-server")
+    dshPluginService = startDshPluginService({
+      home,
+      containers: [
+        { profile: "web", ctx: dshHost.ctx, includeEntry: dshHost.includeEntry, stackContext: dshHost.stackContext },
+        {
+          profile: "ellamaka-tools",
+          ctx: dshToolsHost.ctx,
+          includeEntry: dshToolsHost.includeEntry,
+          stackContext: dshToolsHost.stackContext,
+        },
+      ],
+    })
+  } catch (error) {
+    // A failed watcher must never exit the sidecar (B-06); installs simply
+    // apply at next launch.
+    console.error(`dsh plugin runtime service failed to start: ${(error as Error).message}`)
+  }
+}
+
 async function stop() {
   try {
     delete (globalThis as Record<string, unknown>).__ellamakaDshContainer
+    // Stop the store watcher FIRST so it cannot replay into containers that
+    // are mid-dispose (rook B-07).
+    await dshPluginService?.stop()
+    dshPluginService = undefined
     await dshToolsHost?.dispose()
     dshToolsHost = undefined
     await dshHost?.dispose()

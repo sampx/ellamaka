@@ -109,16 +109,24 @@ export async function mountDshEngine(
 
     // Plugin Runtime Service (D-02): the server process watches the plugin
     // store and replays include patches into both containers when CLI-side
-    // installs change it. A degraded watcher never breaks the engine.
+    // installs change it. A degraded watcher never breaks the engine. The
+    // container logger is injected so store/replay failures land in the
+    // dsh-plugins log with structure (rook W-02).
     let pluginService: { stop(): Promise<void> } | undefined
     try {
       const { startDshPluginService } = await import("@wopal/ellamaka-cordis/plugins/runtime")
+      const watcherLog = webHub.ctx.logger("dsh-plugins")
       pluginService = startDshPluginService({
         home,
         containers: [
-          { profile: "web", ctx: webHub.ctx, includeEntry: dsh.includeEntry },
-          { profile: "ellamaka-tools", ctx: toolsHub.ctx, includeEntry: toolsHost.includeEntry },
+          { profile: "web", ctx: webHub.ctx, includeEntry: dsh.includeEntry, stackContext: dsh.stackContext },
+          { profile: "ellamaka-tools", ctx: toolsHub.ctx, includeEntry: toolsHost.includeEntry, stackContext: toolsHost.stackContext },
         ],
+        logger: {
+          info: (message, extra) => watcherLog.info(message, extra),
+          warn: (message, extra) => watcherLog.warn(message, extra),
+          error: (message, extra) => watcherLog.error(message, extra),
+        },
       })
     } catch (error) {
       webHub.ctx.logger("dsh-plugins").warn("plugin runtime service failed to start", {
