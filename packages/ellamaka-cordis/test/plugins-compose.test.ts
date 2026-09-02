@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
+import { mountDshTools } from "../src/dsh-web"
 import {
   composePluginLayers,
   PLUGIN_LAYER_DIRNAME,
@@ -122,6 +123,24 @@ describe("healPluginsModuleFallback", () => {
     expect(realpathSync(join(modulesDir, "mover"))).toBe(realpathSync(newDir))
   })
 
+  test("replaces a DANGLING self-owned link (rook B-06)", async () => {
+    const home = tempHome()
+    const dir = installedPlugin(home, "resurrected", "1.0.0")
+    // Seed a link whose target no longer exists: realpathSync fails on it,
+    // and a naive symlinkSync would fail EEXIST.
+    const modulesDir = join(home, "profiles", "node_modules")
+    mkdirSync(modulesDir, { recursive: true })
+    symlinkSync(join(home, "gone-plugin-dir"), join(modulesDir, "resurrected"), "dir")
+    await writeStore(home, {
+      schema: "ellamaka.dsh-plugins/v1",
+      plugins: [
+        { name: "resurrected", version: "1.0.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
+      ],
+    })
+    healPluginsModuleFallback(home)
+    expect(realpathSync(join(modulesDir, "resurrected"))).toBe(realpathSync(dir))
+  })
+
   test("keeps non-plugin entries already present in profiles/node_modules", async () => {
     const home = tempHome()
     const modulesDir = join(home, "profiles", "node_modules")
@@ -148,4 +167,63 @@ describe("healPluginsModuleFallback", () => {
     healPluginsModuleFallback(home)
     expect(lstatSync(join(home, "profiles", "node_modules", "plain")).isSymbolicLink()).toBe(true)
   })
+})
+
+describe("loader.internal.import profiles fallback (rook W-01)", () => {
+  test("an EXISTING internal import is wrapped so user plugins resolve via profiles", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-plugin-w01-"))
+    // Install the fixture plugin (source:dir, like the CLI add path).
+    const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-w01-src-"))
+    const src = join(srcRoot, "fixture-dsh-plugin")
+    mkdirSync(src, { recursive: true })
+    writeFileSync(
+      join(src, "package.json"),
+      JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
+    )
+    writeFileSync(join(src, "cordis.patch.yml"), "[]\n")
+    writeFileSync(
+      join(src, "index.js"),
+      'export const name = "fixture-dsh-plugin"\nexport function apply(ctx) { ctx.provide("fixture-dsh-plugin.marker", "mounted") }\n',
+    )
+    // The install area layout the installer produces + the healed symlink.
+    const installed = join(home, "plugins", "fixture-dsh-plugin", "1.0.0")
+    mkdirSync(join(home, "plugins", "fixture-dsh-plugin"), { recursive: true })
+    symlinkSync(src, installed, "dir")
+    await writeStore(home, {
+      schema: "ellamaka.dsh-plugins/v1",
+      plugins: [
+        { name: "fixture-dsh-plugin", version: "1.0.0", source: "dir", enabledIn: ["ellamaka-tools"], installedAt: "2026-09-02T00:00:00.000Z" },
+      ],
+    })
+
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, {
+      home,
+      port: 0,
+      // The prepare hook runs after the Loader mounts and BEFORE the include:
+      // install a stub internal.import WITHOUT the profiles seam, simulating
+      // the Node internal-loader path (rook W-01: the closure/internal loader
+      // resolves official packages but not user plugins).
+      prepare: (bootCtx) => {
+        const loader = bootCtx.get("loader") as { internal?: { import(name: string): Promise<unknown> } } | undefined
+        if (loader && loader.internal === undefined) {
+          loader.internal = {
+            import: async (name: string) => {
+              throw new Error(`stub internal loader cannot resolve ${name}`)
+            },
+          }
+        }
+      },
+    })
+    try {
+      // The wrapped import chain must resolve the plugin through the profiles
+      // anchor despite the stub's blanket failure.
+      expect(ctx.get("fixture-dsh-plugin.marker", false)).toBe("mounted")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+      rmSync(home, { recursive: true, force: true })
+      rmSync(srcRoot, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
