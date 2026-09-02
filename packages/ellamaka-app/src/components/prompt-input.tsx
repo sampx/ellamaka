@@ -331,7 +331,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sandboxDefaultPreset = createMemo(() =>
     sandboxToPreset(readDshAdapterSandbox(sandboxPlugin() as Parameters<typeof readDshAdapterSandbox>[0])),
   )
-  const sandboxSessionID = createMemo(() => (newSession() ? undefined : params.id))
+  const sandboxSessionID = createMemo(() => (props.variant === "new-session" ? undefined : params.id))
   const [sandboxSaved, setSandboxSaved] = persisted(
     Persist.workspace(sdk.directory, SANDBOX_CHOICE_KEY, [`${SANDBOX_CHOICE_KEY}.v1`]),
     createStore<{ session: Record<string, SandboxPreset | undefined> }>({ session: {} }),
