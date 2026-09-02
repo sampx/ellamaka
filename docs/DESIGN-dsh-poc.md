@@ -573,7 +573,7 @@ $WOPAL_HOME/dsh/plugins/
 
 - **官方包不重装**：插件依赖 `@deepseek-ai/*` 时经 `profiles/node_modules` symlink 解析到闭包（heal 机制扩展一个遍历源），与官方运行时版本天然一致，无 skew。
 - **可变目录语义**：命令式操作配可变目录，升级=替换目录+更新 installed.json；与闭包"只增不减"的 immutable 语义解耦。
-- **installed.json 是唯一真相源**：profiles 的 bundles 清单由 Plugin Manager 依据它生成同步；用户手编 cordis.yml 的 bundles 段不再被读取（补丁层 `cordis.patch.yml` 保留为用户逃生口，见 §9.5）。
+- **installed.json 是唯一真相源**：profiles 的 bundles 清单由 Plugin Manager 依据它生成同步；用户手编 cordis.yml 的 bundles 段不再被读取（补丁层 `cordis.patch.yml` 保留为用户逃生口，见 §9.5）。实现决策（D-04）：store 是唯一组合源，profiles 不写 bundles 清单——插件层由 Bridge 在 boot/热更时从 store 组合，`profiles/*/package.json` 保持 initProfile 原状（仅官方 bundle）。
 
 ### 9.3 命令面
 
@@ -599,7 +599,7 @@ ellamaka dsh plugin list [--json]
 
 - **热挂载按容器分别执行**：对 tools 容器直接 `loader.create`；对 web 容器经 include patch 同步（浅合并契约，§6.6.3）。启动中的容器（preparing 状态）跳过热挂载，待 Load 阶段由清单自然生效。
 - **失败语义**：解析或下载失败 → 不写 installed.json、不触碰容器，命令返回非零并保留诊断；半安装状态只存在于 staging 临时目录，不参与解析。卸载 = `loader.remove` + include 反向 patch + 删除目录 + 更新清单，effects 自动反解。
-- **并发**：与物化共用 `locks/` 目录的跨进程文件锁（`plugins.lock`），多进程同时 add 串行化；同进程经 Plugin Manager 单飞。
+- **并发**：与物化共用 `locks/` 目录的跨进程文件锁（`plugins.lock`），多进程同时 add 串行化；同进程经 Plugin Manager 单飞。实现决策（D-02）：热挂载触发 = server 进程 watch `installed.json`（约 2s 轮询 store 哈希），CLI 命令是纯磁盘操作、永不直接触碰容器；store 原子写（tmp+rename）保证 watcher 只见一致状态。
 
 ### 9.5 配置与信任
 

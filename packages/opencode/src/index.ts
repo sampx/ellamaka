@@ -38,6 +38,7 @@ import { JsonMigration } from "@/storage/json-migration"
 import { Database } from "@/storage/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
+import { DshPluginCommand } from "./cli/cmd/dsh-plugin"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@wopal/ellamaka-core/util/opencode-process"
@@ -209,6 +210,7 @@ const cli = yargs(args)
   .command(PrCommand)
   .command(SessionCommand)
   .command(PluginCommand)
+  .command(DshPluginCommand)
   .command(DbCommand)
   .fail((msg, err) => {
     if (
