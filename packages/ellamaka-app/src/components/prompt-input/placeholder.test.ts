@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { promptPlaceholder } from "./placeholder"
+import { designPromptPlaceholder, promptPlaceholder } from "./placeholder"
 
 describe("promptPlaceholder", () => {
   const t = (key: string, params?: Record<string, string>) => `${key}${params?.example ? `:${params.example}` : ""}`
@@ -44,5 +44,19 @@ describe("promptPlaceholder", () => {
       t,
     })
     expect(value).toBe("prompt.placeholder.simple")
+  })
+})
+
+describe("designPromptPlaceholder", () => {
+  const t = (key: string) => key
+
+  test("returns shell placeholder in shell mode", () => {
+    const value = designPromptPlaceholder({ mode: "shell", fallback: "fallback", t })
+    expect(value).toBe("fallback")
+  })
+
+  test("returns design placeholder key in normal mode", () => {
+    const value = designPromptPlaceholder({ mode: "normal", fallback: "fallback", t })
+    expect(value).toBe("prompt.placeholder.design")
   })
 })

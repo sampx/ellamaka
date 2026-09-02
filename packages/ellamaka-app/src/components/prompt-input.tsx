@@ -71,7 +71,7 @@ import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
-import { promptPlaceholder } from "./prompt-input/placeholder"
+import { designPromptPlaceholder, promptPlaceholder } from "./prompt-input/placeholder"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useQueries } from "@tanstack/solid-query"
 import { useQueryOptions } from "@/context/server-sync"
@@ -1330,10 +1330,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     (p) => p,
   )
 
-  const designPlaceholder = () => {
-    if (store.mode === "shell") return placeholder()
-    return "Ask anything, / for commands, @ for context..."
-  }
+  const designPlaceholder = () =>
+    designPromptPlaceholder({
+      mode: store.mode,
+      fallback: placeholder(),
+      t: (key) => language.t(key as Parameters<typeof language.t>[0]),
+    })
 
   const modelControlState = createMemo<ComposerModelControlState>(() => ({
     loading: providersLoading(),
