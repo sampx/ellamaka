@@ -18,7 +18,7 @@ ellamaka 是 WopalSpace 的引擎（OpenCode fork）。为获得沙箱执行、�
 
 1. **单一进程**：ellamaka 与 dsh 运行于同一进程，共享一个公开端口。
 2. **能力复用**：ellamaka 直接采用 dsh 的工具能力（沙箱、搜索、文件操作），不重复实现。
-3. **会话归属**：ellamaka 拥有会话与状态所有权；dsh 侧不创建持久会话，只提供执行能力。
+3. **会话归属**：ellamaka 拥有会话与状态所有权。Web 容器承载 dsh 完整会话（§2.1）；工具容器与 adapter 投影路径不创建、不持有任何会话，只提供执行能力（§6.4）。
 4. **对外稳定**：ellamaka 的 API、SSE 事件、SDK 契约不因融合而变化。
 
 **范围边界**：本文档描述融合后的目标架构。dsh 的会话/账本语义、调度、子代理等引擎能力不在采用范围内——这些能力依赖 dsh 自身的会话模型，与 ellamaka 的会话所有权冲突（§6.1）。
@@ -351,6 +351,33 @@ dsh-adapter（`.wopal/plugins/dsh-adapter`）把工具容器中的工具投影�
 
 `danger-full-access` 保留为 dsh 内部一次性 escalation 目标，不作为空间级配置值暴露，只作为"沙箱关闭"的内部映射。
 
+### 4.5 阶段 B：escalation 审批桥接与沙箱三态切换
+
+沙箱拒绝后，dsh 模型可回填 `sandbox_permissions` + `justification` 申请一次性更宽模式。该申请经 dsh 原生 approval 服务审批——工具容器**原生启用** `approval` 插件（不移出 disabled 清单之外的 fork），由 adapter 补齐其运行时前置条件，审批决策经桥显示在 Workbench 权限卡片。
+
+**adapter session 门面扩展**（§4.3 facade 的增量）：
+
+| 扩展 | 语义 |
+|------|------|
+| `append(type, data)` | 往自持 events 数组 push，approval 审计对（`approval/asked` + `approval/decided`）落内存不落盘 |
+| turn 包裹 | 每次 `tools.execute()` 外层 `turn/start` → 执行 → `turn/end`（引用计数，finally 保证闭合，并发/嵌套仅最外层闭合） |
+
+两者合起来满足 approval 插件的 `hasOpenTurn` 前置条件。工具容器仍不创建持久会话（§6.4 语义 1 不变）。
+
+**approval answerer 桥**：adapter 在容器 ctx 上注册 `approval/request` waterfall listener，按 `req.agent.session.header.id`（= ellamaka sessionID）从 `askRegistry` 取执行时注册的 ask 闭包，构造 `sandbox_escalation` permission ask（patterns = 目标模式，从 escalation reason 解析；metadata 携带 toolName/callID/justification）。决策映射：
+
+| 用户决策 | dsh outcome |
+|---------|------------|
+| once | `allowed-once`（dsh 原生 one-shot，仅本次调用以更宽模式执行） |
+| always | ellamaka Permission 规则池承接（会话内同 pattern 免再问），dsh 侧返回 `allowed-once` |
+| reject | `rejected` |
+| 无 ask 闭包（TUI 等无 UI 入口） | `next()` 委托 waterfall 兜底 `unavailable`（fail-closed） |
+| abort | dsh 原生 `cancelled`（ApprovalService 与请求信号 race） |
+
+**escalation 策略**：`ellamaka.dsh.sandbox.escalation: "ask" | "never"`（默认 `ask`）。`never` 时 adapter 向每个 facade seed `approval/policy` session 事件（dsh 原生 fold 语义，LAST 优先），approval 服务在 waterfall 之前确定性拒绝，answerer 零调用。沙箱关闭（full-access）时 escalation 字段不广告，无需处理。
+
+**沙箱三态切换**：Workbench chat 输入框 composer 底栏 `ComposerSandboxControl` 下拉（Read Only / Workspace Write / Full Access），经既有 `global.config.update` 端点最小 patch 全局配置中 dsh-adapter 插件 spec 的 inline `sandbox` 选项。映射：`read-only`/`workspace-write` → `{enabled: true, mode}`；`full-access` → `{enabled: false}`。显示条件：仅当配置含 dsh-adapter 插件时渲染。新会话生效（adapter 按 sessionID 缓存 facade）。不使用 dsh permission-presets。
+
 ---
 
 ## 5. 配置与隔离
@@ -468,6 +495,7 @@ session-query / schedule / subagent / system prompt 注入等能力依赖 dsh �
 14. **版本绑定**：DSH 运行时清单与 Ellamaka 发布版本绑定。普通配置不覆盖 DSH 版本；独立升级通过发布经过验证的完整清单完成。
 15. **统一自物化**：Runtime Manager 是所有入口的唯一物化实现。闭包缺失或损坏会触发自动物化，不等价于用户禁用，也不要求用户运行脚本修复。
 16. **不可变闭包**：每份完整依赖树按清单指纹落入独立 generation。升级创建新 generation，运行进程持续使用启动时捕获的 installAnchor。
+17. **approval 原生边界**：dsh approval 插件以官方原版使用（不 fork、不修改官方闭包）。宿主侧只补齐 session facade 前置条件并经 answerer 桥接决策；审批审计对落内存不落盘，工具容器不持久化任何会话。
 
 ---
 
@@ -530,3 +558,13 @@ PoC 前期 dsh 引擎运行时数据落在 `~/.dsh`（settings/credentials/sessi
 PoC 为让 Desktop sidecar 从 `$WOPAL_HOME/dsh/node_modules` 找到 Bridge，把 `@wopal/ellamaka-cordis` 作为 `file:` 依赖写入闭包。dev 指向 workspace 源码，packaged Desktop 指向 `resources/dsh-materialize/cordis` 副本。Node 再通过 strip-types 与 `.js → .ts` loader 执行 Bridge 源码。
 
 该方案把 Ellamaka 适配层混入 DSH 官方依赖闭包，并形成 CLI 静态加载、Desktop 动态源码加载两条交付路径。生产设计改为：Bridge 作为编译后的 Ellamaka 代码随宿主发布；官方 DSH 运行时按清单物化；Bridge 通过 installAnchor 加载闭包。DSH 始终不反向依赖 Bridge。
+
+### A.8 阶段 B escalation 审批桥接的决策史
+
+阶段 A 定稿（commit `7bcd42d604`）时，escalation 桥接被记为阶段 B 唯一待定小决策（原 §3.2.5）：模型在写入被沙箱拒绝后可申请一次性更宽模式，该申请要不要桥接到 ellamaka 的 ask。当时的顾虑是 dsh approval/permission-presets 为 dsh 自身 UI 闭环服务，整体接管等于拆掉 ellamaka 权限系统。
+
+**完整桥接否决**：调研确认 dsh `ApprovalService.request()` 依赖真实 session 的 `hasOpenTurn` 与 `session.append` 语义，伪造完整 session/turn 引擎不可行。
+
+**adapter 外部预拦截否决**：per-call 模式 stamping 由 dsh 工具内部完成（`approveEscalation` 返回 granted mode 后工具自行 stamp），外部无注入点，预拦截方案不成立。
+
+**定案（原生使用 + 门面补齐）**：approval 插件保持原版闭包启用，adapter 门面补齐 `append` 与引用计数 turn 边界满足其前置条件，answerer 桥把审批决策接到 ellamaka Permission（§4.5）。`always` 语义由 ellamaka approved 规则池承接，dsh 侧保持封闭四值 outcome 词表。

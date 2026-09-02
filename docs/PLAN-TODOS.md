@@ -30,6 +30,7 @@
 | P3.5+ | DSH home 收口 | ✅ 完成 | 物化到 `$WOPAL_HOME/dsh` 唯一 home |
 | P4 | DSH Web 单端口统一 | ✅ 完成 | `/dsh/*` 同源挂载，dshPort 协议全链路移除 |
 | P5 | 运行时隔离 + 开关统一 + 物化生产化 | ✅ 完成 | `ELLAMAKA_DSH` 禁用开关、state 纯配置注入、Bridge/闭包交付边界、统一 Runtime Manager |
+| P6 | 阶段 B：escalation 审批桥接 + 沙箱三态切换 | ✅ 完成 | dsh 原生 approval 启用，answerer 桥到 ellamaka Permission；composer 底栏沙箱三态下拉 |
 
 ### P1 — 双引擎容器宿主 + 日志桥接 ✅
 
@@ -67,15 +68,27 @@
 
 > 两个 Plan 完成（均在 poc 分支）：① onboarding/隔离批次（2026-08-30，`3911437ed5`）——`ELLAMAKA_DSH` 改禁用开关、dsh 运行时数据经纯配置注入收口 `$WOPAL_HOME/dsh/state`、物化引擎改 arborist、desktop 运行时兜底；② 生产物化批次（2026-09-01，`ee32ee1f`）——Bridge 编译随 CLI/Desktop 发布、构建期内嵌清单与传递锁（pacote 逐包下载）、统一 Runtime Manager、移除 PoC 旧链路（TS loader/源码副本），达成 DESIGN §8 全部 10 项验收基线。
 
+### P6 — 阶段 B：escalation 审批桥接 + 沙箱三态切换 ✅
+
+> Plan `feature-dsh-dsh-escalation-approval-bridge-and-sandbox-mode-ui`（2026-09-02）完成，双仓库结构（adapter 在 `.wopal/plugins/dsh-adapter/` 随 `space/wopal-workspace` 分支分发；容器/UI 在 poc 分支）：
+>
+> - **adapter 门面扩展**（`4d73596`）：`FacadeSession.append` + 引用计数 turn 包裹，满足 approval 插件 open-turn 前置条件
+> - **approval 启用 + answerer 桥**（`1af3f8c` / `1ea182eeaa`）：工具容器移除 approval disabled；adapter `askRegistry` 按会话路由 ask 闭包；outcome 四路映射（once/always/reject/无闭包 fail-closed）；escalation `never` 策略经 seed `approval/policy` 事件在服务内确定性拒绝
+> - **composer 沙箱三态下拉**（`b491e9c433`）：`prompt-input` 底栏 `ComposerSandboxControl`（Read Only / Workspace Write / Full Access），`sandbox-control.ts` 纯函数映射 helper，经 `global.config.update` 最小 patch dsh-adapter inline options
+>
+> 设计回写：DESIGN §4.5（新增）+ §7 约束 17（approval 原生边界）+ 附录 A.8（决策史）。
+
 ---
 
 ## 当前真实状态
 
-### 已实施能力清单（截至 2026-09-01）
+### 已实施能力清单（截至 2026-09-02）
 
 - dsh 引擎单端口同源挂载（`/dsh/*`），CLI serve / TUI / desktop sidecar 三入口可用
 - dsh 工具（grep/glob/read/write/edit/str_replace_editor/bash）经 adapter 沙箱内运行，Workbench 渲染契约一致
 - 沙箱底座（workspace-write / read-only / danger-full-access）经 settings.jsonc 可配
+- 沙箱 escalation 审批桥接：dsh 原生 approval + answerer 桥到 ellamaka Permission，Workbench 权限卡片可决策（once/always/reject）
+- 沙箱三态切换：chat composer 底栏下拉（read-only / workspace-write / full-access），经 global.config.update 写配置
 - 动态装配：dsh 插件加载/卸载 → 下一轮模型请求自动反映
 - DSH home 物化闭包 + kill switch
 - `ELLAMAKA_DSH` 统一为禁用开关（默认开启），CLI 与 desktop sidecar 门控一致
@@ -98,8 +111,7 @@
 
 | 事项 | 状态 | 说明 |
 |------|------|------|
-| 阶段 B：escalation 审批桥接 | ⏸ 待定 | 需独立产品决策；候选方案见 DESIGN §3.2.5 |
-| 界面演进（iframe → 原生） | ⏸ 待定 | 依赖阶段 B 设计决定 |
+| 界面演进（iframe → 原生） | ⏸ 待定 | 阶段 B escalation 桥接已定案落地，此项解锁，待讨论 |
 
 ---
 
@@ -121,3 +133,4 @@
 | 2026-08-30 | ellamaka onboarding/隔离 Plan 实施完成（`3911437ed5`）：开关统一、state 隔离、arborist 物化、运行时兜底 |
 | 2026-09-01 | 生产物化 Plan 实施完成（`ee32ee1f`）：Bridge 随宿主发布、清单+内嵌锁、统一 Runtime Manager；main 优化反向集成进 poc 分支（`a8a4907f5e`） |
 | 2026-09-01 | **废弃 wopal-cli 依赖预装方向**：Plan 删除，wopal-cli 不做预装，三层依赖统一走 ellamaka 运行时兜底；文档全面同步（本文件 / DESKTOP-ONBOARDING / wopal-cli DESIGN / 产品 DESIGN-onboarding / ISSUE 路线图） |
+| 2026-09-02 | **P6 完成**：escalation 审批桥接 + composer 沙箱三态下拉（Plan `feature-dsh-dsh-escalation-approval-bridge-and-sandbox-mode-ui`，adapter `4d73596`/`1af3f8c` + poc `1ea182eeaa`/`b491e9c433`）；DESIGN 新增 §4.5、§7 约束 17、附录 A.8；待定表移除阶段 B 条目 |
