@@ -1122,19 +1122,6 @@ cmd_desktop() {
   echo "  sidecar log: $SIDECAR_LOG"
 }
 
-show_service() {
-  local service="$1" display="$2"
-  if ! service_has_records "$service"; then return 1; fi
-  if ! service_running "$service"; then
-    echo "  ✗  $display not running (stale pidfile records removed)"
-    remove_service_records "$service"
-    return 1
-  fi
-  read_record "$service" || return 1
-  echo "  ✓  $display pid $RECORD_PID, pgid $RECORD_PGID, ports $RECORD_PORT"
-  return 0
-}
-
 # Registry bookkeeping: one line "scope root" per known worktree. Every dev.sh
 # run upserts its own entry so global views can label buckets with real paths
 # even when they were written from a different directory.
@@ -1247,7 +1234,7 @@ show_all_buckets() {
       [ -d "$shown_root" ] || shown_root="$shown_root  (dir gone)"
     fi
     [ "$scope" = "$current_scope" ] && marker="●"
-    log_dir="$dir"
+    log_dir="${dir#"$space"/}"   # space-relative; stays absolute only if outside space
     echo "  $marker  $shown_root"
     echo "          logs: $log_dir"
     # Validate this bucket's records against its own root, not this script's.
@@ -1260,7 +1247,7 @@ show_all_buckets() {
       else
         alive="DEAD"
       fi
-      printf '      %-9s port %-12s pid %-7s %s\n' "$label" "$port" "$pid" "$alive"
+      printf '      %-9s port %-12s pid %-7s pgid %-7s %s\n' "$label" "$port" "$pid" "$pgid" "$alive"
     done < "$pidfile"
     SCOPE_ROOT="$saved_scope_root"
     any=true
@@ -1269,9 +1256,6 @@ show_all_buckets() {
 }
 
 cmd_status() {
-  show_service backend backend || true
-  show_service frontend workbench || true
-  show_service desktop desktop || true
   show_all_buckets
 }
 
