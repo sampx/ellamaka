@@ -24,7 +24,6 @@ const WORKBENCH_KEYBINDS = [
   { id: "file.attach", titleKey: "prompt.action.attachFile", editable: true },
   { id: "file.open", titleKey: "command.file.open", editable: true },
   { id: "sidebar.toggle", titleKey: "command.sidebar.toggle", editable: true },
-  { id: "fileTree.toggle", titleKey: "command.fileTree.toggle", editable: true },
   { id: "model.choose", titleKey: "command.model.choose", editable: true },
   { id: "settings.open", titleKey: "command.settings.open", editable: true },
 ] as const
