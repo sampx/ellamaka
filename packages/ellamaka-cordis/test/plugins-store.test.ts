@@ -11,6 +11,8 @@ import {
   writeStore,
   type DshPluginStoreV1,
 } from "../src/plugins/store"
+import { setEnabled as setEnabledPure } from "../src/plugins/store"
+
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), "dsh-plugin-store-"))
@@ -64,14 +66,14 @@ describe("dsh plugin store", () => {
     expect(leftovers).toEqual([])
   })
 
-  test("writeStore rejects an invalid store and writes nothing", () => {
+  test("writeStore rejects an invalid store and writes nothing", async () => {
     const home = tempHome()
-    expect(() =>
+    await expect(
       writeStore(home, { plugins: [] } as unknown as DshPluginStoreV1),
-    ).toThrow(/schema/)
-    expect(() =>
+    ).rejects.toThrow(/schema/)
+    await expect(
       writeStore(home, { schema: "ellamaka.dsh-plugins/v1" } as unknown as DshPluginStoreV1),
-    ).toThrow(/plugins/)
+    ).rejects.toThrow(/plugins/)
     expect(existsSync(join(home, PLUGINS_DIR, STORE_FILENAME))).toBe(false)
   })
 
@@ -108,7 +110,7 @@ describe("dsh plugin store", () => {
 
   test("updateStore performs a locked read-modify-write", async () => {
     const home = tempHome()
-    writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
+    await writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
     const result = await updateStore(home, (store) => {
       store.plugins.push({
         name: "in-place",
@@ -125,18 +127,18 @@ describe("dsh plugin store", () => {
 
   test("updateStore leaves the store untouched when the mutator throws", async () => {
     const home = tempHome()
-    writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
-    expect(() =>
+    await writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
+    await expect(
       updateStore(home, () => {
         throw new Error("boom")
       }),
-    ).toThrow("boom")
+    ).rejects.toThrow("boom")
     expect(readStore(home).plugins).toEqual([])
   })
 
   test("concurrent updateStore calls serialize and keep every mutation", async () => {
     const home = tempHome()
-    writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
+    await writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
     const names = ["p1", "p2", "p3", "p4", "p5"]
     await Promise.all(
       names.map((name) =>
@@ -148,5 +150,31 @@ describe("dsh plugin store", () => {
     )
     const installed = readStore(home).plugins.map((p) => p.name).sort()
     expect(installed).toEqual(["p1", "p2", "p3", "p4", "p5"])
+  })
+
+  test("interleaved enable/disable across simulated processes keeps BOTH flips (rook B-04)", async () => {
+    // The CLI read happens inside the lock via updateStore: two processes that
+    // each read-then-write must not drop the other's mutation. Simulate the
+    // interleaving the OLD read-outside-lock code allowed by driving two
+    // updateStore calls that each read a snapshot BEFORE mutating.
+    const home = tempHome()
+    await writeStore(home, {
+      schema: "ellamaka.dsh-plugins/v1",
+      plugins: [
+        { name: "shared", version: "1.0.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
+      ],
+    })
+    await Promise.all([
+      updateStore(home, (store) => {
+        setEnabled(store, "shared", "web", true)
+        return { result: undefined, store }
+      }),
+      updateStore(home, (store) => {
+        setEnabled(store, "shared", "ellamaka-tools", true)
+        return { result: undefined, store }
+      }),
+    ])
+    const enabledIn = readStore(home).plugins[0].enabledIn.sort()
+    expect(enabledIn).toEqual(["ellamaka-tools", "web"])
   })
 })

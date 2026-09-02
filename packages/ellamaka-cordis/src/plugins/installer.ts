@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve, sep } from "node:path"
 import {
   emptyStore,
   PLUGINS_DIR,
@@ -11,6 +11,7 @@ import {
   writeStoreLocked,
   type DshPluginEntry,
 } from "./store.js"
+import { removePluginSymlink, healPluginsModuleFallback } from "./compose.js"
 import { resolveTree, type ResolveSpec, type ResolvedTree } from "./resolver.js"
 
 /**
@@ -83,6 +84,42 @@ export class NotInstalledError extends Error {
   }
 }
 
+/**
+ * npm package-name rule (simplified but strict): scope/name segments of
+ * lowercase URL-safe characters, no leading `.|_|-`, no path separators — a
+ * name doubles as a directory name under `plugins/`, so anything else
+ * (including `../`) is rejected (rook B-08).
+ */
+const PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
+
+/** Exact semver (the installer pins one version per install area entry). */
+const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+
+/** Validate an untrusted name+version pair from a package manifest. */
+export function assertSafePackageIdentity(name: string, version: string): void {
+  if (name.length > 214 || !PACKAGE_NAME_RE.test(name)) {
+    throw new Error(`dsh plugin installer: unsafe package name ${JSON.stringify(name)} (npm name rules)`)
+  }
+  if (!SEMVER_RE.test(version)) {
+    throw new Error(`dsh plugin installer: unsafe package version ${JSON.stringify(version)} (exact semver required)`)
+  }
+}
+
+/**
+ * Ensure a computed install target stays INSIDE the plugins area — the last
+ * line of defence against a crafted manifest escaping the install area with
+ * `../` segments (rook B-08).
+ */
+function assertTargetInsidePluginsArea(pluginsArea: string, target: string): void {
+  const area = resolve(pluginsArea)
+  const resolvedTarget = resolve(target)
+  if (resolvedTarget !== area && !resolvedTarget.startsWith(area + sep)) {
+    throw new Error(
+      `dsh plugin installer: install target ${resolvedTarget} escapes the plugins area ${area} — refusing`,
+    )
+  }
+}
+
 /** Production extractor: `pacote.extract` (dynamically imported, Bun/Node). */
 async function createRealExtract(): Promise<ExtractLike> {
   const { default: pacote } = await import("pacote")
@@ -141,6 +178,9 @@ function manifestIdentity(dir: string): { name: string; version: string; manifes
   if (typeof name !== "string" || name.length === 0 || typeof version !== "string" || version.length === 0) {
     throw new Error(`dsh plugin installer: package.json at ${dir} lacks name/version`)
   }
+  // Untrusted manifest fields become directory path segments — validate
+  // BEFORE any path math (rook B-08).
+  assertSafePackageIdentity(name, version)
   return { name, version, manifest }
 }
 
@@ -154,6 +194,7 @@ function installFromDir(path: string, options: InstallOptions): InstallResult {
 
   const pluginsArea = pluginsDir(options.home)
   const target = join(pluginsArea, name, version)
+  assertTargetInsidePluginsArea(pluginsArea, target)
   if (existsSync(target)) {
     rmSync(target, { recursive: true, force: true })
   }
@@ -168,6 +209,10 @@ function installFromDir(path: string, options: InstallOptions): InstallResult {
     enabledIn: [...(options.enabledIn ?? [])],
     installedAt: new Date().toISOString(),
   })
+  // Spike-report contract: add must re-run the symlink heal so the freshly
+  // installed package resolves immediately (also replaces any dangling link
+  // a remove left behind, rook B-06).
+  healPluginsModuleFallback(options.home)
   return {
     name,
     version,
@@ -194,6 +239,9 @@ async function installFromRegistry(
 
   const extract = options.extract ?? (await createRealExtract())
   const pluginsArea = pluginsDir(options.home)
+  // Untrusted registry manifest fields become path segments — validate before
+  // any path math (rook B-08).
+  assertSafePackageIdentity(rootPkg.name, rootPkg.version)
   // Staging scene: a sibling of the target area, never inside it (a failed
   // staging must not be resolvable as an install, DESIGN §9.6 #6).
   const staging = mkdtempSync(join(tmpdir(), "dsh-plugins-stage-"))
@@ -208,17 +256,20 @@ async function installFromRegistry(
       throw new Error(`dsh plugin installer: staged tree missing the entry package at ${stagedRoot}`)
     }
     // Move the entry package into place first (directory first, store last),
-    // THEN flatten its transitive deps under `target/node_modules/` (the
-    // runtime resolves them by directory parent-walk, DESIGN §9.2).
+    // THEN flatten EVERY non-official package of the tree under
+    // `target/node_modules/` (rook B-03): the runtime resolves nested deps by
+    // directory parent-walk, so second-level and deeper transitive packages
+    // must land inside the entry package's node_modules too — leaving them in
+    // staging would drop them at cleanup.
     const target = join(pluginsArea, rootPkg.name, rootPkg.version)
+    assertTargetInsidePluginsArea(pluginsArea, target)
     // rename(2) requires the destination PARENT to exist: create
     // `plugins/<name>/` before moving the staged entry package in.
     rmSync(target, { recursive: true, force: true })
     mkdirSync(dirname(target), { recursive: true })
     renameSync(stagedRoot, target)
-    for (const depId of rootPkg.dependencies) {
-      const dep = tree.packages.get(depId)
-      if (!dep || isOfficialPackage(dep.name)) continue
+    for (const dep of tree.packages.values()) {
+      if (dep === rootPkg || isOfficialPackage(dep.name)) continue
       const stagedDep = join(staging, "node_modules", ...dep.name.split("/"))
       if (!existsSync(stagedDep)) continue
       const depTarget = join(target, "node_modules", ...dep.name.split("/"))
@@ -236,6 +287,7 @@ async function installFromRegistry(
       enabledIn: [...(options.enabledIn ?? [])],
       installedAt: new Date().toISOString(),
     })
+    healPluginsModuleFallback(options.home)
     return {
       name: rootPkg.name,
       version: rootPkg.version,
@@ -292,6 +344,9 @@ export async function removePackage(name: string, options: { home: string }): Pr
     if (existsSync(target)) {
       rmSync(target, { recursive: true, force: true })
     }
+    // Drop the profiles/node_modules link we own: a stale link would dangle
+    // and block any later reinstall under the same name (rook B-06).
+    removePluginSymlink(options.home, name)
     const next = emptyStore()
     next.plugins = store.plugins.filter((p) => p.name !== name)
     writeStoreLocked(options.home, next)

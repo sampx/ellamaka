@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { realpathSync } from "node:fs"
 import { AlreadyInstalledError, installPackage, NotInstalledError, removePackage } from "../src/plugins/installer"
 import { PLUGINS_DIR, readStore, STORE_FILENAME } from "../src/plugins/store"
 
@@ -163,6 +164,119 @@ describe("dsh plugin installer", () => {
     expect(existsSync(join(target, "node_modules", "is-number", "package.json"))).toBe(true)
     const store = readStore(home)
     expect(store.plugins[0]).toMatchObject({ name: "is-odd", version: "3.0.1", source: "registry" })
+  })
+
+  test("registry install lands the FULL tree (three levels deep, rook B-03)", async () => {
+    const home = tempHome()
+    const fake = fakeExtract()
+    // root -> mid -> leaf: the second-level package's own dependency must
+    // land under the entry package's node_modules too.
+    const result = await installPackage(
+      { kind: "registry", name: "root-pkg", version: "1.0.0" },
+      {
+        home,
+        extract: fake.extract,
+        resolve: async () => ({
+          root: { name: "root-pkg", version: "1.0.0" },
+          packages: new Map([
+            ["root-pkg@1.0.0", { name: "root-pkg", version: "1.0.0", dependencies: ["mid-pkg@2.0.0"], tarball: "" }],
+            ["mid-pkg@2.0.0", { name: "mid-pkg", version: "2.0.0", dependencies: ["deep-pkg@3.0.0"], tarball: "" }],
+            ["deep-pkg@3.0.0", { name: "deep-pkg", version: "3.0.0", dependencies: [], tarball: "" }],
+          ]),
+        }),
+      },
+    )
+    expect(result.name).toBe("root-pkg")
+    expect(fake.extracted).toHaveLength(3)
+    const target = join(home, PLUGINS_DIR, "root-pkg", "1.0.0")
+    expect(existsSync(join(target, "node_modules", "mid-pkg", "package.json"))).toBe(true)
+    // Second-level transitive dep: previously dropped in staging cleanup.
+    expect(existsSync(join(target, "node_modules", "deep-pkg", "package.json"))).toBe(true)
+    // Nothing remains in staging (drained).
+    const leftovers = readdirSync(tmpdir()).filter((d) => d.startsWith("dsh-plugins-stage-"))
+    expect(leftovers).toEqual([])
+    expect(readStore(home).plugins[0]).toMatchObject({ name: "root-pkg", version: "1.0.0" })
+  })
+
+  test("a malicious --dir manifest with traversal name is rejected (rook B-08)", async () => {
+    const home = tempHome()
+    const evilRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-evil-"))
+    const evil = join(evilRoot, "evil")
+    mkdirSync(evil, { recursive: true })
+    writeFileSync(
+      join(evil, "package.json"),
+      JSON.stringify({ name: "../../escape", version: "1.0.0", dsh: { bundle: { patch: "./p.yml" } } }),
+    )
+    // Sentinel outside the plugins area must survive untouched.
+    await expect(installPackage({ kind: "dir", path: evil }, { home })).rejects.toThrow(/unsafe package name/)
+    expect(existsSync(join(home, PLUGINS_DIR, "installed.json"))).toBe(false)
+    expect(existsSync(home)).toBe(true)
+  })
+
+  test("a malicious --dir manifest with a `..` in a scoped name is rejected", async () => {
+    const home = tempHome()
+    const evilRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-evil2-"))
+    const evil = join(evilRoot, "evil")
+    mkdirSync(evil, { recursive: true })
+    writeFileSync(
+      join(evil, "package.json"),
+      JSON.stringify({ name: "@scope/../evil", version: "1.0.0" }),
+    )
+    await expect(installPackage({ kind: "dir", path: evil }, { home })).rejects.toThrow(/unsafe package name/)
+  })
+
+  test("a --dir manifest with a non-semver version is rejected (rook B-08)", async () => {
+    const home = tempHome()
+    const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-evil3-"))
+    const src = fixturePluginDir(srcRoot, "badver", "not-semver")
+    await expect(installPackage({ kind: "dir", path: src }, { home })).rejects.toThrow(/unsafe package version/)
+  })
+
+  test("registry install with a traversal root name from the resolved tree is rejected", async () => {
+    const home = tempHome()
+    await expect(
+      installPackage(
+        { kind: "registry", name: "x", version: "1.0.0" },
+        {
+          home,
+          extract: fakeExtract().extract,
+          resolve: async () => ({
+            root: { name: "../escape", version: "1.0.0" },
+            packages: new Map([["../escape@1.0.0", { name: "../escape", version: "1.0.0", dependencies: [], tarball: "" }]]),
+          }),
+        },
+      ),
+    ).rejects.toThrow(/unsafe package name/)
+  })
+
+  test("remove then add a DIFFERENT version succeeds (dangling symlink path, rook B-06)", async () => {
+    const home = tempHome()
+    const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-src-"))
+    const v1 = fixturePluginDir(srcRoot, "upgradable", "1.0.0")
+    await installPackage({ kind: "dir", path: v1 }, { home, enabledIn: ["web"] })
+    await removePackage("upgradable", { home })
+
+    // The remove must have cleaned the profiles/node_modules link.
+    const link = join(home, "profiles", "node_modules", "upgradable")
+    expect(existsSync(link)).toBe(false)
+
+    // Build a v2 source with the SAME package name, different version.
+    const v2dir = join(srcRoot, "upgradable-v2")
+    mkdirSync(v2dir, { recursive: true })
+    writeFileSync(
+      join(v2dir, "package.json"),
+      JSON.stringify({ name: "upgradable", version: "2.0.0", type: "module", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
+    )
+    writeFileSync(join(v2dir, "cordis.patch.yml"), "[]\n")
+
+    // Reinstall under the same name at the new version: previously blocked
+    // by a dangling symlink (realpathSync fails + symlinkSync EEXIST).
+    const readd = await installPackage({ kind: "dir", path: v2dir }, { home, enabledIn: ["web"] })
+    expect(readd.name).toBe("upgradable")
+    expect(readd.version).toBe("2.0.0")
+    expect(
+      realpathSync(join(home, "profiles", "node_modules", "upgradable")),
+    ).toBe(realpathSync(join(home, PLUGINS_DIR, "upgradable", "2.0.0")))
   })
 
   test("dir install with dependencies does not overwrite copied files from nested node_modules", async () => {
