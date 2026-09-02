@@ -29,7 +29,7 @@ import {
   createPackageDshRuntimeApi,
   type DshRuntimeApi,
 } from "./runtime/loader.js"
-import { composePluginLayers, healPluginsModuleFallback, type PluginLayerPatch } from "./plugins/compose.js"
+import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
@@ -210,6 +210,13 @@ export interface DshHost {
    * `entry.update` on this handle (Plugin Runtime Service, D-02/D-03).
    */
   readonly includeEntry?: Entry
+  /**
+   * The full patch-stack context this container booted with (bundle layers,
+   * user patches, extras, state patches). The Plugin Runtime Service passes
+   * it to `composeFullPatchStack` so a hot replay rebuilds the ENTIRE stack
+   * instead of replacing it with plugin rows only (rook B-01).
+   */
+  readonly stackContext?: DshPluginStackContext
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -224,6 +231,8 @@ export interface DshWebHost {
   readonly ctx: Context
   /** The root include entry the boot composition mounted. */
   readonly includeEntry: Entry
+  /** The full boot patch-stack context (hot replay input, rook B-01). */
+  readonly stackContext: DshPluginStackContext
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -428,14 +437,17 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // truth — so boot and hot reload share one composition (D-03). Store order
   // is layer order; profiles never carry a bundles manifest for plugins.
   const pluginLayers: PluginLayerPatch[] = composePluginLayers(resolvedHome, profileName)
-  // Compose the effective patch list: bundle layers + plugin layer + profile layer + extras.
-  const patches = [
-    ...profile.layers.flatMap((layer) => layer.patches),
-    ...(pluginLayers.length > 0 ? [{ insert: pluginLayers }] : []),
-    ...profile.patches,
-    ...extraPatches,
-    ...stateHomePatches,
-  ]
+  // The full patch stack (bundle -> plugin -> user -> extras -> state), composed
+  // by the ONE function the hot replay also calls (rook B-01): boot and hot
+  // reload are the same composition, so a replay never drops official layers.
+  const stackContext: DshPluginStackContext = {
+    profileLayers: profile.layers,
+    pluginLayers,
+    userPatches: profile.patches,
+    extraPatches,
+    stateHomePatches,
+  }
+  const patches = composeFullPatchStack(stackContext)
   const rootConfig = join(profile.dir, "cordis.yml")
   // The root config is the host-owned include: an empty entry list. The
   // bundle + profile patch layers carry every plugin.
@@ -459,21 +471,39 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // is consumed identically. From source the internal loader exists and this
   // polyfill never engages.
   const loader = ctx.get("loader")
-  if (loader !== undefined && loader.internal === undefined) {
+  if (loader !== undefined) {
     // `createClosureRequire` resolves the anchor's realpath first so the
     // node_modules walk reaches the materialised closure regardless of a
     // symlinked layout.
     const closureRequire = createClosureRequire(installAnchor)
-    // Plugin supply chain resolution (D-05): the closure require fails for
-    // user-installed plugins (they live under `plugins/`, not the closure),
-    // so the chain falls back to a require anchored INSIDE the profiles dir —
-    // its parent-walk hits `profiles/node_modules/<pkg>` (the healed plugin
-    // symlinks). An unresolved name throws the ORIGINAL closure error.
+    // Plugin supply chain resolution (D-05, rook W-01): user-installed
+    // plugins live under `plugins/`, never the closure, so EVERY import path
+    // — the bun-compiled fallback when `loader.internal` is absent AND the
+    // Node internal loader when it exists — must end with a profiles-anchored
+    // require whose parent-walk hits `profiles/node_modules/<pkg>` (the
+    // healed plugin symlinks). An unresolved name throws the original error.
     const profilesRequire = createRequire(join(resolvedHome, "profiles", "anchor.js"))
-    loader.internal = {
-      import: async (name: string) => {
+    if (loader.internal === undefined) {
+      loader.internal = {
+        import: async (name: string) => {
+          try {
+            return closureRequire(name)
+          } catch (error) {
+            try {
+              return profilesRequire(name)
+            } catch {
+              throw error
+            }
+          }
+        },
+      }
+    } else {
+      // Wrap the existing (Node internal) import: keep its resolution first,
+      // fall back to the profiles anchor only when it fails.
+      const internalImport = loader.internal.import.bind(loader.internal)
+      loader.internal.import = async (name: string) => {
         try {
-          return closureRequire(name)
+          return await internalImport(name)
         } catch (error) {
           try {
             return profilesRequire(name)
@@ -481,7 +511,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
             throw error
           }
         }
-      },
+      }
     }
   }
   // Intrinsic host setup: the launch environment snapshot and the cmdline
@@ -508,7 +538,12 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // closure is materialised too (the kill switch guards its absence), so
   // passing the base unconditionally is mode-independent.
   const bareModuleBaseUrl = pathToFileURL(join(installAnchor, "..", "..", "..")).href + "/"
-  const includeEntry = await runtime.appBoot.mountRootInclude(ctx, rootConfig, patches, bareModuleBaseUrl)
+  const includeEntry = await runtime.appBoot.mountRootInclude(
+    ctx,
+    rootConfig,
+    patches as Parameters<typeof runtime.appBoot.mountRootInclude>[2],
+    bareModuleBaseUrl,
+  )
   await ctx.get("loader")?.await()
   if (ctx.get("loader") === undefined || includeEntry === undefined) {
     throw new Error("ellamaka-cordis: dsh boot did not provide a loader service")
@@ -522,7 +557,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
 
   if (!requireWebServer) {
-    return { ctx, includeEntry, dispose }
+    return { ctx, includeEntry, stackContext, dispose }
   }
 
   const webServer = ctx.get("webServer")
@@ -535,6 +570,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     url: `http://127.0.0.1:${boundPort}`,
     ctx,
     includeEntry,
+    stackContext,
     dispose,
   }
 }
@@ -605,6 +641,7 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
     webServer: virtualWebServer,
     ctx: host.ctx!,
     includeEntry: host.includeEntry!,
+    stackContext: host.stackContext!,
     // Dispose the VirtualWebServer first (closes every upgrade socket it
     // dispatched, per DESIGN-dsh-poc §2.1 item 10) before unmounting the
     // Loader, so Node closeAllConnections() does not strand raw WebSockets.
@@ -641,7 +678,7 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
       ...(opts.extraPatches ?? []),
     ],
   })
-  return { ...host, ctx, includeEntry: host.includeEntry! }
+  return { ...host, ctx, includeEntry: host.includeEntry!, stackContext: host.stackContext! }
 }
 
 /**
@@ -659,6 +696,7 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
     webServer: host.webServer,
     ctx: host.ctx!,
     includeEntry: host.includeEntry!,
+    stackContext: host.stackContext!,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()
@@ -680,6 +718,8 @@ export interface DshToolsHost extends DshHost {
   readonly ctx: Context
   /** The root include entry the boot composition mounted. */
   readonly includeEntry: Entry
+  /** The full boot patch-stack context (hot replay input, rook B-01). */
+  readonly stackContext: DshPluginStackContext
 }
 
 export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> {
@@ -691,6 +731,7 @@ export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> 
     url: host.url,
     ctx,
     includeEntry: host.includeEntry!,
+    stackContext: host.stackContext!,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()

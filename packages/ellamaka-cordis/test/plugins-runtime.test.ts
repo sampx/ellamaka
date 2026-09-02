@@ -21,8 +21,18 @@ async function bootPair() {
 /** Containers wiring for the service, derived from the mounted hosts. */
 function containersFor(web: DshWebHost, tools: DshToolsHost) {
   return [
-    { profile: "web", ctx: (web as unknown as { ctx?: unknown }).ctx, includeEntry: requireIncludeEntry(web, "web") },
-    { profile: "ellamaka-tools", ctx: tools.ctx, includeEntry: requireIncludeEntry(tools, "ellamaka-tools") },
+    {
+      profile: "web",
+      ctx: (web as unknown as { ctx?: unknown }).ctx,
+      includeEntry: requireIncludeEntry(web, "web"),
+      stackContext: web.stackContext,
+    },
+    {
+      profile: "ellamaka-tools",
+      ctx: tools.ctx,
+      includeEntry: requireIncludeEntry(tools, "ellamaka-tools"),
+      stackContext: tools.stackContext,
+    },
   ]
 }
 
@@ -118,31 +128,55 @@ describe("dsh plugin runtime service (real closure integration)", () => {
     }
   }, 60_000)
 
-  test("a bad replay keeps the last good state and the service survives", async () => {
+  test("a bad replay keeps the last good state, logs structured, and the service survives (rook W-02)", async () => {
     const { home, web, tools } = await bootPair()
-    const service = startDshPluginService({ home, containers: containersFor(web, tools), intervalMs: 200 })
+    const logs: Array<{ message: string; extra?: Record<string, unknown> }> = []
+    const service = startDshPluginService({
+      home,
+      containers: containersFor(web, tools),
+      intervalMs: 200,
+      logger: {
+        info: () => {},
+        warn: () => {},
+        error: (message, extra) => logs.push({ message, extra }),
+      },
+    })
     try {
       // Install the GOOD plugin first and let it mount.
       await installPackage({ kind: "dir", path: FIXTURE_PLUGIN }, { home, enabledIn: ["web", "ellamaka-tools"] })
       await waitFor(() => marker(webCtxOf(web)), "mounted")
 
-      // Break the install area: the healed symlink target vanishes, so the
-      // next replay cannot import the plugin. The update throws; the service
-      // must keep the previous good state and stay alive.
+      // Break the install area so the next replay cannot import the plugin,
+      // then change the store so the watcher re-attempts (a broken install
+      // whose entry is enabled must fail the include update and log).
       rmSync(join(home, "plugins", "fixture-dsh-plugin"), { recursive: true, force: true })
       const store = readStore(home)
-      store.plugins[0].version = "9.9.9-broken"
+      store.plugins.push({
+        name: "phantom-broken-plugin",
+        version: "1.0.0",
+        source: "dir",
+        enabledIn: ["web", "ellamaka-tools"],
+        installedAt: "2026-09-02T00:00:00.000Z",
+      })
       await writeStore(home, store)
-
-      // Wait out several poll ticks, then verify the good state survived.
       await new Promise((resolve) => setTimeout(resolve, 1200))
+
+      // Structured failure log: fixed message + { profile, hash, error }.
+      const failure = logs.find((l) => l.message.includes("replay failed"))
+      expect(failure).toBeDefined()
+      expect(failure?.extra?.profile).toBe("web")
+      expect(failure?.extra?.hash).toBeTypeOf("string")
+      expect(String(failure?.extra?.error).length).toBeGreaterThan(0)
+
+      // The last good state stayed mounted (the good plugin never dropped).
       expect(marker(webCtxOf(web))).toBe("mounted")
       expect(marker(tools.ctx)).toBe("mounted")
 
-      // Recovery: restore the install dir + store; the next replay succeeds.
+      // Recovery: restore the install dir + drop the phantom entry; the next
+      // replay succeeds and the service never crashed.
       cpSync(FIXTURE_PLUGIN, join(home, "plugins", "fixture-dsh-plugin", "1.0.0"), { recursive: true })
       const fixed = readStore(home)
-      fixed.plugins[0].version = "1.0.0"
+      fixed.plugins = fixed.plugins.filter((p) => p.name === "fixture-dsh-plugin")
       await writeStore(home, fixed)
       await waitFor(() => marker(webCtxOf(web)), "mounted")
       await waitFor(() => marker(tools.ctx), "mounted")

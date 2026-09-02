@@ -31,6 +31,26 @@ export interface PluginLayerPatch {
 }
 
 /**
+ * The per-container patch-stack context captured at boot: every
+ * store-independent layer of the container's composition. The Plugin Runtime
+ * Service passes this back to {@link composeFullPatchStack} so a hot replay
+ * rebuilds the ENTIRE stack (rook B-01) instead of replacing it with plugin
+ * rows only.
+ */
+export interface DshPluginStackContext {
+  /** The profile's bundle layers (`loadProfile(...).layers`). */
+  profileLayers: { patches: unknown[] }[]
+  /** The composed plugin rows (recomposed fresh on every replay). */
+  pluginLayers: PluginLayerPatch[]
+  /** The profile's own user patch layer (`cordis.patch.yml` rows). */
+  userPatches: unknown[]
+  /** The Bridge's extraPatches for this mount. */
+  extraPatches: unknown[]
+  /** The state-home config injection rows. */
+  stateHomePatches: unknown[]
+}
+
+/**
  * Compose the plugin patch rows for one profile from the store.
  *
  * Missing/empty store -> no layers (a fresh home boots nothing). Plugins not
@@ -48,6 +68,30 @@ export function composePluginLayers(dshHome: string, profile: string): PluginLay
 /** The patch row for one installed plugin entry. */
 export function pluginLayerPatch(entry: DshPluginEntry): PluginLayerPatch {
   return { id: `${PLUGIN_ENTRY_ID_PREFIX}${entry.name}`, name: entry.name }
+}
+
+/**
+ * The full patch stack of one container (D-01/D-03): bundle layers ->
+ * plugin layers (store order) -> user patch layer -> extra patches -> state
+ * home patches. Boot AND hot reload call this ONE function — a hot replay
+ * must rebuild the entire stack (not only the plugin rows), because the
+ * include re-applies `config.patches` over the raw config on every update and
+ * replacing the list would drop the official bundle/user/state rows.
+ */
+export function composeFullPatchStack(layers: {
+  profileLayers: { patches: unknown[] }[]
+  pluginLayers: PluginLayerPatch[]
+  userPatches: unknown[]
+  extraPatches: unknown[]
+  stateHomePatches: unknown[]
+}): unknown[] {
+  return [
+    ...layers.profileLayers.flatMap((layer) => layer.patches),
+    ...(layers.pluginLayers.length > 0 ? [{ insert: layers.pluginLayers }] : []),
+    ...layers.userPatches,
+    ...layers.extraPatches,
+    ...layers.stateHomePatches,
+  ]
 }
 
 /**
@@ -102,6 +146,21 @@ function rePointSymlink(link: string, target: string): void {
       // A real directory/file occupies the name — never delete user data.
       return
     }
+  } else {
+    // realpath failed: either the link does not exist, or it DANGLES (rook
+    // B-06: a remove left a link whose target is gone). A dangling entry we
+    // own (a symlink whose lstat succeeds but realpath fails) must be
+    // replaced, or symlinkSync below would fail EEXIST forever.
+    try {
+      const stale = lstatSync(link)
+      if (stale.isSymbolicLink()) {
+        rmSync(link, { force: true })
+      } else {
+        return // a real file/directory — never delete user data
+      }
+    } catch {
+      // Nothing at the path: fall through to create the link fresh.
+    }
   }
   try {
     symlinkSync(target, link, "dir")
@@ -114,4 +173,21 @@ function rePointSymlink(link: string, target: string): void {
 /** Read helper re-exported for tests (the store file's raw JSON). */
 export function readStoreRaw(dshHome: string): string {
   return readFileSync(join(pluginsDir(dshHome), "installed.json"), "utf-8")
+}
+
+/**
+ * Remove this module's `profiles/node_modules/<name>` link for one plugin.
+ * Called by the installer on remove so a later reinstall (any version) never
+ * trips over a dangling link (rook B-06). A foreign entry at the path is
+ * left alone.
+ */
+export function removePluginSymlink(dshHome: string, name: string): void {
+  const link = join(dshHome, "profiles", "node_modules", ...name.split("/"))
+  try {
+    if (lstatSync(link).isSymbolicLink()) {
+      rmSync(link, { force: true })
+    }
+  } catch {
+    // Nothing there (or unreadable): nothing to clean.
+  }
 }
