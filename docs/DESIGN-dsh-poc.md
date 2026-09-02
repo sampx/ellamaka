@@ -617,3 +617,60 @@ ellamaka dsh plugin list [--json]
 | 5 | 失败语义 | 网络失败、解析失败、坏包均不污染 installed.json 与运行容器；有可诊断输出 |
 | 6 | 并发 | 多进程并发 add 串行化；半安装状态不参与解析 |
 | 7 | 隔离 | 插件安装不触碰闭包、不读写 `~/.dsh`、不引入 `DSH_HOME`/`DSH_PERMISSION_MODE` env |
+
+---
+
+## 10. workbench × dsh 前端插件互通（目标设计）
+
+> 状态：方向已定稿（2026-09-02）。当前走方向二（dsh 前端插件进 workbench）；方向一（ellamaka 组件进 dsh 界面）为远期吸收轨道，机制同源，桥建好后顺路可达。验证步骤见 §10.4，实施目标已列入 PLAN-TODOS，暂不出详细 Plan。
+
+### 10.1 定位与两方向
+
+dsh 前端插件体系（React + 声明制 slots）与 ellamaka workbench（SolidJS）是两套框架，组件不能互相直接渲染。**Web Component（WC）是跨框架标准插座**：任意框架的组件可包成 WC，任意框架可直接挂载 WC。两方向共享这座桥。
+
+- **方向一**：ellamaka 组件包 WC，注册进 dsh slot，让 dsh 界面使用。技术可行，但布局权与 slot 面由 dsh 官方声明，主导权在外部；完整语义 = 远期 absorb 轨道（dsh 吸收 ellamaka UI）。
+- **方向二（当前）**：dsh 前端插件自愿补 `ellamaka.ui` 面（WC 壳），由 workbench 定义 slot 面加载。主导权在 ellamaka，与「ellamaka 吸收 dsh 能力」主线一致；成本集中在 workbench 侧（slot 面 + 加载器）。
+
+### 10.2 一包多面
+
+一个插件包三个激活面，installed.json 仍唯一真相源，`enable/disable` 一个动作管三处：
+
+| 面 | 目标 | 机制 | 状态 |
+|----|------|------|------|
+| `dsh.bundle.patch` | dsh 服务端容器（工具/服务） | 供应链 Plan（§9） | 已规划 |
+| `dsh.client` | dsh GUI（React + slots） | 组合图动态派生（§6.6/§9） | 已实现自动跟随 |
+| `ellamaka.ui` | workbench（WC + slot 声明） | 本方向新增 | 待实施 |
+
+新增 manifest 面：`package.json → ellamaka.ui: { entry: "./lib/ellamaka.js", slots: [...] }`。插件作者用 React 写组件包 WC 壳（数行包装代码），或纯 TS 写轻组件；WC 自包含运行时，Shadow DOM 提供样式隔离（不污染宿主、不被宿主污染）。
+
+### 10.3 数据通道（关键便利）
+
+dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench 页面与之**同源**（prod 同一 server；dev 由 Vite `/dsh` proxy 转发）。dsh 第三方插件「服务端 `ctx.webServer.register` 路由 + 客户端 fetch `/dsh/...`」的标准数据模式在 workbench 中原样成立——写得规范的 dsh 前端插件，数据面在 workbench 天然可用，改造量集中在 UI 壳，不在数据层。
+
+容器未运行（serve 未起 / dsh 未物化）时，数据请求失败的降级语义由 workbench 加载器承担：WC 显示不可用态，不污染宿主。
+
+### 10.4 设计验证步骤（递进，每步独立可逆）
+
+| V# | 验证 | 内容 | 通过判据 |
+|----|------|------|---------|
+| V1 | 同源连通 | Bridge 静态路由 `/dsh/ellamaka-ui/<pkg>/<ver>/*` + Vite `/dsh` proxy | workbench fetch 插件 WC 文件返回 200 |
+| V2 | 加载器最小链路 | installed.json 含 fixture（`ellamaka.ui` 声明）→ 加载 → 挂载 → 卸载 | fixture WC 在声明 slot 挂载并正确卸载；remove 后不再挂载 |
+| V3 | 数据面实证 | fixture 插件服务端 register `/dsh/fixture/status` | WC 同源 fetch 渲染真实数据 |
+| V4 | 真实插件实证 | fork 一个 dsh client 插件补 `ellamaka.ui` 面 | `add` → watcher 热挂载 → workbench 显示实际功能 |
+| V5 | 失败语义 | 容器未起 / 插件加载异常 | 不可用态降级；插件崩溃被错误隔离，宿主其余槽位不受影响 |
+
+### 10.5 平台侧改造清单
+
+| 件 | 归属 | 内容 |
+|----|------|------|
+| 静态路由 | Bridge | `/dsh/ellamaka-ui/<pkg>/<version>/*` 服务 plugins 目录 WC 文件（`/dsh/plugins/*` 是 dsh registry 专用，只服它组合过的 bundle，不复用） |
+| dev proxy | ellamaka-app | Vite `/dsh` 转发到 serve |
+| workbench slot 面 | ellamaka-app | 初始 3-5 个挂载点（会话侧栏、会话头部、设置页项等）+ 每个 slot 的 props 契约（cwd/sessionId/workspace 等） |
+| WC 加载器 | ellamaka-app | 读 installed.json → 过滤 `ellamaka.ui` + enabled 含 "workbench" → 动态 import → Shadow DOM 挂载 → 错误隔离 → 卸载 |
+| enabledIn 语义扩展 | 供应链 | "workbench" 加入启用面取值（§7 约束 17 的「启用按 profile」延伸：workbench 视为一个面） |
+
+### 10.6 与既有约束的衔接
+
+- **信任面**：WC 与 workbench 同页面上下文，可信度等同 dsh 插件同进程执行（用户显式安装 + `add` 风险提示，§9.5），不新增权限体系。
+- **单真相源**：installed.json 不新增第二清单；profiles 不写 bundles 清单约束保持（D-04）。
+- **官方闭包不变**：`ellamaka.ui` 面仅消费方为 ellamaka，不触碰官方闭包、不进入 dsh GUI 运行时。
