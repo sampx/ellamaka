@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { NoVersionError, resolveTree, UnsupportedSpecError, type FetchLike } from "../src/plugins/resolver"
+import { NoVersionError, resolveTree, satisfiesRange, UnsupportedSpecError, type FetchLike } from "../src/plugins/resolver"
 
 /** Load a recorded packument fixture (real registry data, trimmed fields). */
 function fixture(name: string): unknown {
@@ -74,6 +74,28 @@ describe("dsh plugin dependency resolver", () => {
     expect(isNumberCopies).toHaveLength(1)
   })
 
+  test("caret ranges follow npm 0.x upper-bound semantics (rook B-02)", () => {
+    // ^0.2.3 must stay within 0.2.x (the MINOR is the leftmost non-zero).
+    expect(satisfiesRange("0.2.3", "^0.2.3")).toBe(true)
+    expect(satisfiesRange("0.2.9", "^0.2.3")).toBe(true)
+    expect(satisfiesRange("0.3.0", "^0.2.3")).toBe(false)
+    expect(satisfiesRange("0.1.9", "^0.2.3")).toBe(false)
+    // ^0.0.3: only 0.0.x from the pinned patch on — PATCH is leftmost non-zero.
+    expect(satisfiesRange("0.0.3", "^0.0.3")).toBe(true)
+    expect(satisfiesRange("0.0.4", "^0.0.3")).toBe(true)
+    expect(satisfiesRange("0.0.2", "^0.0.3")).toBe(false)
+    expect(satisfiesRange("0.1.0", "^0.0.3")).toBe(false)
+    // ^0.2 (x patch): within 0.2.x.
+    expect(satisfiesRange("0.2.5", "^0.2")).toBe(true)
+    expect(satisfiesRange("0.3.0", "^0.2")).toBe(false)
+    // ^0 (x minor): any 0.x.
+    expect(satisfiesRange("0.9.9", "^0")).toBe(true)
+    expect(satisfiesRange("1.0.0", "^0")).toBe(false)
+    // regular caret unchanged.
+    expect(satisfiesRange("5.6.2", "^5.3.0")).toBe(true)
+    expect(satisfiesRange("6.0.0", "^5.3.0")).toBe(false)
+  })
+
   test("a range with no satisfying version throws NoVersionError naming the parent chain", async () => {
     try {
       await resolveTree({ kind: "registry", name: "is-odd", version: "99.0.0" }, { fetch: offlineFetch() })
@@ -85,13 +107,13 @@ describe("dsh plugin dependency resolver", () => {
     }
   })
 
-  test("git and file specs are rejected with UnsupportedSpecError", () => {
-    expect(() =>
+  test("git and file specs are rejected with UnsupportedSpecError", async () => {
+    await expect(
       resolveTree({ kind: "registry", name: "is-odd", version: "github:foo/is-odd#main" }),
-    ).toThrow(UnsupportedSpecError)
-    expect(() => resolveTree({ kind: "registry", name: "is-odd", version: "file:../is-odd" })).toThrow(
-      UnsupportedSpecError,
-    )
+    ).rejects.toBeInstanceOf(UnsupportedSpecError)
+    await expect(
+      resolveTree({ kind: "registry", name: "is-odd", version: "file:../is-odd" }),
+    ).rejects.toBeInstanceOf(UnsupportedSpecError)
   })
 
   test("fetch failures propagate with the registry URL", async () => {

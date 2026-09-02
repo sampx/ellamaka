@@ -160,13 +160,32 @@ export function satisfiesRange(candidateVersion: string, range: string, tags?: R
   const [major, minor = "x", patch = "x"] = nums
   if (major === "x") return true
   if (candidate.major !== major) return false
-  if (tilde || caret) {
+  if (tilde) {
     const minMinor = minor === "x" ? 0 : minor
     const minPatch = patch === "x" ? 0 : patch
-    if (candidate.minor !== minMinor && !caret) return false
-    if (candidate.minor < minMinor) return false
-    if (candidate.minor === minMinor && candidate.patch < minPatch) return false
+    if (candidate.minor !== minMinor) return false
+    if (candidate.patch < minPatch) return false
     return true
+  }
+  // Caret: "up to the next leftmost non-zero digit" (npm semver semantics).
+  if (caret) {
+    const minMinor = minor === "x" ? 0 : minor
+    const minPatch = patch === "x" ? 0 : patch
+    if (candidate.minor < minMinor) return false
+    // ^0.0.x: only that exact patch (and its siblings via x) — the leftmost
+    // non-zero may be the PATCH, so the upper bound is the next patch.
+    if (major === 0 && minMinor === 0 && patch !== "x") {
+      return candidate.minor === 0 && candidate.patch >= minPatch
+    }
+    // ^0.y.z: the leftmost non-zero is the MINOR, so the upper bound is 0.(y+1).0.
+    if (major === 0 && minor !== "x") {
+      return candidate.minor === minMinor && candidate.patch >= minPatch
+    }
+    // ^major.y.z: the upper bound is (major+1).0.0.
+    return (
+      candidate.minor > minMinor ||
+      (candidate.minor === minMinor && candidate.patch >= minPatch)
+    )
   }
   // Plain x-range: `5` == `5.x.x`, `5.3` == `5.3.x`, `5.3.2` exact (handled above).
   if (minor !== "x" && candidate.minor !== minor) return false
