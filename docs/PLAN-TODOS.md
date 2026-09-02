@@ -17,13 +17,16 @@ PoC 不合并 main，直到供应链实施验收。顺序从核心到外围：�
 | P3.5+ | DSH home 收口 | 物化到 `$WOPAL_HOME/dsh` 唯一锚点 |
 | P4 | DSH Web 单端口统一 | `/dsh/*` 同源挂载，dshPort 协议移除 |
 | P5 | 运行时隔离 + 物化生产化 | `ELLAMAKA_DSH` 开关、state 隔离、Bridge 随宿主发布、统一 Runtime Manager（§8 十项验收达成，2026-09-01） |
+| P6 | 插件供应链 | 命令式 add/remove/enable/disable/list、热挂载（store watch + include 全栈重放）、`--dir` 安装（§9 七项验收达成，2026-09-02） |
 
 ## 活跃 Plan
 
-| Plan | 状态 | 说明 |
-|------|------|------|
-| `feature-dsh-dsh-escalation-approval-bridge-and-sandbox-mode-ui` | executing | 阶段 B：审批桥接 + 沙箱三态（§4.5） |
-| `feature-ellamaka-dsh-plugin-supply-chain-install-hot-mount-lifecycle` | reviewing | 插件供应链（§9），spike 已验证（§6.6），待用户审批 |
+（无——最近两个 Plan 已完成归档）
+
+| Plan | 结果 |
+|------|------|
+| `feature-dsh-dsh-escalation-approval-bridge-and-sandbox-mode-ui` | 已归档（done，2026-09-02）：审批桥接 + 沙箱三态 UI（§4.5） |
+| `feature-ellamaka-dsh-plugin-supply-chain-install-hot-mount-lifecycle` | 已归档（done，2026-09-02）：插件供应链全链路（§9），实施 12 commits，rook 审查 8 Blocker 全修复，用户实机验证通过 |
 
 推进用 dev-flow：`flow.sh plan status / approve / complete / verify / archive`。
 
@@ -37,11 +40,12 @@ PoC 不合并 main，直到供应链实施验收。顺序从核心到外围：�
 
 ## 排队中的后续目标（§10 workbench × dsh 前端插件互通）
 
-> 设计基线 DESIGN §10（2026-09-02 定稿方向）。排在审批桥接与供应链两 Plan 之后，仅在两者验证通过后启动；暂不出详细 Plan 文档，目标先行列入。
+> 设计基线 DESIGN §10（2026-09-02 定稿方向）。前置 Plan 均已归档，本目标现已是下一个启动候选；暂不出详细 Plan 文档，目标先行列入。
 
 | 项 | 目标/方向 | 状态 |
 |----|-----------|------|
 | 方向 | 走方向二：dsh 前端插件补 `ellamaka.ui` 面（WC 壳）→ 进 workbench 原生 slot；方向一（ellamaka 组件进 dsh 界面）为远期吸收轨道，机制同源 | 已定稿 |
+| 前置实证 | hello-dsh-plugin（`.wopal-space/.tmp/`）已验证 `dsh.client` 第三方面：服务端热挂载 + settings 页 GUI 经 boot manifest 自动下发，零构建手写 factory 形态可行 | 已验证 |
 | 验证 V1 | 同源连通：Bridge 静态路由 `/dsh/ellamaka-ui/*` + Vite `/dsh` proxy | 待做 |
 | 验证 V2 | 加载器最小链路：installed.json fixture → 加载 → 挂载 → 卸载 | 待做 |
 | 验证 V3 | 数据面实证：插件服务端 register 路由 → WC 同源 fetch 渲染 | 待做 |
@@ -56,3 +60,4 @@ PoC 不合并 main，直到供应链实施验收。顺序从核心到外围：�
 | 2026-08-16 ~ 09-01 | P1–P5 全部完成（明细见 git 历史与本文件早期版本） |
 | 2026-09-02 | 设计文档精简重写（删附录过程记录）；§9 插件供应链定稿；spike 验证热挂载与运行时依赖解析（§6.6）；供应链 Plan 创建并提交审阅 |
 | 2026-09-02 | §10 workbench × dsh 前端插件互通方向定稿（走方向二，WC 一包多面 + 同源数据通道）；验证步骤 V1-V5 与平台改造清单列入设计，目标入 TODO 队列 |
+| 2026-09-02 | 供应链 Plan 全周期完成：实施 6 Task + rook 审查（8 Blocker 修复：全栈重放/semver 0.x/传递树/锁内写/profile 别名/悬空 symlink/Desktop watcher/路径穿越）+ Wopal 自审 PASS + 用户实机验证（hello 插件热挂载 + settings 页 GUI）；§9 验收达成进入维护态。审批桥接 Plan 同日归档。§9 供应链 + §10 前置实证（dsh.client 自动手写 bundle）完成 |
