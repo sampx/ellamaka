@@ -733,6 +733,7 @@ export const layer = Layer.effect(
         },
         system: input.system,
         format: input.format,
+        sandboxMode: input.sandboxMode,
       }
 
       if (current?.agent !== info.agent) {
@@ -1425,6 +1426,7 @@ export const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              sandboxMode: lastUser.sandboxMode,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -1746,6 +1748,7 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(MessageV2.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  sandboxMode: Schema.optional(Schema.Literals(["read-only", "workspace-write", "full-access"])),
   parts: Schema.Array(
     Schema.Union([
       MessageV2.TextPartInput,

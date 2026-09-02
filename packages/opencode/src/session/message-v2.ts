@@ -346,6 +346,11 @@ export const User = Schema.Struct({
   }),
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  // Per-message dsh sandbox mode selected in the composer (read-only /
+  // workspace-write / full-access). Carried on the user message so forks and
+  // queue follow-ups inherit the choice; absent falls back to the space-level
+  // `ellamaka.dsh.sandbox` default.
+  sandboxMode: Schema.optional(Schema.Literals(["read-only", "workspace-write", "full-access"])),
 }).annotate({ identifier: "UserMessage" })
 export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
 

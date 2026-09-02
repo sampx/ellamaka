@@ -426,6 +426,7 @@ export type UserMessage = {
   tools?: {
     [key: string]: boolean
   }
+  sandboxMode?: "read-only" | "workspace-write" | "full-access"
 }
 
 export type AssistantMessage = {
@@ -6587,6 +6588,7 @@ export type SessionPromptData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    sandboxMode?: "read-only" | "workspace-write" | "full-access"
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {
@@ -6934,6 +6936,7 @@ export type SessionPromptAsyncData = {
     format?: OutputFormat
     system?: string
     variant?: string
+    sandboxMode?: "read-only" | "workspace-write" | "full-access"
     parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
   }
   path: {

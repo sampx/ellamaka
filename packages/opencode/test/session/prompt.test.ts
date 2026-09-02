@@ -716,6 +716,50 @@ noLLMServer.instance(
   { config: cfg },
 )
 
+it.instance("prompt persists sandboxMode on the user message", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      sandboxMode: "read-only",
+      parts: [{ type: "text", text: "hello sandbox" }],
+    })
+
+    const stored = [...MessageV2.stream(chat.id)].find((m) => m.info.role === "user")
+    expect(stored?.info.role).toBe("user")
+    if (stored?.info.role === "user") {
+      expect(stored.info.sandboxMode).toBe("read-only")
+    }
+  }),
+  { config: cfg },
+)
+
+it.instance("prompt omits sandboxMode when not selected", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "no sandbox choice" }],
+    })
+
+    const stored = [...MessageV2.stream(chat.id)].find((m) => m.info.role === "user")
+    if (stored?.info.role === "user") {
+      expect(stored.info.sandboxMode).toBeUndefined()
+    }
+  }),
+  { config: cfg },
+)
+
 it.instance("static loop returns assistant text through local provider", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
