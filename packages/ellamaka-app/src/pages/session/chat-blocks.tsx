@@ -58,6 +58,10 @@ export function UserMessageBlock(props: {
   actions?: ChatUserActions
   actionLabels?: ChatUserActionLabels
 }) {
+  // Server compaction markers (a user message whose only part is `compaction`)
+  // are structural boundaries, not prompts. They render nothing here; the
+  // transcript layer projects them as a CompactionDivider row instead.
+  if (props.parts.length > 0 && props.parts.every((p) => p.type === "compaction")) return null
   const text = createMemo(() =>
     props.parts
       .filter((p) => p.type === "text" && !p.synthetic)

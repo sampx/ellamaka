@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MemoryRouter, Route, createMemoryHistory } from "@solidjs/router"
 
-import type { UserMessage } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useMutation } from "@tanstack/solid-query"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { Part as OpenCodeMessagePart } from "@opencode-ai/ui/message-part"
@@ -23,6 +23,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
+import { isCompactionMarker } from "@/pages/session/chat-transcript"
 import { WorkbenchChatTimeline, type UserMessageNavigation, type UserMessageNavigator } from "@/pages/session/workbench-chat-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
@@ -52,6 +53,7 @@ import {
 import { reportWorkbenchError } from "../workbench-error"
 
 const emptyUserMessages: UserMessage[] = []
+const emptyParts: Part[] = []
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
 const emptyFollowups: FollowupItem[] = []
@@ -281,11 +283,19 @@ function PanelChatInner(props: {
   const isChildSession = createMemo(() => !!info()?.parentID)
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
 
-  const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user"),
+  const isUser = (m: Message): m is UserMessage => m.role === "user"
+  const realUserMessages = createMemo(
+    () =>
+      messages().flatMap((m) => {
+        if (!isUser(m)) return []
+        if (isCompactionMarker(m, (id) => sync.data.part[id] ?? emptyParts)) return []
+        return [m]
+      }),
     emptyUserMessages,
     { equals: same },
   )
+
+  const userMessages = realUserMessages
 
   const visibleUserMessages = createMemo(
     () => {

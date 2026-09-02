@@ -45,6 +45,7 @@ export type TranscriptRow =
       metaPartID?: string
     }
   | { type: "error"; key: string; turnID: string; message: AssistantMessage }
+  | { type: "compaction"; key: string; turnID: string; parts: Part[] }
 
 /**
  * The transcript is partitioned into a stable virtual history and a directly
@@ -88,6 +89,18 @@ function isUserMessage(message: Message): message is UserMessage {
 
 function isAssistantMessage(message: Message): message is AssistantMessage {
   return message.role === "assistant"
+}
+
+/**
+ * Detects the server's compaction marker: a user message carrying a `compaction`
+ * part and no user-visible content. The engine creates it as the structural
+ * parent of a compaction run; it must never surface as an empty prompt bubble.
+ */
+export function isCompactionMarker(message: Message, getParts: (messageID: string) => Part[]): boolean {
+  if (message.role !== "user") return false
+  const parts = getParts(message.id)
+  if (parts.length === 0) return false
+  return parts.every((part) => part.type === "compaction")
 }
 
 function isRunning(message: AssistantMessage): boolean {
@@ -151,6 +164,10 @@ export function nearestUserTurnID(rows: TranscriptRow[], rowKey: string | undefi
   return undefined
 }
 
+function compactionRowKey(turnID: string): string {
+  return `compaction:${turnID}`
+}
+
 function buildTurnRows(
   turn: ChatTurn,
   getParts: (id: string) => Part[],
@@ -161,8 +178,12 @@ function buildTurnRows(
   const rows: TranscriptRow[] = []
   const turnID = turn.id
 
-  const userParts = getParts(turn.user.id)
-  rows.push({ type: "user", key: userRowKey(turnID), turnID, message: turn.user, parts: userParts })
+  if (isCompactionMarker(turn.user, getParts)) {
+    rows.push({ type: "compaction", key: compactionRowKey(turnID), turnID, parts: getParts(turn.user.id) })
+  } else {
+    const userParts = getParts(turn.user.id)
+    rows.push({ type: "user", key: userRowKey(turnID), turnID, message: turn.user, parts: userParts })
+  }
 
   const running = turn.assistant.some(isRunning)
   const active = status.type !== "idle"
@@ -237,15 +258,24 @@ export function createRowStabilizer() {
   }
 
   function rowFingerprint(row: TranscriptRow): string {
-    const message = row.message as { id: string; time?: { updated?: number; completed?: number } }
-    const time = `${message.time?.updated ?? ""}:${message.time?.completed ?? ""}`
     switch (row.type) {
-      case "user":
+      case "user": {
+        const message = row.message as { id: string; time?: { updated?: number; completed?: number } }
+        const time = `${message.time?.updated ?? ""}:${message.time?.completed ?? ""}`
         return `${row.type}:${message.id}:${time}:${row.parts.map(partFingerprint).join(",")}`
-      case "assistant":
+      }
+      case "assistant": {
+        const message = row.message as { id: string; time?: { updated?: number; completed?: number } }
+        const time = `${message.time?.updated ?? ""}:${message.time?.completed ?? ""}`
         return `${row.type}:${message.id}:${time}:${row.metaPartID ?? ""}:${row.parts.map(partFingerprint).join(",")}`
-      case "error":
+      }
+      case "error": {
+        const message = row.message as { id: string; time?: { updated?: number; completed?: number } }
+        const time = `${message.time?.updated ?? ""}:${message.time?.completed ?? ""}`
         return `${row.type}:${message.id}:${time}`
+      }
+      case "compaction":
+        return `${row.type}:${row.turnID}:${row.parts.map(partFingerprint).join(",")}`
     }
   }
 
@@ -353,7 +383,7 @@ export function projectTranscript(input: TranscriptProjectionInput): TranscriptP
   turns.forEach((turn, index) => {
     const turnRows = buildTurnRows(turn, getParts, status, live, showReasoningSummaries)
     rows.push(...turnRows)
-    if (!promptIndex.has(turn.id)) promptIndex.set(turn.id, turnRows[0]?.key ?? userRowKey(turn.id))
+    if (!promptIndex.has(turn.id)) promptIndex.set(turn.id, turnRows[0]?.key ?? (isCompactionMarker(turn.user, getParts) ? compactionRowKey(turn.id) : userRowKey(turn.id)))
 
     const isLiveTurn = hasLiveTurn && index >= liveTurnIndex
     const turnRunning = turn.assistant.some(isRunning)

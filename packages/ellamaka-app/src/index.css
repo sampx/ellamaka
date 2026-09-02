@@ -883,6 +883,35 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   color: var(--text-weaker);
 }
 
+/* Compaction divider: mirrors the TUI's bordered "Compaction" banner — a
+   horizontal rule on both sides of a centered label, rendered as a turn
+   boundary rather than a message bubble. */
+[data-component="chat-compaction"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 14px 0 2px;
+  padding-inline: var(--workbench-chat-content-inset);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+[data-component="chat-compaction"]::before,
+[data-component="chat-compaction"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--border-active) 55%, transparent);
+}
+
+[data-slot="chat-compaction-label"] {
+  flex: none;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: 1.4;
+}
+
 /* stylelint-disable declaration-no-important -- Shiki serializes these code
    block values inline, and the upstream copy-button variant needs an explicit
    local surface to remain legible in both color schemes. */

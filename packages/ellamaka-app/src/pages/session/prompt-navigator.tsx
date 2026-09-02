@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount } from "solid-js"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
-import { cleanSummary, extractPromptSummary } from "./chat-render.utils"
+import { cleanSummary, extractPromptSummary, isRenderablePart } from "./chat-render.utils"
+import { isCompactionMarker } from "./chat-transcript"
 
 export type PromptNavigatorProps = {
   sessionID: string
@@ -37,22 +38,26 @@ export function PromptNavigator(props: PromptNavigatorProps) {
   }
 
   const entries = createMemo(() =>
-    props.userMessages.map((message) => {
-      const parts = getParts(message.id)
-      const assistant = assistantFor(message.id)
-      const assistantText = assistant
-        .flatMap((a) => getParts(a.id))
-        .filter((p) => p.type === "text" && !p.synthetic)
-        .map((p) => (p.type === "text" ? p.text : ""))
-        .map(cleanSummary)
-        .filter((t) => t.trim().length > 0)
-        .at(-1)
-      return {
-        userMessageID: message.id,
-        userSummary: extractPromptSummary({ message, parts }),
-        assistantSummary: assistantText ?? extractPromptSummary({ message, parts: [], assistant }),
-      }
-    }),
+    props.userMessages
+      // Compaction markers are structural boundaries, not prompts; they never
+      // appear in the prompt rail or directory.
+      .filter((message) => !isCompactionMarker(message, getParts))
+      .map((message) => {
+        const parts = getParts(message.id)
+        const assistant = assistantFor(message.id)
+        const assistantText = assistant
+          .flatMap((a) => getParts(a.id))
+          .filter((p) => p.type === "text" && !p.synthetic)
+          .map((p) => (p.type === "text" ? p.text : ""))
+          .map(cleanSummary)
+          .filter((t) => t.trim().length > 0)
+          .at(-1)
+        return {
+          userMessageID: message.id,
+          userSummary: extractPromptSummary({ message, parts }),
+          assistantSummary: assistantText ?? extractPromptSummary({ message, parts: [], assistant }),
+        }
+      }),
   )
 
   const openDirectory = () => {

@@ -9,6 +9,7 @@ import type {
 import {
   ASSISTANT_SEGMENT_PARTS,
   createRowStabilizer,
+  isCompactionMarker,
   nearestUserTurnID,
   projectTranscript,
   rowKey,
@@ -69,6 +70,10 @@ function toolPart(id: string, messageID: string, tool: string, callID: string): 
 
 function stepStartPart(id: string, messageID: string): Part {
   return { id, sessionID: "ses_1", messageID, type: "step-start" }
+}
+
+function compactionPart(id: string, messageID: string): Part {
+  return { id, sessionID: "ses_1", messageID, type: "compaction", auto: false }
 }
 
 const idle: SessionStatus = { type: "idle" }
@@ -469,6 +474,103 @@ describe("projectTranscript", () => {
     const firstUser = first.partition.direct.find((row) => row.type === "user")
     const secondUser = second.partition.direct.find((row) => row.type === "user")
     expect(secondUser).toBe(firstUser)
+  })
+})
+
+describe("compaction marker projection", () => {
+  test("isCompactionMarker is true for a user message whose parts are all compaction", () => {
+    const marker = userMessage("u-mark")
+    const parts = [compactionPart("cp1", "u-mark")]
+    expect(isCompactionMarker(marker, partsByID(parts))).toBe(true)
+  })
+
+  test("isCompactionMarker is false for a user message with any text part", () => {
+    const u1 = userMessage("u1")
+    const parts = [compactionPart("cp1", "u1"), textPart("p1", "u1", "real prompt")]
+    expect(isCompactionMarker(u1, partsByID(parts))).toBe(false)
+  })
+
+  test("isCompactionMarker is false for a user message with file or agent parts", () => {
+    const u1 = userMessage("u1")
+    const filePart: Part = { id: "f1", sessionID: "ses_1", messageID: "u1", type: "file", mime: "text/plain", url: "file:///x" }
+    expect(isCompactionMarker(u1, partsByID([compactionPart("cp1", "u1"), filePart]))).toBe(false)
+  })
+
+  test("isCompactionMarker is false for assistant messages and for user messages without compaction parts", () => {
+    const a1 = assistantMessage("a1", "u1")
+    const u1 = userMessage("u1")
+    expect(isCompactionMarker(a1, partsByID([]))).toBe(false)
+    expect(isCompactionMarker(u1, partsByID([textPart("p1", "u1", "hello")]))).toBe(false)
+  })
+
+  test("projects a compaction marker turn as a compaction row instead of a user bubble row", () => {
+    const u1 = userMessage("u1", { model: { providerID: "openai", modelID: "gpt-4o" } })
+    const uComp = userMessage("u-comp", { model: { providerID: "openai", modelID: "gpt-4o" } })
+    const aComp = assistantMessage("a-comp", "u-comp", {
+      mode: "compaction",
+      agent: "compaction",
+      summary: true,
+      time: { created: 2000, completed: 3000 },
+    })
+    const u2 = userMessage("u2")
+    const a2 = assistantMessage("a2", "u2")
+    const parts = [
+      textPart("p1", "u1", "hello"),
+      textPart("p2", "a1", "reply"),
+      compactionPart("cp1", "u-comp"),
+      textPart("p3", "a-comp", "summary of the conversation so far"),
+      textPart("p4", "u2", "next question"),
+      textPart("p5", "a2", "answer"),
+    ]
+    // a1 parentID is u1; a-comp parentID is u-comp
+    const a1 = assistantMessage("a1", "u1")
+    const messages: Message[] = [u1, a1, uComp, aComp, u2, a2]
+
+    const { turns, rows } = projectTranscript({ messages, getParts: partsByID(parts), status: idle })
+
+    expect(turns.map((t) => t.id)).toEqual(["u1", "u-comp", "u2"])
+    const userRowTurnIDs = rows.filter((r) => r.type === "user").map((r) => r.turnID)
+    expect(userRowTurnIDs).toEqual(["u1", "u2"])
+    const compactionRow = rows.find((r): r is Extract<TranscriptRow, { type: "compaction" }> => r.type === "compaction")
+    expect(compactionRow).toBeDefined()
+    expect(compactionRow?.turnID).toBe("u-comp")
+    expect(compactionRow?.key).toBe(`compaction:u-comp`)
+    expect(compactionRow?.parts.map((p) => p.id)).toEqual(["cp1"])
+    // The compaction summary assistant parts stay projected under the marker turn.
+    const summaryRow = rows.find((r) => r.type === "assistant" && r.turnID === "u-comp")
+    expect(summaryRow).toBeDefined()
+  })
+
+  test("a compaction marker turn that is still running keeps its rows direct", () => {
+    const u1 = userMessage("u1")
+    const a1 = assistantMessage("a1", "u1")
+    const uComp = userMessage("u-comp")
+    const aComp = assistantMessage("a-comp", "u-comp", {
+      mode: "compaction",
+      agent: "compaction",
+      summary: true,
+      time: { created: 2000 }, // no completed -> running
+    })
+    const parts = [compactionPart("cp1", "u-comp"), textPart("p1", "a-comp", "partial summary")]
+
+    const { partition } = projectTranscript({
+      messages: [u1, a1, uComp, aComp],
+      getParts: partsByID(parts),
+      status: { type: "busy" },
+      live: true,
+    })
+
+    expect(partition.direct.some((r) => r.type === "compaction")).toBe(true)
+    expect(partition.virtual.map((r) => r.turnID)).toEqual(["u1", "u1"])
+  })
+
+  test("promptIndex maps a compaction marker turn to its compaction row key", () => {
+    const uComp = userMessage("u-comp")
+    const parts = [compactionPart("cp1", "u-comp")]
+
+    const { promptIndex } = projectTranscript({ messages: [uComp], getParts: partsByID(parts), status: idle })
+
+    expect(promptIndex.get("u-comp")).toBe("compaction:u-comp")
   })
 })
 

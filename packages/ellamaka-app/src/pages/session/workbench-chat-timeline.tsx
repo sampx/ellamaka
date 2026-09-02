@@ -295,6 +295,10 @@ function TranscriptRowView(props: {
     const r = row()
     return r.type === "error" ? r : undefined
   }
+  const compactionRow = () => {
+    const r = row()
+    return r.type === "compaction" ? r : undefined
+  }
   const metaPartID = createMemo(() => assistantRow()?.metaPartID)
   return (
     <ChatTurnFrame turnID={row().turnID}>
@@ -304,6 +308,17 @@ function TranscriptRowView(props: {
         data-turn-id={row().turnID}
         data-active={row().turnID === activeUserMessageID()}
       >
+        <Show when={compactionRow()}>
+          {(current) => (
+            <Index each={current().parts}>
+              {(part) => (
+                <Show when={part().id} keyed>
+                  <CompactionDivider part={part()} />
+                </Show>
+              )}
+            </Index>
+          )}
+        </Show>
         <Show when={userRow()}>
           {(current) => (
             <UserMessageBlock
