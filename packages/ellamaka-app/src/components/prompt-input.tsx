@@ -82,11 +82,12 @@ import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { displayName } from "@/pages/layout/helpers"
 import {
   SANDBOX_PRESETS,
-  patchDshAdapterSandbox,
-  presetToSandbox,
   readDshAdapterSandbox,
   sandboxToPreset,
   hasDshAdapterPlugin,
+  setPendingSessionSandbox,
+  drainPendingSessionSandbox,
+  NEW_SESSION_SANDBOX_KEY,
   type SandboxPreset,
 } from "./prompt-input/sandbox-control"
 
@@ -104,6 +105,8 @@ interface PromptInputProps {
   onAbort?: () => void
   onSubmit?: () => void
 }
+
+const SANDBOX_CHOICE_KEY = "sandbox-choice"
 
 const EXAMPLES = [
   "prompt.example.1",
@@ -316,20 +319,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const control = createMemo(() => ({ height: "28px", ...buttons() }))
 
   // Sandbox tri-state control: visible only for dock composers in spaces whose
-  // global config loads the dsh-adapter plugin. Reads/writes the adapter's
-  // inline `sandbox` option via the existing global.config.update endpoint;
-  // the backend disposes instances so new sessions pick up the change.
+  // global config loads the dsh-adapter plugin. The mode is a PER-SESSION
+  // choice kept in browser storage; the space-level `ellamaka.dsh.sandbox`
+  // default in the global config is the fallback when the session has no
+  // explicit choice. The choice rides on the prompt payload (`sandboxMode`);
+  // settings files are never written from here.
   const sandboxPlugin = createMemo(() => serverSync.data.config.plugin)
   const sandboxVisible = createMemo(
     () => props.variant === "dock" && hasDshAdapterPlugin(sandboxPlugin() as Parameters<typeof hasDshAdapterPlugin>[0]),
   )
-  const sandboxPreset = createMemo(() => sandboxToPreset(readDshAdapterSandbox(sandboxPlugin() as Parameters<typeof readDshAdapterSandbox>[0])))
+  const sandboxDefaultPreset = createMemo(() =>
+    sandboxToPreset(readDshAdapterSandbox(sandboxPlugin() as Parameters<typeof readDshAdapterSandbox>[0])),
+  )
+  const sandboxSessionID = createMemo(() => (newSession() ? undefined : params.id))
+  const [sandboxSaved, setSandboxSaved] = persisted(
+    Persist.workspace(sdk.directory, SANDBOX_CHOICE_KEY, [`${SANDBOX_CHOICE_KEY}.v1`]),
+    createStore<{ session: Record<string, SandboxPreset | undefined> }>({ session: {} }),
+  )
+  const sandboxPreset = createMemo<SandboxPreset>(() => {
+    const id = sandboxSessionID()
+    if (!id) return sandboxDefaultPreset()
+    return sandboxSaved.session[id] ?? sandboxDefaultPreset()
+  })
   const sandboxSelect = (preset: SandboxPreset) => {
-    const plugins = sandboxPlugin() as Parameters<typeof patchDshAdapterSandbox>[0]
-    if (!plugins) return
-    const next = patchDshAdapterSandbox(plugins, presetToSandbox(preset))
-    if (!next) return
-    void serverSync.updateConfig({ plugin: next })
+    const id = sandboxSessionID()
+    if (!id) {
+      setPendingSessionSandbox(NEW_SESSION_SANDBOX_KEY, preset)
+      return
+    }
+    setSandboxSaved("session", id, preset)
   }
 
   const commentCount = createMemo(() => {
@@ -1162,6 +1180,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     autoAccept: () => accepting(),
     mode: () => store.mode,
     working,
+    sandboxMode: sandboxVisible()
+      ? () => {
+          const id = sandboxSessionID()
+          return id ? sandboxSaved.session[id] : undefined
+        }
+      : undefined,
     editor: () => editorRef,
     queueScroll,
     promptLength,
@@ -1650,7 +1674,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <Show when={sandboxVisible()}>
                     <ComposerSandboxControl
                       preset={sandboxPreset}
-                      disabled={() => serverSync.data.reload === "pending"}
+                      disabled={() => false}
                       onSelect={sandboxSelect}
                       t={(key) => language.t(key as Parameters<typeof language.t>[0])}
                       style={control()}

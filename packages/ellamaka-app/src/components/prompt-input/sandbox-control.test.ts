@@ -6,6 +6,9 @@ import {
   readDshAdapterSandbox,
   hasDshAdapterPlugin,
   patchDshAdapterSandbox,
+  promptSandboxMode,
+  setPendingSessionSandbox,
+  drainPendingSessionSandbox,
   type SandboxOptions,
 } from "./sandbox-control"
 
@@ -151,5 +154,28 @@ describe("readDshAdapterSandbox", () => {
     const next = patchDshAdapterSandbox(["file:///x/dsh-adapter/index.ts"], { enabled: true, mode: "workspace-write" })
     expect(readDshAdapterSandbox(next)).toEqual({ enabled: true, mode: "workspace-write" })
     expect(sandboxToPreset(readDshAdapterSandbox(next))).toBe("workspace-write")
+  })
+})
+
+describe("per-message sandbox mode", () => {
+  test("promptSandboxMode carries the preset verbatim", () => {
+    for (const preset of SANDBOX_PRESETS) {
+      expect(promptSandboxMode(preset)).toBe(preset)
+    }
+  })
+
+  test("pending tracker set/drain round-trips per composer key", () => {
+    setPendingSessionSandbox("composer:new-1", "read-only")
+    expect(drainPendingSessionSandbox("composer:new-1")).toBe("read-only")
+    expect(drainPendingSessionSandbox("composer:new-1")).toBeUndefined()
+  })
+
+  test("pending tracker keys are independent and drain clears only the hit key", () => {
+    setPendingSessionSandbox("composer:new-2", "workspace-write")
+    setPendingSessionSandbox("composer:new-3", "full-access")
+    expect(drainPendingSessionSandbox("composer:new-2")).toBe("workspace-write")
+    expect(drainPendingSessionSandbox("composer:new-2")).toBeUndefined()
+    expect(drainPendingSessionSandbox("composer:new-3")).toBe("full-access")
+    expect(drainPendingSessionSandbox("composer:new-4")).toBeUndefined()
   })
 })

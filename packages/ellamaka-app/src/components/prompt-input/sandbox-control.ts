@@ -1,6 +1,9 @@
-// Pure helpers for the chat composer sandbox tri-state control (Plan: feature-dsh
-// escalation/sandbox, Task 3). The dsh-adapter plugin carries an inline `sandbox`
-// option in its config spec; the composer exposes it as three presets:
+// Pure helpers for the chat composer sandbox tri-state control. The mode is a
+// PER-SESSION choice: kept in browser storage keyed by session, carried on the
+// prompt payload, and never written to settings files. The space-level
+// `ellamaka.dsh.sandbox` default (read from the dsh-adapter plugin spec) is
+// the fallback when a session has no explicit choice.
+//
 //   read-only        → { enabled: true, mode: "read-only" }
 //   workspace-write  → { enabled: true, mode: "workspace-write" }
 //   full-access      → { enabled: false } (sandbox off; adapter default)
@@ -66,6 +69,10 @@ export function readDshAdapterSandbox(plugins: PluginSpec[] | undefined): Sandbo
   }
 }
 
+// Space-default writer. The composer does NOT call this (session choices
+// never touch settings files); it stays for future space-default editing
+// surfaces. Minimal-patch semantics: only the dsh-adapter spec's `sandbox`
+// key changes; every other plugin entry and option field keeps its reference.
 export function patchDshAdapterSandbox(
   plugins: PluginSpec[],
   sandbox: SandboxOptions,
@@ -74,14 +81,37 @@ export function patchDshAdapterSandbox(
   if (index < 0) return undefined
   const next = [...plugins]
   const spec = plugins[index]
-  // The adapter's `sandbox` inline option is owned by this control: patching
-  // rewrites only that key and leaves every other option field as-is.
   const options: Record<string, unknown> = isTupleSpec(spec) ? { ...spec[1] } : {}
-  options.sandbox = sandbox === undefined ? undefined : { ...sandbox }
+  options.sandbox = { ...sandbox }
   if (!isTupleSpec(spec)) {
     next[index] = [spec, options]
   } else {
     next[index] = [spec[0], options]
   }
   return next
+}
+
+// The wire value for a per-message sandbox choice. `full-access` folds to the
+// adapter's disable semantics server-side; the wire value stays the preset so
+// forks and history render the user's actual selection.
+export function promptSandboxMode(preset: SandboxPreset): string {
+  return preset
+}
+
+// Session-scoped in-memory tracker for the choice made in a composer whose
+// session was not created yet at selection time (new-session composers). The
+// submit flow drains it once the session exists, mirroring
+// session-model-tracker. UI state itself persists via Persist.workspace.
+export const NEW_SESSION_SANDBOX_KEY = "new-session-composer"
+
+const pendingSessionSandbox = new Map<string, SandboxPreset>()
+
+export function setPendingSessionSandbox(sessionKey: string, preset: SandboxPreset) {
+  pendingSessionSandbox.set(sessionKey, preset)
+}
+
+export function drainPendingSessionSandbox(sessionKey: string): SandboxPreset | undefined {
+  const preset = pendingSessionSandbox.get(sessionKey)
+  if (preset) pendingSessionSandbox.delete(sessionKey)
+  return preset
 }
