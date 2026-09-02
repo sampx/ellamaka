@@ -13,7 +13,8 @@
     "./types": "./src/types.ts",
     "./dsh-web": "./src/dsh-web.ts",
     "./runtime": "./src/runtime/manager.ts",
-    "./runtime/loader": "./src/runtime/loader.ts"
+    "./runtime/loader": "./src/runtime/loader.ts",
+    "./plugins": "./src/plugins/store.ts"
   },
   "files": [
     "dist"
