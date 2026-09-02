@@ -107,12 +107,32 @@ export async function mountDshEngine(
     toolsHub.ctx.logger("dsh-tools").info("tool container mounted")
     ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = toolsHub.ctx
 
+    // Plugin Runtime Service (D-02): the server process watches the plugin
+    // store and replays include patches into both containers when CLI-side
+    // installs change it. A degraded watcher never breaks the engine.
+    let pluginService: { stop(): Promise<void> } | undefined
+    try {
+      const { startDshPluginService } = await import("@wopal/ellamaka-cordis/plugins/runtime")
+      pluginService = startDshPluginService({
+        home,
+        containers: [
+          { profile: "web", ctx: webHub.ctx, includeEntry: dsh.includeEntry },
+          { profile: "ellamaka-tools", ctx: toolsHub.ctx, includeEntry: toolsHost.includeEntry },
+        ],
+      })
+    } catch (error) {
+      webHub.ctx.logger("dsh-plugins").warn("plugin runtime service failed to start", {
+        error: (error as Error).message,
+      })
+    }
+
     return {
       mountPath: dsh.mountPath,
       dispose: async () => {
         // dsh.dispose() closes the VirtualWebServer's upgrade sockets first,
         // then unmounts the dsh plugin tree from the web hub.
         unmountDsh?.()
+        await pluginService?.stop()
         await dsh.dispose()
         await toolsHost.dispose()
         await webHub?.dispose()

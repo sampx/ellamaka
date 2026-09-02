@@ -220,6 +220,10 @@ export interface DshWebHost {
   readonly mountPath: "/dsh"
   /** The VirtualWebServer the official web profile registered its routes on. */
   readonly webServer: VirtualWebServer
+  /** The host context the dsh tree mounted onto (hot-reload composition). */
+  readonly ctx: Context
+  /** The root include entry the boot composition mounted. */
+  readonly includeEntry: Entry
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -599,6 +603,8 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
   return {
     mountPath: DSH_MOUNT_PREFIX,
     webServer: virtualWebServer,
+    ctx: host.ctx!,
+    includeEntry: host.includeEntry!,
     // Dispose the VirtualWebServer first (closes every upgrade socket it
     // dispatched, per DESIGN-dsh-poc §2.1 item 10) before unmounting the
     // Loader, so Node closeAllConnections() does not strand raw WebSockets.
@@ -622,8 +628,8 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
  * @param options - home, port, and optional prepare hook.
  * @returns a {@link DshHost} handle.
  */
-export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise<DshHost> {
-  return mountProfile(ctx, {
+export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise<DshToolsHost> {
+  const host = await mountProfile(ctx, {
     ...opts,
     profileName: TOOLS_PROFILE_NAME,
     requireWebServer: false,
@@ -635,6 +641,7 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
       ...(opts.extraPatches ?? []),
     ],
   })
+  return { ...host, ctx, includeEntry: host.includeEntry! }
 }
 
 /**
@@ -650,6 +657,8 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
   return {
     mountPath: host.mountPath,
     webServer: host.webServer,
+    ctx: host.ctx!,
+    includeEntry: host.includeEntry!,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()
@@ -669,6 +678,8 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
 export interface DshToolsHost extends DshHost {
   /** The cordis context backing the tool container. */
   readonly ctx: Context
+  /** The root include entry the boot composition mounted. */
+  readonly includeEntry: Entry
 }
 
 export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> {
@@ -679,6 +690,7 @@ export async function bootDshTools(opts: DshHostOptions): Promise<DshToolsHost> 
     port: host.port,
     url: host.url,
     ctx,
+    includeEntry: host.includeEntry!,
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()

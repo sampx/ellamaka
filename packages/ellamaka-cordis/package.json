@@ -17,7 +17,8 @@
     "./plugins": "./src/plugins/store.ts",
     "./plugins/compose": "./src/plugins/compose.ts",
     "./plugins/installer": "./src/plugins/installer.ts",
-    "./plugins/resolver": "./src/plugins/resolver.ts"
+    "./plugins/resolver": "./src/plugins/resolver.ts",
+    "./plugins/runtime": "./src/plugins/runtime.ts"
   },
   "files": [
     "dist"

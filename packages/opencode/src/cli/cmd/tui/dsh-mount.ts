@@ -71,9 +71,25 @@ export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<Dsh
       runtime,
     })
     ;(globalThis as Record<string, unknown>)[CONTAINER_KEY] = hub.ctx
+
+    // Plugin Runtime Service (D-02): the TUI hosts a single tool container;
+    // the watcher replays store changes into it. A degraded watcher never
+    // breaks the TUI.
+    let pluginService: { stop(): Promise<void> } | undefined
+    try {
+      const { startDshPluginService } = await import("@wopal/ellamaka-cordis/plugins/runtime")
+      pluginService = startDshPluginService({
+        home,
+        containers: [{ profile: "ellamaka-tools", ctx: hub.ctx, includeEntry: host.includeEntry }],
+      })
+    } catch (error) {
+      console.error(`dsh plugin runtime service failed to start: ${(error as Error).message}`)
+    }
+
     return {
       dispose: async () => {
         delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
+        await pluginService?.stop()
         await host.dispose()
         await hub?.dispose()
       },
