@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { createRequire } from "node:module"
@@ -7,7 +7,13 @@ import { createServer, type Server } from "node:http"
 import { once } from "node:events"
 import { connect } from "node:net"
 import { Context } from "@deepseek-ai/cordis"
-import { bootDshWeb, mountDshWeb, mountDshTools, shippedPresetRoot } from "../src/dsh-web"
+import {
+  bootDshWeb,
+  migrateToolsProfileApprovalPatch,
+  mountDshWeb,
+  mountDshTools,
+  shippedPresetRoot,
+} from "../src/dsh-web"
 
 /** Attach a VirtualWebServer to a raw server and return its base URL. */
 async function attachAndListen(webServer: { attach(server: Server): void }) {
@@ -264,6 +270,48 @@ describe("dsh web engine", () => {
  * lightweight per-call context without live dsh sessions.
  */
 describe("dsh tools profile", () => {
+  test("approval patch migration removes only the obsolete host row", () => {
+    const input = [
+      "# user comment",
+      "- { id: user-questions, disabled: true }",
+      "- { id: approval, disabled: true }",
+      "- { id: custom-plugin, disabled: true }",
+      "",
+    ].join("\n")
+
+    expect(migrateToolsProfileApprovalPatch(input)).toBe(
+      [
+        "# user comment",
+        "- { id: user-questions, disabled: true }",
+        "- { id: custom-plugin, disabled: true }",
+        "",
+      ].join("\n"),
+    )
+  })
+
+  test("mountDshTools migrates a persisted legacy profile and composes approval", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const seedCtx = new Context()
+    const seedHost = await mountDshTools(seedCtx, { home, port: 0 })
+    await seedHost.dispose()
+    await seedCtx.fiber.dispose()
+
+    const patchPath = join(home, "profiles", "ellamaka-tools", "cordis.patch.yml")
+    const current = readFileSync(patchPath, "utf-8")
+    writeFileSync(patchPath, `${current}\n- { id: approval, disabled: true }\n# user-tail\n`)
+
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+    try {
+      expect(readFileSync(patchPath, "utf-8")).not.toContain("id: approval, disabled: true")
+      expect(readFileSync(patchPath, "utf-8")).toContain("# user-tail")
+      expect(ctx.get("approval")).toBeDefined()
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
+
   test("mountDshTools mounts the tool profile on a context and disposes cleanly", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
     const ctx = new Context()
@@ -360,6 +408,41 @@ describe("dsh tools profile", () => {
       })
       expect(denied.isError).toBe(true)
       expect(denied.error?.info?.code).toBe("FS_SANDBOX_DENIED")
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+    }
+  }, 60_000)
+
+  test("read-only session mode denies write inside the workspace", async () => {
+    const home = mkdtempSync(join(tmpdir(), "dsh-tools-host-"))
+    const workspace = mkdtempSync(join(tmpdir(), "dsh-tools-readonly-ws-"))
+    const target = join(workspace, "forbidden.txt")
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home, port: 0 })
+
+    try {
+      const tools = ctx.get("tools") as {
+        execute(exec: unknown): Promise<{
+          isError: boolean
+          error?: { info?: { code?: string } }
+        }>
+      }
+      const session = {
+        header: { id: "tools-readonly-session", cwd: workspace },
+        events: [{ type: "sandbox/mode", data: { mode: "read-only" } }],
+      }
+      const result = await tools.execute({
+        callId: "tools-readonly-write",
+        name: "write",
+        arguments: { file_path: target, content: "must not exist" },
+        signal: new AbortController().signal,
+        agent: { session },
+      })
+
+      expect(result.isError).toBe(true)
+      expect(result.error?.info?.code).toBe("FS_SANDBOX_DENIED")
+      expect(existsSync(target)).toBe(false)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()

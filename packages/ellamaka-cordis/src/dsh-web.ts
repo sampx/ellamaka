@@ -184,6 +184,17 @@ const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profi
 - { id: repeat-tool-reminder, disabled: true }
 `
 
+// Revision 1 migration: older host-seeded tool profiles disabled approval.
+// The profile patch is otherwise user-owned and must never be overwritten, so
+// migrate only this exact obsolete host row and preserve every other byte.
+const LEGACY_APPROVAL_DISABLED_ROW = "- { id: approval, disabled: true }"
+
+export function migrateToolsProfileApprovalPatch(content: string): string {
+  const lines = content.split("\n")
+  const next = lines.filter((line) => line.trim() !== LEGACY_APPROVAL_DISABLED_ROW)
+  return next.length === lines.length ? content : next.join("\n")
+}
+
 /** A handle to a mounted dsh engine. */
 export interface DshHost {
   /** The port the dsh native webserver bound; absent when no webserver mounts. */
@@ -384,6 +395,9 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
         .trim()
       if (stripped === "[]") {
         writeFileSync(patchPath, TOOLS_PROFILE_PATCH)
+      } else {
+        const migrated = migrateToolsProfileApprovalPatch(current)
+        if (migrated !== current) writeFileSync(patchPath, migrated)
       }
     } catch {
       writeFileSync(patchPath, TOOLS_PROFILE_PATCH)
