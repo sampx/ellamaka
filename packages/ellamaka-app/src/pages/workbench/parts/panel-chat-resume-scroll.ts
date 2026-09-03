@@ -16,6 +16,12 @@ const INTERACTIVE_END_TARGETS = [
   '[data-component="prompt-input"]',
 ].join(", ")
 
+const TRANSCRIPT_NAVIGATOR_CONTROLS = [
+  '[data-slot="chat-prompt-item"]',
+  '[data-slot="chat-prompt-tick"]',
+  '[data-component="chat-prompt-directory-trigger"]',
+].join(", ")
+
 export type ChatTranscriptNavigation = "first" | "previous" | "next" | "latest"
 
 /**
@@ -49,6 +55,11 @@ export function chatTranscriptNavigation(event: KeyboardEvent): ChatTranscriptNa
   // browser caret/page shortcut; any text or attachment keeps the editor's
   // native behavior.
   if (prompt) return prompt.textContent?.trim() ? undefined : action
+
+  // Prompt-directory buttons intentionally retain focus after a jump. They
+  // are navigation controls, not an editor, so the same shortcut must remain
+  // available without requiring the user to click the transcript first.
+  if (target instanceof HTMLElement && target.closest(TRANSCRIPT_NAVIGATOR_CONTROLS)) return action
 
   if (target instanceof HTMLElement && target.closest(INTERACTIVE_END_TARGETS)) return undefined
 

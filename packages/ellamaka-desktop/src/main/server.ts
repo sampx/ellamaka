@@ -2,7 +2,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
-import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
+import { WSL_ENABLED_KEY } from "./constants"
 import { getUserShell, loadShellEnv, mergeShellEnv, resolveShellPath } from "./shell-env"
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
@@ -46,20 +46,6 @@ type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
-}
-
-export function getDefaultServerUrl(): string | null {
-  const value = getStore().get(DEFAULT_SERVER_URL_KEY)
-  return typeof value === "string" ? value : null
-}
-
-export function setDefaultServerUrl(url: string | null) {
-  if (url) {
-    getStore().set(DEFAULT_SERVER_URL_KEY, url)
-    return
-  }
-
-  getStore().delete(DEFAULT_SERVER_URL_KEY)
 }
 
 export function getWslConfig(): WslConfig {

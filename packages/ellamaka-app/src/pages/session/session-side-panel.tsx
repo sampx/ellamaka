@@ -20,7 +20,6 @@ import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
@@ -49,7 +48,6 @@ export function SessionSidePanel(props: {
 }) {
   const layout = useLayout()
   const platform = usePlatform()
-  const settings = useSettings()
   const sync = useSync()
   const file = useFile()
   const language = useLanguage()
@@ -58,10 +56,8 @@ export function SessionSidePanel(props: {
   const { sessionKey, tabs, view, params } = useSessionLayout()
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
-  const desktopV2 = () => platform.platform === "desktop" && settings.general.newLayoutDesigns()
-  // Legacy file-tree setting was removed; the previous default (false on
-  // desktop v2) keeps the same shown/fileOpen behavior.
-  const shown = createMemo(() => !desktopV2())
+  const desktopWorkbench = () => platform.platform === "desktop"
+  const shown = createMemo(() => !desktopWorkbench())
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const fileOpen = createMemo(() => isDesktop() && shown() && layout.fileTree.opened())
@@ -205,7 +201,7 @@ export function SessionSidePanel(props: {
   })
 
   return (
-    <Show when={isDesktop() && !(settings.general.newLayoutDesigns() && !params.id)}>
+    <Show when={isDesktop() && params.id}>
       <aside
         id="review-panel"
         aria-label={language.t("session.panel.reviewAndFiles")}

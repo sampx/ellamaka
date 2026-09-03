@@ -326,20 +326,11 @@ export const dict = {
   "dialog.server.add.username": "Kullanıcı adı (isteğe bağlı)",
   "dialog.server.add.password": "Şifre (isteğe bağlı)",
   "dialog.server.edit.title": "Sunucuyu düzenle",
-  "dialog.server.default.title": "Varsayılan sunucu",
-  "dialog.server.default.description":
-    "Uygulama başlatıldığında yerel sunucu başlatmak yerine bu sunucuya bağlan. Yeniden başlatma gerektirir.",
-  "dialog.server.default.none": "Sunucu seçilmedi",
-  "dialog.server.default.set": "Mevcut sunucuyu varsayılan olarak ayarla",
-  "dialog.server.default.clear": "Temizle",
   "dialog.server.action.remove": "Sunucuyu kaldır",
 
   "dialog.server.menu.edit": "Düzenle",
-  "dialog.server.menu.default": "Varsayılan olarak ayarla",
-  "dialog.server.menu.defaultRemove": "Varsayılanı kaldır",
   "dialog.server.menu.delete": "Sil",
   "dialog.server.current": "Mevcut Sunucu",
-  "dialog.server.status.default": "Varsayılan",
 
   "dialog.project.edit.title": "Projeyi düzenle",
   "dialog.project.edit.name": "Ad",

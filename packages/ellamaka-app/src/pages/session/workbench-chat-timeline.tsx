@@ -4,7 +4,8 @@ import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { Icon } from "@wopal/ui/icon"
 import { Spinner } from "@wopal/ui/spinner"
 import { useSync } from "@/context/sync"
-import { createRowStabilizer, projectTranscript, type TranscriptRow } from "./chat-transcript"
+import { createRowStabilizer, nearestUserTurnID, projectTranscript, type TranscriptRow } from "./chat-transcript"
+import { resolveTurnAnchor } from "./turn-anchor"
 import {
   ChatTurnFrame,
   CompactionDivider,
@@ -42,6 +43,7 @@ export type MessageTimelineScrollPort = {
 
 export type UserMessageNavigation = "first" | "previous" | "next"
 export type UserMessageNavigator = (direction: UserMessageNavigation) => boolean
+export type LatestScrollNavigator = () => void
 
 export type WorkbenchChatTimelineProps = {
   sessionID: string
@@ -68,9 +70,12 @@ export type WorkbenchChatTimelineProps = {
   activeUserMessageIDOverride?: string
   /** Exposes the timeline-aware user-message navigator to the owning panel. */
   onUserMessageNavigator?: (navigator: UserMessageNavigator | undefined) => void
+  /** Exposes a virtualizer-aware latest-output navigator to the owning panel. */
+  onLatestScrollNavigator?: (navigator: LatestScrollNavigator | undefined) => void
   /** Scroll port callbacks (mirrors the official MessageTimeline contract). */
   setScrollRef?: (el: HTMLDivElement | undefined) => void
   setContentRef?: (el: HTMLDivElement) => void
+  onAutoScroll?: () => void
   onScheduleScrollState?: (el: HTMLDivElement) => void
   onUserScroll?: () => void
   onHistoryScroll?: () => void
@@ -294,6 +299,10 @@ function TranscriptRowView(props: {
     const r = row()
     return r.type === "error" ? r : undefined
   }
+  const compactionRow = () => {
+    const r = row()
+    return r.type === "compaction" ? r : undefined
+  }
   const metaPartID = createMemo(() => assistantRow()?.metaPartID)
   return (
     <ChatTurnFrame turnID={row().turnID}>
@@ -303,6 +312,17 @@ function TranscriptRowView(props: {
         data-turn-id={row().turnID}
         data-active={row().turnID === activeUserMessageID()}
       >
+        <Show when={compactionRow()}>
+          {(current) => (
+            <Index each={current().parts}>
+              {(part) => (
+                <Show when={part().id} keyed>
+                  <CompactionDivider part={part()} />
+                </Show>
+              )}
+            </Index>
+          )}
+        </Show>
         <Show when={userRow()}>
           {(current) => (
             <UserMessageBlock
@@ -544,17 +564,90 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
 
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
   const [scrollTop, setScrollTop] = createSignal(0)
+  const [jumpTargetTurnID, setJumpTargetTurnID] = createSignal<string | undefined>()
+  let jumpHistorySuppressUntil = 0
   let virtualizer: VirtualizerHandle | undefined
   let pointerScrollPending = false
+  let pointerScrollMoved = false
+  let latestScrollFrame: number | undefined
+
+  const cancelLatestScroll = () => {
+    if (latestScrollFrame === undefined) return
+    cancelAnimationFrame(latestScrollFrame)
+    latestScrollFrame = undefined
+  }
+
+  const scrollToLatest: LatestScrollNavigator = () => {
+    cancelLatestScroll()
+    if (typeof virtualizer?.measure === "function") virtualizer.measure()
+
+    let passes = 0
+    const pin = () => {
+      const el = scroller()
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+      props.onScheduleScrollState?.(el)
+      passes += 1
+      if (passes >= 8) {
+        latestScrollFrame = undefined
+        return
+      }
+      latestScrollFrame = requestAnimationFrame(pin)
+    }
+    pin()
+  }
+
+  const viewportRowKey = () => {
+    const root = scroller()
+    if (!root) return undefined
+
+    const viewport = root.getBoundingClientRect()
+    const rows = Array.from(root.querySelectorAll<HTMLElement>("[data-row-type][data-turn-id]"))
+    const visible = rows.find((row) => {
+      const rect = row.getBoundingClientRect()
+      return rect.bottom > viewport.top + 1 && rect.top < viewport.bottom
+    })
+    return visible?.dataset.rowKey
+  }
 
   // Derive the active turn from the current viewport anchor. Prefer the
-  // Virtualizer's findItemIndex(viewport scrollTop); fall back to a row-height
-  // estimate when the Virtualizer is not available (e.g. test seam).
+  // mounted DOM anchor when possible so the directly-rendered live tail is
+  // included. The Virtualizer index only covers virtual history and therefore
+  // cannot identify the active user message while a turn is streaming.
   const activeUserMessageID = createMemo(() => {
     if (props.activeUserMessageIDOverride) return props.activeUserMessageIDOverride
+    // Keep the memo reactive to scrolling even when the DOM-anchor branch is
+    // available. The anchor is measured imperatively, so without this read a
+    // PgUp/PgDn event could reuse the previous viewport's active turn.
+    const viewportOffset = scrollTop()
+    // An in-flight programmatic jump owns the anchor until the scroll lands;
+    // deriving it from the stale viewport made rapid PgUp repeat or skip.
+    const pendingJump = jumpTargetTurnID()
+    if (pendingJump) return pendingJump
+    const direct = directRows()
+    // Streaming rows live outside the Virtualizer. At the bottom, their
+    // newest user row is the authoritative anchor and avoids forcing a layout
+    // measurement on every token delta.
+    if (props.scroll.bottom) {
+      for (let i = direct.length - 1; i >= 0; i--) {
+        if (direct[i]?.type === "user") return direct[i].turnID
+      }
+    }
+
+    const allRows = projection().rows
+    // When the user has scrolled up, a running direct row can still be visible
+    // even though the virtual history's index points at the preceding turn.
+    // Consult the mounted anchor only in that mixed direct/virtual state.
+    if (direct.some((row) => row.type === "user")) {
+      const domRowKey = viewportRowKey()
+      if (domRowKey) {
+        const nearestUser = nearestUserTurnID(allRows, domRowKey)
+        if (nearestUser) return nearestUser
+      }
+    }
+
     const rows = virtualRows()
     if (rows.length === 0) return visibleUserMessages()[0]?.id
-    const viewportOffset = scrollTop()
     let candidateIndex = 0
     if (virtualizer && typeof virtualizer.findItemIndex === "function") {
       candidateIndex = virtualizer.findItemIndex(viewportOffset)
@@ -588,49 +681,91 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     if (event.button !== undefined && event.button !== 0) return
     if (nestedScrollable(event.target)) return
     pointerScrollPending = true
+    pointerScrollMoved = false
+  }
+
+  const markPointerScroll = () => {
+    if (!pointerScrollPending) return
+    pointerScrollMoved = true
   }
 
   const stopPointerScroll = () => {
     pointerScrollPending = false
+    pointerScrollMoved = false
   }
+
+  // A drag can end outside the scroller where pointerup does not bubble back
+  // to it; window-level release events clear the pending gesture so a later
+  // streaming auto-scroll is never mistaken for user scrolling.
+  const endPointerScroll = (event: PointerEvent) => {
+    if (!pointerScrollPending) return
+    if (event.target instanceof Element && scroller()?.contains(event.target)) return
+    stopPointerScroll()
+  }
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    window.addEventListener("pointerup", endPointerScroll)
+    window.addEventListener("pointercancel", endPointerScroll)
+    onCleanup(() => {
+      window.removeEventListener("pointerup", endPointerScroll)
+      window.removeEventListener("pointercancel", endPointerScroll)
+    })
+  })
 
   const pauseForWheelScroll = (event: WheelEvent) => {
     if (event.deltaY >= 0 || nestedScrollable(event.target)) return
+    cancelLatestScroll()
     props.onUserScroll?.()
   }
 
   const handleScroll = () => {
     const el = scroller()
     if (!el) return
+    props.onAutoScroll?.()
     setScrollTop(el.scrollTop)
+    if (jumpTargetTurnID()) setJumpTargetTurnID(undefined)
     props.onScheduleScrollState?.(el)
     props.onHistoryScroll?.()
-    if (pointerScrollPending) {
+    if (pointerScrollPending && pointerScrollMoved) {
       pointerScrollPending = false
+      pointerScrollMoved = false
+      cancelLatestScroll()
       props.onUserScroll?.()
     }
-    if (el.scrollTop < 200 && props.historyMore && !props.historyLoading) {
+    if (
+      el.scrollTop < 200 &&
+      props.historyMore &&
+      !props.historyLoading &&
+      Date.now() > jumpHistorySuppressUntil
+    ) {
       const task = props.loadOlder
       if (typeof task === "function") void task()
     }
   }
 
   const jumpToPrompt = (userMessageID: string) => {
+    cancelLatestScroll()
     // Pause auto-scroll so the jump is not overridden by bottom-following.
     props.onPauseAutoScroll?.()
+    setJumpTargetTurnID(userMessageID)
+    // A jump can land near the top where handleScroll would page in older
+    // history mid-flight. Virtua's shift-mode reflow during that load is a
+    // visible second jump, so hold the loader off until the jump settles.
+    jumpHistorySuppressUntil = Date.now() + 400
     const index = virtualRows().findIndex((row) => row.turnID === userMessageID)
     if (index !== -1 && virtualizer) {
+      // Re-measure mounted rows first so scrollToIndex works from real
+      // heights instead of the 60px estimate; the stale-estimate second
+      // correction after the jump was the visible full-viewport flicker.
+      if (typeof virtualizer.measure === "function") virtualizer.measure()
       virtualizer.scrollToIndex(index, { align: "start" })
-      // Virtua mounts rows asynchronously after the scroll; give it one frame
-      // before checking the DOM anchor so the first click lands too.
-      requestAnimationFrame(() => {
-        const anchor = document.querySelector(`[data-turn-id="${userMessageID}"]`)
-        anchor?.scrollIntoView({ block: "start" })
-      })
       return
     }
-    // Fall back to the live tail DOM anchor.
-    const anchor = document.querySelector(`[data-turn-id="${userMessageID}"]`)
+    // Fall back to the live tail DOM anchor, scoped to this panel's scroller.
+    // A document-wide query can match the same turn in another keep-alive
+    // panel and scroll the wrong container.
+    const anchor = resolveTurnAnchor(scroller(), userMessageID)
     anchor?.scrollIntoView({ block: "start" })
   }
 
@@ -690,6 +825,15 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     onCleanup(() => register(undefined))
   })
 
+  createEffect(() => {
+    const register = props.onLatestScrollNavigator
+    if (!register) return
+    register(scrollToLatest)
+    onCleanup(() => register(undefined))
+  })
+
+  onCleanup(cancelLatestScroll)
+
   const syncChild = (childID: string) => {
     void sync.session.sync(childID)
   }
@@ -730,6 +874,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
         ref={bindScroller}
         onScroll={handleScroll}
         on:pointerdown={startPointerScroll}
+        on:pointermove={markPointerScroll}
         on:pointerup={stopPointerScroll}
         on:pointercancel={stopPointerScroll}
         on:wheel={pauseForWheelScroll}

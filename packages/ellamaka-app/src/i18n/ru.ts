@@ -321,20 +321,11 @@ export const dict = {
   "dialog.server.add.username": "Имя пользователя (необязательно)",
   "dialog.server.add.password": "Пароль (необязательно)",
   "dialog.server.edit.title": "Редактировать сервер",
-  "dialog.server.default.title": "Сервер по умолчанию",
-  "dialog.server.default.description":
-    "Подключаться к этому серверу при запуске приложения вместо запуска локального сервера. Требуется перезапуск.",
-  "dialog.server.default.none": "Сервер не выбран",
-  "dialog.server.default.set": "Установить текущий сервер по умолчанию",
-  "dialog.server.default.clear": "Очистить",
   "dialog.server.action.remove": "Удалить сервер",
 
   "dialog.server.menu.edit": "Редактировать",
-  "dialog.server.menu.default": "Сделать по умолчанию",
-  "dialog.server.menu.defaultRemove": "Удалить по умолчанию",
   "dialog.server.menu.delete": "Удалить",
   "dialog.server.current": "Текущий сервер",
-  "dialog.server.status.default": "По умолч.",
 
   "dialog.project.edit.title": "Редактировать проект",
   "dialog.project.edit.name": "Название",

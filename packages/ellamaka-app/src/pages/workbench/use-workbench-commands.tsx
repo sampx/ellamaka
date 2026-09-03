@@ -7,6 +7,7 @@ import { useWorkbenchState } from "@/pages/workbench/view-store"
 import { scopeName, scopePath } from "@/pages/workbench/workbench-scope"
 import { usePlatform } from "@/context/platform"
 import { createEffect, createMemo, on } from "solid-js"
+import { isWorkbenchTabCloseProtected } from "./workbench-keyboard"
 
 const withCategory = (category: string) => {
   return (option: Omit<CommandOption, "category">): CommandOption => ({
@@ -113,7 +114,15 @@ export const useWorkbenchCommands = () => {
     fileCommand({
       id: "tab.close",
       title: language.t("command.tab.close"),
+      keybind: "mod+w",
       onSelect: () => {
+        // Native desktop accelerators trigger this command directly and do
+        // not pass through WorkbenchShell's keydown guard.
+        if (dialog.active) return
+        if (isWorkbenchTabCloseProtected(wb.activeTab())) {
+          wb.setStatusMessage(language.t("workbench.status.tabPinnedProtected", { default: "Pinned tab protected from closing" }))
+          return
+        }
         if (actions.canExecuteActivePanelAction("tab.close")) {
           actions.executeActivePanelAction("tab.close")
           return

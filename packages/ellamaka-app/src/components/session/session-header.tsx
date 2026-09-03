@@ -155,13 +155,11 @@ export function SessionHeader() {
   })
   const hotkey = createMemo(() => command.keybind("file.open"))
   const os = createMemo(() => detectOS(platform))
-  const isDesktopV2 = createMemo(() => platform.platform === "desktop" && settings.general.newLayoutDesigns())
-  const search = createMemo(() => (isDesktopV2() ? false : true))
-  // Legacy file-tree setting was removed; the previous default (false on
-  // desktop v2) keeps the same tree visibility behavior.
-  const tree = createMemo(() => !isDesktopV2())
-  const term = createMemo(() => (isDesktopV2() ? settings.general.showTerminal() : true))
-  const status = createMemo(() => (isDesktopV2() ? false : true))
+  const desktopWorkbench = createMemo(() => platform.platform === "desktop")
+  const search = createMemo(() => !desktopWorkbench())
+  const tree = createMemo(() => !desktopWorkbench())
+  const term = createMemo(() => (desktopWorkbench() ? settings.general.showTerminal() : true))
+  const status = createMemo(() => !desktopWorkbench())
 
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
     finder: true,
@@ -324,7 +322,7 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <Show
-              when={isDesktopV2}
+              when={desktopWorkbench}
               fallback={
                 <div class="flex items-center gap-2">
                   <Show when={projectDirectory()}>

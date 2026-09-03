@@ -334,20 +334,11 @@ export const dict = {
   "dialog.server.add.password": "Пароль (необов'язково)",
   "dialog.server.add.passwordPlaceholder": "пароль",
   "dialog.server.edit.title": "Редагувати сервер",
-  "dialog.server.default.title": "Сервер за замовчуванням",
-  "dialog.server.default.description":
-    "Підключатися до цього сервера під час запуску програми замість запуску локального сервера. Потребує перезапуску.",
-  "dialog.server.default.none": "Сервер не вибрано",
-  "dialog.server.default.set": "Встановити поточний сервер як сервер за замовчуванням",
-  "dialog.server.default.clear": "Очистити",
   "dialog.server.action.remove": "Видалити сервер",
 
   "dialog.server.menu.edit": "Редагувати",
-  "dialog.server.menu.default": "Встановити за замовчуванням",
-  "dialog.server.menu.defaultRemove": "Видалити за замовчуванням",
   "dialog.server.menu.delete": "Видалити",
   "dialog.server.current": "Поточний сервер",
-  "dialog.server.status.default": "За замовчуванням",
   "server.row.noUsername": "без імені користувача",
 
   "dialog.project.edit.title": "Редагувати проєкт",

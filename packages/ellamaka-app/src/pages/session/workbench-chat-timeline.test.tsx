@@ -809,10 +809,115 @@ describe("WorkbenchChatTimeline", () => {
 
     const scroller = host.querySelector("[data-component='chat-scroller']") as HTMLElement
     scroller.dispatchEvent(new Event("pointerdown", { bubbles: true }))
+    scroller.dispatchEvent(new Event("pointermove", { bubbles: true }))
     scroller.scrollTop = 100
     scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
 
     expect(userScrolled).toBe(true)
+    host.remove()
+  })
+
+  test("does not pause bottom-following for a click followed by an automatic scroll", () => {
+    let userScrolled = false
+    withSync([userMessage("u1")], [], { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: [userMessage("u1")],
+          onUserScroll: () => {
+            userScrolled = true
+          },
+        })}
+      />
+    ))
+
+    const scroller = host.querySelector("[data-component='chat-scroller']") as HTMLElement
+    scroller.dispatchEvent(new Event("pointerdown", { bubbles: true }))
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
+
+    expect(userScrolled).toBe(false)
+    host.remove()
+  })
+
+  test("clears a pending pointer gesture when the drag is released outside the scroller", () => {
+    let userScrolled = false
+    withSync([userMessage("u1")], [], { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: [userMessage("u1")],
+          onUserScroll: () => {
+            userScrolled = true
+          },
+        })}
+      />
+    ))
+
+    const scroller = host.querySelector("[data-component='chat-scroller']") as HTMLElement
+    scroller.dispatchEvent(new Event("pointerdown", { bubbles: true }))
+    scroller.dispatchEvent(new Event("pointermove", { bubbles: true }))
+    // The drag ends over panel chrome outside the scroller, so the release
+    // never bubbles back through the scroller's own pointerup handler.
+    window.dispatchEvent(new Event("pointerup"))
+    scroller.scrollTop = 100
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
+
+    expect(userScrolled).toBe(false)
+    host.remove()
+  })
+
+  test("forwards every scroller scroll to the follow controller", () => {
+    let observed = 0
+    withSync([userMessage("u1")], [], { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: [userMessage("u1")],
+          onAutoScroll: () => {
+            observed += 1
+          },
+        })}
+      />
+    ))
+
+    const scroller = host.querySelector("[data-component='chat-scroller']") as HTMLElement
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }))
+
+    expect(observed).toBe(1)
+    host.remove()
+  })
+
+  test("exposes a latest navigator that measures virtual history before pinning", () => {
+    let latest: (() => void) | undefined
+    let captured: { measure?: () => void } | undefined
+    let measured = 0
+    withSync([userMessage("u1")], [], { type: "idle" })
+
+    const host = mount(() => (
+      <WorkbenchChatTimeline
+        {...baseProps({
+          userMessages: [userMessage("u1")],
+          virtualize: false,
+          onVirtualizer: (handle) => {
+            captured = handle as unknown as { measure?: () => void }
+          },
+          onLatestScrollNavigator: (navigator) => {
+            latest = navigator
+          },
+        })}
+      />
+    ))
+
+    expect(latest).toBeDefined()
+    captured!.measure = () => {
+      measured += 1
+    }
+    latest!()
+
+    expect(measured).toBe(1)
     host.remove()
   })
 

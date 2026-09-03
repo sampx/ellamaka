@@ -7,12 +7,10 @@ import { useMutation, useQueryClient } from "@tanstack/solid-query"
 import { showToast } from "@wopal/ui/toast"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
+import { ServerConnection, useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { type ServerHealth } from "@/utils/server-health"
 import { useQueryOptions } from "@/context/server-sync"
@@ -56,53 +54,6 @@ const listServersByHealth = (
   })
 }
 
-const useDefaultServerKey = (
-  get: (() => string | Promise<string | null | undefined> | null | undefined) | undefined,
-) => {
-  const [state, setState] = createStore({
-    url: undefined as string | undefined,
-    tick: 0,
-  })
-
-  createEffect(() => {
-    state.tick
-    let dead = false
-    const result = get?.()
-    if (!result) {
-      setState("url", undefined)
-      onCleanup(() => {
-        dead = true
-      })
-      return
-    }
-
-    if (result instanceof Promise) {
-      void result.then((next) => {
-        if (dead) return
-        setState("url", next ? normalizeServerUrl(next) : undefined)
-      })
-      onCleanup(() => {
-        dead = true
-      })
-      return
-    }
-
-    setState("url", normalizeServerUrl(result))
-    onCleanup(() => {
-      dead = true
-    })
-  })
-
-  return {
-    key: () => {
-      const u = state.url
-      if (!u) return
-      return ServerConnection.key({ type: "http", http: { url: u } })
-    },
-    refresh: () => setState("tick", (value) => value + 1),
-  }
-}
-
 const useMcpToggleMutation = () => {
   const sync = useSync()
   const sdk = useSDK()
@@ -136,10 +87,8 @@ const useMcpToggleMutation = () => {
 
 type ServerStatusState = {
   servers: () => ServerStatusItem[]
-  defaultKey: () => ServerConnection.Key | undefined
   ariaLabel: string
   serversLabel: string
-  defaultLabel: string
   manageLabel: string
   onManage: () => void
 }
@@ -156,7 +105,6 @@ type ServerStatusItem = {
 export function StatusPopoverServerBody() {
   const servers = useServers()
   const server = useServer()
-  const platform = usePlatform()
   const dialog = useDialog()
   const language = useLanguage()
   const location = useLocation()
@@ -170,7 +118,6 @@ export function StatusPopoverServerBody() {
   })
 
   const sortedServers = createMemo(() => listServersByHealth(servers.list(), server.key, servers.health))
-  const defaultServer = useDefaultServerKey(platform.getDefaultServer)
   const serverItems = createMemo(() =>
     sortedServers().map((conn) => {
       const key = ServerConnection.key(conn)
@@ -193,16 +140,14 @@ export function StatusPopoverServerBody() {
     <ServerStatusPopoverView
       state={{
         servers: serverItems,
-        defaultKey: defaultServer.key,
         ariaLabel: language.t("status.popover.ariaLabel"),
         serversLabel: language.t("status.popover.tab.servers"),
-        defaultLabel: language.t("common.default"),
         manageLabel: language.t("status.popover.action.manageServers"),
         onManage: () => {
           const run = ++dialogRun
           void import("./dialog-select-server").then((x) => {
             if (dialogDead || dialogRun !== run) return
-            dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+            dialog.show(() => <x.DialogSelectServer />)
           })
         },
       }}
@@ -263,13 +208,6 @@ function ServerStatusList(props: { state: ServerStatusState }) {
                   class="flex items-center gap-2 w-full min-w-0"
                   nameClass="text-14-regular text-text-base truncate"
                   versionClass="text-12-regular text-text-weak truncate"
-                  badge={
-                    <Show when={item.key === props.state.defaultKey()}>
-                      <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
-                        {props.state.defaultLabel}
-                      </span>
-                    </Show>
-                  }
                 >
                   <div class="flex-1" />
                   <Show when={item.active}>
@@ -293,7 +231,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const sync = useSync()
   const servers = useServers()
   const server = useServer()
-  const platform = usePlatform()
   const dialog = useDialog()
   const language = useLanguage()
   const location = useLocation()
@@ -319,7 +256,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   })
   const sortedServers = createMemo(() => listServersByHealth(servers.list(), server.key, servers.health))
   const toggleMcp = useMcpToggleMutation()
-  const defaultServer = useDefaultServerKey(platform.getDefaultServer)
   const mcpNames = createMemo(() => Object.keys(sync.data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
   const mcpStatus = (name: string) => sync.data.mcp?.[name]?.status
   const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
@@ -391,13 +327,6 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                         class="flex items-center gap-2 w-full min-w-0"
                         nameClass="text-14-regular text-text-base truncate"
                         versionClass="text-12-regular text-text-weak truncate"
-                        badge={
-                          <Show when={key === defaultServer.key()}>
-                            <span class="text-11-regular text-text-base bg-surface-base px-1.5 py-0.5 rounded-md">
-                              {language.t("common.default")}
-                            </span>
-                          </Show>
-                        }
                       >
                         <div class="flex-1" />
                         <Show when={server.current && key === ServerConnection.key(server.current)}>
@@ -416,7 +345,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                   const run = ++dialogRun
                   void import("./dialog-select-server").then((x) => {
                     if (dialogDead || dialogRun !== run) return
-                    dialog.show(() => <x.DialogSelectServer />, defaultServer.refresh)
+                    dialog.show(() => <x.DialogSelectServer />)
                   })
                 }}
               >

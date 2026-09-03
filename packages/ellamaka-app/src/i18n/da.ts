@@ -320,20 +320,11 @@ export const dict = {
   "dialog.server.add.username": "Brugernavn (valgfrit)",
   "dialog.server.add.password": "Adgangskode (valgfrit)",
   "dialog.server.edit.title": "Rediger server",
-  "dialog.server.default.title": "Standardserver",
-  "dialog.server.default.description":
-    "Forbind til denne server ved start af app i stedet for at starte en lokal server. Kræver genstart.",
-  "dialog.server.default.none": "Ingen server valgt",
-  "dialog.server.default.set": "Sæt nuværende server som standard",
-  "dialog.server.default.clear": "Ryd",
   "dialog.server.action.remove": "Fjern server",
 
   "dialog.server.menu.edit": "Rediger",
-  "dialog.server.menu.default": "Sæt som standard",
-  "dialog.server.menu.defaultRemove": "Fjern som standard",
   "dialog.server.menu.delete": "Slet",
   "dialog.server.current": "Nuværende server",
-  "dialog.server.status.default": "Standard",
 
   "dialog.project.edit.title": "Rediger projekt",
   "dialog.project.edit.name": "Navn",

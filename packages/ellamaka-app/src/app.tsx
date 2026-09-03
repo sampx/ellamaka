@@ -97,16 +97,11 @@ function QueryProvider(props: ParentProps) {
 }
 
 function BodyDesignClass() {
-  const settings = useSettings()
-
-  createEffect(() => {
+  onMount(() => {
     if (typeof document === "undefined") return
 
-    const enabled = settings.general.newLayoutDesigns()
-    document.body.classList.toggle("text-12-regular", !enabled)
-    document.body.classList.toggle("font-(family-name:--font-family-text)", enabled)
-    document.body.classList.toggle("text-[13px]", enabled)
-    document.body.classList.toggle("font-[440]", enabled)
+    document.body.classList.remove("text-12-regular")
+    document.body.classList.add("font-(family-name:--font-family-text)", "text-[13px]", "font-[440]")
   })
 
   return null
@@ -217,24 +212,34 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
 
   // performs repeated health check with a grace period for
   // non-http connections, otherwise fails instantly
-  const [startupHealthCheck, healthCheckActions] = createResource(() =>
-    props.disableHealthCheck
-      ? true
-      : Effect.gen(function* () {
-          if (!server.current) return true
-          const { http, type } = server.current
+  const [startupHealthCheck, healthCheckActions] = createResource(
+    () => (server.ready() ? server.current : undefined),
+    (connection) =>
+      props.disableHealthCheck
+        ? true
+        : Effect.gen(function* () {
+            if (!connection) return true
+            const { http, type } = connection
 
-          while (true) {
-            const res = yield* Effect.promise(() => checkServerHealth(http))
-            if (res.healthy) return true
-            if (checkMode() === "background" || type === "http") return false
-          }
-        }).pipe(
-          Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
-          Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
-          Effect.runPromise,
-        ),
+            while (true) {
+              const res = yield* Effect.promise(() => checkServerHealth(http))
+              if (res.healthy) return true
+              if (checkMode() === "background" || type === "http") return false
+            }
+          }).pipe(
+            Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
+            Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
+            Effect.runPromise,
+          ),
   )
+
+  createEffect(() => {
+    if (!server.ready() || startupHealthCheck.loading || startupHealthCheck() !== false) return
+    if (!server.restoringSavedSelection()) return
+
+    server.fallbackToDefault()
+    setCheckMode("blocking")
+  })
 
   const [minSplashDone, setMinSplashDone] = createSignal(false)
   onMount(() => {
@@ -242,7 +247,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
     onCleanup(() => clearTimeout(timer))
   })
 
-  const showSplash = () => checkMode() === "blocking" && (!minSplashDone() || startupHealthCheck.loading)
+  const showSplash = () => !server.ready() || (checkMode() === "blocking" && (!minSplashDone() || startupHealthCheck.loading))
 
   return (
     <Show

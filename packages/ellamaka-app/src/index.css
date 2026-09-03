@@ -371,8 +371,8 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
   max-width: min(82%, 64ch);
   padding: 8px 12px;
   border-radius: 6px;
-  border: 1px solid transparent;
-  background: var(--v2-background-bg-base);
+  border: 1px solid var(--border-weaker-base);
+  background: var(--surface-raised-base);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -881,6 +881,35 @@ html[data-color-scheme="light"] .ellamaka-logo-invert {
 
 [data-slot="chat-narrative-meta-duration"] {
   color: var(--text-weaker);
+}
+
+/* Compaction divider: mirrors the TUI's bordered "Compaction" banner — a
+   horizontal rule on both sides of a centered label, rendered as a turn
+   boundary rather than a message bubble. */
+[data-component="chat-compaction"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 14px 0 2px;
+  padding-inline: var(--workbench-chat-content-inset);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+[data-component="chat-compaction"]::before,
+[data-component="chat-compaction"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--border-active) 55%, transparent);
+}
+
+[data-slot="chat-compaction-label"] {
+  flex: none;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: 1.4;
 }
 
 /* stylelint-disable declaration-no-important -- Shiki serializes these code
@@ -1952,9 +1981,7 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   border: none;
   background: transparent;
   cursor: pointer;
-  opacity: 0;
   z-index: 2;
-  transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-component="chat-prompt-directory-trigger"]::after {
@@ -1967,18 +1994,15 @@ html[data-color-scheme="dark"] [data-slot="workbench-markdown-content"] [data-co
   border-radius: 1px;
   background: var(--icon-base);
   box-shadow: 0 5px var(--icon-base), 0 10px var(--icon-base);
-  transition: width 200ms ease, background-color 200ms ease;
-}
-
-[data-component="chat-prompt-directory-trigger"]:hover,
-[data-component="chat-prompt-directory-trigger"]:focus-visible,
-[data-component="chat-prompt-directory-trigger"][data-open="true"] {
-  opacity: 1;
+  opacity: 0.48;
+  transition: width 200ms ease, background-color 200ms ease, opacity 200ms ease;
 }
 
 [data-component="chat-prompt-directory-trigger"]:hover::after,
-[data-component="chat-prompt-directory-trigger"]:focus-visible::after {
+[data-component="chat-prompt-directory-trigger"]:focus-visible::after,
+[data-component="chat-prompt-directory-trigger"][data-open="true"]::after {
   width: 12px;
+  opacity: 1;
   background: var(--icon-strong-base);
   box-shadow: 0 5px var(--icon-strong-base), 0 10px var(--icon-strong-base);
 }

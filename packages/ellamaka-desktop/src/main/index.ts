@@ -18,12 +18,7 @@ import { broadcastSidecarState, registerIpcHandlers, sendDeepLinks, sendMenuComm
 import { exportDebugLogs, initCrashReporter, initLogging, isDebugLogging, setSidecarLogLevelHandler, startNetLog, toggleDebugLogging, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
-import {
-  createSidecarSpawner,
-  getDefaultServerUrl,
-  preferAppEnv,
-  setDefaultServerUrl,
-} from "./server"
+import { createSidecarSpawner, preferAppEnv } from "./server"
 import { SidecarSupervisor } from "./sidecar-supervisor"
 import {
   createLoadingWindow,
@@ -259,8 +254,6 @@ const startWorkbench = (opts: StartWorkbenchOpts = {}) =>
       ),
       getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED, version: getReleaseInfo().displayVersion }),
       consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
-      getDefaultServerUrl: () => getDefaultServerUrl(),
-      setDefaultServerUrl: (url) => setDefaultServerUrl(url),
       getDisplayBackend: async () => null,
       setDisplayBackend: async () => undefined,
       parseMarkdown: async (markdown) => parseMarkdown(markdown),
@@ -503,8 +496,6 @@ const main = Effect.gen(function* () {
       ),
       getWindowConfig: () => ({ updaterEnabled: UPDATER_ENABLED, version: getReleaseInfo().displayVersion }),
       consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
-      getDefaultServerUrl: () => getDefaultServerUrl(),
-      setDefaultServerUrl: (url) => setDefaultServerUrl(url),
       getDisplayBackend: async () => null,
       setDisplayBackend: async () => undefined,
       parseMarkdown: async (markdown) => parseMarkdown(markdown),

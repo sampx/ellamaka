@@ -322,20 +322,11 @@ export const dict = {
   "dialog.server.add.username": "Korisničko ime (opcionalno)",
   "dialog.server.add.password": "Lozinka (opcionalno)",
   "dialog.server.edit.title": "Uredi server",
-  "dialog.server.default.title": "Podrazumijevani server",
-  "dialog.server.default.description":
-    "Poveži se na ovaj server pri pokretanju aplikacije umjesto pokretanja lokalnog servera. Potreban je restart.",
-  "dialog.server.default.none": "Nije odabran server",
-  "dialog.server.default.set": "Postavi trenutni server kao podrazumijevani",
-  "dialog.server.default.clear": "Očisti",
   "dialog.server.action.remove": "Ukloni server",
 
   "dialog.server.menu.edit": "Uredi",
-  "dialog.server.menu.default": "Postavi kao podrazumijevano",
-  "dialog.server.menu.defaultRemove": "Ukloni podrazumijevano",
   "dialog.server.menu.delete": "Izbriši",
   "dialog.server.current": "Trenutni server",
-  "dialog.server.status.default": "Podrazumijevano",
 
   "dialog.project.edit.title": "Uredi projekat",
   "dialog.project.edit.name": "Naziv",

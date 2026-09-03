@@ -69,12 +69,6 @@ export type Platform = {
   /** Fetch override */
   fetch?: typeof fetch
 
-  /** Get the configured default server URL (platform-specific) */
-  getDefaultServer?(): Promise<ServerConnection.Key | null>
-
-  /** Set the default server URL to use on app startup (platform-specific) */
-  setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
-
   /** Get the configured WSL integration (desktop only) */
   getWslEnabled?(): Promise<boolean>
 
@@ -92,12 +86,6 @@ export type Platform = {
 
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
-
-  /** Get whether native pinch/Ctrl-scroll zoom gestures are enabled (desktop only) */
-  getPinchZoomEnabled?(): Promise<boolean> | boolean
-
-  /** Allow native pinch/Ctrl-scroll zoom gestures (desktop only) */
-  setPinchZoomEnabled?(enabled: boolean): Promise<void> | void
 
   /** Run a desktop-only menu action from the app chrome */
   runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void

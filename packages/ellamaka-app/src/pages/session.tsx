@@ -31,7 +31,7 @@ import { Button } from "@wopal/ui/button"
 import { showToast } from "@wopal/ui/toast"
 import { checksum } from "@wopal/ellamaka-core/util/encode"
 import { useLocation, useSearchParams } from "@solidjs/router"
-import { NewSessionDesignView, NewSessionView, SessionHeader } from "@/components/session"
+import { NewSessionDesignView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useServerSync } from "@/context/server-sync"
@@ -59,7 +59,6 @@ import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useLocalPanelActions } from "@/pages/session/use-local-panel-actions"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
-import { shouldUseV2NewSessionPage } from "@/pages/session/new-session-layout"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
@@ -94,7 +93,6 @@ export default function Page() {
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const location = useLocation()
   const { params, sessionKey, tabs, view } = useSessionLayout()
-  const newSessionDesign = createMemo(() => settings.general.newLayoutDesigns())
 
   createEffect(() => {
     if (!prompt.ready()) return
@@ -161,10 +159,9 @@ export default function Page() {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
-  const isV2NewSessionPage = () =>
-    shouldUseV2NewSessionPage({ newLayoutDesigns: newSessionDesign(), sessionID: params.id })
-  const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened() && !isV2NewSessionPage())
-  const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened() && !isV2NewSessionPage())
+  const isNewSessionPage = () => !params.id
+  const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened() && !isNewSessionPage())
+  const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened() && !isNewSessionPage())
   const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
@@ -1640,7 +1637,7 @@ export default function Page() {
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
             "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
               !size.active() && !ui.reviewSnap,
-            "transition-[width]": !isV2NewSessionPage(),
+            "transition-[width]": !isNewSessionPage(),
           }}
           style={{
             width: sessionPanelWidth(),
@@ -1697,14 +1694,12 @@ export default function Page() {
                 </Show>
               </Match>
               <Match when={true}>
-                <Show when={newSessionDesign()} fallback={<NewSessionView worktree={newSessionWorktree()} />}>
-                  <NewSessionDesignView>{composerRegion("inline")}</NewSessionDesignView>
-                </Show>
+                <NewSessionDesignView>{composerRegion("inline")}</NewSessionDesignView>
               </Match>
             </Switch>
           </div>
 
-          <Show when={params.id || !newSessionDesign()}>{composerRegion("dock")}</Show>
+          <Show when={params.id}>{composerRegion("dock")}</Show>
 
           <Show when={desktopReviewOpen()}>
             <div onPointerDown={() => size.start()}>

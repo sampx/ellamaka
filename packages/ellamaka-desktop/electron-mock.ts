@@ -52,6 +52,15 @@ mock.module("electron", () => ({
   nativeTheme: {
     themeSource: "system",
   },
+  net: {
+    fetch: () => Promise.reject(new Error("net mocked for tests")),
+  },
+  nativeImage: {
+    createFromPath: () => ({ isEmpty: () => true }),
+  },
+  protocol: {
+    registerSchemesAsPrivileged: () => {},
+  },
   Notification: class {},
   default: {
     app: {

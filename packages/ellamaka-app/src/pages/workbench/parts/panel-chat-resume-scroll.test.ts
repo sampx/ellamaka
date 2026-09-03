@@ -34,6 +34,18 @@ describe("chatTranscriptNavigation", () => {
     expect(dispatchKeydown(prompt)).toBeUndefined()
   })
 
+  test("keeps navigation available after a prompt-directory jump", () => {
+    const navigator = document.createElement("div")
+    navigator.dataset.component = "chat-prompt-navigator"
+    const item = document.createElement("button")
+    item.dataset.slot = "chat-prompt-item"
+    navigator.appendChild(item)
+    expect(dispatchKeydown(item, { key: "End" })).toBe("latest")
+    expect(dispatchKeydown(item, { key: "PageUp" })).toBe("previous")
+    expect(dispatchKeydown(item, { key: "PageDown" })).toBe("next")
+    navigator.remove()
+  })
+
   test("preserves selection and platform shortcut variants", () => {
     expect(dispatchKeydown(document.createElement("div"), { shiftKey: true })).toBeUndefined()
     expect(dispatchKeydown(document.createElement("div"), { ctrlKey: true })).toBeUndefined()

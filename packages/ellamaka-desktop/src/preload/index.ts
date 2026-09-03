@@ -29,8 +29,6 @@ const api: ElectronAPI = {
   },
   getWindowConfig: () => ipcRenderer.invoke("get-window-config"),
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
-  getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
-  setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
   setDisplayBackend: (backend) => ipcRenderer.invoke("set-display-backend", backend),
   parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),
@@ -77,13 +75,6 @@ const api: ElectronAPI = {
   relaunch: () => ipcRenderer.send("relaunch"),
   getZoomFactor: () => ipcRenderer.invoke("get-zoom-factor"),
   setZoomFactor: (factor) => ipcRenderer.invoke("set-zoom-factor", factor),
-  getPinchZoomEnabled: () => ipcRenderer.invoke("get-pinch-zoom-enabled"),
-  setPinchZoomEnabled: (enabled) => ipcRenderer.invoke("set-pinch-zoom-enabled", enabled),
-  onPinchZoomEnabledChanged: (cb) => {
-    const handler = (_: unknown, enabled: boolean) => cb(enabled)
-    ipcRenderer.on("pinch-zoom-enabled-changed", handler)
-    return () => ipcRenderer.removeListener("pinch-zoom-enabled-changed", handler)
-  },
   onZoomFactorChanged: (cb) => {
     const handler = (_: unknown, factor: number) => cb(factor)
     ipcRenderer.on("zoom-factor-changed", handler)

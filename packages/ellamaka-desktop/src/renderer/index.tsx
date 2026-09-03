@@ -20,7 +20,7 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, onMo
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
-import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
+import { resetZoom, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@wopal/ui/theme"
 import { DesktopRouter } from "./desktop-router"
@@ -208,16 +208,6 @@ const createPlatform = (releaseVersion: () => string): Platform => {
       return fetch(input, init)
     },
 
-    getDefaultServer: async () => {
-      const url = await window.api.getDefaultServerUrl().catch(() => null)
-      if (!url) return null
-      return ServerConnection.Key.make(url)
-    },
-
-    setDefaultServer: async (url: string | null) => {
-      await window.api.setDefaultServerUrl(url)
-    },
-
     getDisplayBackend: async () => {
       return window.api.getDisplayBackend().catch(() => null)
     },
@@ -229,10 +219,6 @@ const createPlatform = (releaseVersion: () => string): Platform => {
     parseMarkdown: (markdown: string) => window.api.parseMarkdownCommand(markdown),
 
     webviewZoom,
-
-    getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
-
-    setPinchZoomEnabled,
 
     runDesktopMenuAction,
 
@@ -300,13 +286,6 @@ listenForDeepLinks()
     onCleanup(unsub)
   })
 
-  const [defaultServer] = createResource(
-    () => onboardingMode() === "workbench",
-    () =>
-      platform.getDefaultServer?.().then((url) => {
-        if (url) return ServerConnection.key({ type: "http", http: { url } })
-      }),
-  )
   const [locale] = createResource(loadLocale)
 
   const initialSidecarServer = (): ServerConnection.Sidecar | undefined => {
@@ -387,7 +366,6 @@ listenForDeepLinks()
           >
             <Show
               when={
-                !defaultServer.loading &&
                 !sidecar.loading &&
                 !windowConfig.loading &&
                 !windowCount.loading &&
@@ -397,7 +375,7 @@ listenForDeepLinks()
               {(_) => {
                 return (
                   <AppInterface
-                    defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
+                    defaultServer={ServerConnection.Key.make("sidecar")}
                     servers={servers()}
                     router={DesktopRouter}
                   >

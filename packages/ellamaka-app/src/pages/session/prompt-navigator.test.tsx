@@ -84,6 +84,30 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
+  test("excludes compaction marker messages from the rail and directory", () => {
+    const u1 = userMessage("u1", "hello")
+    const uComp = userMessage("u-comp", "")
+    const u2 = userMessage("u2", "world")
+    const compactionPart: Part = { id: "cp1", sessionID: "ses_1", messageID: "u-comp", type: "compaction", auto: false }
+    const host = mount(() => (
+      <PromptNavigator
+        {...baseProps({
+          userMessages: [u1, uComp, u2],
+          getParts: (id: string) => (id === "u-comp" ? [compactionPart] : []),
+        })}
+      />
+    ))
+
+    expect(host.querySelectorAll("[data-slot='chat-prompt-tick']").length).toBe(2)
+    expect(host.querySelector("[data-slot='chat-prompt-tick'][data-message-id='u-comp']")).toBeNull()
+
+    openDirectory(host)
+    const items = host.querySelectorAll("[data-slot='chat-prompt-item']")
+    expect(items.length).toBe(2)
+    expect(host.querySelector("[data-slot='chat-prompt-item'][data-message-id='u-comp']")).toBeNull()
+    host.remove()
+  })
+
   test("opens a directory popover with user and assistant summaries", async () => {
     const u1 = userMessage("u1", "hello")
     const a1: AssistantMessage = {
@@ -163,6 +187,19 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
+  test("keeps the directory trigger indicator visible without hover", async () => {
+    await installChatStyles()
+    const u1 = userMessage("u1", "hello")
+    const host = mount(() => <PromptNavigator {...baseProps({ userMessages: [u1] })} />)
+
+    const trigger = host.querySelector("[data-component='chat-prompt-directory-trigger']") as HTMLElement
+    const triggerStyle = getComputedStyle(trigger)
+    // The right-edge entry point stays perceivable at rest; hover only
+    // strengthens it (width/color), it never gates visibility.
+    expect(triggerStyle.opacity).not.toBe("0")
+    host.remove()
+  })
+
   test("calls loadOlder when the directory opens and historyMore is true", async () => {
     let loaded = 0
     const u1 = userMessage("u1", "hello")
@@ -185,7 +222,7 @@ describe("PromptNavigator", () => {
     host.remove()
   })
 
-  test("jumps to a prompt and keeps the directory open when an item is clicked", async () => {
+  test("jumps to a prompt and closes the directory when an item is clicked", async () => {
     let jumped: string | undefined
     const u1 = userMessage("u1", "hello")
     const host = mount(() => (
@@ -207,7 +244,7 @@ describe("PromptNavigator", () => {
     await tick()
 
     expect(jumped).toBe("u1")
-    expect(popover.getAttribute("data-open")).toBe("true")
+    expect(popover.getAttribute("data-open")).toBe("false")
     host.remove()
   })
 

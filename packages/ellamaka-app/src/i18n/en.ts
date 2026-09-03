@@ -235,6 +235,7 @@ export const dict = {
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
   "prompt.placeholder.normal": 'Ask anything... "{{example}}"',
   "prompt.placeholder.simple": "Ask anything...",
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for agents...",
   "prompt.placeholder.summarizeComments": "Summarize comments…",
   "prompt.placeholder.summarizeComment": "Summarize comment…",
   "prompt.mode.shell": "Shell",
@@ -288,6 +289,7 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.action.compact": "Compact session",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
@@ -339,20 +341,11 @@ export const dict = {
   "dialog.server.add.password": "Password (optional)",
   "dialog.server.add.passwordPlaceholder": "password",
   "dialog.server.edit.title": "Edit server",
-  "dialog.server.default.title": "Default server",
-  "dialog.server.default.description":
-    "Connect to this server on app launch instead of starting a local server. Requires restart.",
-  "dialog.server.default.none": "No server selected",
-  "dialog.server.default.set": "Set current server as default",
-  "dialog.server.default.clear": "Clear",
   "dialog.server.action.remove": "Remove server",
 
   "dialog.server.menu.edit": "Edit",
-  "dialog.server.menu.default": "Set as default",
-  "dialog.server.menu.defaultRemove": "Remove default",
   "dialog.server.menu.delete": "Delete",
   "dialog.server.current": "Current Server",
-  "dialog.server.status.default": "Default",
   "server.row.noUsername": "no username",
 
   "dialog.project.edit.title": "Edit project",
@@ -405,6 +398,8 @@ export const dict = {
   "context.usage.cost": "Cost",
   "context.usage.clickToView": "Click to view context",
   "context.usage.view": "View context usage",
+  "context.usage.tooltip": "{{tokens}} tokens ({{percent}}% of context)",
+  "context.usage.tooltipNoLimit": "{{tokens}} tokens",
 
   "language.en": "English",
   "language.zh": "简体中文",
@@ -796,10 +791,6 @@ export const dict = {
   "settings.general.row.showSessionProgressBar.title": "Show session progress bar",
   "settings.general.row.showSessionProgressBar.description":
     "Display the animated progress bar at the top of the session when the agent is working",
-  "settings.general.row.newLayoutDesigns.title": "New layout and designs",
-  "settings.general.row.newLayoutDesigns.description": "Enable the redesigned layout, home, composer, and session UI",
-  "settings.general.row.pinchZoom.title": "Pinch to zoom",
-  "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 
   "settings.general.row.wayland.title": "Use native Wayland",
   "settings.general.row.wayland.description": "Disable X11 fallback on Wayland. Requires restart.",

@@ -1,4 +1,4 @@
-import { ErrorBoundary, Show, createEffect, createSignal, onMount, onCleanup } from "solid-js"
+import { ErrorBoundary, Show, createEffect, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { SpaceStoreProvider } from "./space-store"
 import { WorkbenchStateProvider, useWorkbenchState } from "./view-store"
@@ -36,12 +36,15 @@ import { WorkbenchSurfaceProvider } from "./workbench-surface-context"
 import { ViewRegistryProvider, useViewRegistry, registerDefaultViews } from "./view-registry"
 import { reportWorkbenchError, type WorkbenchErrorDetail, WORKBENCH_ERROR_EVENT } from "./workbench-error"
 import { CliRepairDialog } from "./parts/cli-repair-dialog"
+import { useCommand } from "@/context/command"
 import { useDialog } from "@wopal/ui/context/dialog"
 import { Toast } from "@wopal/ui/toast"
+import { isWorkbenchClosePanelShortcut, isWorkbenchTabCloseProtected } from "./workbench-keyboard"
 
 function WorkbenchShell() {
   const wb = useWorkbenchState()
   const actions = useWorkbenchActions()
+  const command = useCommand()
   useWorkbenchCommands()
   const spaceStore = useSessionStore()
   const projection = useSessionProjectionWriter()
@@ -176,22 +179,33 @@ function WorkbenchShell() {
       e.preventDefault()
     }
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+      if (isWorkbenchClosePanelShortcut(e)) {
+        // Keep command suspension and modal-dialog ownership intact. In those
+        // states the corresponding capture listener must receive the event.
+        if (command.suspended() || dialog.active) return
         const activeTab = wb.activeTab()
-        const isPinned = !activeTab || activeTab.path === "" || !!activeTab.pinned
-        if (isPinned) {
+        if (isWorkbenchTabCloseProtected(activeTab)) {
           e.preventDefault()
           e.stopPropagation()
           wb.setStatusMessage(t("workbench.status.tabPinnedProtected", { default: "Pinned tab protected from closing" }))
+          return
         }
+        // A blocked prompt surface stops bubbling before the document-level
+        // command listener. Trigger the command at the Workbench boundary so
+        // Cmd/Ctrl+W remains reliable even while an agent is running.
+        e.preventDefault()
+        e.stopPropagation()
+        command.trigger("tab.close", "keybind")
       }
     }
     window.addEventListener("contextmenu", preventContextMenu)
-    window.addEventListener("keydown", handleKeyDown)
+    // Capture before prompt gates and browser-editable surfaces. This keeps
+    // Cmd/Ctrl+W reliable while still protecting General/pinned tabs.
+    window.addEventListener("keydown", handleKeyDown, true)
     onCleanup(() => {
       unsub()
       window.removeEventListener("contextmenu", preventContextMenu)
-      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("keydown", handleKeyDown, true)
     })
   })
 
