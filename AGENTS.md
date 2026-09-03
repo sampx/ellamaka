@@ -82,7 +82,8 @@ Execution chain: OpenCode upstream → ellamaka fork → `--wopal-space` → `.w
 | Build ellamaka-branded CLI | `bun packages/ellamaka-release/src/cli/build.ts --web-ui ellamaka-app` |
 | Build CLI binary | `./scripts/build.sh cli` |
 | Build desktop app | `./scripts/build.sh desktop` |
-| Release CLI / Desktop (one-step) | `./scripts/bump-release.sh <cli\|desktop> [--patch\|--minor\|--major\|--rc\|--beta] [--channel beta\|prod] [--dry-run]` |
+| Release CLI | `./scripts/release-cli.sh [--patch\|--minor\|--major\|--rc] [--dry-run]` |
+| Release Desktop | `./scripts/release-desktop.sh [--patch\|--minor\|--major\|--beta] [--dry-run]` |
 | Withdraw a released version | `./scripts/withdraw-release.sh <cli\|desktop> [--channel stable\|beta] [version]` |
 | Dev server (TUI/Workbench/Desktop) | `./scripts/dev.sh` |
 | Post-upstream clean check | `./scripts/check-cleanup.sh` |

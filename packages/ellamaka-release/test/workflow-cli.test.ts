@@ -13,8 +13,8 @@ function count(text: string, needle: string) {
 
 describe("publish-ellamaka workflow", () => {
   test("release triggered by CLI tag push, with dispatch as re-release/dev path", () => {
-    // bump-release.sh owns trigger authority: one-step bump → push
-    // namespaced tag → push:tags fires this workflow. failed-attempt
+    // release-cli.sh / release-desktop.sh own trigger authority: one-step
+    // bump → push namespaced tag → push:tags fires this workflow. failed-attempt
     // re-release and CI dev builds go through workflow_dispatch.
     expect(workflow).toContain("workflow_dispatch:")
     expect(workflow).toMatch(/\n  push:\s*\n\s*tags:\s*\[\s*"ellamaka-cli-v\*"\s*\]/)

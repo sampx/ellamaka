@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/lib/version.sh — shared build version resolution for ellamaka
 # CLI / Desktop / sidecar builds. Sourced by scripts/build.sh,
-# scripts/dev.sh and scripts/bump-release.sh.
+# scripts/dev.sh and the release scripts.
 #
 # Product version anchors (docs/DISTRIBUTION.md §3.2):
 #   CLI product     → packages/ellamaka-cli/package.json
@@ -39,7 +39,8 @@ function current_version() {
 # Prints the next version for the product's anchor. patch/minor/major bump
 # the base and drop any prerelease; rc/beta continue the same-kind sequence
 # on the current base, otherwise start a fresh -rc.1/-beta.1 on the next
-# patch.
+# patch. Superseded by packages/ellamaka-release/src/version-line.ts
+# (unified version-line model) — kept only for callers outside release.
 function bump_version() {
   local product="$1" bump="$2" project_root="${3:-$PROJECT_ROOT}"
   local core
@@ -123,7 +124,7 @@ function resolve_build_version() {
 # bumps the dependency to ^<config floor> and refreshes bun.lock so the
 # compile-time schema types, runtime version check, and release gate all
 # agree. Idempotent: no-op when the dependency floor already covers the
-# config floor. Called by build.sh / dev.sh / bump-release.sh before they
+# config floor. Called by build.sh / dev.sh / lib/release.sh before they
 # resolve MIN_WOPAL_CLI_VERSION, so the sync happens during development
 # and verification, not only at release time.
 function sync_min_wopal_cli_version() {
@@ -235,7 +236,7 @@ function resolve_min_wopal_cli_version() {
 #
 # Prints the highest SemVer tag for the product/channel: stable-only tags
 # for stable/prod channels, -beta.N tags for beta, -rc.N tags for rc. Prints
-# nothing when no such tag exists. Used by bump-release.sh to detect
+# nothing when no such tag exists. Used by lib/release.sh to detect
 # failed-attempt retries (highest tag without an effective manifest was
 # never released).
 function highest_release_tag() {

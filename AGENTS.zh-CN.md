@@ -82,7 +82,8 @@ description: WopalSpace engine fork of OpenCode for running space-aware agents, 
 | 构建 ellamaka 品牌 CLI | `bun packages/ellamaka-release/src/cli/build.ts --web-ui ellamaka-app` |
 | 构建 CLI 二进制 | `./scripts/build.sh cli` |
 | 构建桌面应用 | `./scripts/build.sh desktop` |
-| 发布 CLI / Desktop（一步制） | `./scripts/bump-release.sh <cli\|desktop> [--patch\|--minor\|--major\|--rc\|--beta] [--channel beta\|prod] [--dry-run]` |
+| 发布 CLI（一步制） | `./scripts/release-cli.sh [--patch\|--minor\|--major\|--rc] [--dry-run]` |
+| 发布 Desktop（一步制） | `./scripts/release-desktop.sh [--patch\|--minor\|--major\|--beta] [--dry-run]` |
 | 撤回已发布版本 | `./scripts/withdraw-release.sh <cli\|desktop> [--channel stable\|beta] [version]` |
 | 开发服务（TUI/Workbench/桌面） | `./scripts/dev.sh` |
 | 上游合并后精简检查 | `./scripts/check-cleanup.sh` |

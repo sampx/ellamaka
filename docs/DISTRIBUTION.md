@@ -184,12 +184,16 @@ channel 规则：
 - Desktop beta latest 只引用 `-beta.N`，并与 stable 使用不同 appId/feed。
 - 不进行隐式跨 channel 更新或比较。
 
-发布是一步制（脚本 `scripts/bump-release.sh`，与 wopal-cli 同构）：版本准备与发布触发在同一脚本内完成，`--dry-run` 承担预演职责：
+发布是一步制（脚本 `scripts/release-cli.sh` / `scripts/release-desktop.sh`）：版本准备与发布触发在同一脚本内完成，`--dry-run` 承担预演职责。
 
-1. 计算目标版本：读产品锚点当前版本，按 `--patch`/`--minor`/`--major`/`--rc`/`--beta` 或显式版本计算下一个版本。
-2. 写入锚点：CLI 发布时锚点写完整版本（含 `-rc.N`），其余全部 workspace 包（除两个产品锚点外）+ 根写 prerelease base；Desktop 发布只写 Desktop 锚点。
+版本推断采用统一版本线模型（`packages/ellamaka-release/src/version-line.ts`）：根 `package.json` 是产品版本线 base 的唯一真相源，两个产品锚点只承载通道状态（`-rc.N` / `-beta.N`）。任何发布动作的目标 base 永远等于版本线 base：
+
+1. 计算目标版本：读版本线（根 package.json）与产品锚点，按 `--patch`/`--minor`/`--major`/`--rc`/`--beta` 或显式版本推断。stable 发布取版本线 base 本身（候选转正，`2.0.4-rc.2 → 2.0.4`）；rc/beta 在锚点同 base 有序列时续 N+1，否则从新 base 的 `.1` 起步（自动追平另一产品推进的版本线）；minor/major 开新版本线。锚点领先版本线直接拒绝。
+2. 写入：rc/beta/patch 续发只写产品锚点；minor/major 开新版本线时根 + 全部 workspace 依赖包（除两个产品锚点外）同步镜像新 base。
 3. 提交 bump、创建 namespaced tag（`ellamaka-cli-vX.Y.Z[-rc.N]` / `ellamaka-desktop-vX.Y.Z[-beta.N]`）、推送当前分支与 tag。tag push 触发目标 workflow（`push: tags`），不再手工 dispatch。
 4. 监听 workflow 至完成，成功后自动触发历史清理。
+
+Desktop 渠道为单开关模型：`--beta` 即 beta 渠道（版本必然为 `X.Y.Z-beta.N`，发布到 `ellamaka-desktop/beta/`），缺席即 prod（版本必然为纯 `X.Y.Z`）；不存在独立 `--channel` 参数。
 
 failed attempt 的 re-release（幂等）：目标 tag 在远端已存在时——有有效 R2 manifest 则拒绝（发布不可变，请用更高版本）；无 manifest 则以该 tag 为 `--ref` 重新 `workflow_dispatch`，不重复 bump。
 
@@ -204,7 +208,7 @@ bump 写入前校验：版本符合 SemVer 子集、version/channel 一致、bra
 
 ### 4.2 发布流程
 
-**触发条件**：`push: tags`（前缀 `ellamaka-cli-v*` / `ellamaka-desktop-v*`）由 `scripts/bump-release.sh` 一步制发布触发；`workflow_dispatch` 仅用于 failed-attempt re-release（`--ref <tag>`）与 CI dev 构建（`publish=false`）。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。每个发布构建在最早阶段执行 anchor match gate：从 tag 解析的版本必须等于对应产品锚点 package.json 的 version，不一致即失败，任何构建都不会启动。
+**触发条件**：`push: tags`（前缀 `ellamaka-cli-v*` / `ellamaka-desktop-v*`）由 `scripts/release-cli.sh` / `scripts/release-desktop.sh` 一步制发布触发；`workflow_dispatch` 仅用于 failed-attempt re-release（`--ref <tag>`）与 CI dev 构建（`publish=false`）。所有 job 有 `if: github.repository == 'wopal-cn/ellamaka'` 仓库守卫。每个发布构建在最早阶段执行 anchor match gate：从 tag 解析的版本必须等于对应产品锚点 package.json 的 version，不一致即失败，任何构建都不会启动。
 
 CLI rc 与 stable 走完全相同的 release job：同一 versioned path（`ellamaka/v<version>/`）、同一 latest promotion、同一 Release 页面。`-rc.N` 仅作为版本字符串进入 tag、build 注入与 manifest，任何步骤都不区分 rc 与 stable。
 
@@ -219,7 +223,7 @@ CLI 发布流程（release job）：
 
 Desktop 发布流程：matrix 构建（macos-latest 产 dmg+zip、windows-latest 产 NSIS、ubuntu-latest 产 AppImage+deb）。R2 上传、manifest 校验与 CDN purge 复用 CLI 的既有机制。
 
-**重试状态**：tag 存在但没有有效 versioned manifest（failed attempt）时，`bump-release.sh` 以该 tag 为 `--ref` 重新 `workflow_dispatch`（tag 不移动、版本文件不重复 bump）；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
+**重试状态**：tag 存在但没有有效 versioned manifest（failed attempt）时，release 脚本以该 tag 为 `--ref` 重新 `workflow_dispatch`（tag 不移动、版本文件不重复 bump）；有效 immutable manifest 已提交时只能重试 release page 或 latest promotion，不能重新 build。已提交 release 出现 identity/hash mismatch 或重大运行问题时执行 §7.3 整版 withdrawal，版本号永久作废，后续使用更高版本。
 
 ---
 
@@ -386,7 +390,7 @@ release cleanup 不得使用字符串比较、`sort -V`、文件修改时间或�
 
 cleanup 输出待删除对象与保护原因的审计清单后才执行。任何 cleanup 失败都不能阻止客户端继续读取上一次有效 aliases。
 
-**Retention 保留数量**（`bump-release.sh` 发布成功后自动触发 cleanup 时使用的默认值）：
+**Retention 保留数量**（release 脚本发布成功后自动触发 cleanup 时使用的默认值）：
 
 | 产品 | 渠道 | 保留数量 | 说明 |
 |------|------|---------|------|

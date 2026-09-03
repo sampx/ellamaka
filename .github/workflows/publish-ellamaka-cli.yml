@@ -34,7 +34,7 @@ on:
           - mac
           - windows
 
-# 触发权归 bump-release.sh：一步制 bump 后 push tag（push: tags 触发本
+# 触发权归 release-cli.sh / release-desktop.sh：一步制 bump 后 push tag（push: tags 触发本
 # workflow）；failed attempt 的 re-release 走 workflow_dispatch --ref <tag>。
 # Per docs/DISTRIBUTION.md §4.1/§7, releases are immutable: versioned R2
 # paths are never cleared, committed releases are never overwritten.
@@ -57,7 +57,7 @@ jobs:
       - name: Derive version
         id: version
         run: |
-          # push:tags 事件（bump-release.sh 一步制发布）：版本从 tag 解析，
+          # push:tags 事件（release-cli / release-desktop 一步制发布）：版本从 tag 解析，
           # 必为正式发布。workflow_dispatch：输入版本（发布/重发/CI dev 共用）。
           if [[ "${{ github.event_name }}" = "push" ]]; then
             version="${GITHUB_REF_NAME#ellamaka-cli-v}"
@@ -91,7 +91,7 @@ jobs:
           PKG_VERSION="$(node -e "console.log(require('./packages/ellamaka-cli/package.json').version)")"
           if [ "${{ steps.version.outputs.version }}" != "$PKG_VERSION" ]; then
             echo "ERROR: release version ${{ steps.version.outputs.version }} does not match packages/ellamaka-cli/package.json version $PKG_VERSION."
-            echo "  Bump the anchor first (scripts/bump-release.sh cli), or fix the tag."
+            echo "  Bump the anchor first (scripts/release-cli.sh), or fix the tag."
             exit 1
           fi
           echo "  version matches packages/ellamaka-cli/package.json: $PKG_VERSION"
