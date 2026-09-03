@@ -72,6 +72,7 @@ export function PromptNavigator(props: PromptNavigatorProps) {
 
   const jump = (id: string) => {
     setPreview(undefined)
+    setOpen(false)
     props.onJump(id)
   }
 
