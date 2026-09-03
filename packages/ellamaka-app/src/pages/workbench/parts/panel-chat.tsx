@@ -24,7 +24,12 @@ import { formatServerError } from "@/utils/server-errors"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { findLast } from "@opencode-ai/core/util/array"
 import { isCompactionMarker } from "@/pages/session/chat-transcript"
-import { WorkbenchChatTimeline, type UserMessageNavigation, type UserMessageNavigator } from "@/pages/session/workbench-chat-timeline"
+import {
+  WorkbenchChatTimeline,
+  type LatestScrollNavigator,
+  type UserMessageNavigation,
+  type UserMessageNavigator,
+} from "@/pages/session/workbench-chat-timeline"
 import { createSessionComposerState } from "@/pages/session/composer"
 import { useSessionHistoryLoader } from "@/hooks/use-session-history-loader"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -123,6 +128,7 @@ function PanelChatInner(props: {
     onUserInteracted: () => setFollowState((current) => transitionChatFollowState(current, "pause")),
   })
   let navigateUserMessage: UserMessageNavigator | undefined
+  let navigateLatest: LatestScrollNavigator | undefined
 
   // Followups are transient Panel UI state. The server owns delivered
   // messages; drafts must not be persisted as a second domain copy.
@@ -184,8 +190,13 @@ function PanelChatInner(props: {
     const overflow = max > 1
     const bottom = !overflow || distance <= 2
     const jump = overflow && distance > jumpThreshold(el)
-    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
+    const resumedAtBottom = bottom && !ui.scroll.bottom && followState() === "paused"
+    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) {
+      if (resumedAtBottom) setFollowState((current) => transitionChatFollowState(current, "resume"))
+      return
+    }
     setUi("scroll", { overflow, bottom, jump })
+    if (resumedAtBottom) setFollowState((current) => transitionChatFollowState(current, "resume"))
   }
 
   const scheduleScrollState = (el: HTMLDivElement) => {
@@ -208,6 +219,7 @@ function PanelChatInner(props: {
   const resumeScroll = () => {
     setFollowState((current) => transitionChatFollowState(current, "resume"))
     autoScroll.forceScrollToBottom()
+    navigateLatest?.()
     const el = scroller
     if (el) scheduleScrollState(el)
   }
@@ -215,6 +227,7 @@ function PanelChatInner(props: {
   const lockFollowingLatest = () => {
     if (!shouldKeepChatAtLatest(followState())) return
     autoScroll.forceScrollToBottom()
+    navigateLatest?.()
     if (scroller) scheduleScrollState(scroller)
   }
 
@@ -637,8 +650,12 @@ function PanelChatInner(props: {
             onUserMessageNavigator={(navigator) => {
               navigateUserMessage = navigator
             }}
+            onLatestScrollNavigator={(navigator) => {
+              navigateLatest = navigator
+            }}
             setScrollRef={setScrollRef}
             setContentRef={setContentRef}
+            onAutoScroll={autoScroll.handleScroll}
             onScheduleScrollState={scheduleScrollState}
             onUserScroll={pauseFollowLatest}
             onHistoryScroll={historyLoader.onScrollerScroll}

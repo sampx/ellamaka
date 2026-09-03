@@ -10,7 +10,8 @@ import type { Session } from "./session-store"
 import { useWorkbenchActions } from "./workbench-actions"
 import { scopeFromTab } from "./workbench-scope"
 import { reportWorkbenchError } from "./workbench-error"
-import { attachUrl } from "@/utils/attach-url"
+import { useServer } from "@/context/server"
+import { createTuiAttachRequest, resolveTuiAttachAuth } from "./tui-attach"
 
 // Task 3 (O18): ViewId enum constants replace string literals "tui"/"chat"/"context".
 export const ViewId = {
@@ -25,7 +26,7 @@ interface WorkbenchViewSdk {
   url: string
   client: {
     pty: {
-      create(params: { command?: string; args?: string[]; cwd?: string; title?: string }): Promise<{ data?: { id: string } }>
+      create(params: { command?: string; args?: string[]; cwd?: string; title?: string; env?: Record<string, string> }): Promise<{ data?: { id: string } }>
     }
   }
 }
@@ -109,6 +110,7 @@ export function registerDefaultViews(registry: ViewRegistry) {
     showContext: false,
     render: (ctx) => {
       const actions = useWorkbenchActions()
+      const server = useServer()
       const [ptyId, setPtyId] = createSignal<string | undefined>(undefined)
       const [ptyError, setPtyError] = createSignal<string | undefined>(undefined)
       let disposed = false
@@ -133,21 +135,22 @@ export function registerDefaultViews(registry: ViewRegistry) {
         if (ctx.panel.viewMode !== "tui") return
 
         const sessionId = ctx.session?.id
-        const args = sessionId
-          ? ["attach", attachUrl(ctx.sdk.url), "-s", sessionId, "--dir", ctx.directory]
-          : undefined
+        const auth = resolveTuiAttachAuth(server.current)
 
         void actions.ensurePanelPty({
           scope: scopeFromTab({ name: ctx.spaceName, path: ctx.spacePath }),
           panelID: ctx.panel.id,
           kind: "tui",
           create: async () => {
-            const res = await ctx.sdk.client.pty.create({
-              command: "ellamaka",
-              args,
-              cwd: ctx.directory,
-              title: `ellamaka tui (${ctx.panel.id})`,
-            })
+            const res = await ctx.sdk.client.pty.create(
+              createTuiAttachRequest({
+                serverUrl: ctx.sdk.url,
+                sessionID: sessionId,
+                directory: ctx.directory,
+                panelID: ctx.panel.id,
+                auth,
+              }),
+            )
             if (!res.data?.id) throw new Error("No PTY ID returned")
             return res.data.id
           },
