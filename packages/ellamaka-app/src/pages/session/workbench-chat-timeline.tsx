@@ -43,6 +43,7 @@ export type MessageTimelineScrollPort = {
 
 export type UserMessageNavigation = "first" | "previous" | "next"
 export type UserMessageNavigator = (direction: UserMessageNavigation) => boolean
+export type LatestScrollNavigator = () => void
 
 export type WorkbenchChatTimelineProps = {
   sessionID: string
@@ -69,9 +70,12 @@ export type WorkbenchChatTimelineProps = {
   activeUserMessageIDOverride?: string
   /** Exposes the timeline-aware user-message navigator to the owning panel. */
   onUserMessageNavigator?: (navigator: UserMessageNavigator | undefined) => void
+  /** Exposes a virtualizer-aware latest-output navigator to the owning panel. */
+  onLatestScrollNavigator?: (navigator: LatestScrollNavigator | undefined) => void
   /** Scroll port callbacks (mirrors the official MessageTimeline contract). */
   setScrollRef?: (el: HTMLDivElement | undefined) => void
   setContentRef?: (el: HTMLDivElement) => void
+  onAutoScroll?: () => void
   onScheduleScrollState?: (el: HTMLDivElement) => void
   onUserScroll?: () => void
   onHistoryScroll?: () => void
@@ -564,6 +568,34 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
   let jumpHistorySuppressUntil = 0
   let virtualizer: VirtualizerHandle | undefined
   let pointerScrollPending = false
+  let pointerScrollMoved = false
+  let latestScrollFrame: number | undefined
+
+  const cancelLatestScroll = () => {
+    if (latestScrollFrame === undefined) return
+    cancelAnimationFrame(latestScrollFrame)
+    latestScrollFrame = undefined
+  }
+
+  const scrollToLatest: LatestScrollNavigator = () => {
+    cancelLatestScroll()
+    if (typeof virtualizer?.measure === "function") virtualizer.measure()
+
+    let passes = 0
+    const pin = () => {
+      const el = scroller()
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+      props.onScheduleScrollState?.(el)
+      passes += 1
+      if (passes >= 8) {
+        latestScrollFrame = undefined
+        return
+      }
+      latestScrollFrame = requestAnimationFrame(pin)
+    }
+    pin()
+  }
 
   const viewportRowKey = () => {
     const root = scroller()
@@ -649,26 +681,56 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     if (event.button !== undefined && event.button !== 0) return
     if (nestedScrollable(event.target)) return
     pointerScrollPending = true
+    pointerScrollMoved = false
+  }
+
+  const markPointerScroll = () => {
+    if (!pointerScrollPending) return
+    pointerScrollMoved = true
   }
 
   const stopPointerScroll = () => {
     pointerScrollPending = false
+    pointerScrollMoved = false
   }
+
+  // A drag can end outside the scroller where pointerup does not bubble back
+  // to it; window-level release events clear the pending gesture so a later
+  // streaming auto-scroll is never mistaken for user scrolling.
+  const endPointerScroll = (event: PointerEvent) => {
+    if (!pointerScrollPending) return
+    if (event.target instanceof Element && scroller()?.contains(event.target)) return
+    stopPointerScroll()
+  }
+
+  createEffect(() => {
+    if (typeof window === "undefined") return
+    window.addEventListener("pointerup", endPointerScroll)
+    window.addEventListener("pointercancel", endPointerScroll)
+    onCleanup(() => {
+      window.removeEventListener("pointerup", endPointerScroll)
+      window.removeEventListener("pointercancel", endPointerScroll)
+    })
+  })
 
   const pauseForWheelScroll = (event: WheelEvent) => {
     if (event.deltaY >= 0 || nestedScrollable(event.target)) return
+    cancelLatestScroll()
     props.onUserScroll?.()
   }
 
   const handleScroll = () => {
     const el = scroller()
     if (!el) return
+    props.onAutoScroll?.()
     setScrollTop(el.scrollTop)
     if (jumpTargetTurnID()) setJumpTargetTurnID(undefined)
     props.onScheduleScrollState?.(el)
     props.onHistoryScroll?.()
-    if (pointerScrollPending) {
+    if (pointerScrollPending && pointerScrollMoved) {
       pointerScrollPending = false
+      pointerScrollMoved = false
+      cancelLatestScroll()
       props.onUserScroll?.()
     }
     if (
@@ -683,6 +745,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
   }
 
   const jumpToPrompt = (userMessageID: string) => {
+    cancelLatestScroll()
     // Pause auto-scroll so the jump is not overridden by bottom-following.
     props.onPauseAutoScroll?.()
     setJumpTargetTurnID(userMessageID)
@@ -762,6 +825,15 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
     onCleanup(() => register(undefined))
   })
 
+  createEffect(() => {
+    const register = props.onLatestScrollNavigator
+    if (!register) return
+    register(scrollToLatest)
+    onCleanup(() => register(undefined))
+  })
+
+  onCleanup(cancelLatestScroll)
+
   const syncChild = (childID: string) => {
     void sync.session.sync(childID)
   }
@@ -802,6 +874,7 @@ export function WorkbenchChatTimeline(props: WorkbenchChatTimelineProps) {
         ref={bindScroller}
         onScroll={handleScroll}
         on:pointerdown={startPointerScroll}
+        on:pointermove={markPointerScroll}
         on:pointerup={stopPointerScroll}
         on:pointercancel={stopPointerScroll}
         on:wheel={pauseForWheelScroll}
