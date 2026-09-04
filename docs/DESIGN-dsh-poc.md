@@ -106,11 +106,21 @@ Dsh 前端在隔离 iframe 内加载。`VirtualWebServer` 在 index tap 链末�
 - `document.createElement("script")` 动态加载的插件 bundle
 - 覆盖相对路径与同源绝对 URL；外部 URL 与已带 `/dsh` 的 URL 保持不变
 
-**静态资源路径**：DSH 前端使用根路径 `/assets/*`、`/favicon.svg` 与 boot manifest 的 `/plugins/*`。index 变换统一添加 `/dsh` 前缀，并移除 iframe 不需要的 PWA manifest link。
+**静态资源路径**：rc.1 dist 的 index 使用文档相对路径（`./assets/*`），官方靠注入 `<base href="/">` 锚定根。index 变换把根绝对与 `./` 相对 URL 一并绝对化到 `/dsh` 前缀（免疫 base 标签逃逸），并移除 iframe 不需要的 PWA manifest link。
+
+### 浏览器认证（rc.1 browser-auth）
+
+rc.1 为 dsh web 面引入官方 `browser-auth`（`dsh-client-connection`）：进程持有 launch token，浏览器首访 index 必须带 `?token=` 交换一张 authority 绑定的签名 cookie（HttpOnly、Path=/、SameSite=Strict、默认 30 天），`/api` 通道叠加 Host/Origin trust fence（403）与 cookie 认证（401）两层栅栏；静态资源公开。集成忠实官方代码，不自造会话：
+
+- **认证入口**：`mountDshWeb` 从官方 `connection` 服务现算 `authenticatedPath`（`/dsh/?token=...`，getter，不持久化 token）。
+- **出站 Location 改写**：官方 token 交换 303 的 `location` 写死 `/`；`VirtualWebServer` 对 3xx Location 头做前缀改写（`/` → `/dsh/`），单端口方案下 iframe 登录不跳出挂载点。与 index 改写同属适配层职责。
+- **下发通道**：serve 端 `mountDshEngine` 把 entry getter 发布到 `WorkbenchDshUrl`（模块级单槽，进程内单挂载）；`GET /workbench/dsh-url` 经已认证的 workbench API 现答 `{ url }`（引擎未挂载/禁用时 `url: undefined`）。token 只经 Ellamaka 已认证面下发。
+- **前端消费**：`DshSurface` 经 SDK 取 URL，origin 与活跃 server 一致才采用，否则回落 `<server>/dsh/` 派生（browser-auth 关闭的部署）。
+- **dev 拓扑（SameSite 修复）**：cookie 是 SameSite=Strict，Vite :3000 → 后端 :4097 的跨站 iframe 带不上 cookie。`vite.config.ts` 把 `/dsh` 代理到后端（`ELLAMAKA_DSH_PROXY_TARGET` 可覆盖，ws: true），iframe 与 cookie 同 origin；Desktop/生产同源天然成立。`dshIframeSrc` 的 `pageOrigin` 参数把 entry URL 重定向到页面 origin。
 
 ### iframe 地址派生
 
-`DshIframe` 的 src 从活跃 server 的 `http.url` 派生为 `<url>/dsh/`，不写死相对路径。原因：ellamaka-app 的 dev 模式由 Vite 服务前端（默认 3000），后端 serve 独立监听（默认 4097）；相对 `/dsh/` 在 `:3000/workbench` 页面会解析到前端 origin。派生后 dev 下指向 `http://127.0.0.1:4097/dsh/`、Desktop 下指向 sidecar 本地地址，两侧都命中后端 `/dsh` 挂载点。
+`DshIframe` 的 src 优先取 `/workbench/dsh-url` 的认证入口（见上），回落 `<server url>/dsh/` 派生，不写死相对路径。原因：ellamaka-app 的 dev 模式由 Vite 服务前端（默认 3000），后端 serve 独立监听（默认 4097）；相对 `/dsh/` 在 `:3000/workbench` 页面会解析到前端 origin。dev 下经 vite 代理指向页面 origin 的 `/dsh/`、Desktop 与生产指向后端 origin，两侧都命中 DSH 挂载点。
 
 ### 助理 tab 承载
 
@@ -819,6 +829,22 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 - 影响会话核心的变更（agent-loop/session/compaction 类行）推迟到当前请求结束的空闲窗口；等待有上限（超时记 `pending` 状态并在 UI 提示，不强杀会话）。
 - bun-hmr 自身失败（watcher 建立、候选校验）只降级为「变更待重启生效」，绝不影响容器现有服务；所有失败经 log-bridge 结构化上报。
+
+**与现有插件轮询重放机制的关系（bun-hmr 是升级而非替换）**：
+
+- 现状：`startDshPluginService`（`packages/ellamaka-cordis/src/plugins/runtime.ts`）每 2 秒轮询 `plugins/installed.json` 的 hash，变化即对 web/tools 两容器 `includeEntry.update()` 重放完整补丁栈（P6 插件供应链的热挂载底座）。它是官方 HMR 在 Bun 下不可用时的替代品。
+- bun-hmr 完成后：**轮询（每 2 秒 hash 对比）被 chokidar 事件驱动取代**；但组合逻辑与 `includeEntry.update()` 热挂载原语**保留**，bun-hmr 的 generation 候选替换正是复用 `startDshPluginService` 的组合逻辑（见上「模块热换的 Bun 替代路径」第 1 步）。删除该机制会让 bun-hmr 失去组合底座。
+
+**现状缺陷：失败重试风暴（B2 必须修复）**：
+
+- `runtime.ts` 的 `tick()` 在 replay 失败后执行 `lastHash = undefined`（"forget the hash so the NEXT tick retries"）。这使下一个 2 秒 tick 再次读取同一坏 store、再次失败、再次清零——**无退避、无停止条件地无限重试**。
+- 每个失败 tick 都执行一次 `includeEntry.update()` → 组合重挂 → 重置依赖它的 SSE/WebSocket 连接 → 前端 `dsh-client-connection` 指数退避重连。**日志风暴与后端断线重连是同一循环的两个现象**（实测同现），直到引擎重启才停。
+- 修复方向（归属 B2）：失败时应保留旧的 `lastHash`（失败不算数，等下一次真实 store 变更再试），而非清零重试同一坏状态。这是 bun-hmr 改造现有重放路径时一并修复的缺陷。
+
+**Spike 实测结论（S-2，不可再走解析拦截）**：
+
+- `.wopal-space/.tmp/spike/s2-plugin.mjs` 实测：`Bun.plugin({ setup(build) { build.onResolve(...) } })` 注册成功、暴露 `onResolve` API，但**不影响运行时的 `await import()`**——`@wopal-spike/missing` 依旧 `ERR_MODULE_NOT_FOUND`。Bun 的 `Bun.plugin` 拦截只作用于构建期（bundle），运行时模块解析不在其内。
+- bun-hmr 不依赖此能力（走 include update + 内容寻址 URL），该结论仅作记录，防止将来再尝试用 `Bun.plugin` 做运行时解析拦截。
 
 ### tool-cordis 注册冲突的宿主侧缓解
 
