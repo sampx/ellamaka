@@ -25,11 +25,11 @@ import { pathToFileURL } from "node:url"
 import { createCordisLogExporter, type EllamakaLogLevel } from "./log-bridge.js"
 import { VirtualWebServer, DSH_MOUNT_PREFIX } from "./dsh-virtual-webserver.js"
 import {
-  createClosureRequire,
   createPackageDshRuntimeApi,
   type DshRuntimeApi,
 } from "./runtime/loader.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
+import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
@@ -436,7 +436,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // The plugin layer (D-04): composed from the store — the single source of
   // truth — so boot and hot reload share one composition (D-03). Store order
   // is layer order; profiles never carry a bundles manifest for plugins.
-  const pluginLayers: PluginLayerPatch[] = composePluginLayers(resolvedHome, profileName)
+  // Bare names resolve at this composition point (B1 拆雷): Bridge-owned rows
+  // reach the Loader as absolute file:// URLs (closure -> profiles order).
+  const pluginLayers: PluginLayerPatch[] = composePluginLayers(resolvedHome, profileName, {
+    installAnchor,
+  })
   // The full patch stack (bundle -> plugin -> user -> extras -> state), composed
   // by the ONE function the hot replay also calls (rook B-01): boot and hot
   // reload are the same composition, so a replay never drops official layers.
@@ -460,60 +464,14 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type).
   ctx.provide("dshHomePath", (...segments: string[]) => join(stateDir, ...segments))
   const loaderFiber = await ctx.registry.plugin(runtime.pluginLoader)
-  // Packaged-host bare-module bridge: bun-compiled binaries (CLI) and the
-  // Desktop sidecar bundle carry no dsh packages, and bun SEA lacks Node's
-  // internal ESM loader (cordis-plugin-loader's ModuleLoader.fromInternal()
-  // returns undefined), so bare plugin names in the patch layers would fall
-  // back to the host bundle and fail. Anchor a CJS require at the install
-  // anchor instead: from a real disk path, require() resolves the whole
-  // materialised closure regardless of cwd. The Loader normalises
-  // ESM/CJS/default shapes before applying a plugin, so the exports object
-  // is consumed identically. From source the internal loader exists and this
-  // polyfill never engages.
-  const loader = ctx.get("loader")
-  if (loader !== undefined) {
-    // `createClosureRequire` resolves the anchor's realpath first so the
-    // node_modules walk reaches the materialised closure regardless of a
-    // symlinked layout.
-    const closureRequire = createClosureRequire(installAnchor)
-    // Plugin supply chain resolution (D-05, rook W-01): user-installed
-    // plugins live under `plugins/`, never the closure, so EVERY import path
-    // — the bun-compiled fallback when `loader.internal` is absent AND the
-    // Node internal loader when it exists — must end with a profiles-anchored
-    // require whose parent-walk hits `profiles/node_modules/<pkg>` (the
-    // healed plugin symlinks). An unresolved name throws the original error.
-    const profilesRequire = createRequire(join(resolvedHome, "profiles", "anchor.js"))
-    if (loader.internal === undefined) {
-      loader.internal = {
-        import: async (name: string) => {
-          try {
-            return closureRequire(name)
-          } catch (error) {
-            try {
-              return profilesRequire(name)
-            } catch {
-              throw error
-            }
-          }
-        },
-      }
-    } else {
-      // Wrap the existing (Node internal) import: keep its resolution first,
-      // fall back to the profiles anchor only when it fails.
-      const internalImport = loader.internal.import.bind(loader.internal)
-      loader.internal.import = async (name: string) => {
-        try {
-          return await internalImport(name)
-        } catch (error) {
-          try {
-            return profilesRequire(name)
-          } catch {
-            throw error
-          }
-        }
-      }
-    }
-  }
+  // B1 拆雷 (DESIGN-dsh-poc 「Bun 下不伪造 loader.internal（拆雷）」): the
+  // Bridge no longer injects a fake `loader.internal` when the runtime
+  // provides none — the fake object fooled the official hmr capability guard
+  // into misusing Node-private loader APIs and was the rc.2 incident's
+  // breeding ground. Under bun `ModuleLoader.fromInternal()` returns
+  // undefined, official bare-name imports fall back to native `import()`
+  // (Path 1, spike record), and Bridge-composed rows arrive as absolute
+  // file:// URLs resolved at the composition point (composePluginLayers).
   // Intrinsic host setup: the launch environment snapshot and the cmdline
   // service (--port) that the web-startup plugin reads to bind the webserver.
   const { DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot } = runtime.launchEnv
@@ -529,6 +487,18 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // official web plugins register their routes against it instead of a real
   // socket. The official `webserver` entry is disabled via extraPatches.
   await prepare?.(ctx)
+  // When the runtime provides a REAL internal loader (Node sidecar), wrap its
+  // import with the profiles fallback (rook W-01): the internal loader
+  // resolves official closure packages but not user plugins under
+  // `profiles/node_modules`, so EVERY internal import path must end with a
+  // profiles-anchored require whose parent-walk hits the healed plugin
+  // symlinks. An unresolved name throws the original error. This runs AFTER
+  // `prepare` so an internal injected there is wrapped too, and BEFORE the
+  // root include mount below (the only consumer of internal.import).
+  const preparedLoader = ctx.get("loader")
+  if (preparedLoader !== undefined && preparedLoader.internal !== undefined) {
+    wrapInternalWithProfilesFallback(preparedLoader.internal, resolvedHome)
+  }
   // Bare package names in the patch layers (e.g. `@deepseek-ai/dsh-web-app`)
   // must resolve against the closure the install anchor lives in, not the
   // host module graph: a bundled host (packaged CLI bunfs, Desktop sidecar)
@@ -592,9 +562,12 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
  */
 export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshWebHost> {
   const runtime = opts.runtime ?? createPackageDshRuntimeApi()
+  // Resolve home once so mountProfile and the agent-presets user root agree.
+  const resolvedHome = opts.home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const virtualWebServer = new VirtualWebServer(ctx, { host: "127.0.0.1", port: opts.port, runtime })
   const host = await mountProfile(ctx, {
     ...opts,
+    home: resolvedHome,
     profileName: WEB_PROFILE_NAME,
     requireWebServer: true,
     virtualWebServer,
@@ -604,9 +577,22 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
       // it, so without this the roster is empty and sessions cannot start.
       // Derived from the same install anchor the profile resolves packages
       // from, so a bundled host reads the materialised closure's presets.
+      //
+      // The USER root lives under state/.agent-presets (DESIGN-dsh-poc 双根
+      // 发现). The stock `includeUserRoot` appends the dsh-home-paths default
+      // (~/.dsh or $DSH_HOME), which the integration must never own (constraint
+      // #10: never use/set DSH_HOME, never read/write ~/.dsh). We supply the
+      // correct user root explicitly and disable the stock one.
       {
         id: "agent-presets",
-        config: { default: "standard", roots: [{ path: shippedPresetRoot(opts.installAnchor), trust: "system" }] },
+        config: {
+          default: "standard",
+          includeUserRoot: false,
+          roots: [
+            { path: shippedPresetRoot(opts.installAnchor), trust: "system" },
+            { path: join(resolvedHome, "state", ".agent-presets"), trust: "user" },
+          ],
+        },
       },
       // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
       // which the bun dev runtime lacks. It is a code-execution capability, not

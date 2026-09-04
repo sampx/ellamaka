@@ -16,6 +16,7 @@
     "./runtime/loader": "./src/runtime/loader.ts",
     "./plugins": "./src/plugins/store.ts",
     "./plugins/compose": "./src/plugins/compose.ts",
+    "./plugins/resolve-specifiers": "./src/plugins/resolve-specifiers.ts",
     "./plugins/installer": "./src/plugins/installer.ts",
     "./plugins/resolver": "./src/plugins/resolver.ts",
     "./plugins/runtime": "./src/plugins/runtime.ts"

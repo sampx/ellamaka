@@ -56,3 +56,5 @@ export {
   pluginPackageDir,
 } from "./plugins/compose.js"
 export type { PluginLayerPatch } from "./plugins/compose.js"
+export { resolveRowSpecifier } from "./plugins/resolve-specifiers.js"
+export type { ResolveRowOptions, ResolvableRow } from "./plugins/resolve-specifiers.js"

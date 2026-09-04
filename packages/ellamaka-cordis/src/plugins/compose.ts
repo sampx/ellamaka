@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import { join } from "node:path"
 import { pluginsDir, readStore, type DshPluginEntry } from "./store.js"
+import { resolveRowSpecifier } from "./resolve-specifiers.js"
 
 /**
  * Plugin layer composition (DESIGN-dsh-poc §9, D-03/D-04).
@@ -14,10 +15,12 @@ import { pluginsDir, readStore, type DshPluginEntry } from "./store.js"
  *
  * Each plugin layer is a patch row `{ id: "dsh-plugin:<name>", name: "<pkg>" }`
  * — the explicit stable id makes the loader's id diff deterministic (the
- * include contract, spike 2 path B), and the bare package name resolves
- * through `profiles/node_modules` (healed by {@link healPluginsModuleFallback}).
+ * include contract, spike 2 path B). The bare package name is resolved at the
+ * composition point to an absolute `file://` URL (B1 拆雷:
+ * {@link composeResolvedPluginLayers}, closure -> profiles order) so the row
+ * reaches the Loader final — the fake `loader.internal` injection is gone and
+ * profiles-only packages cannot resolve natively.
  */
-
 /** The install-area directory name this module composes packages from. */
 export const PLUGIN_LAYER_DIRNAME = "plugins"
 
@@ -51,23 +54,45 @@ export interface DshPluginStackContext {
 }
 
 /**
+ * Composition options carrying the resolution anchors (B1 拆雷).
+ */
+export interface ComposeLayersOptions {
+  /**
+   * The install anchor the container's profile loads from (the closure's
+   * `@deepseek-ai/dsh/package.json`). Passed through to the specifier
+   * resolver; when omitted it falls back to this package's own closure.
+   */
+  installAnchor?: string
+}
+
+/**
  * Compose the plugin patch rows for one profile from the store.
  *
  * Missing/empty store -> no layers (a fresh home boots nothing). Plugins not
  * enabled in the requested profile are skipped. Store order is composition
  * order (install order), which keeps layer diffs append-only across installs.
+ *
+ * Bare names are resolved HERE, at the composition point, so boot and hot
+ * replay share one rewrite and the Loader never sees a bare Bridge-owned
+ * name (B1 拆雷). An unresolvable name throws the original resolution error.
  */
-export function composePluginLayers(dshHome: string, profile: string): PluginLayerPatch[] {
+export function composePluginLayers(dshHome: string, profile: string, options?: ComposeLayersOptions): PluginLayerPatch[] {
   if (!existsSync(join(dshHome, PLUGIN_LAYER_DIRNAME))) return []
   const store = readStore(dshHome)
   return store.plugins
     .filter((entry) => entry.enabledIn.includes(profile))
-    .map((entry) => pluginLayerPatch(entry))
+    .map((entry) => resolvePluginLayerPatch(entry, dshHome, options?.installAnchor))
 }
 
-/** The patch row for one installed plugin entry. */
+/** The patch row for one installed plugin entry (bare name, unresolved). */
 export function pluginLayerPatch(entry: DshPluginEntry): PluginLayerPatch {
   return { id: `${PLUGIN_ENTRY_ID_PREFIX}${entry.name}`, name: entry.name }
+}
+
+/** One resolved patch row: the bare name replaced by its absolute file URL. */
+function resolvePluginLayerPatch(entry: DshPluginEntry, dshHome: string, installAnchor?: string): PluginLayerPatch {
+  const row = pluginLayerPatch(entry)
+  return { ...row, name: resolveRowSpecifier(row.name, { dshHome, installAnchor }) }
 }
 
 /**

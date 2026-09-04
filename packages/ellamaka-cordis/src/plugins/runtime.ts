@@ -128,7 +128,11 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
   let pendingReplay = false
 
   const replayContainer = async (container: DshPluginContainer): Promise<void> => {
-    const pluginLayers = composePluginLayers(options.home, container.profile)
+    // Compose with the container's boot anchor: bare names resolve at the
+    // composition point (B1 拆雷), identical to the boot-time composition.
+    const pluginLayers = composePluginLayers(options.home, container.profile, {
+      installAnchor: options.installAnchor,
+    })
     // Rebuild the FULL patch stack (B-01): the include re-applies
     // config.patches over the raw config on every update, so replacing the
     // list with plugin rows only would drop the bundle/user/state layers.
