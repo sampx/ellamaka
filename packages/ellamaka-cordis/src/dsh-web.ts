@@ -30,6 +30,7 @@ import {
 } from "./runtime/loader.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
+import { stateHomePatches as makeStateHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
@@ -39,23 +40,7 @@ const TOOLS_PROFILE_NAME = "ellamaka-tools"
 
 const require = createRequire(import.meta.url)
 
-/**
- * Shipped agent-preset root, beside the `@deepseek-ai/dsh` install anchor's
- * own config (`config/agent-presets/`). Carries the built-in `standard` preset
- * (and friends) the web UI defaults to. Mirrors how the dsh CLI's
- * `composeProfile` assembles the SHIPPED root — `loadProfile` alone does not.
- *
- * Resolved lazily from the given install anchor (or, when omitted, this
- * module's own closure): the root must track the anchor the mount actually
- * resolves the dsh packages from — a bundled host (packaged CLI, Desktop
- * sidecar) passes the materialised closure copy under `$WOPAL_HOME/dsh`
- * (DESIGN-dsh-poc §2.2), and a module-load-time constant would silently
- * point at the wrong closure or crash the whole module on resolve.
- */
-export function shippedPresetRoot(installAnchor?: string): string {
-  const anchor = installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
-  return join(dirname(anchor), "config", "agent-presets")
-}
+export { shippedPresetRoot } from "./runtime/anchor.js"
 
 /**
  * Default patch layer for the `ellamaka-tools` profile. Written on first
@@ -348,16 +333,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // profile already applies — so neither write ever touches the user's default
   // `~/.dsh`. Re-enable only once dsh exposes a home seam or publishes the
   // adapters with a configurable home.
-  const stateHomePatches: Record<string, unknown>[] = [
-    { id: "settings", config: { dshHome: stateDir } },
-    { id: "credentials", config: { dshHome: stateDir } },
-    { id: "attachment-local", config: { dshHome: stateDir } },
-    { id: "shell-env", config: { dshHome: stateDir } },
-    { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
-    { id: "skill-filesystem", config: { dshHome: stateDir } },
-    { id: "llm-deepseek", disabled: true },
-    { id: "session-telemetry-otel", disabled: true },
-  ]
+  const stateHomePatches = makeStateHomePatches(stateDir)
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -571,46 +547,12 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
     profileName: WEB_PROFILE_NAME,
     requireWebServer: true,
     virtualWebServer,
-    extraPatches: [
-      // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
-      // the dsh CLI's composeProfile does — loadProfile alone does not inject
-      // it, so without this the roster is empty and sessions cannot start.
-      // Derived from the same install anchor the profile resolves packages
-      // from, so a bundled host reads the materialised closure's presets.
-      //
-      // The USER root lives under state/.agent-presets (DESIGN-dsh-poc 双根
-      // 发现). The stock `includeUserRoot` appends the dsh-home-paths default
-      // (~/.dsh or $DSH_HOME), which the integration must never own (constraint
-      // #10: never use/set DSH_HOME, never read/write ~/.dsh). We supply the
-      // correct user root explicitly and disable the stock one.
-      {
-        id: "agent-presets",
-        config: {
-          default: "standard",
-          includeUserRoot: false,
-          roots: [
-            { path: shippedPresetRoot(opts.installAnchor), trust: "system" },
-            { path: join(resolvedHome, "state", ".agent-presets"), trust: "user" },
-          ],
-        },
-      },
-      // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
-      // which the bun dev runtime lacks. It is a code-execution capability, not
-      // part of the web UI chat surface. The CLI serve path (bun) disables it
-      // via `disableCodeRuntime`; the Desktop sidecar (Node 22.18+) keeps it.
-      ...(opts.disableCodeRuntime ? [{ id: "code-runtime", disabled: true }] : []),
-      // The official webserver binds a real socket; the virtual profile
-      // provides VirtualWebServer instead, so disable the real one.
-      { id: "webserver", disabled: true },
-      // The iframe serves under /dsh; a root-path URL would be a wrong entry
-      // point, so close web-runtime's URL printing and shell/prompt injection.
-      // Full config replacement preserves the connection-trust fields.
-      {
-        id: "web-runtime",
-        config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] },
-      },
-      ...(opts.extraPatches ?? []),
-    ],
+    extraPatches: webExtraPatches({
+      installAnchor: opts.installAnchor,
+      resolvedHome,
+      disableCodeRuntime: opts.disableCodeRuntime,
+      extraPatches: opts.extraPatches,
+    }),
   })
   // Register the DSH iframe prefix adaptation as the last index tap: rewrite
   // static asset URLs to /dsh and inject the browser fetch/WebSocket/
@@ -656,13 +598,7 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
     ...opts,
     profileName: TOOLS_PROFILE_NAME,
     requireWebServer: false,
-    extraPatches: [
-      // HMR needs --expose-internals (bun lacks it); the tool surface has no
-      // hot-reload need, so disable it to boot under bun.
-      { id: "hmr", disabled: true },
-      { id: "tool-bash", config: { enableRunInBackground: false } },
-      ...(opts.extraPatches ?? []),
-    ],
+    extraPatches: toolsExtraPatches({ extraPatches: opts.extraPatches }),
   })
   return { ...host, ctx, includeEntry: host.includeEntry!, stackContext: host.stackContext! }
 }
