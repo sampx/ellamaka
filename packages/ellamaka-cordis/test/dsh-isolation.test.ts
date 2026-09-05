@@ -7,31 +7,38 @@ import { mountDshWeb, mountDshTools } from "../src/dsh-web"
 
 /**
  * dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
- * (settings/sessions/storages/credentials) lands under `$WOPAL_HOME/dsh/state`,
+ * (settings/sessions/storages/credentials) lands under `$WOPAL_HOME/dsh/home`,
  * NOT `~/.dsh`. Purely via config injection — `process.env.DSH_HOME` is never
- * set.
+ * set by the integration code itself (the host sets it for B-class env reads
+ * at process launch).
  */
 
 describe("dsh runtime isolation", () => {
   test("never sets process.env.DSH_HOME", async () => {
+    // The mount itself must not set the env; an ambient value inherited from
+    // the surrounding process (e.g. running inside a dsh session) is not the
+    // mount's doing, so isolate it for the duration of the assertion.
+    const prevDshHome = process.env.DSH_HOME
+    delete process.env.DSH_HOME
     const home = mkdtempSync(join(tmpdir(), "dsh-isolate-env-"))
     const ctx = new Context()
     const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
     try {
       expect(process.env.DSH_HOME).toBeUndefined()
     } finally {
+      if (prevDshHome !== undefined) process.env.DSH_HOME = prevDshHome
       await host.dispose()
       await ctx.fiber.dispose()
     }
   }, 30_000)
 
-  test("settings runtime file lands in state/ not ~/.dsh", async () => {
+  test("settings runtime file lands in home/ not ~/.dsh", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-isolate-settings-"))
     const ctx = new Context()
     const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
     try {
       // The settings service is mounted; a namespaced update persists through
-      // the file provider to `<state>/settings.yaml`.
+      // the file provider to `<home>/settings.yaml`.
       const settings = ctx.get("settings") as
         | { update(ns: string, patch: unknown): Promise<unknown> }
         | undefined
@@ -42,21 +49,21 @@ describe("dsh runtime isolation", () => {
       // Wait a tick for the async persist to flush to disk.
       await new Promise((r) => setTimeout(r, 300))
 
-      const stateSettings = join(home, "state", "settings.yaml")
-      expect(existsSync(stateSettings)).toBe(true)
+      const homeSettings = join(home, "home", "settings.yaml")
+      expect(existsSync(homeSettings)).toBe(true)
 
-      // The written document lives under the closure's state/ dir — never the
+      // The written document lives under the mount's home/ dir — never the
       // user's default ~/.dsh home. The home dir for this mount is a temp dir,
       // so its settings cannot be under the user's real home.
-      expect(stateSettings.startsWith(join(homedir(), ".dsh"))).toBe(false)
-      expect(stateSettings.startsWith(home)).toBe(true)
+      expect(homeSettings.startsWith(join(homedir(), ".dsh"))).toBe(false)
+      expect(homeSettings.startsWith(home)).toBe(true)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
     }
   }, 30_000)
 
-  test("tools profile still overrides ctx dshHomePath to state/", async () => {
+  test("tools profile still overrides ctx dshHomePath to home/", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-isolate-tools-"))
     const ctx = new Context()
     const host = await mountDshTools(ctx, { home, port: 0 })
@@ -66,25 +73,25 @@ describe("dsh runtime isolation", () => {
       // still applies for any `!!js dshHomePath(...)` the tool bundle uses.
       const injected = ctx.get("dshHomePath") as ((...s: string[]) => string) | undefined
       expect(injected).toBeDefined()
-      expect(injected!("sessions")).toBe(join(home, "state", "sessions"))
+      expect(injected!("sessions")).toBe(join(home, "home", "sessions"))
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
     }
   }, 30_000)
 
-  test("ctx dshHomePath override resolves storages/sessions under state/", async () => {
+  test("ctx dshHomePath override resolves storages/sessions under home/", async () => {
     const home = mkdtempSync(join(tmpdir(), "dsh-isolate-dshhomepath-"))
     const ctx = new Context()
     const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
     try {
       // The ctx-injected dshHomePath is what `!!js dshHomePath('sessions')`
       // expressions evaluate. Reading it directly proves the override is in
-      // place and rooted at state/.
+      // place and rooted at home/.
       const injected = ctx.get("dshHomePath") as ((...s: string[]) => string) | undefined
       expect(injected).toBeDefined()
-      expect(injected!("sessions")).toBe(join(home, "state", "sessions"))
-      expect(injected!("storages")).toBe(join(home, "state", "storages"))
+      expect(injected!("sessions")).toBe(join(home, "home", "sessions"))
+      expect(injected!("storages")).toBe(join(home, "home", "storages"))
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
@@ -93,7 +100,7 @@ describe("dsh runtime isolation", () => {
 
   test("omitted home falls back to $WOPAL_HOME/dsh for state and profile paths (W-01)", async () => {
     // When `home` is omitted, mountProfile must use the standard $WOPAL_HOME/dsh
-    // consistently across stateDir AND the profile pathing (healProfilesModule
+    // consistently across the home dir AND the profile pathing (healProfilesModule
     // fallback / loadProfile), never ~/.dsh.
     const prevWopalHome = process.env.WOPAL_HOME
     const wopalHome = mkdtempSync(join(tmpdir(), "dsh-iso-omitted-home-"))
@@ -104,10 +111,10 @@ describe("dsh runtime isolation", () => {
       host = await mountDshWeb(ctx, { port: 4097, disableCodeRuntime: true })
       const injected = ctx.get("dshHomePath") as ((...s: string[]) => string) | undefined
       expect(injected).toBeDefined()
-      expect(injected!("sessions")).toBe(join(wopalHome, "dsh", "state", "sessions"))
+      expect(injected!("sessions")).toBe(join(wopalHome, "dsh", "home", "sessions"))
 
       // Profiles were seeded under the resolved home, not ~/.dsh.
-      expect(existsSync(join(wopalHome, "dsh", "profiles", "web", "package.json"))).toBe(true)
+      expect(existsSync(join(wopalHome, "dsh", "home", "profiles", "web", "package.json"))).toBe(true)
     } finally {
       if (prevWopalHome === undefined) delete process.env.WOPAL_HOME
       else process.env.WOPAL_HOME = prevWopalHome

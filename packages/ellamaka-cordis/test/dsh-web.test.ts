@@ -359,7 +359,7 @@ describe("dsh tools profile", () => {
     await seedHost.dispose()
     await seedCtx.fiber.dispose()
 
-    const patchPath = join(home, "profiles", "ellamaka-tools", "cordis.patch.yml")
+    const patchPath = join(home, "home", "profiles", "ellamaka-tools", "cordis.patch.yml")
     const current = readFileSync(patchPath, "utf-8")
     writeFileSync(patchPath, `${current}\n- { id: approval, disabled: true }\n# user-tail\n`)
 

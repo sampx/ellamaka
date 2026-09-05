@@ -5,7 +5,7 @@ import { join } from "node:path"
 import {
   composeDshDumpLayers,
   dumpDshConfig,
-  stateHomePatches,
+  homePatches,
   webExtraPatches,
   toolsExtraPatches,
 } from "../src/diagnostics/dump-config"
@@ -25,7 +25,7 @@ function installedPlugin(home: string, name: string, version = "1.0.0"): string 
 }
 
 describe("composeDshDumpLayers", () => {
-  test("assembles layers in boot order: bundle -> plugin -> user -> extra -> state", () => {
+  test("assembles layers in boot order: bundle -> plugin -> user -> extra -> home", () => {
     const mockProfile = {
       dir: "/mock/profile/dir",
       patchPath: "/mock/profile/dir/cordis.patch.yml",
@@ -45,7 +45,7 @@ describe("composeDshDumpLayers", () => {
       profile: mockProfile,
       pluginLayers,
       extraPatches,
-      stateHomePatches: statePatches,
+      homePatches: statePatches,
     })
 
     // Expect 5 layers:
@@ -54,7 +54,7 @@ describe("composeDshDumpLayers", () => {
     // 3. ellamaka plugin layers (installed.json) -> [{ insert: pluginLayers }]
     // 4. user layer (/mock/profile/dir/cordis.patch.yml) -> profile.patches
     // 5. bridge extra patches -> extraPatches
-    // 6. state home patches -> statePatches
+    // 6. home patches -> statePatches
     expect(layers).toHaveLength(6)
     expect(layers[0]).toEqual({
       label: "@deepseek-ai/dsh-base",
@@ -77,7 +77,7 @@ describe("composeDshDumpLayers", () => {
       patches: extraPatches,
     })
     expect(layers[5]).toEqual({
-      label: "ellamaka state home patches",
+      label: "ellamaka home patches",
       patches: statePatches,
     })
   })
@@ -94,13 +94,13 @@ describe("composeDshDumpLayers", () => {
       profile: mockProfile,
       pluginLayers: [],
       extraPatches: [],
-      stateHomePatches: [],
+      homePatches: [],
     })
 
     // pluginLayers is empty -> no plugin layer
     // profile.patches is empty -> no user layer
     // extraPatches is empty -> no extra layer
-    // stateHomePatches is empty -> no state layer
+    // homePatches is empty -> no home layer
     expect(layers).toHaveLength(1)
     expect(layers[0].label).toBe("@deepseek-ai/dsh-base")
   })
@@ -117,7 +117,7 @@ describe("composeDshDumpLayers", () => {
       profile: mockProfile,
       pluginLayers: [{ id: "dsh-plugin:p", name: "file:///p.js" }],
       extraPatches: [],
-      stateHomePatches: [],
+      homePatches: [],
     })
 
     expect(layers.map((l) => l.label)).toEqual([
@@ -128,7 +128,7 @@ describe("composeDshDumpLayers", () => {
 })
 
 describe("dumpDshConfig", () => {
-  test("dumps configuration for web profile with comments, plugin layers, and state patches", async () => {
+  test("dumps configuration for web profile with comments, plugin layers, and home patches", async () => {
     const home = tempHome()
     installedPlugin(home, "demo-plugin", "1.0.0")
     await writeStore(home, {
@@ -155,7 +155,7 @@ describe("dumpDshConfig", () => {
     // Contains resolved plugin file:// URL
     expect(output).toContain("file://")
     expect(output).toContain("demo-plugin")
-    // Contains state home patch injection
+    // Contains home patch injection
     expect(output).toContain("settings")
     expect(output).toContain("dshHome:")
   })
@@ -211,7 +211,7 @@ describe("dumpDshConfig", () => {
     // the user patch file's marker (userLayer:false skips the patch file).
     expect(output).not.toContain("demo-plugin")
     expect(output).not.toContain("ellamaka plugin layers")
-    expect(output).not.toContain("ellamaka state home patches")
+    expect(output).not.toContain("ellamaka home patches")
     expect(output).not.toContain("user-marker")
 
     // The same fixture with defaultOnly=false MUST include the user marker —
@@ -225,16 +225,16 @@ describe("dumpDshConfig", () => {
 })
 
 describe("lifted patch builders snapshot equality", () => {
-  test("stateHomePatches matches dsh-web original shape exactly", () => {
-    const stateDir = "/test/state/dir"
-    const patches = stateHomePatches(stateDir)
+  test("homePatches matches dsh-web original shape exactly", () => {
+    const homeDir = "/test/home/dir"
+    const patches = homePatches(homeDir)
     expect(patches).toEqual([
-      { id: "settings", config: { dshHome: stateDir } },
-      { id: "credentials", config: { dshHome: stateDir } },
-      { id: "attachment-local", config: { dshHome: stateDir } },
-      { id: "shell-env", config: { dshHome: stateDir } },
-      { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
-      { id: "skill-filesystem", config: { dshHome: stateDir } },
+      { id: "settings", config: { dshHome: homeDir } },
+      { id: "credentials", config: { dshHome: homeDir } },
+      { id: "attachment-local", config: { dshHome: homeDir } },
+      { id: "shell-env", config: { dshHome: homeDir } },
+      { id: "agent-instructions", config: { dshHome: homeDir, maxBytes: 65536 } },
+      { id: "skill-filesystem", config: { dshHome: homeDir } },
       { id: "llm-deepseek", disabled: true },
       { id: "session-telemetry-otel", disabled: true },
     ])
