@@ -1,24 +1,83 @@
 import { describe, expect, test } from "bun:test"
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { mountDshTools } from "../src/dsh-web"
 import { startDshPluginService } from "../src/plugins/runtime"
-import { readStore } from "../src/plugins/store"
+import { readProfileManifest, withProfileManifestWrite, appendBundle } from "../src/plugins/profile-manifest"
 import {
   composeFullPatchStack,
   composePluginLayers,
   PLUGIN_ENTRY_ID_PREFIX,
-  PLUGIN_LAYER_DIRNAME,
   healPluginsModuleFallback,
+  removePluginSymlink,
   type PluginLayerPatch,
 } from "../src/plugins/compose"
 import { resolveComposedRows } from "../src/plugins/resolve-specifiers"
-import { writeStore } from "../src/plugins/store"
 
-function tempHome(): string {
+function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "dsh-plugin-compose-"))
+}
+
+/** The profile directory fixture for a territory root. */
+function profileDirOf(root: string, profile = "web"): string {
+  return join(root, "home", "profiles", profile)
+}
+
+/**
+ * A fixture plugin package placed in the profile's node_modules (the official
+ * install-area layout the Bun installer lands): the source tree is materialised
+ * under `<profile>/node_modules/<name>/` with its manifest, entry file and
+ * bundle patch file.
+ */
+function installedPlugin(
+  root: string,
+  name: string,
+  opts: { version?: string; bundle?: boolean | string; marker?: string; profile?: string } = {},
+): string {
+  const { version = "1.0.0", bundle = true, marker = "m", profile = "web" } = opts
+  const dir = join(profileDirOf(root, profile), "node_modules", ...name.split("/"))
+  mkdirSync(dir, { recursive: true })
+  const manifest: Record<string, unknown> = { name, version, type: "module", main: "index.js" }
+  if (bundle) {
+    manifest.dsh = { bundle: { patch: typeof bundle === "string" ? bundle : "./cordis.patch.yml" } }
+  }
+  writeFileSync(join(dir, "package.json"), JSON.stringify(manifest))
+  writeFileSync(
+    join(dir, "index.js"),
+    `export const name = ${JSON.stringify(name)}\nexport function apply(ctx) { ctx.provide(${JSON.stringify(name + ".marker")}, ${JSON.stringify(marker)}) }\n`,
+  )
+  if (bundle) {
+    writeFileSync(
+      join(dir, typeof bundle === "string" ? bundle : "./cordis.patch.yml"),
+      `- insert:\n    - id: dsh-plugin:${name}\n      name: ${JSON.stringify(name)}\n`,
+    )
+  }
+  return dir
+}
+
+/** Register the plugin as installed in the profile manifest (the truth source). */
+async function registerInstalled(root: string, name: string, profile = "web"): Promise<void> {
+  await withProfileManifestWrite(profileDirOf(root, profile), (manifest) => {
+    appendBundle(manifest, name)
+  })
+}
+
+/** Seed the raw manifest document (bypasses the write layer for edge shapes). */
+function seedManifest(root: string, manifest: Record<string, unknown>, profile = "web"): void {
+  mkdirSync(profileDirOf(root, profile), { recursive: true })
+  writeFileSync(join(profileDirOf(root, profile), "package.json"), JSON.stringify(manifest, null, 2) + "\n")
 }
 
 /** Poll a probe until it satisfies `want` (bun lacks expect.poll). */
@@ -31,193 +90,196 @@ async function waitFor(probe: () => number, want: number, timeoutMs = 10_000): P
   }
 }
 
-/** A fixture plugin package under the install area (as the installer lands it). */
-function installedPlugin(home: string, name: string, version = "1.0.0", marker = "m"): string {
-  const dir = join(home, "plugins", name, version)
-  mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version, type: "module", main: "index.js" }))
-  writeFileSync(
-    join(dir, "index.js"),
-    `export const name = ${JSON.stringify(name)}\nexport function apply(ctx) { ctx.provide(${JSON.stringify(name + ".marker")}, ${JSON.stringify(marker)}) }\n`,
-  )
-  return dir
-}
-
-describe("composePluginLayers", () => {
-  test("an empty store composes no layers", async () => {
-    const home = tempHome()
-    expect(composePluginLayers(home, "web")).toEqual([])
+describe("composePluginLayers (profile manifest truth source)", () => {
+  test("a missing manifest composes no layers (fresh profile)", () => {
+    const root = tempRoot()
+    expect(composePluginLayers(root, "web")).toEqual([])
   })
 
-  test("a missing plugins dir composes no layers (fresh home)", async () => {
-    const home = tempHome()
-    expect(composePluginLayers(home, "ellamaka-tools")).toEqual([])
+  test("a manifest with no bundles composes no layers", () => {
+    const root = tempRoot()
+    seedManifest(root, { name: "web" })
+    expect(composePluginLayers(root, "web")).toEqual([])
   })
 
-  test("only plugins enabled in the requested profile compose a layer", async () => {
-    const home = tempHome()
-    installedPlugin(home, "web-only", "1.0.0", "w")
-    installedPlugin(home, "tools-only", "2.0.0", "t")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "web-only", version: "1.0.0", source: "dir", enabledIn: ["web"], installedAt: "2026-09-02T00:00:00.000Z" },
-        { name: "tools-only", version: "2.0.0", source: "dir", enabledIn: ["ellamaka-tools"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
+  test("bundles that are all official rows compose no layers (official rows are the bundle layer)", () => {
+    const root = tempRoot()
+    seedManifest(root, { dsh: { profile: { bundles: ["@deepseek-ai/dsh-base"] } } })
+    expect(composePluginLayers(root, "web")).toEqual([])
+  })
+
+  test("a user bundle with no installed package entity throws a named diagnostic", () => {
+    const root = tempRoot()
+    seedManifest(root, { dsh: { profile: { bundles: ["dshmarket"] } } })
+    expect(() => composePluginLayers(root, "web")).toThrow(/dshmarket/)
+  })
+
+  test("the user segment composes patch rows from the package's cordis.patch.yml", async () => {
+    const root = tempRoot()
+    installedPlugin(root, "web-only", { marker: "w" })
+    await registerInstalled(root, "web-only")
+    healPluginsModuleFallback(root)
+    const layers = composePluginLayers(root, "web")
+    expect(layers).toHaveLength(1)
+    expect(layers[0].id).toBe("dsh-plugin:web-only")
+    // The composed row comes from the package's OWN cordis.patch.yml insert
+    // list, resolved to the entry file's absolute file:// URL.
+    expect(layers[0].name.startsWith("file://")).toBe(true)
+    expect(decodeURIComponent(layers[0].name)).toContain(join("node_modules", "web-only", "index.js"))
+  })
+
+  test("official bundles are skipped; only the user segment produces rows", () => {
+    const root = tempRoot()
+    installedPlugin(root, "user-plugin")
+    seedManifest(root, {
+      dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "user-plugin"] } },
     })
-    healPluginsModuleFallback(home)
-    const webLayers = composePluginLayers(home, "web")
-    expect(webLayers).toHaveLength(1)
-    expect(webLayers[0].id).toBe("dsh-plugin:web-only")
-    // The bare name resolves at the composition point (B1 拆雷) to the
-    // plugin's entry file: an absolute URL whose realpath is the install area
-    // (require.resolve returns the healed symlink's target).
-    expect(webLayers[0].name.startsWith("file://")).toBe(true)
-    expect(decodeURIComponent(webLayers[0].name)).toContain(join("plugins", "web-only", "1.0.0"))
-
-    const toolsLayers = composePluginLayers(home, "ellamaka-tools")
-    expect(toolsLayers).toHaveLength(1)
-    expect(toolsLayers[0].id).toBe("dsh-plugin:tools-only")
+    healPluginsModuleFallback(root)
+    const layers = composePluginLayers(root, "web")
+    expect(layers).toHaveLength(1)
+    expect(layers[0].id).toBe("dsh-plugin:user-plugin")
   })
 
-  test("layers follow store order and carry explicit stable ids", async () => {
-    const home = tempHome()
-    installedPlugin(home, "alpha", "1.0.0")
-    installedPlugin(home, "beta", "1.0.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "beta", version: "1.0.0", source: "dir", enabledIn: ["web"], installedAt: "2026-09-02T00:00:00.000Z" },
-        { name: "alpha", version: "1.0.0", source: "dir", enabledIn: ["web"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    healPluginsModuleFallback(home)
-    const layers = composePluginLayers(home, "web")
+  test("layers follow manifest bundle order and carry explicit stable ids", () => {
+    const root = tempRoot()
+    installedPlugin(root, "alpha")
+    installedPlugin(root, "beta")
+    seedManifest(root, { dsh: { profile: { bundles: ["beta", "alpha"] } } })
+    healPluginsModuleFallback(root)
+    const layers = composePluginLayers(root, "web")
     expect(layers.map((l) => l.id)).toEqual(["dsh-plugin:beta", "dsh-plugin:alpha"])
   })
 
-  test("the layer row keeps the explicit id while the name resolves to the plugin entry file", async () => {
-    const home = tempHome()
-    installedPlugin(home, "scoped-plugin", "0.1.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "scoped-plugin", version: "0.1.0", source: "dir", enabledIn: ["web"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    healPluginsModuleFallback(home)
-    const layers = composePluginLayers(home, "web")
+  test("the row name resolves to the package entry file under the profile node_modules", async () => {
+    const root = tempRoot()
+    installedPlugin(root, "scoped-plugin", { version: "0.1.0" })
+    await registerInstalled(root, "scoped-plugin")
+    healPluginsModuleFallback(root)
+    const layers = composePluginLayers(root, "web")
     expect(layers[0].name.startsWith("file://")).toBe(true)
-    // require.resolve returns the healed symlink's realpath (the install area).
-    expect(decodeURIComponent(layers[0].name)).toContain(join("plugins", "scoped-plugin", "0.1.0"))
-    expect(PLUGIN_LAYER_DIRNAME).toBe("plugins")
+    expect(decodeURIComponent(layers[0].name)).toContain(join("node_modules", "scoped-plugin"))
+    expect(PLUGIN_ENTRY_ID_PREFIX).toBe("dsh-plugin:")
+  })
+
+  test("a bundle row whose patch file is missing throws a named diagnostic", () => {
+    const root = tempRoot()
+    installedPlugin(root, "patchless-bundle", { bundle: "./missing.yml" })
+    seedManifest(root, { dsh: { profile: { bundles: ["patchless-bundle"] } } })
+    expect(() => composePluginLayers(root, "web")).toThrow(/missing\.yml/)
+  })
+
+  test("composeFullPatchStack keeps the official sandwich around the plugin layer", () => {
+    const pluginLayers: PluginLayerPatch[] = [{ id: "dsh-plugin:x", name: "file:///x/index.js" }]
+    const stack = composeFullPatchStack({
+      profileLayers: [{ patches: [{ id: "bundle-row" }] }],
+      pluginLayers,
+      userPatches: [{ id: "user-row" }],
+      extraPatches: [{ id: "extra-row" }],
+      homePatches: [{ id: "home-row" }],
+    })
+    expect(stack).toEqual([
+      { id: "bundle-row" },
+      { insert: pluginLayers },
+      { id: "user-row" },
+      { id: "extra-row" },
+      { id: "home-row" },
+    ])
   })
 })
 
-describe("healPluginsModuleFallback", () => {
-  test("symlinks every installed plugin under profiles/node_modules", async () => {
-    const home = tempHome()
-    const dir = installedPlugin(home, "link-me", "3.1.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "link-me", version: "3.1.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    healPluginsModuleFallback(home)
-    const link = join(home, "home", "profiles", "node_modules", "link-me")
+describe("healPluginsModuleFallback (profile manifest source)", () => {
+  test("symlinks every declared user plugin under profiles/node_modules", async () => {
+    const root = tempRoot()
+    const dir = installedPlugin(root, "link-me")
+    await registerInstalled(root, "link-me")
+    healPluginsModuleFallback(root)
+    const link = join(root, "home", "profiles", "node_modules", "link-me")
     expect(existsSync(link)).toBe(true)
     expect(realpathSync(link)).toBe(realpathSync(dir))
   })
 
-  test("re-points a stale link when the plugin is reinstalled elsewhere", async () => {
-    const home = tempHome()
-    const oldDir = installedPlugin(home, "mover", "1.0.0")
-    const newDir = installedPlugin(home, "mover", "2.0.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "mover", version: "2.0.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    // Seed a stale link pointing at the old version.
-    const modulesDir = join(home, "home", "profiles", "node_modules")
+  test("re-points a stale link when the plugin is reinstalled (new entity dir)", async () => {
+    const root = tempRoot()
+    const dir = installedPlugin(root, "mover")
+    // Seed a stale link pointing at a non-existent old entity location.
+    const modulesDir = join(root, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
-    symlinkSync(oldDir, join(modulesDir, "mover"), "dir")
-    healPluginsModuleFallback(home)
-    expect(realpathSync(join(modulesDir, "mover"))).toBe(realpathSync(newDir))
+    symlinkSync(join(root, "gone"), join(modulesDir, "mover"), "dir")
+    await registerInstalled(root, "mover")
+    healPluginsModuleFallback(root)
+    expect(realpathSync(join(modulesDir, "mover"))).toBe(realpathSync(dir))
   })
 
   test("replaces a DANGLING self-owned link (rook B-06)", async () => {
-    const home = tempHome()
-    const dir = installedPlugin(home, "resurrected", "1.0.0")
-    // Seed a link whose target no longer exists: realpathSync fails on it,
-    // and a naive symlinkSync would fail EEXIST.
-    const modulesDir = join(home, "home", "profiles", "node_modules")
+    const root = tempRoot()
+    const dir = installedPlugin(root, "resurrected")
+    const modulesDir = join(root, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
-    symlinkSync(join(home, "gone-plugin-dir"), join(modulesDir, "resurrected"), "dir")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "resurrected", version: "1.0.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    healPluginsModuleFallback(home)
+    symlinkSync(join(root, "gone-plugin-dir"), join(modulesDir, "resurrected"), "dir")
+    await registerInstalled(root, "resurrected")
+    healPluginsModuleFallback(root)
     expect(realpathSync(join(modulesDir, "resurrected"))).toBe(realpathSync(dir))
   })
 
-  test("keeps non-plugin entries already present in profiles/node_modules", async () => {
-    const home = tempHome()
-    const modulesDir = join(home, "home", "profiles", "node_modules")
+  test("keeps non-plugin entries already present in profiles/node_modules", () => {
+    const root = tempRoot()
+    const modulesDir = join(root, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
-    const foreign = join(home, "elsewhere")
+    const foreign = join(root, "elsewhere")
     mkdirSync(foreign)
     symlinkSync(foreign, join(modulesDir, "official-pkg"), "dir")
-    await writeStore(home, { schema: "ellamaka.dsh-plugins/v1", plugins: [] })
-    healPluginsModuleFallback(home)
+    seedManifest(root, { name: "web" })
+    healPluginsModuleFallback(root)
     // The foreign link is untouched and still resolves.
     expect(realpathSync(join(modulesDir, "official-pkg"))).toBe(realpathSync(foreign))
   })
 
-  test("reads the store through the standard layout even after an unrelated file exists", async () => {
-    const home = tempHome()
-    installedPlugin(home, "plain", "1.0.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "plain", version: "1.0.0", source: "dir", enabledIn: [], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
-    })
-    writeFileSync(join(home, "unrelated.txt"), "not a store")
-    healPluginsModuleFallback(home)
-    expect(lstatSync(join(home, "home", "profiles", "node_modules", "plain")).isSymbolicLink()).toBe(true)
+  test("damaged installs (no package.json) are skipped, not linked", async () => {
+    const root = tempRoot()
+    const dir = installedPlugin(root, "damaged")
+    rmSync(join(dir, "package.json"))
+    await registerInstalled(root, "damaged")
+    healPluginsModuleFallback(root)
+    expect(existsSync(join(root, "home", "profiles", "node_modules", "damaged"))).toBe(false)
+  })
+
+  test("removePluginSymlink clears our link and leaves foreign entries alone", async () => {
+    const root = tempRoot()
+    installedPlugin(root, "removeme")
+    await registerInstalled(root, "removeme")
+    healPluginsModuleFallback(root)
+    const link = join(root, "home", "profiles", "node_modules", "removeme")
+    expect(existsSync(link)).toBe(true)
+    removePluginSymlink(root, "removeme")
+    expect(existsSync(link)).toBe(false)
+    // A second call is a no-op (nothing there).
+    removePluginSymlink(root, "removeme")
   })
 })
 
 describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)", () => {
   test("Bridge-composed rows are rewritten to absolute file:// URLs; official bundle rows keep bare names", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-"))
+    const root = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-"))
     const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-src-"))
     const src = join(srcRoot, "fixture-dsh-plugin")
     mkdirSync(src, { recursive: true })
     writeFileSync(
       join(src, "package.json"),
-      JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js" }),
+      JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
     )
+    writeFileSync(join(src, "cordis.patch.yml"), "- insert:\n    - id: dsh-plugin:fixture-dsh-plugin\n      name: fixture-dsh-plugin\n")
     writeFileSync(join(src, "index.js"), "export const name = \"fixture-dsh-plugin\"\nexport function apply(ctx) { ctx.provide(\"fixture-dsh-plugin.marker\", \"mounted\") }\n")
-    // The install area layout the installer produces + the healed symlink.
-    const installed = join(home, "plugins", "fixture-dsh-plugin", "1.0.0")
-    mkdirSync(join(home, "plugins", "fixture-dsh-plugin"), { recursive: true })
-    symlinkSync(src, installed, "dir")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "fixture-dsh-plugin", version: "1.0.0", source: "dir", enabledIn: ["ellamaka-tools"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
+    // The official install-area layout: the package entity under the
+    // profile's node_modules (mountDshTools inits the web profile template).
+    const profileDir = profileDirOf(root)
+    mkdirSync(join(profileDir, "node_modules"), { recursive: true })
+    cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
+    await withProfileManifestWrite(profileDir, (manifest) => {
+      appendBundle(manifest, "fixture-dsh-plugin")
     })
 
     const ctx = new Context()
-    const host = await mountDshTools(ctx, { home, port: 0 })
+    const host = await mountDshTools(ctx, { home: root, port: 0 })
     try {
       const config = (host.includeEntry as unknown as {
         options?: { config?: { patches?: { insert?: PluginLayerPatch[] }[] } }
@@ -226,9 +288,9 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
       const pluginRow = insertRows.find((row) => row.id === "dsh-plugin:fixture-dsh-plugin")
       expect(pluginRow).toBeDefined()
       // The Bridge-composed row reaches the Loader as an absolute file URL
-      // into the plugin package's entry file (the healed symlink's target).
+      // into the plugin package's entry file under the profile node_modules.
       expect(pluginRow!.name.startsWith("file://")).toBe(true)
-      expect(decodeURIComponent(pluginRow!.name)).toContain(join("fixture-dsh-plugin", "index.js"))
+      expect(decodeURIComponent(pluginRow!.name)).toContain(join("node_modules", "fixture-dsh-plugin", "index.js"))
       // The plugin itself mounted through that URL.
       expect(ctx.get("fixture-dsh-plugin.marker", false)).toBe("mounted")
 
@@ -239,15 +301,15 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
-      rmSync(home, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
       rmSync(srcRoot, { recursive: true, force: true })
     }
   }, 60_000)
 
   test("a fresh mount provides no loader.internal and composed rows resolve to files (拆雷)", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-fake-"))
+    const root = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-fake-"))
     const ctx = new Context()
-    const host = await mountDshTools(ctx, { home, port: 0 })
+    const host = await mountDshTools(ctx, { home: root, port: 0 })
     try {
       const loader = ctx.get("loader") as { internal?: { import(name: string): Promise<unknown> } } | undefined
       expect(loader).toBeDefined()
@@ -274,53 +336,47 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
-      rmSync(home, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
     }
   }, 60_000)
 
   test("a hot replay rewrites freshly composed rows before the include update", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-hot-"))
+    const root = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-hot-"))
     const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-hot-src-"))
     const src = join(srcRoot, "fixture-dsh-plugin")
     mkdirSync(src, { recursive: true })
     writeFileSync(
       join(src, "package.json"),
-      JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js" }),
+      JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
     )
+    writeFileSync(join(src, "cordis.patch.yml"), "- insert:\n    - id: dsh-plugin:fixture-dsh-plugin\n      name: fixture-dsh-plugin\n")
     writeFileSync(join(src, "index.js"), "export const name = \"fixture-dsh-plugin\"\nexport function apply(ctx) { ctx.provide(\"fixture-dsh-plugin.marker\", \"mounted\") }\n")
-    const installed = join(home, "plugins", "fixture-dsh-plugin", "1.0.0")
-    mkdirSync(join(home, "plugins", "fixture-dsh-plugin"), { recursive: true })
-    symlinkSync(src, installed, "dir")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "fixture-dsh-plugin", version: "1.0.0", source: "dir", enabledIn: ["ellamaka-tools"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
+    const profileDir = profileDirOf(root)
+    mkdirSync(join(profileDir, "node_modules"), { recursive: true })
+    cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
+    await withProfileManifestWrite(profileDir, (manifest) => {
+      appendBundle(manifest, "fixture-dsh-plugin")
     })
 
     const ctx = new Context()
-    const host = await mountDshTools(ctx, { home, port: 0 })
+    const host = await mountDshTools(ctx, { home: root, port: 0 })
     let updates = 0
     const seenNames: string[] = []
     const service = startDshPluginService({
-      home,
+      home: root,
       containers: [{ profile: "ellamaka-tools", ctx, includeEntry: host.includeEntry, stackContext: host.stackContext }],
       intervalMs: 100,
       onReplay: () => updates++,
     })
     try {
-      // Touch the store (re-write identical content is enough: the hash
-      // short-circuit compares the serialized document, so force a fresh read
-      // by adding then removing a disabled phantom entry).
-      const store = readStore(home)
-      store.plugins.push({
-        name: "phantom-hot-plugin",
-        version: "1.0.0",
-        source: "dir",
-        enabledIn: [],
-        installedAt: "2026-09-02T00:00:00.000Z",
+      // The service watches the PROFILE's composition files under the
+      // tools profile: touching its manifest (re-write identical content is
+      // enough — the hash short-circuit compares serialized documents) must
+      // trigger exactly one replay. We append+remove a dependency to change
+      // the serialized document, then restore it.
+      await withProfileManifestWrite(profileDir, (manifest) => {
+        appendBundle(manifest, "phantom-hot-plugin")
       })
-      await writeStore(home, store)
       await waitFor(() => updates, 1)
 
       // The include update carried file:// rows for every Bridge-composed
@@ -339,7 +395,7 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
       await service.stop()
       await host.dispose()
       await ctx.fiber.dispose()
-      rmSync(home, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
       rmSync(srcRoot, { recursive: true, force: true })
     }
   }, 60_000)
@@ -347,8 +403,7 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
 
 describe("loader.internal.import profiles fallback (rook W-01, post-B1)", () => {
   test("an EXISTING internal import is wrapped so user plugins resolve via profiles", async () => {
-    const home = mkdtempSync(join(tmpdir(), "dsh-plugin-w01-"))
-    // Install the fixture plugin (source:dir, like the CLI add path).
+    const root = mkdtempSync(join(tmpdir(), "dsh-plugin-w01-"))
     const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-w01-src-"))
     const src = join(srcRoot, "fixture-dsh-plugin")
     mkdirSync(src, { recursive: true })
@@ -356,25 +411,21 @@ describe("loader.internal.import profiles fallback (rook W-01, post-B1)", () => 
       join(src, "package.json"),
       JSON.stringify({ name: "fixture-dsh-plugin", version: "1.0.0", type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
     )
-    writeFileSync(join(src, "cordis.patch.yml"), "[]\n")
+    writeFileSync(join(src, "cordis.patch.yml"), "- insert:\n    - id: dsh-plugin:fixture-dsh-plugin\n      name: fixture-dsh-plugin\n")
     writeFileSync(
       join(src, "index.js"),
       'export const name = "fixture-dsh-plugin"\nexport function apply(ctx) { ctx.provide("fixture-dsh-plugin.marker", "mounted") }\n',
     )
-    // The install area layout the installer produces + the healed symlink.
-    const installed = join(home, "plugins", "fixture-dsh-plugin", "1.0.0")
-    mkdirSync(join(home, "plugins", "fixture-dsh-plugin"), { recursive: true })
-    symlinkSync(src, installed, "dir")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        { name: "fixture-dsh-plugin", version: "1.0.0", source: "dir", enabledIn: ["ellamaka-tools"], installedAt: "2026-09-02T00:00:00.000Z" },
-      ],
+    const profileDir = profileDirOf(root)
+    mkdirSync(join(profileDir, "node_modules"), { recursive: true })
+    cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
+    await withProfileManifestWrite(profileDir, (manifest) => {
+      appendBundle(manifest, "fixture-dsh-plugin")
     })
 
     const ctx = new Context()
     const host = await mountDshTools(ctx, {
-      home,
+      home: root,
       port: 0,
       // The prepare hook runs after the Loader mounts and BEFORE the wrap:
       // install a stub internal.import simulating the Node internal-loader
@@ -407,7 +458,7 @@ describe("loader.internal.import profiles fallback (rook W-01, post-B1)", () => 
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
-      rmSync(home, { recursive: true, force: true })
+      rmSync(root, { recursive: true, force: true })
       rmSync(srcRoot, { recursive: true, force: true })
     }
   }, 60_000)
