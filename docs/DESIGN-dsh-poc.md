@@ -1,10 +1,10 @@
 # DESIGN-dsh — ellamaka 与 dsh 融合架构设计
 
-> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**空间 × Agent 配置体系是当前主线**；workbench 前端插件互通为启动前提明确的后续门槛轨道。
+> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**wopal 插件包（Agent 配置随包发布）是当前主线**；workbench 前端插件互通为启动前提明确的后续门槛轨道。
 > **上级架构**：`DESIGN.md`
 > **技术依据**：`research/deepseek-harness-architecture-and-integration-research.md`（dsh 全景调研）
 
-**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **空间 × Agent 配置体系（当前主线）** → workbench × dsh 前端插件互通（门槛轨道）。
+**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **wopal 插件包（当前主线）** → workbench × dsh 前端插件互通（门槛轨道）。
 
 本文档不使用章节号，交叉引用一律以标题文字为准（如「见「设计约束 · 不可变闭包」」）。
 
@@ -21,9 +21,9 @@ ellamaka 是 WopalSpace 的引擎（OpenCode fork）。为获得沙箱执行、�
 3. **会话归属**：ellamaka 拥有会话与状态所有权。Web 容器承载 dsh 完整会话（见「架构总览 · 单进程、单端口、双容器」）；工具容器与 adapter 投影路径不创建、不持有任何会话，只提供执行能力（见「已验证事实 · 工具容器不持久化的成立条件」）。
 4. **对外稳定**：ellamaka 的 API、SSE 事件、SDK 契约不因融合而变化。
 5. **插件生态一体化**：dsh 插件可命令式安装、即时生效、跨重启保留，配置融入 ellamaka 配置体系（见「插件供应链」）。
-6. **空间化 Agent 配置**：wopal 的多空间、多 Agent 协作模式在 dsh 界面内原生成立——每个空间有自己的 Agent 团队、武器可见性与界面形态（见「空间 × Agent 配置体系」）。
+6. **Agent 配置随包发布**：wopal 的灵魂与能力以 dsh 官方插件形态交付——配置单与自定义能力随插件包发布，用户安装即得（见「wopal 插件包」）。
 
-**范围边界**：dsh 的会话/账本语义、调度、子代理等引擎能力不在工具采用范围内——这些能力依赖 dsh 自身的会话模型，与 ellamaka 的会话所有权冲突（见「已验证事实 · 深耦合能力不可采用」）。Agent 配置与组队能力（见「空间 × Agent 配置体系」）运行在 dsh Web 容器内，使用 dsh 自有会话模型，不与 ellamaka 争抢会话所有权。
+**范围边界**：dsh 的会话/账本语义、调度、子代理等引擎能力不在工具采用范围内——这些能力依赖 dsh 自身的会话模型，与 ellamaka 的会话所有权冲突（见「已验证事实 · 深耦合能力不可采用」）。Agent 配置与组队能力（见「wopal 插件包」）运行在 dsh Web 容器内，使用 dsh 自有会话模型，不与 ellamaka 争抢会话所有权。
 
 ---
 
@@ -51,9 +51,9 @@ ellamaka 进程（唯一监听端口）
 ├── 工具容器（ellamaka-tools profile，无 webserver）
 │     └── globalThis.__ellamakaDshContainer → dsh-adapter 调用工具
 ├── DSH Plugin Manager（见「插件供应链」）
-│     └── `ellamaka dsh plugin` 命令 → plugins/ 安装区 + 运行中容器热挂载
-└── 预设生成器（见「空间 × Agent 配置体系 · 预设生成器」）
-      └── 每空间 × 每灵魂 → 一份 Agent 配置单 → Web 容器会话按空间装配
+│     └── `ellamaka dsh plugin` 命令 → profile 官方终态（node_modules + package.json 声明）+ 运行中容器热挂载
+└── wopal 插件包（见「wopal 插件包 · wopal 插件包」）
+      └── 配置单随包发布 → Web 容器会话按配置单装配
 ```
 
 **两个容器必须分离**的原因：Web UI 需要 dsh 的完整 agent-loop 语义（会话账本 + checkpoint 屏障 + 完整插件集）；工具采用只需要工具本体 + 最小调用上下文。同一容器无法同时满足两种装配——checkpoint 插件会强制 flush 调用方的 live session（见「已验证事实 · 工具容器不持久化的成立条件」）。
@@ -74,7 +74,7 @@ ellamaka 进程（唯一监听端口）
 | Ellamaka DSH Bridge | `@wopal/ellamaka-cordis` | 随 CLI 与 Desktop sidecar 编译发布；提供容器、虚拟 WebServer、运行时动态加载与 dsh boot 装配，不作为 DSH 闭包依赖发布 |
 | DSH Runtime Manager | `@wopal/ellamaka-cordis/runtime` | serve、web、TUI 与 Desktop sidecar 共用的启动入口；负责禁用判断、闭包物化、完整性校验、动态加载和容器挂载 |
 | DSH Plugin Manager | `@wopal/ellamaka-cordis/plugins`（随 Bridge 发布） | 插件供应链：安装区管理、依赖解析、热挂载与 profile 清单同步 |
-| 预设生成器 | Bridge 侧同步模块 | 从各空间 `.wopal/` 定义文件生成 Agent 配置单，注册进 Web 容器的预设体系（见「空间 × Agent 配置体系 · 预设生成器」） |
+| wopal 插件包 | `@wopal/dsh-wopal-pack` | 配置单 + 自定义能力随包发布，经官方 `config.roots` 注册为配置单根（见「wopal 插件包」） |
 | DSH 运行时清单 | Ellamaka 构建产物 | 构建时从 `packages/ellamaka-cordis/package.json` 派生并锁定 DSH 官方依赖、完整依赖树与完整性信息；运行时内嵌读取 |
 | dsh 引擎装配 | `@wopal/ellamaka-cordis/dsh-web` | 通过 installAnchor 从物化闭包加载官方运行时，重放 dsh boot 序列，构造两个容器；覆盖 `ctx.dshHomePath` 与插件 `dshHome` 配置注入，落地运行时隔离 |
 | dsh-adapter | `.wopal/plugins/dsh-adapter` | 把工具容器中的工具投影进 ellamaka ToolRegistry |
@@ -154,32 +154,36 @@ Dsh 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge �
 
 #### 唯一 home 与目录所有权
 
-**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。Ellamaka 集成只用 `$WOPAL_HOME`；`~/.dsh` 归 dsh 官方 CLI 专用，Ellamaka 不在其内读写。
+**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。`~/.dsh` 归 dsh 官方 CLI 独立试验专用，Ellamaka 不在其内读写。
 
-**`DSH_HOME` env 的宿主兜底（2026-09-05 修订）**：rc.2 时代的约束「永不设置 `DSH_HOME`」在 rc.1 生态下不成立——官方包（如 `dsh-agent-presets` 的用户配置单根）在**包级代码**里直接 import `dshHomePath()`（读 `$DSH_HOME` env），完全绕开 ctx/config 注入体系；这类 env 直读是官方生态的既定机制，逐包重新适配不可接受。因此宿主在**进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/state`**（dev.sh 注入 backend、Desktop sidecar env 注入），让官方包的 env 解析与配置注入**汇合到同一个 state 目录**——设置它的目的恰恰是保护隔离（官方包不落到 `~/.dsh`）。Ellamaka 自己的集成代码（bridge/adapter/配置注入路径）依旧不读不依赖这个 env。
+**`DSH_HOME` 指向 `$WOPAL_HOME/dsh/home`**。宿主在进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/home`（dev.sh 注入 backend、Desktop sidecar env 注入）。官方包在包级代码里直接 import `dshHomePath()`（读 `$DSH_HOME` env，如 `dsh-agent-presets` 的用户配置单根），这类 env 直读是官方生态的既定机制，逐包重新适配不可接受；设置 env 让官方语义的 home 解析落在 Ellamaka 领地内，永不落到 `~/.dsh`。Ellamaka 自己的集成代码（bridge/adapter/配置注入路径）不读这个 env，路径一律由调用参数与配置注入。
 
 ```text
-$WOPAL_HOME/dsh/
-├── closures/                            ← 按内容哈希命名的依赖闭包；只增不减，永不自动删除
-│   └── <fingerprint>/                   ← 清单 sha256 摘要前 12 位 hex；同名即同内容
+$WOPAL_HOME/dsh/                          ← Ellamaka 领地根（不是 DSH_HOME）
+├── closures/                             ← 按内容哈希命名的依赖闭包；只增不减，永不自动删除
+│   └── <fingerprint>/                    ← 清单 sha256 摘要前 12 位 hex；同名即同内容
 │       ├── package.json
 │       ├── package-lock.json
 │       ├── runtime-manifest.json
 │       └── node_modules/
-├── plugins/                             ← 用户插件安装区（见「插件供应链」）；唯一按内容可变的安装区
-│   ├── installed.json                   ← 已装插件真相源：包名、版本、启用于哪些 profile
-│   └── <pkg>/<version>/                 ← 每插件独立目录，自带传递依赖子树
-├── profiles/                            ← 用户可编辑 profile（跨版本保留）
-│   ├── web/
-│   ├── ellamaka-tools/
-│   └── node_modules/                    ← 启动时按 installAnchor 重建的快捷方式（heal 时并入 plugins/ 源）
-├── presets/                             ← 生成的空间 × 灵魂 Agent 配置单根（见「预设生成器」；生成物，可随时重建）
-├── state/                               ← DSH 运行时数据（含用户自建配置单 `state/.agent-presets/`）
-├── staging/                             ← 物化临时区；持锁进程开始时清空，成功后移入 closures/
-└── locks/                               ← materialize.lock（物化）与 plugins.lock（供应链）跨进程锁
+├── home/                                 ← DSH_HOME：100% 官方布局的 harness home
+├── home/                                 ← DSH_HOME：100% 官方布局的 harness home
+│   ├── profiles/                         ← 官方语义的 profile 区（跨版本保留）
+│   │   ├── node_modules/                 ← 宿主共享依赖层：官方包 symlink 到闭包（heal 归位）
+│   │   ├── web/                          ← profile 目录：package.json（dependencies + dsh.profile.bundles）、
+│   │   │                                   node_modules/（已装插件实体）、cordis.patch.yml、.dsh-market/
+│   │   └── ellamaka-tools/
+│   ├── .agent-presets/                   ← 用户自建配置单根（官方位置）
+│   ├── sessions/  storages/  attachments/ ← 运行时数据（官方位置；A 类包 config 注入同指此处）
+│   ├── settings.yaml  .credentials.yaml  .anonymous-user-id
+│   └── cordis.patch.yml                  ← home patch 层（官方位置）
+├── staging/                              ← 物化临时区；持锁进程开始时清空，成功后移入 closures/
+└── locks/                                ← materialize.lock（物化）与 plugins.lock（供应链）跨进程锁
 ```
 
-闭包按指纹不可变。新 Ellamaka 版本需要不同的 DSH 依赖树时创建新闭包，不原地修改正在运行的闭包。`profiles/`、`presets/` 与 `state/` 独立于闭包版本，升级时保持用户配置、生成物与运行时数据。
+`home/` 是官方生态契约的完整落地：官方 CLI 的 profile 布局、`dsh-agent-presets` 的用户根、`dshmarket` 的状态目录全部按官方语义就位。官方 `dsh plugin` 生态机制与 Ellamaka 引擎读写同一套 profile 文件，互操作天然成立。
+
+闭包按指纹不可变。新 Ellamaka 版本需要不同的 DSH 依赖树时创建新闭包，不原地修改正在运行的闭包。`home/`、`presets/` 独立于闭包版本，升级时保持用户配置、生成物与运行时数据。
 
 **闭包内容边界**：闭包 = dsh 版本化的官方运行时（引擎、官方工具插件、官方 client UI、官方自带配置单与内置技能）。这些是 dsh 的产品内容，随 dsh 版本演进而非随用户演进；用户的自进化内容（自建配置单、用户技能、已装插件、profile 补丁）全部落在闭包之外的可变区。升级闭包不丢任何用户内容。
 
@@ -293,15 +297,15 @@ Bridge 的生产代码不在模块顶层静态导入 `@deepseek-ai/*` 运行时�
 
 #### 运行时数据隔离
 
-Dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessions、storages、home patch）统一落在 `$WOPAL_HOME/dsh/state`。隔离采用**纯配置注入，零环境变量**：
+Dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessions、storages、home patch）统一落在 `$DSH_HOME` = `$WOPAL_HOME/dsh/home`（官方语义位置）。三类解析路径汇合同一目录：
 
-| 机制 | 说明 | 隔离方式 |
-|------|------|---------|
-| `ctx` 注入的 `dshHomePath` | profile 配置 `!!js dshHomePath(...)` 表达式经 `with(ctx){eval}` 求值，覆盖 storages/sessions | 装配时 `ctx.provide("dshHomePath", (...s) => join(stateDir, ...s))` |
-| 插件直接 `import { resolveDshHome }` | settings/credentials/agent-instructions/shell-env/skill-fs/attachment 等读 `config.dshHome` | 在 profile patch 层给各插件传 `dshHome: $WOPAL_HOME/dsh/state` |
-| 无配置注入的例外 | `llm-deepseek` 上传索引、`anonymous-user-id` | 使用插件显式路径配置；未提供隔离入口的功能保持禁用 |
+| 路径 | 消费方 | 解析方式 |
+|------|--------|---------|
+| `ctx` 注入的 `dshHomePath` | profile 配置 `!!js dshHomePath(...)` 表达式（storages/sessions） | 装配时 `ctx.provide("dshHomePath", (...s) => join(homeDir, ...s))`，覆盖官方 boot 的 env 直读注入 |
+| 插件 `config.dshHome` | settings/credentials/agent-instructions/shell-env/skill-fs/attachment | profile patch 层传 `dshHome: $DSH_HOME` |
+| env 直读（官方生态机制） | dsh-agent-presets 用户根、anonymous-user-id、llm-deepseek | 宿主进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/home` |
 
-两种机制最终都落在 `$WOPAL_HOME/dsh/state`。宿主另在进程级设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（见「唯一 home 与目录所有权」的修订），为闭包内官方包的 env 直读兜底——两条路汇合同一目录。官方 dsh CLI 无论同进程还是独立进程，都感知不到 Ellamaka 的运行时数据。
+`~/.dsh` 归官方 CLI 独立试验专用；Ellamaka 全程不读写。
 
 ### Profile 机制
 
@@ -309,7 +313,7 @@ Dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessio
 
 | 文件 | 作用 |
 |------|------|
-| `package.json` | 声明 `dsh.profile.bundles` 有序 bundle 列表（仅官方 bundle；插件层由 Plugin Manager 依 installed.json 组合，见「插件供应链 · add 流水线」实现决策 D-04） |
+| `package.json` | 声明 `dsh.profile.bundles` 有序 bundle 列表 + `dependencies`（已装插件）；这是插件安装唯一真相源（见「插件供应链 · 真相源与目录布局」D-04） |
 | `cordis.yml` | 插件行清单 |
 | `cordis.patch.yml` | 用户补丁层，按 entry id 覆盖/禁用，应用于所有 bundle 层之后 |
 
@@ -525,7 +529,7 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 ### Agent 配置体系机制事实（2026-09-03，闭包源码实证）
 
 1. **配置单（agent preset）= 一个会话主 Agent 的装配清单**：一个目录含 `agent.cordis.yml`（插件行清单）与可选 `preset.yml`（展示元数据）。会话按所选配置单装配工具、人格、技能与行为配置。
-2. **双根发现与优先序**：官方根（闭包内 `dsh/config/agent-presets/`，trust=system）+ 用户根（`$WOPAL_HOME/dsh/state/.agent-presets/`，trust=user，首次写入时创建）。roots 数组按优先序去重，**earlier root 赢得重复 id**；用户根恒排最后，因此用户根的同 id 目录被官方静默遮蔽（不报错、不生效）。
+2. **双根发现与优先序**：官方根（`dsh-agent-presets` 包内 shipped 集合，trust=system）+ 用户根（`$DSH_HOME/.agent-presets/` = `$WOPAL_HOME/dsh/home/.agent-presets/`，trust=user，首次写入时创建）。roots 数组按优先序去重，**earlier root 赢得重复 id**；用户根恒排最后，因此用户根的同 id 目录被官方静默遮蔽（不报错、不生效）。
 3. **Bridge 装配点**：`mountDshWeb` 以 agent-presets extraPatch 注入 `default: "standard"` 与官方根；roots 是宿主可配数组，追加自定义 system 根是一行配置。
 4. **配置单服务能力完整**：`agentPresets` 服务提供 `list/resolve/mount/read/copy/remove/composeFrom/recompose/standingKeyFor`；`copy(from, id, name)` 是官方钦定的 authoring 路径（校验 id 形状、拒绝覆盖、失败回滚）。
 5. **工具可见性的引擎级开关**：`tools.restrict({ allow?, deny? })` 按**Agent 作用域**收窄武器——命中名单的工具从该 Agent 的模型视野中完全移除（schema 不下发，token 一并消失）；引擎强制拒绝无作用域的全局限制（"a context-global restriction would mask every agent"）。配置单挂载层即 Agent 作用域，preset 行插件调用 restrict 天然 per-Agent 生效。
@@ -547,9 +551,9 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 7. **wopal-plugin 原生边界**：wopal-plugin 继续作为 ellamaka 原生插件运行。只采用独立 dsh 能力，不拆分或迁移 wopal-plugin。
 8. **工具容器边界**：工具调用走专用工具容器（ellamaka-tools profile），容器内不创建任何 dsh session；adapter 只传递工具实测消费的最小 per-call context。web 容器保持完整 profile，不复用为工具后端。禁用清单是 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 9. **空间隔离**：容器装配是进程级共享能力池，空间差异在投影层解决。
-10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME` 解析自己的路径。宿主在进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（dev.sh 与 Desktop sidecar），为闭包内官方包的 env 直读兜底（rc.1 实证修订，见「唯一 home 与目录所有权」）；集成代码自身不读该 env。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
+10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME` 解析自己的路径。宿主在进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/home`（dev.sh 与 Desktop sidecar），`home/` 是 100% 官方布局的 harness home（见「唯一 home 与目录所有权」）；集成代码自身不读该 env。`~/.dsh` 归 dsh 官方 CLI 独立试验专用，ellamaka 不在其内创建、修改或删除任何内容。
 11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。serve、web、TUI 与 Desktop sidecar 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
-12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。宿主设置的 `DSH_HOME` env 指向同一 state 目录（官方包 env 直读兜底），不改变隔离边界。
+12. **运行时隔离**：dsh 运行时数据落 `$WOPAL_HOME/dsh/home/`（DSH_HOME）内官方语义位置（sessions/settings/credentials 等），与闭包、plugins 分目录。A 类插件经 config 注入、B 类官方包经 env 直读，两条路汇合同一 home，官方包永不落到 `~/.dsh`。
 13. **交付边界**：Ellamaka 发布物携带编译后的 Bridge；`@deepseek-ai/*` 官方运行时只存在于指纹闭包。Bridge 不发布为独立 registry 包，也不进入闭包 manifest。
 14. **版本绑定**：DSH 运行时清单与 Ellamaka 发布版本绑定。普通配置不覆盖 DSH 版本；独立升级通过发布经过验证的完整清单完成。
 15. **统一自物化**：Runtime Manager 是所有入口的唯一物化实现。闭包缺失或损坏会触发自动物化，不等价于用户禁用，也不要求用户运行脚本修复。
@@ -558,7 +562,7 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 18. **插件安装零外部工具链**：安装器不 forward 系统包管理器（pnpm/npm），复用 Runtime Manager 的 pacote + registry 测速基建；用户插件的传递树由内置最小解析器在运行时解析（见「已验证事实 · 插件供应链实测事实」）。
 19. **安装命令式、配置双轨**：插件安装与 dsh 界面侧的插件配置走命令式并即时生效；集成到 ellamaka 的工具投影配置走 settings.jsonc（与「配置与隔离 · 进程级共享、空间级隔离」一致）。
 20. **approval 原生边界**：dsh approval 插件以官方原版使用（不 fork、不修改官方闭包）。宿主侧只补齐 session facade 前置条件并经 answerer 桥接决策；审批审计对落内存不落盘，工具容器不持久化任何会话。
-21. **Bun 宿主兼容性门禁**：发布态 `ellamaka serve` 是单 Bun 进程；用户插件不得要求 Node 私有模块加载器或 `--expose-internals`。`plugin add` 必须在写入 installed.json 和触碰运行中容器前完成静态依赖扫描与 Bun 隔离挂载预检；不兼容插件拒绝安装并给出可操作诊断，绝不以伪造 `loader.internal`、切换到 Node 或降级整台宿主来绕过。官方 Node 专用 `cordis-plugin-hmr` 是宿主实现例外：Bun 路径以 Bridge 的 Bun HMR 适配器替代它，不把该例外转嫁给第三方插件。
+21. **Bun 宿主兼容性门禁**：发布态 `ellamaka serve` 是单 Bun 进程；用户插件不得要求 Node 私有模块加载器或 `--expose-internals`。`plugin add` 必须在写入 profile 声明与触碰运行中容器前完成静态依赖扫描与 Bun 隔离挂载预检；不兼容插件拒绝安装并给出可操作诊断，绝不以伪造 `loader.internal`、切换到 Node 或降级整台宿主来绕过。官方 Node 专用 `cordis-plugin-hmr` 是宿主实现例外：Bun 路径以 Bridge 的 Bun HMR 适配器替代它，不把该例外转嫁给第三方插件。
 
 ---
 
@@ -576,174 +580,181 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 | 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包；闭包只增不减、无自动删除 |
 | 7 | 动态加载 | Bridge 仅从 installAnchor 对应闭包加载官方运行时；应用 bundle、cwd、workspace 和全局 node_modules 不影响解析 |
 | 8 | 失败语义 | 首次安装、升级、离线、超时、integrity 失败与损坏闭包均产生确定的状态和诊断；Ellamaka 能以无 DSH 模式继续运行 |
-| 9 | 隔离 | 依赖闭包、profiles 与 state 各归其位；Ellamaka 不读写 `~/.dsh`；`DSH_HOME` env 由宿主设置为 state 目录（官方包兜底），集成代码不消费它 |
+| 9 | 隔离 | 依赖闭包、home 与 plugins 各归其位；Ellamaka 不读写 `~/.dsh`；`DSH_HOME` env 由宿主设置为 `home/`（官方包 env 直读汇合点），集成代码不消费它 |
 | 10 | PoC 机制退出 | 生产链路不再使用 TS strip-types、`.js → .ts` loader、`resources/dsh-materialize/cordis` 源码副本及手工版本常量 |
 
 ---
 
 ## 插件供应链
 
-> 核心供应链已于 2026-09-02 达成（验收基线 + 用户实机验证），进入维护态；「Bun 宿主兼容性预检」是新增的发布前门禁，待实施后才可宣称 Bun 路径的第三方插件兼容性闭环完成。
+> 2026-09-05 生态对齐定稿：插件安装/注册/组合全面对齐官方生态契约，执行器换成 Bun（零 pnpm、零官方 dsh CLI 依赖）。对齐原则：**凡是官方生态有既定机制的，声明与终态对齐官方，不自研平行路**。
 
 ### 定位与原则
 
-dsh 插件是 ellamaka 的一等公民：**命令式安装、即时生效、跨重启保留**。动态生效（装完即用）是 ellamaka 插件（重启生效）不具备的差异化能力。
+dsh 插件是 ellamaka 的一等公民：**命令式安装、即时生效、跨重启保留**。插件生态的通用语言是 profile 目录的声明文件（`package.json` 的 `dependencies` + `dsh.profile.bundles`、`cordis.patch.yml`）——官方 CLI、dshmarket、热挂载、快照回滚全部构建在这组文件上。Ellamaka 引擎的 `loadProfile` 本就消费这套文件，官方机制装出的插件无需任何适配即被加载。
 
 三条原则：
 
-1. **安装共享、启用按 profile**（「设计约束 · 插件安装共享、启用按 profile」）：web 与 tools 两容器同进程同闭包，安装动作全局一次；激活按容器声明。
-2. **闭包分层**：官方闭包保持不可变（见「DSH home 与运行时隔离」）；用户插件装到独立的可变安装区。官方闭包是"产品发布时刻的依赖快照"，不承担插件生态容器职责。
-3. **零外部工具链**（「设计约束 · 插件安装零外部工具链」）：不依赖系统 pnpm/npm。
+1. **生态契约对齐**：安装的终态 = 官方语义的 profile 目录（依赖声明 + bundles 注册 + 可解析的 node_modules）。所有生态参与方（官方 CLI、市场、宿主引擎）读写同一套声明文件。
+2. **执行器 Bun 化**：pnpm 只是官方 CLI 选择的安装执行器，不是生态契约。Ellamaka 以 Bun 生态实现安装（自研解析器 + pacote 下载 + node_modules 摆放），用户机器零 pnpm 依赖。
+3. **闭包分层**：官方闭包保持不可变；插件依赖 `@deepseek-ai/*` 时经共享层 symlink 解析到闭包（heal 机制），与引擎运行时版本天然一致。
 
-### 安装区布局
+### 真相源与目录布局
+
+**profile `package.json` 是插件安装的唯一真相源**（dependencies 记录已装包与版本，`dsh.profile.bundles` 记录激活的插件层）。`cordis.patch.yml` 是用户补丁层（禁用/覆盖/表达式）。`installed.json` store 退役。
 
 ```text
-$WOPAL_HOME/dsh/plugins/
-├── installed.json               ← 真相源
-│                                  [{ name, version, source, enabledIn: ["web","ellamaka-tools"], installedAt }]
-└── <pkg>/<version>/             ← 每插件独立目录（原地升级替换，不做指纹代数）
-    ├── package.json
-    └── node_modules/            ← 该插件的传递依赖子树（含嵌套同名不同版本）
+$DSH_HOME/profiles/
+├── node_modules/                ← 宿主共享依赖层：@deepseek-ai/* 官方包 symlink 到闭包（heal 维护）
+└── web/
+    ├── package.json             ← dependencies（已装清单）+ dsh.profile.bundles（激活清单）＝ 真相源
+    ├── node_modules/            ← 插件实体 + 传递依赖（Bun 安装器摆放，Node parent-walk 可解析）
+    ├── cordis.yml  cordis.patch.yml
+    └── .dsh-market/             ← 市场状态（装了市场后由市场自管）
 ```
 
-- **官方包不重装**：插件依赖 `@deepseek-ai/*` 时经 `profiles/node_modules` symlink 解析到闭包（heal 机制），与官方运行时版本天然一致，无 skew。
-- **可变目录语义**：命令式操作配可变目录，升级=替换目录+更新 installed.json；与闭包"只增不减"的 immutable 语义解耦。
-- **installed.json 是唯一真相源**：插件层由 Bridge 在 boot/热更时从 store 组合，`profiles/*/package.json` 保持 initProfile 原状（仅官方 bundle）。补丁层 `cordis.patch.yml` 保留为用户逃生口（见「插件供应链 · 配置与信任」）。
+组合顺序：bundle 层（`dsh.profile.bundles` 逐包应用各自 `cordis.patch.yml`）→ 用户补丁层 → Bridge extra patches → state home patches。官方 CLI 的 `dsh plugin add`、市场的安装、Ellamaka 的 `ellamaka dsh plugin add` 写的都是同一套文件。
 
-### 命令面
+### `ellamaka dsh` shim 命令面
+
+`ellamaka dsh` 是官方 `dsh` CLI 的 Bun 执行器替身，覆盖生态互操作所需的命令子集：
 
 ```sh
-ellamaka dsh plugin add <pkg>[@version] [--profile web,tools]   # 缺省启用两个 profile
-ellamaka dsh plugin add --dir <path> [--profile ...]            # 本地目录安装（开发迭代通道）
-ellamaka dsh plugin remove <pkg>
-ellamaka dsh plugin enable <pkg> --profile <name> | disable <pkg> [--profile <name>]
-ellamaka dsh plugin list [--json]
+ellamaka dsh plugin add <pkg>[@version] [--profile web,ellamaka-tools]   # Bun 安装器执行，写官方终态
+ellamaka dsh plugin remove <pkg> [--profile ...]
+ellamaka dsh plugin install                       # 按当前 package.json 全量重装（市场恢复流程依赖）
+ellamaka dsh plugin list [--json]                 # 读 profile package.json
+ellamaka dsh dump-config --profile web [--default-only] [--json]   # 已实现（B1.5）
 ```
 
-所有命令经由 Bridge 的闭包解析与容器更新缝隙驱动运行中容器，**不需要 dsh 官方 CLI 在场**；Bun 路径不得以伪造 Node `internal` loader 作为该解析机制。
+`dsh web`/boot 类命令不 shim——`ellamaka serve` 就是宿主。安装即时生效由 Bridge 的组合文件监听驱动（并入 B2 bun-hmr 的 `registerConfig` 范围），补足官方"首次安装需重启"的缺口。
 
-### add 流水线
+### Bun 安装器流水线
 
 ```text
-解析 spec → BFS 解析传递树（abridged packument + semver + hoist，见「已验证事实 · 插件供应链实测事实」）
-        → pacote 按解析树逐包下载解压到 plugins/<pkg>/<version>/（复用物化器基建 + registry 测速）
-        → 校验入口：package.json 声明 dsh.bundle.patch（bundle）或纯库依赖（警告安装）
-        → Bun 宿主兼容性预检（静态依赖扫描 + 隔离挂载）
-        → 写 installed.json → 重跑 symlink heal → 更新 profiles bundles 清单
-        → 运行中容器热挂载（loader.create / include update）
-        → adapter 侧 tool.provider hook 下一轮自动可见
+解析 spec → BFS 解析传递树（abridged packument + semver，复用自研解析器）
+        → pacote 逐包下载解压（复用物化器 registry 测速基建）
+        → 摆放：entry 包 + 传递依赖落 profiles/<name>/node_modules/（parent-walk 可解析）
+        → 共享层 heal：@deepseek-ai/* symlink 到闭包，保证 hasLoadableEntry 类校验命中
+        → 声明落盘：写 dependencies + 追加 dsh.profile.bundles（与官方 CLI reconcilePlugins 同语义）
+        → 组合校验：复用闭包官方模块（app-boot 的 initProfile/loadProfile 显式 home 参数）
+        → 运行中容器热挂载（组合文件监听触发，同官方 include 机制）
 ```
 
-- **热挂载按容器分别执行**：对 tools 容器直接 `loader.create`；对 web 容器经 include patch 同步（浅合并契约）。启动中的容器（preparing 状态）跳过热挂载，待 Load 阶段由清单自然生效。
-- **失败语义**：解析或下载失败 → 不写 installed.json、不触碰容器，命令返回非零并保留诊断；半安装状态只存在于 staging 临时目录，不参与解析。卸载 = `loader.remove` + include 反向 patch + 删除目录 + 更新清单，effects 自动反解。
-- **并发**：与物化共用 `locks/` 目录的跨进程文件锁（`plugins.lock`），多进程同时 add 串行化；同进程经 Plugin Manager 单飞。
+- **失败语义**：解析/下载失败不触碰 profile 目录；半安装状态只存在于 staging 临时目录。
+- **并发**：`locks/plugins.lock` 跨进程锁串行化写操作。
+- **Bun 宿主兼容性预检**（D-06 保留）：静态 Node 私有 loader 扫描 + 隔离挂载，在落盘前执行。
+- **GitHub 源**（`github:owner/repo`）：第二期实现（git clone + bun build）；第一期给明确报错与 npm 替代指引。
 
-### Bun 宿主兼容性预检
+### 与 dshmarket 的宿主安装工契约
 
-发布态的 `ellamaka serve` 不因安装一个 dsh 插件而改变运行时。插件的目标宿主固定为 Bun；Node 是开发/构建工具和 Desktop 既有环境，不是 CLI serve 的运行时逃生通道。
+市场插件内置两种安装执行方式：spawn 宿主 CLI（读 `process.argv[1]`，在 Bun 打包的 serve 进程下语义失效）或**宿主安装工契约**——宿主在容器内注册 `desktopProfiles`（当前 profile 名与目录）与 `desktopPnpm`（安装执行接口）两个 service，市场即完全通过注入接口执行安装/卸载/恢复，不 spawn 进程。官方 DSH Desktop 正是此模式的先例。
 
-预检在插件已下载到 staging、但尚未写入 `installed.json` 前执行，分两层：
+Ellamaka 容器常驻注入这两个 service；`desktopPnpm.runPlugin(args, dir, signal)` 的实现 = Bun 安装器（支持 `add`/`remove`/`install` 三个动词，exitCode 0 即成功；pnpm ndjson 进度事件为可选增强，缺省退化为普通进度显示）。市场的目录浏览、一键安装、更新、快照、热禁用全部原生工作，零修改市场代码。
 
-1. **静态拒绝**：扫描插件入口及已解析传递依赖树的静态 `import`/`require`，拒绝 Node 私有加载器依赖，包括 `internal/*`、`node:internal/*`、`node-addon-require-builtin`，以及要求/探测 `--expose-internals` 的已知调用形态。诊断必须列出插件包、命中文件、specifier 或特征和依赖链。
-2. **隔离挂载**：静态扫描无命中不等于兼容。Bridge 在不接入 Web/工具正式容器、也不写 store 的候选 Cordis context 中，以 Bun resolver 加载并激活插件 entry；任何模块解析或激活失败都视为不兼容。候选 context 的 dispose 必须完成后才可写 store 或热挂载。
+**已知偏差**：市场的更新自动回滚按 `pnpm-lock.yaml` 字节恢复执行；Bun 安装器不产 pnpm-lock，回滚退化为按快照 `package.json` 声明重装（语义等价，非字节级）。市场快照本身只存 `package.json`、`cordis.patch.yml`、`.dsh-market/state.json`，不含 lock。
 
-静态扫描的职责是尽早解释确定的 Node 私有 loader 依赖，不把它伪装成安全审计；动态 `import`、`eval`、生成代码或压缩后的间接访问由隔离挂载兜底。公共 `node:` API 不因名字被一律拒绝：只有在 Bun 解析或激活实际失败时才返回通用运行时不兼容，避免把 Bun 已支持的 Node API 误判为不可用。
+**自重启边界**：市场 `restart.ts` 可 SIGTERM 宿主进程。Ellamaka 以 `allowRestart: false` 注入关闭此路径，容器进程生命周期归用户。
 
-拒绝语义固定为：不写 `installed.json`、不更新 profile links、不触碰运行中容器、不留下可解析的半安装目录；CLI 返回稳定错误码 `DshPluginBunIncompatible`，并说明“此插件要求当前发布态 Bun 宿主不提供的 Node 私有 loader 或运行时能力”。已运行的同名旧版本继续服务。
+### 实现决策
 
-这条门禁只限制服务端宿主插件。`dsh-client` 浏览器 bundle、插件的常规 dsh 服务/API 与动态安装、启用、禁用、卸载语义不受影响；Bun HMR 适配器负责服务端的配置和模块 generation 更新，`dsh-client-hmr` 继续负责浏览器端重载。
-
-**实现决策**（代码注释按编号引用这些决策，编号属实现层锚点，非章节号）：
-
-- **D-01**：容器完整补丁栈 = bundle layers → store 组合的插件层 → 用户补丁层，逐层覆盖。
-- **D-02**：热挂载触发 = server 进程 watch `installed.json`（约 2s 轮询 store 哈希）；CLI 命令是纯磁盘操作、永不直接触碰容器；store 原子写（tmp+rename）保证 watcher 只见一致状态。
+- **D-01**：容器完整补丁栈 = bundle layers（profile `dsh.profile.bundles`）→ 用户补丁层 → Bridge extra patches → state home patches，逐层覆盖。
+- **D-02**：热挂载触发 = 监听 profile 组合文件（package.json / cordis.patch.yml）变化；CLI 与市场安装都是纯磁盘操作 + 触发组合事件；由 B2 bun-hmr 的 `registerConfig` 承载。
 - **D-03**：include `entry.update()` 重放契约——按 entry id diff 事务性插拔，浅合并（更新 patches 先展开旧 config）。
-- **D-04**：store 是唯一组合源，profiles 不写插件 bundles 清单。
-- **D-05**：供应链 heal——`profiles/node_modules` 为每个已装用户插件建 symlink，`add` 后必须重跑。
-- **D-06**：Bun 宿主兼容性门禁——下载后的 staging 先做 Node 私有 loader 静态扫描，再做隔离 Cordis 挂载；任一失败都不可写 store 或触碰正式容器。
+- **D-04**：profile `package.json` 是插件安装唯一真相源；官方 CLI 与市场与 `ellamaka dsh plugin` 写同一套文件；无第二清单。
+- **D-05**：共享层 heal——`profiles/node_modules` 的 `@deepseek-ai/*` symlink 指向闭包（官方包解析归口），安装/启动时幂等维护。
+- **D-06**：Bun 宿主兼容性门禁——下载后的 staging 先做 Node 私有 loader 静态扫描，再做隔离 Cordis 挂载；任一失败都不可落盘或触碰正式容器。
+- **D-07**：`desktopPnpm` 实现支持 `add`/`remove`/`install` 三动词；`add` 接受 npm 包名、`name@version` 与 `--dir` 本地路径；exitCode 0 即成功语义。
 
 ### 配置与信任
 
-- **配置双轨**（「设计约束 · 安装命令式、配置双轨」）：工具投影侧——某插件的工具是否投影进 ellamaka、以何白名单——走空间级 `settings.jsonc`（`ellamaka.dsh.tools` 段），与「工具投影」映射白名单合并；dsh 界面侧——插件在 web 容器内的 entry 级配置——命令式写入该插件的补丁层，动态生效。
-- **信任边界**：命令式安装是用户显式动作，初期免安装确认，只做 tarball 完整性（integrity）校验；第三方插件与 ellamaka 同进程执行、能碰 fs/shell 的风险在 `plugin add` 输出中明示。不新造权限体系。
+- **配置双轨**：工具投影侧（插件的工具是否投影进 ellamaka、白名单）走空间级 `settings.jsonc`；dsh 界面侧（entry 级配置）命令式写补丁层，动态生效。
+- **信任边界**：命令式安装是用户显式动作，做 tarball integrity 校验；第三方插件与宿主同进程执行的风险在安装输出中明示。不新造权限体系。
+
+### 迁移路径
+
+1. 布局迁移：`state/*` → `home/`，`profiles/` → `home/profiles/`，`.agent-presets` → `home/.agent-presets`；`state/` 退役（引擎停止后一次性执行）。
+2. env 注入改指 `home/`：dev.sh 与 Desktop sidecar。
+3. 安装器 retarget：从 `plugins/<pkg>/<ver>/` + store 改写为 profile node_modules + package.json 声明；`installed.json`/`composePluginLayers` 退役。
+4. 宿主安装工契约：`desktopProfiles` + `desktopPnpm` 注入实现。
+5. 已装 poc 插件（hello、weapon-rack 等）迁移到官方声明形态。
+6. 回归验收：preset 发现、市场安装流、官方 CLI 同 home 互操作、插件热挂载、dump-config。
 
 ### 验收基线
 
-> 已于 2026-09-02 达成下列原有验收项（供应链 Plan 200 测试全绿 + 用户实机验证 hello 插件热挂载/卸载/设置页 GUI）；Bun 宿主兼容性预检须另行验收。
-
 | # | 能力 | 验收结果 |
 |---|------|----------|
-| 1 | 安装 | `add` 在无系统包管理器的环境下完成第三方 dsh 插件安装，传递树完整，`@deepseek-ai/*` 依赖走闭包 symlink |
-| 2 | 即时生效 | 运行中的 serve 进程内 `add` 后：web 容器新插件 entry 激活、UI 可见；tools 容器新工具下一轮模型请求可见；全程无重启 |
-| 3 | 持久化 | 重启后插件清单与激活状态与安装时一致；installed.json 是唯一真相源 |
-| 4 | 卸载/禁用 | `remove`/`disable` 后 effects 反解、工具从 registry 消失、内置同名工具自动恢复 |
-| 5 | 失败语义 | 网络失败、解析失败、坏包均不污染 installed.json 与运行容器；有可诊断输出 |
-| 6 | 并发 | 多进程并发 add 串行化；半安装状态不参与解析 |
-| 7 | 隔离 | 插件安装不触碰闭包、不读写 `~/.dsh`、不引入 `DSH_HOME`/`DSH_PERMISSION_MODE` env |
-| 8 | Bun 宿主兼容性预检 | **待实施**：Node 私有 loader 依赖在 staging 被拒绝；动态/未知运行时依赖在隔离挂载失败时被拒绝；两种失败都不改变 store 或运行中容器，并输出命中证据 |
+| 1 | 生态互操作 | 官方 `dsh plugin`（指到同一 home）与 `ellamaka dsh plugin` 装的插件彼此可见，引擎都能加载 |
+| 2 | 市场全流程 | dshmarket 在 Ellamaka 容器内完成浏览→安装→启用→禁用→更新，全程 Bun 执行器、零 pnpm |
+| 3 | 即时生效 | 安装后运行中容器免重启生效（组合文件监听 + include 重放） |
+| 4 | 持久化 | 重启后已装清单与激活状态一致；profile package.json 是唯一真相源 |
+| 5 | 失败语义 | 解析/下载/预检失败不触碰 profile 目录与运行容器；有可诊断输出 |
+| 6 | 共享层一致 | `profiles/node_modules` 的官方包 symlink 恒指闭包，引擎与生态校验共享同一解析 |
+| 7 | Bun 预检 | Node 私有 loader 依赖在落盘前被拒绝，输出命中证据 |
 
 ---
 
-## 空间 × Agent 配置体系（当前主线）
+## wopal 插件包（Agent 配置随包发布，当前主线）
 
-> 设计定稿（2026-09-03）。目标：wopal 的多空间、多 Agent 协作模式在 dsh 界面内原生成立——每个空间有自己的 Agent 团队（灵魂）、武器可见性、技能集与界面形态；定义文件来自 ellamaka 既有资产（`.wopal/`），自动生成，不重新设计。机制事实依据见「已验证事实 · Agent 配置体系机制事实」。
+> 设计定稿（2026-09-03）；**2026-09-05 生态对齐后修订**。目标：wopal 的灵魂与能力以 **dsh 官方插件形态**交付——一个可发布到 dsh 生态的完整插件包（内含配置单 + 自定义能力），用户安装即得 wopal 配置单。机制事实依据见「已验证事实 · Agent 配置体系机制事实」。
+>
+> **修订要点（相对 2026-09-03 定稿）**：废弃「预设生成器」（每空间 × 每灵魂自动生成配置单）。配置单是全局一份的装配清单（不是每空间生成物），且 ellamaka 灵魂与 dsh 配置单是两种语言，只能按相似设计意图人工适配，不能自动生成。配置单的交付形态改为**随插件包发布**——与官方 `dsh-agent-presets` 包内置 shipped presets 同构。
 
 ### 定位
 
-主战场是 **dsh 界面本身**（助理 tab 的原生 UI + 官方引擎）。ellamaka 侧已定稿不再扩展，只通过工具容器继续喂小工具（见「能力采用」）。本节把 ellamaka 已验证的「空间 = 能力集 + 灵魂团队 + 权限控武器」模式，用 dsh 自己的机制（配置单 + 组队 + 插件体系）在 dsh 内重实现。
+主战场是 **dsh 界面本身**（助理 tab 的原生 UI + 官方引擎）。ellamaka 侧已定稿不再扩展，只通过工具容器继续喂小工具（见「能力采用」）。本节把 ellamaka 已验证的「空间 = 能力集 + 灵魂团队 + 权限控武器」模式，以 **dsh 官方插件规范**交付——wopal（及其团队 fae/rook）是一个标准 npm 插件包，配置单与自定义能力随包发布，安装即得。
 
-三个组成件，全部踩在既有地基上：
+两个组成件，全部踩在官方生态契约上：
 
 | 组成件 | 解决的问题 | 依赖的地基 |
 |--------|-----------|-----------|
-| **武器架插件** | 队员武器可见性 + 上下文 token 成本 | 引擎 `tools.restrict`（Agent 配置体系机制事实第 5 条）+ 供应链 |
-| **预设生成器** | 从 ellamaka 定义文件自动生成配置单 | SpaceRegistry + agent-presets 双根机制 + installAnchor |
-| **空间皮肤插件** | 界面按空间定制（编码空间/多媒体空间） | 供应链 + dsh client 插件面（hello 前置实证已验证）+ slots/theme 体系 |
+| **wopal 插件包** | 配置单随包发布（安装即得 wopal/fae/rook 配置单）+ 打包自定义能力 | 官方 agent-presets 双根机制 + `config.roots` 通道 + 生态对齐供应链（E2） |
+| **武器架能力** | 队员武器可见性 + 上下文 token 成本 | 引擎 `tools.restrict`（Agent 配置体系机制事实第 5 条），作为包内插件能力 |
 
-组队不新建机制，直接采用 dsh 官方组队能力（见「组队语义」）。
+组队不新建机制，直接采用 dsh 官方组队能力（见「组队语义」）。空间皮肤插件（S3）保持独立后续项（见 PLAN-TODOS）。
 
 ### 概念映射
 
-| wopal 空间资产 | dsh 机制 | 生成器动作 |
-|---------------|---------|-----------|
-| 空间 = 能力集 + 多 agent | 一组配置单（每灵魂一份，id = `空间-灵魂`） | 每空间 × 每灵魂生成一份 |
-| `.wopal/agents/<灵魂>` 人格定义 | 配置单 persona | 人格文本直接搬入 |
-| 权限 frontmatter 的工具可见性 | 武器架插件一行 + `allow` 名单 | 解析 frontmatter → allow 列表 |
-| `.wopal/skills/` | 配置单 skill 行指向该空间技能目录（绝对路径） | 一行配置 |
-| 空间 `AGENTS.md` / REGULATIONS | 引擎 agent-instructions 按会话 cwd 向上逐层读取 | **无需生成**——按目录自动生效 |
-| 灵魂间协作规则 | 官方组队工具行 + 人格内协作纪律 | 组队工具行 + 人格段落 |
-| `.wopal/` 下的 dsh 插件启用集 | 配置单插件行（安装全局共享，可见性按配置单授予） | 按空间配置生成行 |
+| wopal 资产 | dsh 机制 | 插件包动作 |
+|------------|---------|-----------|
+| 灵魂（wopal/fae/rook 人格） | 配置单 persona | 人工适配为配置单（按相似设计意图，非自动生成），随包发布 |
+| 工具可见性（权限控武器） | 武器架能力（`tools.restrict`）+ 配置单 allow 名单 | 包内 `lib/weapon-rack.js`，配置单一行引用 |
+| `.wopal/skills/`（wopal 专属技能） | 配置单 `skill-filesystem.customSkillDirs` | 指向空间技能目录（绝对路径，安装时按空间实例化） |
+| 空间 `AGENTS.md` / REGULATIONS | 引擎 agent-instructions 按会话 cwd 向上逐层读取 | **无需打包**——按目录自动生效 |
+| 灵魂间协作规则 | 官方组队工具行 + 人格内协作纪律 | 配置单组队工具行 + 人格段落 |
+| 自定义能力（未来） | 包内插件（apply 注册工具/服务） | 与 presets 同包发布，配置单引用 |
 
-**关键边界——安装共享、可见性按配置单**：dsh 插件安装是进程级全局动作（「设计约束 · 插件安装共享、启用按 profile」既定）；"空间 A 有而空间 B 没有"的表达层是**配置单的插件行 + 武器架 allow 名单**，不是每空间一套安装区。这与既有的「安装共享、启用按 profile」同构，可见性粒度从 profile 细化到配置单。
+**关键边界——安装共享、可见性按配置单**：dsh 插件安装是进程级全局动作（「设计约束 · 插件安装共享、启用按 profile」既定）；"wopal 有而别的配置单没有"的表达层是**配置单的插件行 + 武器架 allow 名单**，不是每配置单一套安装区。这与既有的「安装共享、启用按 profile」同构，可见性粒度从 profile 细化到配置单。
 
-### 武器架插件
+### wopal 插件包（配置单随包发布）
 
-一个小插件，全空间共用，每个配置单引用一行：
+wopal（及团队 fae/rook）以**标准 dsh 插件包**交付，与官方 `dsh-agent-presets` 包内置 shipped presets 同构：
+
+```text
+@wopal/dsh-wopal-pack/
+├── package.json              # main/exports；files 含 lib/ 与 presets/
+├── lib/
+│   ├── index.js              # 插件 apply(ctx)：注册武器架能力等
+│   └── weapon-rack.js        # tools.restrict 逻辑（配置单引用的能力件）
+├── presets/                  # 随包发布的配置单（与官方 shipped presets 同构）
+│   ├── wopal/                #   agent.cordis.yml + preset.yml + skills/
+│   ├── fae/
+│   └── rook/
+└── cordis.patch.yml          # 声明：向 agent-presets 行追加 config.roots
+```
+
+- **安装链路（全官方生态，零自研）**：`ellamaka dsh plugin add @wopal/dsh-wopal-pack`（E2 Bun 安装器）→ 包实体进 `home/profiles/<profile>/node_modules/`、`package.json` 声明 dependencies + bundles → 包的 `cordis.patch.yml` 向 agent-presets 行追加 `config.roots`（指向包内 `presets/`，官方预留的 deployment-added roots 通道）→ 引擎 discoverPresets 扫到 wopal/fae/rook → 配置单列表出现。
+- **配置单根语义**：包内 `presets/` 以 `{ path, trust: "system" }` 注册，与官方 `includeShippedRoot` 同机制（区别仅根来源是已装插件包而非官方包）。用户个性化仍走官方 authoring 路径 copy 到 `home/.agent-presets/`（用户根，升级不丢）。
+- **规范符合性**：插件实体/注册/组合 = 官方 profile 声明文件（生态对齐 E2）；配置单根 = 官方 `config.roots` 通道；preset 随包发布 = 官方 `dsh-agent-presets` 先例；能力 = 普通 cordis 插件（`ctx.tools.register`/`restrict`）。
+
+### 武器架能力（包内插件）
+
+wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按需在配置单行挂载：
 
 - **行为**：挂载时读取自身配置 `{ allow: [toolName...] }`，对当前 Agent 作用域调用一次 `ctx.tools.restrict({ allow })`。
 - **效果**：不在 allow 名单内的工具从该 Agent 的模型视野中完全移除——工具 schema 不下发，对应 prompt token 一并消失。同时解决两个问题：**队员不必承接主 Agent 全部武器**（ellamaka 权限体系控可见性的对等语义）与 **token 成本**（描述文本不再占用上下文）。
 - **作用域正确性**：配置单挂载层即 Agent 作用域（引擎强制拒绝无作用域的全局限制），preset 行插件调用 restrict 天然只影响加入该配置单的 Agent。
-- **安装与分发**：经供应链安装一次（全局），配置单以一行插件行 + 各自 allow 名单引用。
-
-### 预设生成器
-
-Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录**。
-
-```text
-扫已注册空间（SpaceRegistry / wopal CLI，现成能力）
-  → 每空间 × 每灵魂生成一份配置单（见「概念映射」映射表）
-      人格   ← .wopal/agents/<soul>
-      武器   ← 权限 frontmatter → 武器架插件行 + allow 名单
-      技能   ← skill 行指向该空间 .wopal/skills/（绝对路径）
-      插件   ← 空间配置的 dsh 插件行
-  → 生成物写入 $WOPAL_HOME/dsh/presets/<空间>/<id>/（纯文本 YAML，可再生 artifact）
-  → Bridge 装配时把该目录注册为 agent-presets 的自定义 system 根（roots 数组前置，一行配置）
-  → workbench 建会话按空间选中该空间的配置单组（dsh 会话本就支持 per-session 选配置单）
-```
-
-- **生成物纪律**：`presets/` 下全部是可再生 artifact，禁止手编（见「设计决策 · 生成物可再生」）；用户个性化走官方 authoring 路径 copy 到 `state/.agent-presets/`（用户根，升级不丢）。
-- **触发时机**：Web 容器 boot 时 + 空间定义文件变化时（watch 或按需刷新，与供应链 watcher 同型）。
-- **幂等**：重复生成产出一致结果；空间删除 → 对应配置单目录移除 → 列表自动消失。
+- **分发**：随 wopal 插件包发布（`lib/`），配置单以一行插件行 + 各自 allow 名单引用。若未来被其它配置单复用，可拆为独立包。
 
 ### 空间皮肤插件
 
@@ -767,9 +778,10 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 | 决策 | 内容 | 理由 |
 |------|------|------|
-| **新 id，不覆盖** | 生成配置单一律用新 id（`空间-灵魂`），禁止以同 id 覆盖官方配置单；用户根同 id 本就被静默遮蔽，宿主根同 id 遮蔽技术上可行但会让官方演进被旧副本永久压住 | 静默腐化防线 + 升级语义干净 |
-| **生成物可再生** | `presets/` 是生成 artifact，禁手编；个性化走用户根 copy | 单一真相源在 `.wopal/` 定义文件；生成物随时可删可重建 |
-| **武器可见性 = per-Agent 白名单** | 角色武器差异统一走武器架插件，不用补丁层或安装区表达 | 引擎级语义正确（从视野移除）；token 成本同步解决 |
+| **配置单随包发布** | wopal/fae/rook 配置单随插件包发布，经官方 `config.roots` 通道注册为 system 根 | 与官方 `dsh-agent-presets` 同构；安装即得；升级包即升级配置单 |
+| **不自动生成** | 废弃「预设生成器」；配置单由人工按相似设计意图适配 | ellamaka 灵魂与 dsh 配置单是两种语言，无可靠自动映射（用户裁定） |
+| **个性化走用户根** | 用户对 wopal 配置单的个性化经官方 authoring 路径 copy 到 `home/.agent-presets/` | 升级包不覆盖用户个性化；官方 authoring 通道 |
+| **武器可见性 = per-Agent 白名单** | 角色武器差异统一走武器架能力（`tools.restrict`），不用补丁层或安装区表达 | 引擎级语义正确（从视野移除）；token 成本同步解决 |
 | **界面定制只走声明式 slots/theme** | 皮肤插件禁用 replace 整区（shadows-shipped-ui 高风险位） | 未来 iframe → 原生演进（待定事项）时定制件可迁移 |
 | **空间识别用会话工作目录** | 皮肤插件与服务端以 cwd + 空间目录标记判断，不新增会话字段、不做跨引擎 RPC | 最小耦合；dsh 会话本就按空间目录建立 |
 | **组队用官方机制** | 自定义招人 provider 仅在 per-角色武器成为真实需求后立项 | 队员继承配置单已覆盖主要诉求；避免过早建设 |
@@ -780,7 +792,8 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 | 验收项 | 判据 |
 |--------|------|
-| 空间装配 | 多空间实测：每空间 × 每灵魂配置单生成、界面可选、新会话按空间装配 |
+| 随包发布 | `ellamaka dsh plugin add @wopal/dsh-wopal-pack` 后 wopal/fae/rook 配置单出现在配置单列表，安装即得 |
+| 规范符合 | 包实体进 profile 官方终态（node_modules + package.json 声明）；无自研安装/注册机制 |
 | 武器可见性 | 不同配置单的会话模型视野工具集与 allow 名单一致；token 占用随名单收窄 |
 | 技能与规则 | 空间技能目录加载；AGENTS.md 规则按 cwd 生效 |
 | 界面形态 | 编码/多媒体两演示空间视觉可区分；皮肤件崩溃被错误隔离，不影响宿主 |
@@ -838,7 +851,7 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 **与现有插件轮询重放机制的关系（bun-hmr 是升级而非替换）**：
 
-- 现状：`startDshPluginService`（`packages/ellamaka-cordis/src/plugins/runtime.ts`）每 2 秒轮询 `plugins/installed.json` 的 hash，变化即对 web/tools 两容器 `includeEntry.update()` 重放完整补丁栈（P6 插件供应链的热挂载底座）。它是官方 HMR 在 Bun 下不可用时的替代品。
+- 现状：`startDshPluginService`（`packages/ellamaka-cordis/src/plugins/runtime.ts`）每 2 秒轮询插件真相源（生态对齐迁移后为 profile 组合文件：`package.json`/`cordis.patch.yml`）的 hash，变化即对 web/tools 两容器 `includeEntry.update()` 重放完整补丁栈（P6 插件供应链的热挂载底座）。它是官方 HMR 在 Bun 下不可用时的替代品。
 - bun-hmr 完成后：**轮询（每 2 秒 hash 对比）被 chokidar 事件驱动取代**；但组合逻辑与 `includeEntry.update()` 热挂载原语**保留**，bun-hmr 的 generation 候选替换正是复用 `startDshPluginService` 的组合逻辑（见上「模块热换的 Bun 替代路径」第 1 步）。删除该机制会让 bun-hmr 失去组合底座。
 
 **现状缺陷：失败重试风暴（B2 必须修复）**：
@@ -887,7 +900,7 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 ## workbench × dsh 前端插件互通（门槛轨道）
 
-> 前身为主线方向（2026-09-02 定稿方向二）。2026-09-03 重排优先级：**空间 × Agent 配置体系先行**——先把 dsh 插件用起来（自建 + 外部发现），用出真实价值后再评估 WC 化吸收。
+> 前身为主线方向（2026-09-02 定稿方向二）。2026-09-03 重排优先级：**wopal 插件包先行**——先把 dsh 插件用起来（自建 + 外部发现），用出真实价值后再评估 WC 化吸收。
 
 ### 定位与启动前提
 
@@ -900,7 +913,7 @@ dsh 前端插件体系（React + 声明制 slots）与 ellamaka workbench（Soli
 
 ### 一包多面
 
-一个插件包三个激活面，installed.json 仍唯一真相源，`enable/disable` 一个动作管三处：
+一个插件包三个激活面，profile `package.json` 是唯一真相源，`enable/disable` 一个动作管三处：
 
 | 面 | 目标 | 机制 | 状态 |
 |----|------|------|------|
@@ -921,7 +934,7 @@ dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench �
 | V# | 验证 | 内容 | 通过判据 |
 |----|------|------|---------|
 | V1 | 同源连通 | Bridge 静态路由 `/dsh/ellamaka-ui/<pkg>/<ver>/*` + Vite `/dsh` proxy | workbench fetch 插件 WC 文件返回 200 |
-| V2 | 加载器最小链路 | installed.json 含 fixture（`ellamaka.ui` 声明）→ 加载 → 挂载 → 卸载 | fixture WC 在声明 slot 挂载并正确卸载；remove 后不再挂载 |
+| V2 | 加载器最小链路 | profile package.json 含 fixture（`ellamaka.ui` 声明）→ 加载 → 挂载 → 卸载 | fixture WC 在声明 slot 挂载并正确卸载；remove 后不再挂载 |
 | V3 | 数据面实证 | fixture 插件服务端 register `/dsh/fixture/status` | WC 同源 fetch 渲染真实数据 |
 | V4 | 真实插件实证 | fork 一个在用 dsh client 插件补 `ellamaka.ui` 面 | `add` → watcher 热挂载 → workbench 显示实际功能 |
 | V5 | 失败语义 | 容器未起 / 插件加载异常 | 不可用态降级；插件崩溃被错误隔离，宿主其余槽位不受影响 |
@@ -933,60 +946,44 @@ dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench �
 | 静态路由 | Bridge | `/dsh/ellamaka-ui/<pkg>/<version>/*` 服务 plugins 目录 WC 文件（`/dsh/plugins/*` 是 dsh registry 专用，不复用） |
 | dev proxy | ellamaka-app | Vite `/dsh` 转发到 serve |
 | workbench slot 面 | ellamaka-app | 初始 3-5 个挂载点（会话侧栏、会话头部、设置页项等）+ 每个 slot 的 props 契约 |
-| WC 加载器 | ellamaka-app | 读 installed.json → 过滤 `ellamaka.ui` + enabled 含 "workbench" → 动态 import → Shadow DOM 挂载 → 错误隔离 → 卸载 |
+| WC 加载器 | ellamaka-app | 读 profile package.json → 过滤 `ellamaka.ui` + enabled 含 "workbench" → 动态 import → Shadow DOM 挂载 → 错误隔离 → 卸载 |
 | enabledIn 语义扩展 | 供应链 | "workbench" 加入启用面取值（「设计约束 · 插件安装共享、启用按 profile」的延伸） |
 
 ### 与既有约束的衔接
 
 - **信任面**：WC 与 workbench 同页面上下文，可信度等同 dsh 插件同进程执行（用户显式安装 + `add` 风险提示，见「插件供应链 · 配置与信任」），不新增权限体系。
-- **单真相源**：installed.json 不新增第二清单；实现决策 D-04 保持。
+- **单真相源**：profile `package.json` 不新增第二清单；实现决策 D-04 保持。
 - **官方闭包不变**：`ellamaka.ui` 面仅消费方为 ellamaka，不触碰官方闭包、不进入 dsh GUI 运行时。
 
 ---
 
-## dsh 插件市场在 Ellamaka 宿主中的应用（待实验）
+## dshmarket 插件市场接入
 
-**定位**：dshmarket 是官方 dsh 生态的可视化插件市场（Settings → Plugin Market），浏览/安装/更新/卸载社区插件。官方安装与机制已在 `docs/products/wopal-space/research/dsh/dsh-market-installation-analysis.md` 记录（2026-09-05，官方 `~/.dsh/profiles/web` 实测）。本节回答：poc 宿主高度定制，市场要如何在其中运行。
+**定位**：dshmarket 是官方 dsh 生态的可视化插件市场（Settings → Plugin Market），浏览/安装/更新/卸载社区插件（2300+ 条目目录）。官方安装与机制在 `docs/products/wopal-space/research/dsh/dsh-market-installation-analysis.md` 记录（2026-09-05 实测）。接入 Ellamaka 遵循「插件供应链」的生态对齐设计：**市场代码零修改，宿主提供安装工契约**。
 
-**结论**：市场不能直接照搬。poc 需要「换底座 + 割依赖」——先把市场对官方 CLI/pnpm/home 的依赖桥接成 poc 的 store/compose 机制，再决定 UI 落点。
+### 接入机制
 
-### 三层结构差异
+市场 `apply(ctx, config)` 需要 `webServer` 与 `loader` 两个服务——Ellamaka web 容器原生提供（VirtualWebServer + Loader）。安装执行走市场的**宿主安装工契约**：宿主注入 `desktopProfiles`（profile 名与目录）与 `desktopPnpm`（安装执行接口）后，市场完全经注入接口执行安装/卸载/恢复，不 spawn CLI、不依赖 pnpm。安装接口实现 = Bun 安装器（见「插件供应链 · Bun 安装器流水线」）。
 
-| 层 | 官方 `~/.dsh/profiles/web` | poc `$WOPAL_HOME/dsh` |
-|----|------|------|
-| 安装机制 | `dsh plugin` → pnpm add，写 profile `package.json` dependencies + `dsh.profile.bundles` | `ellamaka dsh plugin` → 自研 resolver+pacote，写 `plugins/installed.json`（store 是唯一真相源） |
-| 插件实体 | `web/node_modules/` | `plugins/<name>/<version>/` |
-| 注册 | `dsh.profile.bundles` | store `enabledIn`，运行时 `composePluginLayers` 合成 |
-| 组合 | 官方 loader 读 bundles + patch | 桥自研 `composeFullPatchStack` + include replay |
+市场路由挂 `webServer`，按 `/dsh` mount 前缀重写（与官方 web 资产重写同理）。市场自身状态目录 `.dsh-market/` 按 DSH_HOME 语义落在 profile 目录内。
 
-市场的安装动作是 `spawn('dsh', ['plugin', ...])`（dsh-cli.ts）。poc 没有 `dsh` 命令，只有 `ellamaka dsh plugin`。这是第一道要换的底座。
+### 生态兼容边界（源码实证）
 
-### 兼容性分层评估
+| 市场能力 | 机制 | Ellamaka 兼容性 |
+|----------|------|----------------|
+| 安装/卸载 | 宿主安装工接口，exitCode 0 判成功 | 原生工作；接口由 Bun 安装器实现 |
+| 安装后校验 | 读 profile package.json `dsh` 字段 + entry 在 node_modules 可解析 | 终态文件由 Bun 安装器按官方语义摆放，校验通过 |
+| 已装列表 | 读 profile `package.json` dependencies | 与真相源一致 |
+| 热禁用/启用 | 追加 profile `cordis.patch.yml` 行 | 组合文件监听触发热重放（D-02） |
+| 快照/恢复 | 存 package.json + cordis.patch.yml + .dsh-market/state.json | 原生工作；恢复的裸 install 走安装工 `install` 动词（D-07） |
+| 更新自动回滚 | 按 pnpm-lock.yaml 字节恢复 | **已知偏差**：Bun 安装器不产 pnpm-lock，回滚退化为按快照声明重装（语义等价） |
+| 进度显示 | pnpm ndjson 阶段事件 | 可选增强；缺省退化为普通进度 |
+| GitHub 源安装 | git clone + build | 第二期实现；第一期明确报错 |
+| 自重启 | SIGTERM 宿主进程 | `allowRestart: false` 注入关闭 |
+| client.inject | 前端模块注入 Settings | 走官方 web-app 的 client 机制；接入探针实测确认 |
 
-**服务端挂载（可行，改动最少）**：poc 的 web 容器完整提供市场 `apply(ctx, config)` 需要的两个服务——`webServer`（`dsh-web.ts` VirtualWebServer）+ `loader`。市场通过 `process.argv` 找 `--profile`，poc serve 无此 argv，需传 `config.profile = 'web'` 显式指定。市场路由挂在 `webServer` 上，需按 `/dsh` mount 前缀重写（与官方 web 资产重写同理）。市场本体可像普通 bundle 一样被 include 组合，UI 能出现在 Settings。
+### 实施步骤
 
-**安装/卸载动作（必须换底座）**，两条路：
-
-- **A（推荐，最小侵入）**：市场支持显式 `profileDirectory`（Desktop 分支专为「宿主自己管 profile 目录」设计）。poc 给它注入一个 `profileDirectory = $WOPAL_HOME/dsh/plugins/<name>/<version>` + 一个假 `desktopPnpm` 服务（实现 `DesktopPnpmLike` 接口），让它走 Desktop 分支，把 pnpm add 换成 poc 的 `installPackage`。市场 UI 的 install/uninstall/update 全指向 poc store。
-- **B（更「正统」）**：给 poc 补 `dsh` CLI 兼容层或让市场可配置 CLI 名，市场原样走 `ellamaka dsh plugin add`。好处是热挂载逻辑直接复用 poc include replay；坏处是市场的 pnpm 假设（pnpm-workspace、store v11、.modules.yaml）在 poc 里不存在，校验会误判。
-
-倾向 A。poc 已有完整 include replay 热挂载，市场自带的 `hot.ts`（cordis-plugin-include 的 Include 子类）与 poc 的 `entry.update` replay 是两套并存机制，poc 里应**禁用市场自己的 hot/patch/restart**，只留「目录浏览 + 安装编排」，实际安装落点由桥接管。
-
-**断裂点（poc 侧必须处理）**：
-
-| 市场能力 | 问题 | poc 处理 |
-|----------|------|---------|
-| `client.inject`（前端模块注入） | 官方 web 靠它把市场 UI 注入 Settings | 需实测：poc `renderIndex` 只处理 `webserver/index-inject` 注入表，不转发 bundle 的 `client.inject` 到 ellamaka 前端。若市场 UI 完全走自己挂的 `/dsh-market/*` 路由则不需要；若依赖则需桥转发 |
-| pnpm 假设 | nodeLinker hoisted、.modules.yaml、store v11 | 不适用；poc 用 symlink heal + flat node_modules，校验逻辑需绕过 |
-| `$DSH_HOME`/`~/.dsh` | 市场 `resolveDshHome()` 读 `DSH_HOME` env | 宿主已设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（2026-09-05 修订），市场经 env 即可正确定位；集成注入的 profileDirectory 优先，不碰 `~/.dsh`（隔离红线） |
-| 自重启 / SIGTERM | `restart.ts` 直杀宿主进程 | poc 禁用（`allowRestart: false`），宿主进程生命周期归用户 |
-| 快照/备份 | 读 profile 目录 + manifest+lockfile | poc store 无 lockfile；快照改为 store + `plugins/` 目录 |
-
-### 实验步骤（B3/B2 之后执行）
-
-1. **只读探针**：在 poc web 容器以目录插件方式挂 dshmarket（`ellamaka dsh plugin add dshmarket --dir` 或注入 patch），验证 `apply()` 能过 `inject(['webServer','loader'])`、UI 路由能出现在 `/dsh` 下。这是最大不确定点（client.inject 依赖）。
-2. **换底座**：实现 `DesktopPnpmLike` 兼容注入，让市场走 Desktop 分支，`profileDirectory` 指到 poc store，安装动作转 `installPackage`。
-3. **禁用破坏面**：`allowRestart: false`，禁用 `hot.ts`/`patch.ts`/`restart.ts`，隔离红线不碰 `~/.dsh`。
-4. **快照/备份适配**：poc store + `plugins/` 目录；目录 UI 的「已安装列表」从 store 读。
-
-**风险**：dshmarket 是 4400 行 routes 的成熟生态插件，poc 当前「工具容器优先」，web 容器刚过浏览器认证。市场 UI 依赖的前端注入链（client.inject → Settings 面板）是最大不确定点——先做第 1 步探针，一次实机验证后再定方案，避免先写适配代码才发现 UI 链路不通。
+1. **探针**：以官方声明形态（Bun 安装器写入 profile）挂载 dshmarket，验证 `apply()`、路由挂载、Settings 入口（client.inject 链路实测确认）。
+2. **宿主安装工**：实现 `desktopProfiles` + `desktopPnpm` 注入与 Bun 安装器三动词。
+3. **验收**：按「插件供应链 · 验收基线」#2 执行市场全流程。
