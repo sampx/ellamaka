@@ -154,7 +154,9 @@ Dsh 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge �
 
 #### 唯一 home 与目录所有权
 
-**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。Ellamaka 集成只用 `$WOPAL_HOME`，**永不使用 `$DSH_HOME`，永不设置 `DSH_HOME` 环境变量**；`~/.dsh` 归 dsh 官方 CLI 专用，Ellamaka 不在其内读写。
+**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。Ellamaka 集成只用 `$WOPAL_HOME`；`~/.dsh` 归 dsh 官方 CLI 专用，Ellamaka 不在其内读写。
+
+**`DSH_HOME` env 的宿主兜底（2026-09-05 修订）**：rc.2 时代的约束「永不设置 `DSH_HOME`」在 rc.1 生态下不成立——官方包（如 `dsh-agent-presets` 的用户配置单根）在**包级代码**里直接 import `dshHomePath()`（读 `$DSH_HOME` env），完全绕开 ctx/config 注入体系；这类 env 直读是官方生态的既定机制，逐包重新适配不可接受。因此宿主在**进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/state`**（dev.sh 注入 backend、Desktop sidecar env 注入），让官方包的 env 解析与配置注入**汇合到同一个 state 目录**——设置它的目的恰恰是保护隔离（官方包不落到 `~/.dsh`）。Ellamaka 自己的集成代码（bridge/adapter/配置注入路径）依旧不读不依赖这个 env。
 
 ```text
 $WOPAL_HOME/dsh/
@@ -299,7 +301,7 @@ Dsh 引擎的运行时数据（settings、credentials、匿名用户 ID、sessio
 | 插件直接 `import { resolveDshHome }` | settings/credentials/agent-instructions/shell-env/skill-fs/attachment 等读 `config.dshHome` | 在 profile patch 层给各插件传 `dshHome: $WOPAL_HOME/dsh/state` |
 | 无配置注入的例外 | `llm-deepseek` 上传索引、`anonymous-user-id` | 使用插件显式路径配置；未提供隔离入口的功能保持禁用 |
 
-两种机制最终都落在 `$WOPAL_HOME/dsh/state`，不依赖 `DSH_HOME`。官方 dsh CLI 无论同进程还是独立进程，都感知不到 Ellamaka 的运行时数据。
+两种机制最终都落在 `$WOPAL_HOME/dsh/state`。宿主另在进程级设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（见「唯一 home 与目录所有权」的修订），为闭包内官方包的 env 直读兜底——两条路汇合同一目录。官方 dsh CLI 无论同进程还是独立进程，都感知不到 Ellamaka 的运行时数据。
 
 ### Profile 机制
 
@@ -545,9 +547,9 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 7. **wopal-plugin 原生边界**：wopal-plugin 继续作为 ellamaka 原生插件运行。只采用独立 dsh 能力，不拆分或迁移 wopal-plugin。
 8. **工具容器边界**：工具调用走专用工具容器（ellamaka-tools profile），容器内不创建任何 dsh session；adapter 只传递工具实测消费的最小 per-call context。web 容器保持完整 profile，不复用为工具后端。禁用清单是 profile 的用户补丁层，ellamaka 仅在模板为空时播种、不覆盖用户编辑。
 9. **空间隔离**：容器装配是进程级共享能力池，空间差异在投影层解决。
-10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME`，不用 `$DSH_HOME`，**永不设置 `DSH_HOME` env**。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
+10. **DSH home 唯一**：依赖闭包、profile 定义与运行时数据只物化在 `$WOPAL_HOME/dsh`；ellamaka 集成永远只用 `$WOPAL_HOME` 解析自己的路径。宿主在进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（dev.sh 与 Desktop sidecar），为闭包内官方包的 env 直读兜底（rc.1 实证修订，见「唯一 home 与目录所有权」）；集成代码自身不读该 env。`~/.dsh` 归 dsh 官方 CLI 专用，ellamaka 不在其内创建、修改或删除任何内容。
 11. **启用开关统一**：`ELLAMAKA_DSH` 是禁用开关，默认开启。serve、web、TUI 与 Desktop sidecar 统一以 `ELLAMAKA_DSH=0` 禁用，未设置或 `!=0` 启用。无其他分支启用方式。
-12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。隔离不依赖 `DSH_HOME` env。
+12. **运行时隔离**：dsh 运行时数据经纯配置注入落 `$WOPAL_HOME/dsh/state`，与闭包/profiles 分目录，与官方 `~/.dsh` 完全隔离。宿主设置的 `DSH_HOME` env 指向同一 state 目录（官方包 env 直读兜底），不改变隔离边界。
 13. **交付边界**：Ellamaka 发布物携带编译后的 Bridge；`@deepseek-ai/*` 官方运行时只存在于指纹闭包。Bridge 不发布为独立 registry 包，也不进入闭包 manifest。
 14. **版本绑定**：DSH 运行时清单与 Ellamaka 发布版本绑定。普通配置不覆盖 DSH 版本；独立升级通过发布经过验证的完整清单完成。
 15. **统一自物化**：Runtime Manager 是所有入口的唯一物化实现。闭包缺失或损坏会触发自动物化，不等价于用户禁用，也不要求用户运行脚本修复。
@@ -574,7 +576,7 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 | 6 | 并发与原子性 | 多进程共享 `$WOPAL_HOME` 时只执行一次下载；未验证 staging 不参与加载；升级不改写运行中的闭包；闭包只增不减、无自动删除 |
 | 7 | 动态加载 | Bridge 仅从 installAnchor 对应闭包加载官方运行时；应用 bundle、cwd、workspace 和全局 node_modules 不影响解析 |
 | 8 | 失败语义 | 首次安装、升级、离线、超时、integrity 失败与损坏闭包均产生确定的状态和诊断；Ellamaka 能以无 DSH 模式继续运行 |
-| 9 | 隔离 | 依赖闭包、profiles 与 state 各归其位；Ellamaka 不读写 `~/.dsh`，不设置或消费 `DSH_HOME` |
+| 9 | 隔离 | 依赖闭包、profiles 与 state 各归其位；Ellamaka 不读写 `~/.dsh`；`DSH_HOME` env 由宿主设置为 state 目录（官方包兜底），集成代码不消费它 |
 | 10 | PoC 机制退出 | 生产链路不再使用 TS strip-types、`.js → .ts` loader、`resources/dsh-materialize/cordis` 源码副本及手工版本常量 |
 
 ---
@@ -788,15 +790,15 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 
 ## Bun 宿主 HMR 与闭包升级（当前主线）
 
-> 设计定稿（2026-09-03）。背景：官方 0.1.1-rc.2 运行中发生三类事故——tool-cordis 进程级注册冲突、29.9 万事件大会话回放拖垮单进程控制面、state 目录被官方 CLI 污染。官方 0.1.2-rc.1 已将模块级 HMR 改为按 profile 显式启用（base bundle 默认 `hmr: disabled: true`），web profile 以 `patchReload: 'live'` 的 watch-only 回退实现用户 patch 热加载；闭包应升级至该版本。本节给出 Bun 宿主下 DSH 热加载能力的完整设计与升级路径。机制事实依据见「已验证事实」与本节内联引用。
+> 设计定稿（2026-09-03）；**2026-09-05 按 B3（闭包 0.1.2-rc.1 实机升级）实证修订**。背景：官方 0.1.1-rc.2 运行中发生三类事故——tool-cordis 进程级注册冲突、29.9 万事件大会话回放拖垮单进程控制面、state 目录被官方 CLI 污染。官方 0.1.2-rc.1 已将模块级 HMR 改为按 profile 显式启用（base bundle 默认 `hmr: disabled: true`）；闭包已随 B3 升级（提交 `5e587e8b2c`）。本节给出 Bun 宿主下 DSH 热加载能力的完整设计与升级路径。机制事实依据见「已验证事实」与本节内联引用；B3 之后新增以 rc.1 闭包实机代码为准（`~/.wopal/dsh/closures/<fingerprint>/node_modules/@deepseek-ai/*`），不再以 ref-repo 源码推演。
 
 ### 官方 0.1.2-rc.1 机制事实
 
 以下事实逐条核对自 `labs/ref-repos/deepseek-harness`（0.1.2-rc.1 tag）：
 
 - **模块级 HMR 是 opt-in**：`packages/bundle/base/cordis.patch.yml` 中 `hmr` 行带 `disabled: true`，注释「Module reload is opt-in per profile」。官方唯一调用方是 CLI TUI 开发路径。
-- **watch-only 回退**：`apps/cli/src/profile-boot.ts` 对 `patchReload: 'live'` 的 profile（web 模板默认 live），在 `hmr` 未挂载时以 `config: { root: [] }` 挂载一个空根 HMR 实例，仅提供 `registerConfig` 配置监听——不打开任何模块根，不触碰模块缓存。
-- **HMR 的 Node 私有依赖仍在**：`vendor/hmr/src/index.ts:120` 构造器要求 `ctx.loader.internal` 存在，模块热换路径使用 Node 内部 ESM loader 的 `loadCache`/`resolve`。Bun 下该条件永远不成立（`ModuleLoader.fromInternal()` 只识别 Node ≥22 的 internal/modules/esm/loader）。
+- **watch-only 回退是 Node-only**（B3 实机修订）：`profile-boot`（闭包 `dsh/lib/profile-boot-*.js:271-288`）对 `patchReload: 'live'` 的 profile（web 模板默认 live）在 `hmr` 未挂载时以 `config: { root: [] }` 挂载空根 HMR 实例，仅提供 `registerConfig` 配置监听。但该创建路径在 Bun 下**第一步就抛错**——官方 hmr 插件构造器要求 `loader.internal`（见下条），异常被 `try/catch + suppressShutdownError` 静默吞掉。结论：**Bun serve 下用户 patch 热加载在 rc.1 官方代码中完全不可用**（watch-only 回退与模块热换一样失效），bun-hmr 是 Bun 下该能力的唯一路径，B2 的验收基线是 0 → 1。
+- **HMR 的 Node 私有依赖仍在**：`cordis-plugin-hmr/lib/index.js:107` 构造器要求 `ctx.loader.internal` 存在（"–-expose-internals is required for HMR service"），模块热换路径使用 Node 内部 ESM loader 的 `loadCache`/`resolve`（`:216`）。Bun 下该条件永远不成立（`ModuleLoader.fromInternal()` 只识别 Node ≥22 的 internal/modules/esm/loader）。
 - **loader 无 internals 时的降级是官方语义**：`vendor/loader/src/index.ts:73` 中 `internal = ModuleLoader.fromInternal()` 可为 `undefined`；裸包名导入走原生 `import()`（`vendor/loader/src/config/tree.ts`）。官方 embedder 文档明确「无 internals 走 documented no-internals path」。
 - **tool-cordis 注册表冲突未修**：`packages/extensions/cordis-host-runner/src/inspect-registry.ts` 的 `register()` 依旧按 manifest id 全局去重抛错；同引擎第二个含 `tool-cordis` 的 preset 挂载仍失败。
 - **FrameQueue 仍无界**：`packages/host/apiproxy/lib/index.js` 的 `FrameQueue.push` 依旧无条件 `buffer.push`，无帧数/字节上限。
@@ -805,6 +807,8 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 ### Bun 宿主 HMR 适配器（bun-hmr）
 
 **定位**：Bun 容器内实现官方「配置热加载」契约；模块级热换降级为安全的事务性重载。适配器以 `@wopal/ellamaka-cordis/bun-hmr` 提供，在 Bun 路径以同一 `hmr` 服务位替代官方插件；Node 路径（Desktop sidecar）继续用官方 `@deepseek-ai/cordis-plugin-hmr`。
+
+**兼容契约（B3 实证收窄）**：官方调用方 `watchUserPatches`（闭包 `dsh-app-boot/lib/index.js:1075-1095`）对 `hmr` 服务位的消费面**精确两个方法**——`registerConfig(filename, refresh)`（监听单文件、变更时串行 refresh、返回 disposer；重复注册同路径抛错）与经 `entry.update({ config: { patches } })` 的组合重放。refresh 闭包由官方提供（重读 patch 文件 → `compose` → `entry.update`），bun-hmr 只负责「检测变更 + 串行调度」。因此 bun-hmr 不需要复刻官方 hmr 的模块根/watcher 配置面：官方 `watchUserPatches` 以 `config: { root: [] }`（空根）挂载，语义就是「无模块监听、只要配置监听」；构造器守卫（`loader.internal`）在 bun-hmr 中不存在。错误契约对齐：`registerConfig` 在服务未激活时抛错、官方调用方对 `INACTIVE_EFFECT` 错误码静默降级为 no-op disposer——bun-hmr 保持同样的错误形状。实现时以 rc.1 闭包 `cordis-plugin-hmr/lib/index.js` 的 `registerConfig` 为对齐基准（`findWatchRoot`、路径去重、串行 refresh），不参考 rc.2 时代设计稿。
 
 **能力边界**（对照官方 hmr 的两个消费者）：
 
@@ -848,6 +852,12 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 - `.wopal-space/.tmp/spike/s2-plugin.mjs` 实测：`Bun.plugin({ setup(build) { build.onResolve(...) } })` 注册成功、暴露 `onResolve` API，但**不影响运行时的 `await import()`**——`@wopal-spike/missing` 依旧 `ERR_MODULE_NOT_FOUND`。Bun 的 `Bun.plugin` 拦截只作用于构建期（bundle），运行时模块解析不在其内。
 - bun-hmr 不依赖此能力（走 include update + 内容寻址 URL），该结论仅作记录，防止将来再尝试用 `Bun.plugin` 做运行时解析拦截。
 
+**B3 传递的适配教训（B2 实现前必读）**：
+
+- **rc.1 破坏性变更的模式是「读面服务化」**：Session 事件日志从裸数组升级为 seq 编号读面（`snapshotEvents`/`eventAt`/`seq` 连续性契约，sandbox-policy 与 approval 的折叠都走它）；connection 服务化（browser-auth）；HMR 服务位收敛。凡 facade/适配层引用官方服务形状的，**以闭包内实际代码为对齐基准**，不参考历史设计稿——B3 的 tools 断链事故（dsh-adapter session facade 停在旧契约）即源于此。
+- **测试与受测服务同副本**：bun 的多副本物化使 Symbol/WeakMap 跨副本失联（B3 scope-instances 4 测试重写的教训）；bun-hmr 测试中任何服务位断言必须与受测容器同副本解析 cordis。
+- **lock/manifest 物料链已闭环**（B3 提交 `5e587e8b2c`）：lock 生成器自带新鲜度门禁与键规范化，optional 语义落地；B2 涉及闭包再生物料时直接复用，无需另建防护。
+
 ### tool-cordis 注册冲突的宿主侧缓解
 
 上游未修（进程级 id 去重），宿主侧在本闭包版本内执行缓解：
@@ -856,14 +866,16 @@ Bridge 侧同步模块，职责单一：**空间定义文件 → 配置单目录
 - **创造模式单会话约束**：官方 `cordis` preset 内置 `tool-cordis`，同一引擎最多一个该 preset 的活动会话；第二个会话挂载失败回落 default。此约束作为已知限制记录，不在宿主侧 hack（修改官方 preset 违反「已验证事实 · 官方配置单在闭包内不可变」）。
 - **会话恢复顺序**：resume 大 preset 会话先于新会话创建发生时，同样受此约束；Bridge 不做挂载重试风暴抑制之外的额外干预（错误已被 loader 聚合，UI 侧由挂载失败回落语义兜底）。
 
-### 闭包升级路径（0.1.1-rc.2 → 0.1.2-rc.1）
+### 闭包升级路径（0.1.1-rc.2 → 0.1.2-rc.1）——**已由 B3 执行完毕（2026-09-05）**
 
-1. **版本提升**：`packages/ellamaka-cordis/package.json` 六个 `@deepseek-ai/*` 直接依赖提升至 `0.1.2-rc.1`（`cordis`/`cordis-plugin-loader` 保持 4.0.2/1.0.3，官方未变更）。
-2. ** manifests 再生**：构建生成新的 `dsh-runtime-manifest.json` 与 `dsh-runtime-lock.json`（约束「DSH 依赖真相源」），Runtime Manager 自动物化新指纹闭包，旧闭包保留（「设计约束 · 不可变闭包」）。
-3. **stateHomePatches 复核**：rc.2 的 8 行 state 注入与 `dshHomePath` override 逐行对照 rc.1（`app-boot/src/index.ts:803` 仍 provide `dshHomePath`，seam 未变）；`session-persistence-jsonl` 在 web 容器保持禁用（tools 容器语义不变）。
-4. **agent-presets 行为回归**：rc.1 `mount.ts` 的 `mountPreset`/`leakedServices` 契约未变；重点回归双根发现（官方根 + 用户根 extraPatch）与 standing mount 复检。
-5. **Bun 路径回归清单**（升级后必须全绿）：serve（Bun）下 web+tools 双容器挂载、wopal/fae/rook 配置单挂载、插件 add/enable/remove 热挂载、`/global/health`、`/dsh` iframe 全链路、Desktop sidecar（Node）同清单回归。
-6. **升级收益**：watch-only patch 热加载进入可用区间（bun-hmr 兜底）、base bundle 的 PTC tools mode env seam、http-proxy 版本对齐等 rc.1 修复一并获得。
+> 以下 1-5 条作为已执行的升级记录保留（验收清单供 Desktop sidecar 回归时复用）；第 6 条「升级收益」中 watch-only patch 热加载一项经实机证伪——见「官方 0.1.2-rc.1 机制事实」的 Node-only 修订，该收益改由 bun-hmr 兑现。实施偏差全录见 `docs/PLAN-iframe-auth-rc1.md` §7（记录 6-12）。
+
+1. **版本提升**：`packages/ellamaka-cordis/package.json` 六个 `@deepseek-ai/*` 直接依赖提升至 `0.1.2-rc.1`（`cordis`/`cordis-plugin-loader` 保持 4.0.2/1.0.3，官方未变更）——已随提交 `1bb2d2674f` 落地，且 manifest 携带全量 closure 依赖集。
+2. **manifests 再生**：`dsh-runtime-manifest.json` 与 `dsh-runtime-lock.json` 已再生（582 包、66 optional 条目、指纹 892d5933），Runtime Manager 实机物化新闭包成功，旧闭包保留。
+3. **stateHomePatches 复核**：`dshHomePath` override seam 未变（实机 state 目录行为正常）；`session-persistence-jsonl` 在 web 容器保持禁用（tools 容器语义不变）。
+4. **agent-presets 行为回归**：双根发现与 standing mount 复检随 B3 实机验证通过。
+5. **Bun 路径回归清单**：serve（Bun）下 web+tools 双容器挂载、wopal 配置单挂载、`/global/health`、`/dsh` iframe 全链路（token 交换 → cookie → 对话 E2E）已实机全绿；插件 add/enable/remove 热挂载与 Desktop sidecar（Node）同清单回归留待 B2 验证窗口一并执行。
+6. **升级收益（修订）**：base bundle 的 PTC tools mode env seam、http-proxy 版本对齐等 rc.1 修复已随升级获得；watch-only patch 热加载在 Bun 下不可用（官方回退被构造器守卫阻断），该项收益由 B2 的 bun-hmr 兑现。
 
 ### 非目标
 
@@ -966,7 +978,7 @@ dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench �
 |----------|------|---------|
 | `client.inject`（前端模块注入） | 官方 web 靠它把市场 UI 注入 Settings | 需实测：poc `renderIndex` 只处理 `webserver/index-inject` 注入表，不转发 bundle 的 `client.inject` 到 ellamaka 前端。若市场 UI 完全走自己挂的 `/dsh-market/*` 路由则不需要；若依赖则需桥转发 |
 | pnpm 假设 | nodeLinker hoisted、.modules.yaml、store v11 | 不适用；poc 用 symlink heal + flat node_modules，校验逻辑需绕过 |
-| `$DSH_HOME`/`~/.dsh` | 市场 `resolveDshHome()` 读 `DSH_HOME` env | poc 从不设 `DSH_HOME`，运行时数据在 `$WOPAL_HOME/dsh/state`。市场必须经注入的 profileDirectory 定位，不能碰 `~/.dsh`（隔离红线） |
+| `$DSH_HOME`/`~/.dsh` | 市场 `resolveDshHome()` 读 `DSH_HOME` env | 宿主已设置 `DSH_HOME=$WOPAL_HOME/dsh/state`（2026-09-05 修订），市场经 env 即可正确定位；集成注入的 profileDirectory 优先，不碰 `~/.dsh`（隔离红线） |
 | 自重启 / SIGTERM | `restart.ts` 直杀宿主进程 | poc 禁用（`allowRestart: false`），宿主进程生命周期归用户 |
 | 快照/备份 | 读 profile 目录 + manifest+lockfile | poc store 无 lockfile；快照改为 store + `plugins/` 目录 |
 

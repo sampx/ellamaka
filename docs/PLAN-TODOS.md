@@ -55,6 +55,7 @@
 | **B2** | bun-hmr 适配器 | `@wopal/ellamaka-cordis/bun-hmr`：`registerConfig` 配置监听等价实现 + generation 候选校验 + 空闲窗口原子替换；Bun 路径以同 `hmr` 服务位挂载，Node 路径保持官方插件 | Bun serve 下编辑 profile 用户补丁层 → 运行中容器热应用；候选校验失败保留旧栈；`patchReload: 'live'` 契约达成 | dev-flow Plan（依赖 B1） | 待排期 |
 | **B3** | 闭包升级 0.1.2-rc.1 | 六个直接依赖提升 + manifest/lock 再生 + stateHomePatches 逐行复核 + 回归清单执行 | 设计文档「闭包升级路径」第 5 条回归清单全绿（serve + Desktop sidecar） | dev-flow Plan（依赖 B1，可与 B2 并行验证） | 待排期 |
 | **B4** | 创造模式技能适配 dsh-in-ellamaka | `editing-cordis-compositions` 与 `cordis-plugin-development` 两技能补「dsh in ellamaka」章节：唯一 home=$WOPAL_HOME/dsh、禁用 DSH_HOME、state 目录语义、配置单双根路径、 Bun 兼容性门禁 | 技能正文含 dsh-in-ellamaka 约束；明确官方 CLI 试验用临时 DSH_HOME；经 skill-creator 修订 | skill-creator 修订（文档类） | 待排期 |
+| ~~B1.5~~ | ~~dump-config 离线诊断子命令~~ | **已完成（2026-09-04）**：`ellamaka dsh dump-config`（--profile/--default-only/--json），不启动引擎、零 state 写入，YAML/JSON 同源组合；补丁构造器提为共享纯函数（dsh-web 重构行为零变化）；`shippedPresetRoot` 迁至 runtime/anchor 破循环依赖；真 home 同内容写跳过（mtime 幂等）；技能修订消灭裸 `dsh plugin` 教唆源。commit `e1666b8a4b`（ellamaka）+ `138434e`（.wopal 技能源） |
 
 **执行顺序**：B1 → B3（升级验证）与 B2（可并行推进）；B4 独立随时可做。
 
@@ -93,4 +94,5 @@
 | 2026-09-02 | 供应链 Plan 全周期完成：实施 6 Task + rook 审查（8 Blocker 修复）+ Wopal 自审 PASS + 用户实机验证（hello 插件热挂载 + settings 页 GUI）；验收达成进入维护态。审批桥接 Plan 同日归档。hello-dsh-plugin 前置实证（dsh.client 自动手写 bundle）完成 |
 | 2026-09-03 | 界面改造：DSH 从 titlebar 临时按钮迁入「助理」tab——health 增加 `dsh` 字段 + SDK 重生成；dshVisible 派生化；iframe keep-alive 化；`ELLAMAKA_DSH=0` 回落原生助理。四场景实机验证通过（记为 P7） |
 | 2026-09-03 | 设计文档完全重写为**无章节号**版本（按标题文字交叉引用）；主线确立为「空间 × Agent 配置体系」（设计定稿，S1 待执行）；workbench WC 吸收降级为门槛轨道（前提：插件用起来 + workbench slot 化）；PLAN-TODOS 改为小步快跑（S1–S4）推进模型 |
+| 2026-09-04 | B1.5 完成：dump-config 离线诊断子命令（temp-home 全链路验证替代实机 smoke）+ 技能修订（消灭裸 `dsh plugin` 教唆）。**事故教训**：运行中引擎 `profiles/` 是引擎领地——内容幂等写 ≠ mtime 幂等，standing 重建按 mtime/size 触发，测试/dump/诊断一律 temp-home 注入（Live-home quarantine 已写入 poc AGENTS.md）。ellamaka commit `e1666b8a4b`；.wopal 技能源 commit `138434e`（等待 B3 完成后统一合并分支） |
 | 2026-09-05 | dshmarket 插件市场接入 poc 宿主的设计思路与实验步骤写入 DESIGN-dsh-poc（待实验）；PLAN-TODOS 待定事项登记，排在 B3/B2 之后 |

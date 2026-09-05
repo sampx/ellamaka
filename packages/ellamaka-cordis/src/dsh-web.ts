@@ -30,6 +30,7 @@ import {
 } from "./runtime/loader.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
+import { stateHomePatches as makeStateHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
@@ -376,7 +377,8 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
   // (settings/sessions/storages/credentials/.../home-patch) lands under
   // `$WOPAL_HOME/dsh/state`, NOT `~/.dsh`. Done via pure config injection —
-  // zero env, never `process.env.DSH_HOME`. When the caller omits `home`, fall
+  // this mount never reads `process.env.DSH_HOME` for its own paths. When
+  // the caller omits `home`, fall
   // back to the standard `$WOPAL_HOME/dsh` so isolation still holds.
   const resolvedHome = home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const stateDir = join(resolvedHome, "state")
@@ -393,22 +395,13 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   //     `~/.dsh/.anonymous-user-id` when telemetry is enabled (it can be turned
   //     on by an inherited `DSH_TELEMETRY_MODE` env, not just the default
   //     DISABLED).
-  // `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME` is unset, and we
-  // must NOT set `process.env.DSH_HOME` (constraint #10, AC#4). Since there is
-  // no injection seam, both features are DISABLED — the same degrade the tools
-  // profile already applies — so neither write ever touches the user's default
-  // `~/.dsh`. Re-enable only once dsh exposes a home seam or publishes the
-  // adapters with a configurable home.
-  const stateHomePatches: Record<string, unknown>[] = [
-    { id: "settings", config: { dshHome: stateDir } },
-    { id: "credentials", config: { dshHome: stateDir } },
-    { id: "attachment-local", config: { dshHome: stateDir } },
-    { id: "shell-env", config: { dshHome: stateDir } },
-    { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
-    { id: "skill-filesystem", config: { dshHome: stateDir } },
-    { id: "llm-deepseek", disabled: true },
-    { id: "session-telemetry-otel", disabled: true },
-  ]
+  // `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME` is unset. The
+  // host now sets `DSH_HOME=$WOPAL_HOME/dsh/state` at process launch
+  // (dev.sh / Desktop sidecar, constraint #10 2026-09-05 revision), so an
+  // env-resolving plugin lands in state. These two still stay DISABLED
+  // until their env-resolution paths are re-verified against the live env —
+  // re-enable only after confirming every write lands inside state.
+  const stateHomePatches = makeStateHomePatches(stateDir)
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -513,7 +506,9 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   ctx.baseUrl = pathToFileURL(dirname(rootConfig)).href + "/"
   // Override the ctx-injected `dshHomePath` so `!!js dshHomePath('sessions')`
   // (etc.) expressions in the bundle patch layers resolve under state/ — the
-  // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type).
+  // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type);
+  // the host sets `DSH_HOME` to this same state dir at launch, so both
+  // resolution paths agree.
   ctx.provide("dshHomePath", (...segments: string[]) => join(stateDir, ...segments))
   const loaderFiber = await ctx.registry.plugin(runtime.pluginLoader)
   // B1 拆雷 (DESIGN-dsh-poc 「Bun 下不伪造 loader.internal（拆雷）」): the
@@ -623,24 +618,10 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
     profileName: WEB_PROFILE_NAME,
     requireWebServer: true,
     virtualWebServer,
-    extraPatches: [
-      // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
-      // which the bun dev runtime lacks. It is a code-execution capability, not
-      // part of the web UI chat surface. The CLI serve path (bun) disables it
-      // via `disableCodeRuntime`; the Desktop sidecar (Node 22.18+) keeps it.
-      ...(opts.disableCodeRuntime ? [{ id: "code-runtime", disabled: true }] : []),
-      // The official webserver binds a real socket; the virtual profile
-      // provides VirtualWebServer instead, so disable the real one.
-      { id: "webserver", disabled: true },
-      // The iframe serves under /dsh; a root-path URL would be a wrong entry
-      // point, so close web-runtime's URL printing and shell/prompt injection.
-      // Full config replacement preserves the connection-trust fields.
-      {
-        id: "web-runtime",
-        config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [] },
-      },
-      ...(opts.extraPatches ?? []),
-    ],
+    extraPatches: webExtraPatches({
+      disableCodeRuntime: opts.disableCodeRuntime,
+      extraPatches: opts.extraPatches,
+    }),
   })
   // Register the DSH iframe prefix adaptation as the last index tap: rewrite
   // static asset URLs to /dsh and inject the browser fetch/WebSocket/
@@ -701,13 +682,7 @@ export async function mountDshTools(ctx: Context, opts: DshHostOptions): Promise
     ...opts,
     profileName: TOOLS_PROFILE_NAME,
     requireWebServer: false,
-    extraPatches: [
-      // HMR needs --expose-internals (bun lacks it); the tool surface has no
-      // hot-reload need, so disable it to boot under bun.
-      { id: "hmr", disabled: true },
-      { id: "tool-bash", config: { enableRunInBackground: false } },
-      ...(opts.extraPatches ?? []),
-    ],
+    extraPatches: toolsExtraPatches({ extraPatches: opts.extraPatches }),
   })
   return { ...host, ctx, includeEntry: host.includeEntry!, stackContext: host.stackContext! }
 }
