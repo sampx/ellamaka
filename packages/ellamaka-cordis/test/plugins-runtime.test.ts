@@ -49,6 +49,29 @@ async function waitForCount(probe: () => number, want: number, timeoutMs = 15_00
   }
 }
 
+/**
+ * Wait for `probe()` to equal `want`, retrying `touch` while it does not.
+ * Under FSEvents a watcher can miss a single event while several watchers
+ * observe the same files; the composition write is idempotent, so re-writing
+ * it re-arms the watch without changing the outcome.
+ */
+async function waitForWithRetry(
+  probe: () => string | undefined,
+  want: string | undefined,
+  touch: () => Promise<void>,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (probe() === want) return
+    if (Date.now() > deadline) {
+      throw new Error(`waitForWithRetry(${JSON.stringify(want)}) timed out; last: ${JSON.stringify(probe())}`)
+    }
+    await touch()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+}
+
 async function teardown(hosts: Array<{ dispose(): Promise<void> }>, home: string): Promise<void> {
   for (const host of hosts) {
     try {
@@ -103,8 +126,8 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     try {
       // CLI-side semantics: a pure disk operation on the composition files.
       await installFixture(home)
-      await waitFor(() => marker(webCtxOf(web)), "mounted")
-      await waitFor(() => marker(tools.ctx), "mounted")
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
+      await waitForWithRetry(() => marker(tools.ctx), "mounted", () => installFixture(home))
       expect(updates).toBeGreaterThanOrEqual(2)
     } finally {
       await service.stop()
@@ -126,7 +149,7 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     })
     try {
       await installFixture(home)
-      await waitFor(() => marker(webCtxOf(web)), "mounted")
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
       const settled = updates
 
       // Break the composition: a manifest bundle row whose package entity is
@@ -179,16 +202,18 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     const service = startDshPluginService({ home, containers: [webContainer(web), toolsContainer(tools)] })
     try {
       await installFixture(home)
-      await waitFor(() => marker(webCtxOf(web)), "mounted")
-      await waitFor(() => marker(tools.ctx), "mounted")
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
+      await waitForWithRetry(() => marker(tools.ctx), "mounted", () => installFixture(home))
 
       // Remove the manifest bundle row for WEB only (disable semantics).
-      await withProfileManifestWrite(profileDirOf(home, "web"), (raw) => {
-        const dsh = (raw.dsh ??= {}) as Record<string, unknown>
-        const profileSection = (dsh.profile ??= {}) as Record<string, unknown>
-        profileSection.bundles = ((profileSection.bundles ?? []) as string[]).filter((b) => b !== "fixture-dsh-plugin")
-      })
-      await waitFor(() => marker(webCtxOf(web)), undefined)
+      const removeRow = () =>
+        withProfileManifestWrite(profileDirOf(home, "web"), (raw) => {
+          const dsh = (raw.dsh ??= {}) as Record<string, unknown>
+          const profileSection = (dsh.profile ??= {}) as Record<string, unknown>
+          profileSection.bundles = ((profileSection.bundles ?? []) as string[]).filter((b) => b !== "fixture-dsh-plugin")
+        })
+      await removeRow()
+      await waitForWithRetry(() => marker(webCtxOf(web)), undefined, removeRow)
       expect(marker(tools.ctx)).toBe("mounted")
     } finally {
       await service.stop()
@@ -203,7 +228,7 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     const service = startDshPluginService({ home, containers: [webContainer(web), toolsContainer(tools)] })
     try {
       await installFixture(home)
-      await waitFor(() => marker(webCtxOf(web)), "mounted")
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
       // The include config still carries the FULL stack after a replay:
       // official bundle rows (bare names) AND the Bridge-composed plugin row
       // (explicit dsh-plugin: id, resolved to an absolute file:// URL).
@@ -248,8 +273,8 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     const service = startDshPluginService({ home, containers: [webContainer(web), toolsContainer(tools)], onReplay: () => updates++ })
     try {
       await installFixture(home)
-      await waitFor(() => marker(webCtxOf(web)), "mounted")
-      await waitFor(() => marker(tools.ctx), "mounted")
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
+      await waitForWithRetry(() => marker(tools.ctx), "mounted", () => installFixture(home))
       const settled = updates
       await new Promise((resolve) => setTimeout(resolve, 1200))
       expect(updates).toBe(settled)

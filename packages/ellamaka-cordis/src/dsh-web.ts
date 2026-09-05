@@ -29,6 +29,7 @@ import {
   type DshRuntimeApi,
 } from "./runtime/loader.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, isOfficialBundleRow, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
+import { createBunHmr } from "./plugins/bun-hmr.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
 import { dshHomeDirOf } from "./runtime/status.js"
 import { homePatches as makeHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
@@ -579,7 +580,53 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
   await runtime.appBoot.assertEntriesActivated(ctx, "ellamaka")
 
+  // Bun host HMR adapter (DESIGN-dsh-poc 「Bun 宿主 HMR 适配器」, 0 -> 1):
+  // the official `watchUserPatches` needs a `hmr` service with
+  // `registerConfig`; under Bun the official cordis-plugin-hmr cannot run
+  // (Node internal loader required), so the Bridge mounts the Bun adapter
+  // and wires the profile's user patch layer through the official caller —
+  // a patch-file change recomposes the FULL stack (the same composition the
+  // Plugin Runtime Service replays) transactionally by include id diff.
+  const bunHmr = createBunHmr({
+    containers: [{ profile: profileName, ctx, includeEntry: includeEntry as unknown as { id: string; update(o: unknown): Promise<void> } }],
+    dshRoot,
+    ctx,
+    installAnchor,
+  })
+  await bunHmr.mount()
+  const watchDispose = await runtime.appBoot
+    .watchUserPatches(ctx, {
+      binName: "ellamaka",
+      filename: join(profile.dir, "cordis.patch.yml"),
+      compose: (userRows): typeof userRows => {
+        // The candidate composition: official bundle rows are carried by the
+        // boot-time stack context; the plugin layer is recomposed fresh from
+        // the profile manifest; the refreshed user rows replace the snapshot
+        // captured at boot.
+        const pluginLayers = composePluginLayers(dshRoot, profileName, { installAnchor })
+        return composeFullPatchStack({
+          profileLayers: stackContext.profileLayers,
+          pluginLayers,
+          userPatches: [...userRows],
+          extraPatches: stackContext.extraPatches,
+          homePatches: stackContext.homePatches,
+        }) as typeof userRows
+      },
+    })
+    .catch((error: unknown) => {
+      // The official caller degrades when the file cannot be watched; the
+      // container keeps its boot composition (bun-hmr logs via the loader).
+      console.warn("[dsh] user patch-layer watching unavailable:", (error as Error).message)
+      return async () => {}
+    })
+
   const dispose = async () => {
+    try {
+      await watchDispose()
+    } catch {
+      // Already disposed.
+    }
+    await bunHmr.stop()
     const loader = ctx.get("loader")
     if (loader !== undefined) await loader.remove(includeEntry.id)
     await loaderFiber.dispose()
