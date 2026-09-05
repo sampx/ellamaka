@@ -47,6 +47,9 @@ guard_engine_stopped() {
 
 guard_engine_stopped "$STATE_DIR"
 guard_engine_stopped "$PROFILES_DIR"
+# The destination is live data for the new layout: a resumed migration must
+# never write into a home that a running engine (new code) is using.
+guard_engine_stopped "$HOME_DIR"
 
 # --- idempotency ------------------------------------------------------------
 # A prior completed migration leaves BOTH legacy dirs absent. Only then is this
