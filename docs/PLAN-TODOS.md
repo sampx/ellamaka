@@ -3,7 +3,7 @@
 > **用途**：本分支（poc-ellamaka-cordis）进度索引与批次管理。
 > **分工**：`DESIGN-dsh-poc.md` 管设计真相（按标题引用，不使用章节号）；dev-flow Plan（`.wopal-space/plans/ellamaka/`）管跨文件、多任务的大步实施；本文件管总览与执行顺序。
 > **推进原则**：小步快跑，每一步交付可应用的具体成果，步内不掺杂后续步骤内容。
-> **编号规则**：P = 已完成批次（历史）；A = 生态对齐（当前执行）；W = wopal 插件包（下一主线）；G = 门槛轨道（workbench 互通）。编号一经分配不复用、不重排。
+> **编号规则**：P = 已完成批次（历史）；A = 生态对齐（当前执行）；W = wopal 插件包（下一主线）；E = 多空间解耦与实验 profile（独立主线）；G = 门槛轨道（workbench 互通）。编号一经分配不复用、不重排。
 
 ---
 
@@ -54,6 +54,19 @@
 
 ---
 
+## 独立主线：E 线（多空间解耦与实验 profile）
+
+设计真相见 `DESIGN-dsh-poc.md`「多空间解耦与实验 profile」。「助理」tab 的遮蔽耦合是 P7 的设计债；实验性第三方插件（依赖历史闭包、安全边界存疑）不应当进主 Web 容器。E 线拆掉遮蔽、把 DSH 空间配置化，并以独立进程承载实验 profile。
+
+| 步 | 名称 | 交付成果 | 验收标准 | 实施形态 | 状态 |
+|---|------|---------|---------|---------|------|
+| **E1** | 去遮蔽 + 空间配置化 | 「助理」与「DSH」拆为两个独立空间 tab；DSH 空间开关两层模型（`settings.jsonc` 默认值 + 设置面板运行时覆盖）；`ellamaka.dsh.enabled` 配置键与 `ELLAMAKA_DSH` 逃生舱并存 | 启用 DSH 时显示独立 DSH tab（非「助理」），助理 tab 独立开关；面板修改立即生效并持久化；`ELLAMAKA_DSH=0` 仍能硬禁用 | dev-flow Plan（TDD + rook 审查） | 待排期 |
+| **E2** | 实验 profile 独立进程 | `ellamaka dsh up --profile <name> --closure <fp>` 独立进程启动；实验进程独立 DSH_HOME；workbench 服务器管理式注册为空间 tab；闭包历史版本物化能力 | 实验 profile 以独立进程运行、崩溃不影响主进程；dsh-oil-creator 类插件在实验空间跑通并可用；注册后可持久化、健康圆点、keep-alive iframe | dev-flow Plan（依赖 E1 + A2 + 闭包物化扩展） | 待排期 |
+
+**执行顺序**：E1 → E2。E1 不依赖 A 线施工内容（A 线动 home/安装器，不碰 tab 模型），可与 A 线并行排期；E2 依赖 E1 的前端 tab 模型扩展、A2 的官方声明供应链，以及「物化指定历史版本闭包」的新能力。W4 是 E2 的首个实证消费者（通过实验空间评估外部插件）。E 线立项（2026-09-06），设计已落入 `DESIGN-dsh-poc.md`。
+
+---
+
 ## 门槛轨道：G 线（workbench × dsh 前端插件互通）
 
 设计真相与执行清单见 `DESIGN-dsh-poc.md`「workbench × dsh 前端插件互通」（V1–V5）。
@@ -97,3 +110,4 @@
 | 2026-09-05 | **编号体系重排**：历史批次统一为 P1–P9；执行轨道重编为 A（生态对齐）、W（wopal 插件包）、G（门槛轨道）；原 B2 并入 A2，原 S 线更名 W 线，B4 保留原名入独立事项 |
 | 2026-09-05 | **A1 代码+脚本落地**（Plan feature-dsh-a1-home-layout-migration Task 1–4 + Task 5 脚本，rook 两轮审查通过）：`DshLayout` 单点重定义 `homeDir=dsh/home`、供应链/mount/dump 三层 retarget、`stateHomePatches`→`homePatches`、dev.sh/sidecar env 改指 `home/`、迁移脚本 `scripts/dsh-migrate-home.sh`（幂等+守卫+哨兵）；live home 迁移待引擎停止后执行 |
 | 2026-09-05 | **A1 live 迁移完成**（引擎停止后由 wopal 亲自执行）：`state/*`→`home/`、`profiles/*`→`home/profiles/`，state/profiles 退役，`home/README.md` 哨兵就位；AC#5/#6/#7 实证通过，二次执行 no-op。A1 全部落地，待用户验证 |
+| 2026-09-06 | **E 线立项（多空间解耦与实验 profile）**：P7「助理」tab 遮蔽耦合确立为设计债；DSH 空间配置化（settings.jsonc 默认值 + 设置面板覆盖）；实验 profile 独立进程 + 独立 DSH_HOME + 服务器注册式空间 tab；设计落入 DESIGN-dsh-poc.md，暂不排期（用户裁定 E 线独立立项，暂不写 plan） |

@@ -1,10 +1,10 @@
 # DESIGN-dsh — ellamaka 与 dsh 融合架构设计
 
-> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**wopal 插件包（Agent 配置随包发布）是当前主线**；workbench 前端插件互通为启动前提明确的后续门槛轨道。
+> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**wopal 插件包（Agent 配置随包发布）是当前主线**；多空间解耦与实验 profile（E 线）为独立主线（2026-09-06 立项，暂不排期）；workbench 前端插件互通为启动前提明确的后续门槛轨道。
 > **上级架构**：`DESIGN.md`
 > **技术依据**：`research/deepseek-harness-architecture-and-integration-research.md`（dsh 全景调研）
 
-**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **wopal 插件包（当前主线）** → workbench × dsh 前端插件互通（门槛轨道）。
+**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **wopal 插件包（当前主线）** → **多空间解耦与实验 profile（E 线，独立主线）** → workbench × dsh 前端插件互通（门槛轨道）。
 
 本文档不使用章节号，交叉引用一律以标题文字为准（如「见「设计约束 · 不可变闭包」」）。
 
@@ -130,6 +130,8 @@ Dsh iframe 的宿主是 workbench 的「助理」tab（General 空间 tab）：
 - **keep-alive**：iframe 与原生工作区双层持久挂载，仅切 `display`；切 tab 不重载 iframe，DSH 会话状态保留（Space Keep-Alive 同款不变量）。
 - **覆盖范围**：iframe 盖掉助理 tab 内容区全部（含 SpaceRail），dsh 界面自带侧栏；tab 名保持「助理」。
 - **回落**：`ELLAMAKA_DSH=0` 时助理 tab 显示原生 General 会话空间，与 DSH 引入前行为一致；General 引擎作用域（`provisionGeneral`、会话投影、后台任务会话）不受影响。
+
+> **演进**：本节描述的是 P7 遮蔽语义（DSH iframe 盖住助理 tab）。该耦合由「多空间解耦与实验 profile」演进——助理与 DSH 拆为独立空间，本节遮蔽模型在 E1 落地后退役。
 
 ### DSH home 与运行时隔离
 
@@ -562,6 +564,7 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 19. **安装命令式、配置双轨**：插件安装与 dsh 界面侧的插件配置走命令式并即时生效；集成到 ellamaka 的工具投影配置走 settings.jsonc（与「配置与隔离 · 进程级共享、空间级隔离」一致）。
 20. **approval 原生边界**：dsh approval 插件以官方原版使用（不 fork、不修改官方闭包）。宿主侧只补齐 session facade 前置条件并经 answerer 桥接决策；审批审计对落内存不落盘，工具容器不持久化任何会话。
 21. **Bun 宿主兼容性门禁**：发布态 `ellamaka serve` 是单 Bun 进程；用户插件不得要求 Node 私有模块加载器或 `--expose-internals`。`plugin add` 必须在写入 profile 声明与触碰运行中容器前完成静态依赖扫描与 Bun 隔离挂载预检；不兼容插件拒绝安装并给出可操作诊断，绝不以伪造 `loader.internal`、切换到 Node 或降级整台宿主来绕过。官方 Node 专用 `cordis-plugin-hmr` 是宿主实现例外：Bun 路径以 Bridge 的 Bun HMR 适配器替代它，不把该例外转嫁给第三方插件。
+22. **多空间解耦与实验 profile 隔离**（见「多空间解耦与实验 profile」）：核心容器（web + ellamaka-tools）保持同进程；实验性第三方 profile 以独立进程 + 独立 DSH_HOME 运行，不进入主 Web 容器、不与主引擎共享 home/profiles（运行中引擎 `profiles/` 是引擎领地）。闭包（只读）可共享；home 必须隔离。实验 profile 的插件安装长期形态走 A2 官方声明供应链。
 
 ---
 
@@ -895,6 +898,110 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 - 不在宿主侧实现 Node `loadCache` 等价物或 `--expose-internals` 仿真；Bun 不提供这些私有结构，伪造已被证实是事故温床。
 - 不修改官方闭包内任何包（含 `cordis` preset 与 `tool-cordis`）；上游缺陷以升级跟踪。
 - 不在本设计内处理 FrameQueue 背压与 agent-loop delta 合并——两者属上游缺陷，宿主侧仅以「会话隔离 + 大会话不自动 resume」缓解，修复跟踪官方仓库。
+
+---
+
+## 多空间解耦与实验 profile（独立主线）
+
+> **状态**：E 线立项（2026-09-06），设计方向已定，暂不排期。本节描述目标形态；实现细节留待 E 线 dev-flow Plan。
+> **关联**：本节是「运行时机制 · 助理 tab 承载」的演进——遮蔽耦合是 P7 的设计债，本节将其拆除为空间化模型。
+
+### 定位与目标
+
+当前 dsh iframe 以遮蔽方式占用 workbench「助理」tab：`dshVisible = dshEnabled && 激活 tab 是 General`（见「运行时机制 · 助理 tab 承载」）。这是 P7 的设计债——同一个 tab 在不同开关下代表两个完全不同的产品系统（ellamaka 原生助理 vs dsh web UI），心智模型分裂，也无法承载第二个 dsh 环境。
+
+E 线把 DSH 呈现从「遮蔽」升级为「独立空间」，并开辟实验性第三方 profile 的隔离运行轨道：
+
+1. **语义各归其位**：「助理」（ellamaka 通用空间）与「DSH」（web profile 空间）是两个并列的独立空间，而非一个遮蔽另一个。
+2. **开关配置化**：DSH 空间启停从环境变量 kill switch 演进为两层配置模型（`settings.jsonc` 默认值 + 设置面板运行时覆盖）；`ELLAMAKA_DSH` 保留为硬逃生舱。
+3. **实验隔离**：实验性第三方插件（依赖历史闭包、安全边界存疑）经独立进程 + 独立 home 运行，不进入主 Web 容器，不污染日常环境。
+4. **Profile 即空间**：dsh profile 概念映射为 workbench 空间——正式 web profile、实验 profile 在顶栏并排呈现。
+
+### 空间模型
+
+Workbench 顶栏的空间类型扩展为三类：
+
+| 空间类型 | 标识 | 内容 | 进程归属 |
+|----------|------|------|----------|
+| **助理** | `assistant`（原 General，path `""`） | ellamaka 原生通用会话空间 | ellamaka serve 进程 |
+| **DSH** | `dsh` | dsh web profile（完整 dsh UI） | ellamaka serve 进程（同进程，Web 容器） |
+| **实验 profile** | `dsh-profile:<id>` | 指定闭包 + 指定 profile 的隔离 dsh 实例 | 独立进程 |
+
+- 助理与 DSH 各自独立开关、独立持久化 activeTabPath；互不遮蔽。
+- 实验 profile 是注册式实体：一个实验 profile = 一个独立进程 + 一个空间 tab，携带独立 URL 入口与健康状态。
+- ellamaka 工具容器（`ellamaka-tools` profile）保持同进程，不作为独立空间呈现——它服务于工具投影，不是用户可见空间。
+
+### 配置模型
+
+DSH 相关配置采用两层模型（与「配置与隔离 · 进程级共享、空间级隔离」的 settings.jsonc 机制一致）：
+
+| 层 | 位置 | 作用 | 修改方式 |
+|----|------|------|----------|
+| 默认值 | `settings.jsonc`（`ellamaka.dsh.*` 域） | 定义 DSH 空间、助理空间的启停默认值与实验 profile 注册清单 | 编辑配置文件，重启/重载生效 |
+| 运行时覆盖 | 设置面板 + 持久化 store | 用户在界面内修改，立即生效并持久化（本机覆盖） | 设置面板 UI |
+
+合并逻辑：面板有值用面板值，未设置回落 `settings.jsonc` 默认值。与现有服务器列表持久化机制（`Persist.global`）同一套技术路线。
+
+具体键位（draft，待 E1 Plan 定型）：
+
+```jsonc
+{
+  "ellamaka": {
+    "dsh": {
+      "enabled": true,           // 引擎挂载门控（对应 ELLAMAKA_DSH 的配置化形态）
+      "spaceVisible": true,      // DSH 空间 tab 显隐默认值
+      "profiles": [              // 实验 profile 注册清单（默认值层）
+        {
+          "id": "oil-lab",
+          "title": "Oil Creator",
+          "closure": "971a81a03700",
+          "profile": "oil-lab",
+          "home": "$WOPAL_HOME/dsh/experimental/oil-lab/home"
+        }
+      ]
+    },
+    "assistant": {
+      "enabled": true            // 助理空间启停默认值
+    }
+  }
+}
+```
+
+**`ELLAMAKA_DSH` 逃生舱保留**：配置化开关服务于日常使用；`ELLAMAKA_DSH=0` 仍是硬禁用路径（跳过物化、加载与挂载，见「统一启动语义」）。env 显式设置时优先于配置——与 opencode 惯例一致，且保证配置损坏时仍有自愈手段。
+
+### 进程拓扑
+
+**核心容器保持同进程**：web profile + ellamaka-tools profile 继续与 ellamaka serve 同进程（单端口、单进程、零延迟工具调用，见「架构总览 · 单进程、单端口、双容器」）。这是核心基建，没有拆分理由。
+
+**实验 profile 独立进程**：每个启用的实验 profile 由独立进程承载。隔离收益：
+
+1. **闭包版本隔离**：实验进程可绑定任意历史闭包（如 dsh-oil-creator 要求的 `0.1.0-rc.7` 窗口），主进程继续跑 `892d593303e0`，避免单进程内双版本 `@deepseek-ai/*` 冲突。
+2. **故障防扩散**：实验插件崩溃、死锁、爆内存不影响主进程与正式 DSH 空间。
+3. **home 隔离**：实验进程使用独立 DSH_HOME（`$WOPAL_HOME/dsh/experimental/<id>/home`），**不与主引擎共享 home/profiles**——运行中引擎 `profiles/` 是引擎领地（2026-09-04 事故教训），两进程共享 profile 目录必然冲突。
+
+**启动范式（当前方向）**：独立 CLI 启动 + workbench 注册（用户自起、自己连）。`ellamaka dsh up --profile <name> --closure <fp> [--port 0]` 独立跑出 authenticated entry；workbench 通过服务器管理式界面注册（复用 `context/server.tsx` 的 add/健康探针/持久化范式），注册后成为空间 tab。主进程对实验进程零感知、零生命周期看管职责——隔离最干净，崩溃与主程序零关联。
+
+### 闭包版本物化扩展
+
+当前 Runtime Manager 只物化 host 锁定的版本集（见「运行时机制 · 物化状态机」）。实验 profile 需要物化**指定历史版本**的闭包（dsh-oil-creator 的 peer 窗口是 `0.1.0-rc.6 || 0.1.0-rc.7`，现有闭包 `892d593303e0`=0.1.2-rc.1、`971a81a03700`=0.1.1-rc.2 均不满足）。E 线新增能力：
+
+- 物化指定版本 → seal 进 `closures/<fingerprint>`（复用「统一自物化」的 lock/stage/verify/activate 管线，版本来源从内嵌清单改为显式参数）。
+- 物化结果遵循「不可变闭包」约束：只增不减，成功后永久保留，同指纹无限复用。
+
+### 前端机制
+
+- **tab 模型**：助理、DSH、实验 profile 在顶栏并排；`dshVisible` 从布尔派生改为按空间 id 派生；激活空间决定 Surface 呈现。
+- **keep-alive iframe 池**：每个 dsh 类空间持有一个 keep-alive iframe（沿用「助理 tab 承载 · keep-alive」的 display 切换不变量）；切 tab 不重载 iframe，会话状态保留。
+- **健康圆点**：复用现有 per-server 健康探针范式（`useCheckServerHealth`），实验进程状态映射到空间 tab 指示。
+- **`WorkbenchDshFlagBinding` 职责扩展**：从单一 `health.dsh` bool 扩展为「引擎挂载态 + 实验空间清单」两类信号。
+
+### 与既有设计的衔接
+
+- **替代**：本节演进「运行时机制 · 助理 tab 承载」的遮蔽语义；E1 落地后遮蔽模型退役。
+- **设计约束**：新增约束「多空间解耦与实验 profile 隔离」（见「设计约束 · 多空间解耦与实验 profile 隔离」）；其余约束（单进程核心容器、统一自物化、不可变闭包、DSH home 唯一）保持不变。
+- **与 A 线**：E1 不依赖 A 线施工内容；E2 依赖 A2 的官方声明供应链（实验 profile 内装插件长期形态走 Bun 安装器终态）。
+- **与 W 线**：W4 是 E2 的首个实证消费者——通过实验空间评估外部插件（如 dsh-oil-creator）并产出评估报告。
+- **与 G 线**：正交。G 线解决「把有真实价值的 dsh 前端插件 UI 搬进 workbench」；E 线解决「怎么安全地运行与评估第三方插件」。G 线启动前提（W4 出价值插件 + workbench slot 化）不受 E 线影响。
 
 ---
 
