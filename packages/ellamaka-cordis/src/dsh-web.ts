@@ -30,6 +30,7 @@ import {
 } from "./runtime/loader.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
+import { dshHomeDirOf } from "./runtime/status.js"
 import { stateHomePatches as makeStateHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
@@ -381,6 +382,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // the caller omits `home`, fall
   // back to the standard `$WOPAL_HOME/dsh` so isolation still holds.
   const resolvedHome = home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  const homeDir = dshHomeDirOf(resolvedHome)
   const stateDir = join(resolvedHome, "state")
   // Profile patch rows that give the dsh plugins that read `config.dshHome`
   // (via `resolveDshHome(config.dshHome)`) an explicit home rooted at state.
@@ -443,7 +445,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // profile's plugin rows resolve against this installation's dependency
   // closure (matches how the dsh launcher boots a profile). rc.1 API: an
   // options object + async (was `(anchor, home?)` sync in rc.2).
-  await healProfilesModuleFallback({ installAnchor, home: resolvedHome })
+  await healProfilesModuleFallback({ installAnchor, home: homeDir })
   // Plugin supply chain heal (D-05): one symlink per installed user plugin
   // under the same profiles/node_modules fallback, so a bare plugin-layer
   // name resolves by parent-walk. Self-owned — the official closure heal is
@@ -455,7 +457,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // user edits it (anything beyond initProfile's empty template), it is never
   // overwritten.
   if (profileName === TOOLS_PROFILE_NAME) {
-    const dir = resolveProfileDir(profileName, resolvedHome)
+    const dir = resolveProfileDir(profileName, homeDir)
     initProfile(dir, runtime.appBoot.DEFAULT_PROFILE_BUNDLES)
     const patchPath = join(dir, runtime.appBoot.PROFILE_PATCH_FILENAME)
     try {
@@ -477,7 +479,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
 
   // Load the profile (bundle layers + user patch layer).
-  const profile = loadProfile("ellamaka", profileName, installAnchor, resolvedHome)
+  const profile = loadProfile("ellamaka", profileName, installAnchor, homeDir)
   // The plugin layer (D-04): composed from the store — the single source of
   // truth — so boot and hot reload share one composition (D-03). Store order
   // is layer order; profiles never carry a bundles manifest for plugins.

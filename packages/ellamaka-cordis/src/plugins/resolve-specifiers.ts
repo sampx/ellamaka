@@ -8,7 +8,7 @@
  * `EntryTree.import` consults `ctx.loader.internal` dynamically and falls
  * back to native `import()` when absent. Bun's native resolution reaches
  * everything inside the closure (spike probes 1/3) but NOT packages that
- * exist only under `profiles/node_modules` — i.e. exactly the rows the
+ * exist only under `home/profiles/node_modules` — i.e. exactly the rows the
  * Bridge composes itself. Official bundle rows (bare `@deepseek-ai/*`
  * names) are NOT Bridge-owned and stay untouched: their bare names keep
  * resolving through `bareModuleBaseUrl` under Node's internal loader and
@@ -16,19 +16,23 @@
  *
  * Resolution order per the supply-chain contract (D-05): closure
  * `node_modules` first (via the install anchor), then the profiles anchor
- * (`<dshHome>/profiles/`), where the healed user-plugin symlinks live. An
- * unresolvable name rethrows the resolver's own error, preserving the
+ * (`<dshRoot>/home/profiles/`), where the healed user-plugin symlinks live.
+ * An unresolvable name rethrows the resolver's own error, preserving the
  * original error semantics.
  */
 import { createRequire } from "node:module"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { createClosureRequire } from "../runtime/loader.js"
+import { homeProfilesDirOf } from "../runtime/status.js"
 
 /** Options for {@link resolveRowSpecifier}. */
 export interface ResolveRowOptions {
-  /** The dsh home (`$WOPAL_HOME/dsh`) whose profiles anchor is consulted second. */
-  dshHome: string
+  /**
+   * The Ellamaka territory root (`$WOPAL_HOME/dsh`) whose profiles anchor
+   * (`<dshRoot>/home/profiles/`) is consulted second.
+   */
+  dshRoot: string
   /**
    * Absolute path to the closure's `@deepseek-ai/dsh/package.json` install
    * anchor (the mount's closure). Optional: resolution then falls back to
@@ -79,10 +83,10 @@ export function resolveRowSpecifier(name: string, options: ResolveRowOptions): s
   } catch (error) {
     errors.push(error)
   }
-  // Then the profiles anchor: parent-walk from `profiles/` reaches
-  // `profiles/node_modules/<pkg>` (the healed plugin symlinks).
+  // Then the profiles anchor: parent-walk from `home/profiles/` reaches
+  // `home/profiles/node_modules/<pkg>` (the healed plugin symlinks).
   try {
-    const profilesRequire = createRequire(join(options.dshHome, "profiles", "anchor.js"))
+    const profilesRequire = createRequire(join(homeProfilesDirOf(options.dshRoot), "anchor.js"))
     return pathToFileURL(profilesRequire.resolve(name)).href
   } catch (error) {
     errors.push(error)
@@ -98,14 +102,14 @@ export interface InternalImporter {
 /**
  * Wrap an EXISTING internal loader's `import` with the profiles fallback
  * (rook W-01): the internal loader (Node sidecar) resolves official closure
- * packages but not user plugins under `profiles/node_modules`, so every
+ * packages but not user plugins under `home/profiles/node_modules`, so every
  * import path must end with a profiles-anchored require. The internal
  * resolution stays first; an unresolved name rethrows the internal's
  * original error. Mutates `internal.import` in place, as the bridge always
  * did for real internals.
  */
-export function wrapInternalWithProfilesFallback(internal: InternalImporter, dshHome: string): void {
-  const profilesRequire = createRequire(join(dshHome, "profiles", "anchor.js"))
+export function wrapInternalWithProfilesFallback(internal: InternalImporter, dshRoot: string): void {
+  const profilesRequire = createRequire(join(homeProfilesDirOf(dshRoot), "anchor.js"))
   const internalImport = internal.import.bind(internal)
   internal.import = async (name: string, ...rest: unknown[]) => {
     try {

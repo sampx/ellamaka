@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import { join } from "node:path"
 import { pluginsDir, readStore, type DshPluginEntry } from "./store.js"
+import { homeProfilesDirOf } from "../runtime/status.js"
 import { resolveRowSpecifier } from "./resolve-specifiers.js"
 
 /**
@@ -76,12 +77,12 @@ export interface ComposeLayersOptions {
  * replay share one rewrite and the Loader never sees a bare Bridge-owned
  * name (B1 拆雷). An unresolvable name throws the original resolution error.
  */
-export function composePluginLayers(dshHome: string, profile: string, options?: ComposeLayersOptions): PluginLayerPatch[] {
-  if (!existsSync(join(dshHome, PLUGIN_LAYER_DIRNAME))) return []
-  const store = readStore(dshHome)
+export function composePluginLayers(dshRoot: string, profile: string, options?: ComposeLayersOptions): PluginLayerPatch[] {
+  if (!existsSync(join(dshRoot, PLUGIN_LAYER_DIRNAME))) return []
+  const store = readStore(dshRoot)
   return store.plugins
     .filter((entry) => entry.enabledIn.includes(profile))
-    .map((entry) => resolvePluginLayerPatch(entry, dshHome, options?.installAnchor))
+    .map((entry) => resolvePluginLayerPatch(entry, dshRoot, options?.installAnchor))
 }
 
 /** The patch row for one installed plugin entry (bare name, unresolved). */
@@ -90,9 +91,9 @@ export function pluginLayerPatch(entry: DshPluginEntry): PluginLayerPatch {
 }
 
 /** One resolved patch row: the bare name replaced by its absolute file URL. */
-function resolvePluginLayerPatch(entry: DshPluginEntry, dshHome: string, installAnchor?: string): PluginLayerPatch {
+function resolvePluginLayerPatch(entry: DshPluginEntry, dshRoot: string, installAnchor?: string): PluginLayerPatch {
   const row = pluginLayerPatch(entry)
-  return { ...row, name: resolveRowSpecifier(row.name, { dshHome, installAnchor }) }
+  return { ...row, name: resolveRowSpecifier(row.name, { dshRoot, installAnchor }) }
 }
 
 /**
@@ -101,7 +102,7 @@ function resolvePluginLayerPatch(entry: DshPluginEntry, dshHome: string, install
  * home patches. Boot AND hot reload call this ONE function — a hot replay
  * must rebuild the entire stack (not only the plugin rows), because the
  * include re-applies `config.patches` over the raw config on every update and
- * replacing the list would drop the official bundle/user/state rows.
+ * replacing the list would drop the official bundle/user/home rows.
  */
 export function composeFullPatchStack(layers: {
   profileLayers: { patches: unknown[] }[]
@@ -122,13 +123,14 @@ export function composeFullPatchStack(layers: {
 /**
  * The install directory of one plugin entry (`plugins/<name>/<version>/`).
  */
-export function pluginPackageDir(dshHome: string, entry: DshPluginEntry): string {
-  return join(pluginsDir(dshHome), entry.name, entry.version)
+export function pluginPackageDir(dshRoot: string, entry: DshPluginEntry): string {
+  return join(pluginsDir(dshRoot), entry.name, entry.version)
 }
 
 /**
  * Maintain the plugin half of the flat module fallback
- * `$DSH_HOME/profiles/node_modules`: one symlink per installed plugin, so a
+ * `$DSH_HOME/profiles/node_modules` (the territory's `home/profiles/node_modules`):
+ * one symlink per installed plugin, so a
  * bare package name in a plugin layer resolves through the ordinary
  * Node parent-walk from the profile directory (spike 2: the profiles-anchor
  * require finds `node_modules/<pkg>` beside it).
@@ -139,12 +141,12 @@ export function pluginPackageDir(dshHome: string, entry: DshPluginEntry): string
  * links are kept, stale links (reinstalled version) are re-pointed, entries
  * not owned by the store are left alone.
  */
-export function healPluginsModuleFallback(dshHome: string, store?: ReturnType<typeof readStore>): void {
-  const modulesDir = join(dshHome, "profiles", "node_modules")
+export function healPluginsModuleFallback(dshRoot: string, store?: ReturnType<typeof readStore>): void {
+  const modulesDir = join(homeProfilesDirOf(dshRoot), "node_modules")
   mkdirSync(modulesDir, { recursive: true })
-  const entries = (store ?? readStore(dshHome)).plugins
+  const entries = (store ?? readStore(dshRoot)).plugins
   for (const entry of entries) {
-    const target = pluginPackageDir(dshHome, entry)
+    const target = pluginPackageDir(dshRoot, entry)
     const link = join(modulesDir, entry.name)
     if (!existsSync(join(target, "package.json"))) continue // damaged install: skip, mount will fail loud
     mkdirSync(join(modulesDir, ...entry.name.split("/").slice(0, -1)), { recursive: true })
@@ -196,8 +198,8 @@ function rePointSymlink(link: string, target: string): void {
 }
 
 /** Read helper re-exported for tests (the store file's raw JSON). */
-export function readStoreRaw(dshHome: string): string {
-  return readFileSync(join(pluginsDir(dshHome), "installed.json"), "utf-8")
+export function readStoreRaw(dshRoot: string): string {
+  return readFileSync(join(pluginsDir(dshRoot), "installed.json"), "utf-8")
 }
 
 /**
@@ -206,8 +208,8 @@ export function readStoreRaw(dshHome: string): string {
  * trips over a dangling link (rook B-06). A foreign entry at the path is
  * left alone.
  */
-export function removePluginSymlink(dshHome: string, name: string): void {
-  const link = join(dshHome, "profiles", "node_modules", ...name.split("/"))
+export function removePluginSymlink(dshRoot: string, name: string): void {
+  const link = join(homeProfilesDirOf(dshRoot), "node_modules", ...name.split("/"))
   try {
     if (lstatSync(link).isSymbolicLink()) {
       rmSync(link, { force: true })
