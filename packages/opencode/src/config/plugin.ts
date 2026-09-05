@@ -21,6 +21,9 @@ export type Origin = {
   spec: Spec
   source: string
   scope: Scope
+  // Resolved module id for file plugins, backfilled once the module is loaded so
+  // same-id plugins (e.g. space-level overriding user-level) dedupe by identity.
+  id?: string
 }
 
 export async function load(dir: string) {
@@ -64,21 +67,32 @@ export async function resolvePluginSpec(plugin: Spec, configFilepath: string): P
   return resolved
 }
 
-// Dedupe on the load identity (package name for npm specs, exact file URL for local specs), but keep the
-// full Origin so downstream code still knows which config file won and where follow-up writes should go.
+// Dedupe on the load identity (package name for npm specs, module id for local specs — falling back
+// to the plugin file name), but keep the full Origin so downstream code still knows which config file
+// won and where follow-up writes should go. Space-level (higher-precedence, merged later) plugins win.
 export function deduplicatePluginOrigins(plugins: Origin[]): Origin[] {
   const seen = new Set<string>()
   const list: Origin[] = []
 
   for (const plugin of plugins.toReversed()) {
     const spec = pluginSpecifier(plugin.spec)
-    const name = spec.startsWith("file://") ? spec : parsePluginSpecifier(spec).pkg
+    const name = plugin.id ?? (spec.startsWith("file://") ? pluginFileName(spec) : parsePluginSpecifier(spec).pkg)
     if (seen.has(name)) continue
     seen.add(name)
     list.push(plugin)
   }
 
   return list.toReversed()
+}
+
+// Local (file) plugins are identified by their module id when known, otherwise by their file name so
+// that same-name plugins in different directories (e.g. user-level vs space-level) dedupe to one.
+function pluginFileName(spec: string): string {
+  try {
+    return path.basename(new URL(spec).pathname)
+  } catch {
+    return spec
+  }
 }
 
 export * as ConfigPlugin from "./plugin"

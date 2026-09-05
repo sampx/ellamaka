@@ -48,7 +48,7 @@ Example:
 - Relative path specs are resolved relative to the config file that declared them.
 - A file module listed in `tui.json` must be a TUI module (`default export { id?, tui }`) and must not export `server`.
 - Duplicate npm plugins are deduped by package name; higher-precedence config wins.
-- Duplicate file plugins are deduped by exact resolved file spec. This happens while merging config, before plugin modules are loaded.
+- Duplicate file plugins are deduped by module id; when the module is not yet loaded, same-name file plugins across config layers dedupe to the higher-precedence (space-level) one. This happens while merging config, before plugin modules are loaded.
 - `plugin_enabled` is keyed by plugin id, not by plugin spec.
 - For file plugins, that id must come from the plugin module's exported `id`. For npm plugins, it is the exported `id` or the package name if `id` is omitted.
 - Plugins are enabled by default. `plugin_enabled` is only for explicit overrides, usually to disable a plugin with `false`.

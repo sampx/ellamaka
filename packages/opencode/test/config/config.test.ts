@@ -994,6 +994,72 @@ describe("deduplicatePluginOrigins", () => {
     expect(result).toEqual(["a-plugin@1.0.0", "b-plugin@1.0.0", "c-plugin@1.0.0"])
   })
 
+  test("dedupes same-name file plugins across directories by module id, keeping the winner's origin", () => {
+    const globalSpec = "file:///Users/me/.wopal/plugins/wopal-plugin.ts"
+    const spaceSpec = "file:///work/space/.wopal/plugins/wopal-plugin.ts"
+
+    const result = ConfigPlugin.deduplicatePluginOrigins([
+      { spec: globalSpec, source: "/Users/me/.wopal/config/settings.jsonc", scope: "global" as const, id: "wopal-plugin" },
+      { spec: spaceSpec, source: "/work/space/.wopal/config/settings.jsonc", scope: "local" as const, id: "wopal-plugin" },
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0].spec).toBe(spaceSpec)
+    expect(result[0].source).toBe("/work/space/.wopal/config/settings.jsonc")
+    expect(result[0].scope).toBe("local")
+  })
+
+  test("dedupes same-name file plugins by file name when module id is unknown, keeping the higher-precedence one", () => {
+    const globalSpec = "file:///Users/me/.wopal/plugins/wopal-plugin.ts"
+    const spaceSpec = "file:///work/space/.wopal/plugins/wopal-plugin.ts"
+
+    const result = ConfigPlugin.deduplicatePluginOrigins([
+      { spec: globalSpec, source: "/Users/me/.wopal/config/settings.jsonc", scope: "global" as const },
+      { spec: spaceSpec, source: "/work/space/.wopal/config/settings.jsonc", scope: "local" as const },
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(result[0].spec).toBe(spaceSpec)
+    expect(result[0].source).toBe("/work/space/.wopal/config/settings.jsonc")
+  })
+
+  test("keeps different-name file plugins separate", () => {
+    const a = "file:///Users/me/.wopal/plugins/one.ts"
+    const b = "file:///work/space/.wopal/plugins/two.ts"
+
+    const result = ConfigPlugin.deduplicatePluginOrigins([
+      { spec: a, source: "", scope: "global" as const },
+      { spec: b, source: "", scope: "local" as const },
+    ])
+
+    expect(result).toHaveLength(2)
+    expect(result.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual([a, b])
+  })
+
+  test("only global plugin with no space counterpart stays unchanged", () => {
+    const spec = "file:///Users/me/.wopal/plugins/wopal-plugin.ts"
+
+    const result = ConfigPlugin.deduplicatePluginOrigins([
+      { spec, source: "/Users/me/.wopal/config/settings.jsonc", scope: "global" as const },
+    ])
+
+    expect(result).toHaveLength(1)
+    expect(ConfigPlugin.pluginSpecifier(result[0].spec)).toBe(spec)
+  })
+
+  test("different ids on same-name file plugins are treated as distinct", () => {
+    const a = "file:///Users/me/.wopal/plugins/wopal-plugin.ts"
+    const b = "file:///work/space/.wopal/plugins/wopal-plugin.ts"
+
+    const result = ConfigPlugin.deduplicatePluginOrigins([
+      { spec: a, source: "", scope: "global" as const, id: "user-wopal" },
+      { spec: b, source: "", scope: "local" as const, id: "space-wopal" },
+    ])
+
+    expect(result).toHaveLength(2)
+    expect(result.map((item) => item.id)).toEqual(["user-wopal", "space-wopal"])
+  })
+
 })
 
 describe("OPENCODE_DISABLE_PROJECT_CONFIG", () => {
