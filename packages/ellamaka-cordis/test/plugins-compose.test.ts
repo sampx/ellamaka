@@ -350,6 +350,11 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
   }, 60_000)
 
   test("a hot replay rewrites freshly composed rows before the include update", async () => {
+    // The EVENT-driven trigger behaviour is covered by the runtime suite
+    // (plugins-runtime.test.ts, real watchers). Here we pin the REPLAY
+    // COMPOSITION itself: the exact rows a replay delivers through
+    // includeEntry.update are the freshly composed file:// rows, and the
+    // shallow-merge keeps the rest of the config.
     const root = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-hot-"))
     const srcRoot = mkdtempSync(join(tmpdir(), "dsh-plugin-b1-hot-src-"))
     const src = join(srcRoot, "fixture-dsh-plugin")
@@ -360,14 +365,10 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
     )
     writeFileSync(join(src, "cordis.patch.yml"), "- insert:\n    - id: dsh-plugin:fixture-dsh-plugin\n      name: fixture-dsh-plugin\n")
     writeFileSync(join(src, "index.js"), "export const name = \"fixture-dsh-plugin\"\nexport function apply(ctx) { ctx.provide(\"fixture-dsh-plugin.marker\", \"mounted\") }\n")
-    // mountDshTools mounts the "ellamaka-tools" profile: the fixture must
-    // target THAT profile's manifest and node_modules.
     const profileDir = profileDirOf(root, "ellamaka-tools")
     mkdirSync(join(profileDir, "node_modules"), { recursive: true })
     cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
     await withProfileManifestWrite(profileDir, (manifest) => {
-      // Seed the official tools template bundles first (initProfile
-      // semantics for a pre-created manifest), then the fixture.
       const dsh = (manifest.dsh ??= {}) as Record<string, unknown>
       const profile = (dsh.profile ??= {}) as Record<string, unknown>
       profile.bundles = ["@deepseek-ai/dsh-base"]
@@ -377,27 +378,25 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
 
     const ctx = new Context()
     const host = await mountDshTools(ctx, { home: root, port: 0 })
-    let updates = 0
-    const seenNames: string[] = []
-    const service = startDshPluginService({
-      home: root,
-      containers: [{ profile: "ellamaka-tools", ctx, includeEntry: host.includeEntry, stackContext: host.stackContext }],
-      intervalMs: 100,
-      onReplay: () => updates++,
-    })
     try {
-      // The service watches the PROFILE's composition files under the
-      // tools profile: touching its manifest (re-write identical content is
-      // enough — the hash short-circuit compares serialized documents) must
-      // trigger exactly one replay. We append+remove a dependency to change
-      // the serialized document, then restore it.
-      await withProfileManifestWrite(profileDir, (manifest) => {
-        // Dependencies-only mutation: the serialized manifest changes (the
-        // watch fires) without adding an unresolvable bundle row.
-        const deps = (manifest.dependencies ??= {}) as Record<string, string>
-        deps["phantom-hot-plugin"] = "1.0.0"
+      // Simulate the replay path (the runtime service's replayContainer):
+      // compose fresh plugin rows and deliver them through the SAME
+      // shallow-merge include update the replay uses.
+      const { composeFullPatchStack } = await import("../src/plugins/compose")
+      const stack = (host as unknown as { stackContext: { profileLayers: { patches: unknown[] }[]; userPatches: unknown[]; extraPatches: unknown[]; homePatches: unknown[] } }).stackContext
+      const pluginLayers = composePluginLayers(root, "ellamaka-tools")
+      const patches = composeFullPatchStack({
+        profileLayers: stack.profileLayers,
+        pluginLayers,
+        userPatches: stack.userPatches,
+        extraPatches: stack.extraPatches,
+        homePatches: stack.homePatches,
       })
-      await waitFor(() => updates, 1)
+      const previousConfig = (host.includeEntry as unknown as {
+        options?: { config?: Record<string, unknown> }
+      }).options?.config
+      const { patches: _prev, ...rest } = previousConfig ?? {}
+      await host.includeEntry.update({ config: { ...rest, patches } })
 
       // The include update carried file:// rows for every Bridge-composed
       // plugin (captured through the live entry options after the replay).
@@ -405,14 +404,13 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
         options?: { config?: { patches?: { insert?: PluginLayerPatch[] }[] } }
       }).options?.config
       const insertRows = (config?.patches ?? []).flatMap((row) => row?.insert ?? [])
-      for (const row of insertRows) {
-        if (row.id.startsWith(PLUGIN_ENTRY_ID_PREFIX)) seenNames.push(row.name)
-      }
+      const seenNames = insertRows
+        .filter((row) => row.id.startsWith(PLUGIN_ENTRY_ID_PREFIX))
+        .map((row) => row.name)
       expect(seenNames.length).toBeGreaterThan(0)
       expect(seenNames.every((name) => name.startsWith("file://"))).toBe(true)
-      expect(updates).toBeGreaterThanOrEqual(1)
+      expect(ctx.get("fixture-dsh-plugin.marker", false)).toBe("mounted")
     } finally {
-      await service.stop()
       await host.dispose()
       await ctx.fiber.dispose()
       rmSync(root, { recursive: true, force: true })

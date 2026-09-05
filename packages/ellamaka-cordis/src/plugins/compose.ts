@@ -89,15 +89,13 @@ export interface InsertRow {
 }
 
 /**
- * Read ONE patch file's insert rows (the official `cordis.patch.yml` subset:
- * a top-level `- insert:` list whose items carry `id` + `name`). Supports the
- * two official item shapes:
- *   - insert:
- *       - id: dsh-market
+ * Read ONE patch file's insert rows (the official `cordis.patch.yml`
+ * subset). Supports the shapes real dsh bundles ship:
+ *   - insert:                      # a patch row keyed `insert:`
+ *       - id: dsh-market           #   its item rows carry id + name
  *         name: dshmarket
- *   - insert:
- *       - id: dsh-plugin:x
- *         name: "x"
+ *   - id: dsh-plugin:x             # a bare top-level entry row whose
+ *     name: x                      #   fields ARE the inserted entry
  * A row the Loader cannot consume is a misconfiguration and throws a named
  * diagnostic (official parsePatchList same stance).
  */
@@ -109,10 +107,40 @@ export function readBundleInsertRows(content: string, file: string): InsertRow[]
     const line = lines[index].replace(/\t/g, "  ")
     index++
     if (!line.trim() || line.trim().startsWith("#")) continue
-    if (!/^-\s+insert:\s*$/.test(line.trim())) {
-      throw new Error(`dsh plugin compose: unsupported patch row in ${file}: ${JSON.stringify(line.trim())}`)
+    if (/^-\s+insert:\s*$/.test(line.trim())) {
+      rows.push(...readInsertBlockItems())
+      continue
     }
-    // Consume the item rows belonging to this insert block (deeper indented).
+    // A bare top-level entry row: `- id: x` with continuation fields.
+    const entryMatch = /^-\s*(?:(id|name):\s*(.*))?\s*$/.exec(line)
+    if (entryMatch) {
+      const fields: Record<string, string> = {}
+      if (entryMatch[1]) fields[entryMatch[1]] = unquote(entryMatch[2] ?? "")
+      while (index < lines.length) {
+        const raw = lines[index]
+        if (!raw.trim() || raw.trim().startsWith("#")) {
+          index++
+          continue
+        }
+        const continuation = raw.replace(/\t/g, "  ")
+        if (!/^\s/.test(continuation)) break // dedented: next top-level row
+        const fieldMatch = /^\s+(id|name):\s*(.*?)\s*$/.exec(continuation)
+        if (!fieldMatch) break
+        fields[fieldMatch[1]] = unquote(fieldMatch[2])
+        index++
+      }
+      if (fields.id === undefined || fields.name === undefined) {
+        throw new Error(`dsh plugin compose: insert row in ${file} needs both "id" and "name"`)
+      }
+      rows.push({ id: fields.id, name: fields.name })
+      continue
+    }
+    throw new Error(`dsh plugin compose: unsupported patch row in ${file}: ${JSON.stringify(line.trim())}`)
+  }
+  return rows
+
+  /** Consume the item rows of one `- insert:` block (deeper indented). */
+  function readInsertBlockItems(): InsertRow[] {
     const items: { id?: string; name?: string }[] = []
     let current: { id?: string; name?: string } | undefined
     while (index < lines.length) {
@@ -153,10 +181,9 @@ export function readBundleInsertRows(content: string, file: string): InsertRow[]
       if (item.id === undefined || item.name === undefined) {
         throw new Error(`dsh plugin compose: insert row in ${file} needs both "id" and "name"`)
       }
-      rows.push({ id: item.id!, name: item.name! })
     }
+    return items as InsertRow[]
   }
-  return rows
 }
 
 /** Strip one pair of matching YAML quotes from a scalar value. */

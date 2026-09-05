@@ -1,29 +1,31 @@
-import { readProfileManifest } from "./profile-manifest.js"
-import { profileDirOf } from "./compose.js"
-import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type PluginLayerPatch } from "./compose.js"
+import { watch, type FSWatcher } from "chokidar"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, profileDirOf } from "./compose.js"
 
 /**
- * Plugin Runtime Service: watches the store and replays include patches into
- * the running containers (DESIGN-dsh-poc §9.4, D-02/D-03).
+ * Plugin Runtime Service: watches the profile composition files and replays
+ * include patches into the running containers (DESIGN-dsh-poc A2, D-03).
  *
- * Trigger contract (D-02): CLI commands are pure disk operations; the server
- * process polls the store on an interval, hashes the document, and only
- * replays when the hash changed — so an unchanged store costs one file read
- * per tick and never touches the containers.
+ * Trigger contract (event driven, Plan Task 5): the watched set is each
+ * container's profile composition files — `package.json` (the manifest
+ * truth source) and `cordis.patch.yml` (the user patch layer). chokidar
+ * events fire a replay; the CONTENT of the watched files is hashed
+ * (mtime is unreliable: an idempotent write must not replay, P9 lesson) and
+ * only a hash change replays.
+ *
+ * Failure semantics (D-03 storm fix): a failed replay KEEPS the last hash —
+ * a failure does not count as a state change, so no retry loop ever forms.
+ * The containers stay on their last good state; the next REAL file change
+ * triggers a fresh replay.
  *
  * Replay contract (D-03, spike 2 path B): the include `entry.update` is a
  * SHALLOW merge, so each replay spreads the previous config back and REPLACES
  * `patches` with the FULL composition rebuilt by
  * {@link composeFullPatchStack}: bundle layers -> plugin layers -> user patch
- * layer -> extra patches -> home patches. Replacing the stack with only
- * the plugin rows would drop the official bundle/user/home rows on the first
- * tick (the include re-applies `config.patches` over the raw config). The
- * loader diffs entries by explicit id, so mount/unmount of individual plugins
- * is transactional — add/remove/enable/disable all share this one path.
- *
- * Failure semantics (DESIGN §9.6 #5): a failed replay is logged with
- * structure and the LAST GOOD STATE stays mounted; the service never crashes
- * and replays again on the next store change.
+ * layer -> extra patches -> home patches. The loader diffs entries by
+ * explicit id, so mount/unmount of individual plugins is transactional —
+ * add/remove/enable/disable all share this one path.
  */
 
 /** The structured logger seam the service logs through (W-02). */
@@ -57,18 +59,14 @@ export interface DshPluginContainer {
 export interface DshPluginServiceOptions {
   /**
    * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
-   * `plugins/` store under it is watched.
+   * watched composition files live under `home/profiles/<name>/`.
    */
   home: string
   /** The containers to replay plugin layers into. */
   containers: DshPluginContainer[]
-  /** Poll interval in ms; defaults to 2000 (Plan D-02). */
-  intervalMs?: number
   /**
    * The install anchor the container's profile was loaded from (binds the
-   * full-stack recomposition to the same bundle layers boot used). Required
-   * for correct replays; when omitted the service replays plugin-only stacks
-   * (legacy behaviour, only valid for standalone test containers).
+   * full-stack recomposition to the same bundle layers boot used).
    */
   installAnchor?: string
   /** Structured logger; defaults to a console-backed fallback. */
@@ -81,13 +79,16 @@ export interface DshPluginServiceOptions {
 
 /** A running service handle. */
 export interface DshPluginServiceHandle {
-  /** Stop polling. Idempotent; in-flight replays are awaited. */
+  /**
+   * Close the watcher and settle in-flight replays. Idempotent: further
+   * calls are no-ops.
+   */
   stop(): Promise<void>
 }
 
-/** Stable hash of the store document: plain JSON serialization digest. */
-function storeHash(store: unknown): string {
-  return JSON.stringify(store)
+/** Stable hash of the watched composition contents: JSON serialization digest. */
+function compositionHash(contents: (string | undefined)[]): string {
+  return JSON.stringify(contents)
 }
 
 /** Console-backed fallback logger (never silent in production, W-02). */
@@ -104,7 +105,8 @@ function defaultLogger(): DshPluginServiceLogger {
  * (bundle -> plugin -> user -> extra -> home) with freshly composed plugin
  * rows. `profilePatches` carries the per-profile boot context (bundle layer
  * patches, user patch list, extras, home patches) captured at mount time —
- * these layers are store-independent and stay byte-identical across replays.
+ * these layers are manifest-independent and stay byte-identical across
+ * replays.
  */
 export interface DshPluginStackContext {
   /** The profile's bundle layers (from `loadProfile(...).layers`). */
@@ -118,18 +120,43 @@ export interface DshPluginStackContext {
 }
 
 /**
- * Start watching the plugin store and hot-replaying include patches.
- * Returns immediately; the first tick runs after `intervalMs`.
+ * Start watching the profile composition files and hot-replaying include
+ * patches. Event driven: no polling interval.
  */
 export function startDshPluginService(options: DshPluginServiceOptions): DshPluginServiceHandle {
-  const intervalMs = options.intervalMs ?? 2000
   const containers = options.containers
   const logger = options.logger ?? defaultLogger()
   let lastHash: string | undefined
   let stopped = false
-  /** Serialization: a change spotted mid-replay is coalesced into one retry. */
+  /** Serialization: change events spotted mid-replay coalesce into one rerun. */
   let replaying = false
   let pendingReplay = false
+
+  /** The watched composition files, one pair per container profile. */
+  const watchedFiles = new Map<string, { manifest: string; patch: string }>()
+  for (const container of containers) {
+    const dir = profileDirOf(options.home, container.profile)
+    watchedFiles.set(container.profile, {
+      manifest: join(dir, "package.json"),
+      patch: join(dir, "cordis.patch.yml"),
+    })
+  }
+  const allWatched = [...watchedFiles.values()].flatMap((f) => [f.manifest, f.patch])
+
+  /** Read one watched file's content (`undefined` when absent). */
+  function readContent(file: string): string | undefined {
+    try {
+      if (!existsSync(file)) return undefined
+      return readFileSync(file, "utf-8")
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Hash the CURRENT content of every watched file (content, not mtime). */
+  function currentHash(): string {
+    return compositionHash(allWatched.map(readContent))
+  }
 
   const replayContainer = async (container: DshPluginContainer): Promise<void> => {
     // Compose with the container's boot anchor: bare names resolve at the
@@ -163,24 +190,10 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
     options.onReplay?.(container.profile)
   }
 
-  const tick = async (): Promise<void> => {
+  /** One observation: hash -> replay changed containers -> keep old hash on failure. */
+  const runReplay = async (): Promise<void> => {
     if (stopped) return
-    let hash: string | undefined
-    try {
-      // The truth source is each container's profile manifest (the official
-      // composition file). The hash covers every watched container's
-      // manifest, so an install touching any of them replays.
-      const manifests = containers.map((container) =>
-        JSON.stringify(readProfileManifest(profileDirOf(options.home, container.profile)).raw),
-      )
-      hash = storeHash(manifests)
-    } catch (error) {
-      // A corrupt manifest mid-write must never crash the watcher: log and
-      // skip this tick; the atomic manifest write means the next tick sees
-      // good state.
-      logger.warn("plugin manifest read failed", { error: (error as Error).message })
-      return
-    }
+    const hash = currentHash()
     if (hash === lastHash) return // short-circuit: nothing changed
     if (replaying) {
       pendingReplay = true
@@ -191,7 +204,6 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
       // Heal BEFORE composing: a newly installed plugin needs its
       // profiles/node_modules symlink to exist for the loader's import.
       healPluginsModuleFallback(options.home)
-      lastHash = hash
       let failed = false
       for (const container of containers) {
         try {
@@ -202,38 +214,45 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
           failed = true
           logger.error("plugin include replay failed; keeping last good state", {
             profile: container.profile,
-            hash,
             error: (error as Error).message,
           })
           options.onReplayError?.(container.profile, error)
         }
       }
-      if (failed) {
-        // A failed replay means the observed store could not be applied;
-        // forget the hash so the NEXT tick retries after another change
-        // (or the same state, coalesced by pendingReplay below).
-        lastHash = undefined
+      // Storm fix (D-03): a failed replay does NOT update the hash — the
+      // failure is not a state change, so nothing retries until a real file
+      // change arrives. Only a fully successful run adopts the new hash.
+      if (!failed) {
+        lastHash = hash
       }
     } finally {
       replaying = false
     }
   }
 
-  const timer = setInterval(() => {
-    void tick().then(() => {
-      if (pendingReplay && !stopped) {
-        pendingReplay = false
-        void tick()
-      }
-    })
-  }, intervalMs)
-  // Never hold the event loop open just for the watcher.
-  if (typeof timer.unref === "function") timer.unref()
+  /** Drain a pending change observed while a replay was in flight. */
+  const drainPending = async (): Promise<void> => {
+    while (pendingReplay && !stopped) {
+      pendingReplay = false
+      await runReplay()
+    }
+  }
+
+  lastHash = currentHash() // adopt the state observed at startup
+  const watcher = watch(allWatched, {
+    ignoreInitial: true,
+    awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 25 },
+  })
+  watcher.on("all", () => {
+    if (stopped) return
+    void runReplay().then(drainPending)
+  })
 
   return {
     stop: async () => {
+      if (stopped) return
       stopped = true
-      clearInterval(timer)
+      await watcher.close()
       // Await at most one in-flight replay so callers observe settled state.
       while (replaying) {
         await new Promise((resolve) => setTimeout(resolve, 10))
