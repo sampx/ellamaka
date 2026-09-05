@@ -3,24 +3,17 @@ export type { CordisHubOptions, HubRuntime } from "./types.js"
 export { createCordisLogExporter } from "./log-bridge.js"
 export type { CordisLogExporterDeps, EllamakaLogLevel } from "./log-bridge.js"
 export {
-  PLUGINS_DIR,
-  STORE_FILENAME,
-  STORE_SCHEMA,
-  emptyStore,
-  pluginsDir,
+  PLUGINS_LOCK_FILENAME,
+  appendBundle,
+  dropPlugin,
   pluginsLockFile,
-  readStore,
-  setEnabled,
-  storeFile,
-  updateStore,
-  validateStore,
-  writeStore,
-} from "./plugins/store.js"
-export type {
-  DshPluginEntry,
-  DshPluginSource,
-  DshPluginStoreV1,
-} from "./plugins/store.js"
+  profileManifestFile,
+  readProfileManifest,
+  setDependency,
+  withPluginsLock,
+  withProfileManifestWrite,
+} from "./plugins/profile-manifest.js"
+export type { ProfileManifest } from "./plugins/profile-manifest.js"
 export {
   DEFAULT_RESOLVER_REGISTRY,
   NoVersionError,

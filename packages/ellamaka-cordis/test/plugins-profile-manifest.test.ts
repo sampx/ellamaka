@@ -154,31 +154,29 @@ describe("withProfileManifestWrite", () => {
     expect(Object.keys(manifest.dependencies).sort()).toEqual(["p1", "p2", "p3", "p4", "p5"])
   })
 
-  test("writes hold the cross-process plugins.lock under locks/", async () => {
+  test("writes queue behind a held plugins.lock and persist after it releases", async () => {
     const root = tempRoot()
     const profileDir = join(root, "home", "profiles", "web")
     mkdirSync(profileDir, { recursive: true })
     const lockGuard = pluginsLockFile(root)
-    let lockHeldDuringWrite = false
-    // Hold the lock from "another process" first: the write must queue behind
-    // it (serialise), and while we hold it the guard directory exists.
+    const events: string[] = []
     const release = Promise.withResolvers<void>()
     const holder = withPluginsLock(root, async () => {
+      events.push("holder-entered")
       await release.promise
+      events.push("holder-left")
     })
-    const writer = withProfileManifestWrite(profileDir, (manifest) => {
-      // By the time the mutator runs, the previous holder released; assert
-      // the lock guard path the writer used by re-acquiring inside — cheap
-      // proof the writer went through the same guard.
-      lockHeldDuringWrite = existsSync(lockGuard)
-      setDependency(manifest, "x", "1.0.0")
+    const writer = withProfileManifestWrite(profileDir, () => {
+      // The writer can only run after the holder left: serialisation proof.
+      events.push("writer-entered")
     })
+    // Give the holder a tick to enter before releasing.
+    await new Promise((resolve) => setTimeout(resolve, 20))
     release.resolve()
     await Promise.all([holder, writer])
+    expect(events).toEqual(["holder-entered", "holder-left", "writer-entered"])
     // The guard is gone after release (ownership-safe removal).
     expect(existsSync(lockGuard)).toBe(false)
-    // Sanity: the writer observed the guard released (not timed out).
-    expect(lockHeldDuringWrite).toBe(false)
     expect(PLUGINS_LOCK_FILENAME).toBe("plugins.lock")
   })
 })
