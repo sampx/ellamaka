@@ -6,6 +6,15 @@ import { join } from "node:path"
  * §3.4.2 / §3.4.4). No I/O: these derive the layout and gate only from their
  * inputs, so they are trivially testable and safe to call before any
  * filesystem work.
+ *
+ * Layout vocabulary (DESIGN-dsh-poc "唯一 home 与目录所有权"):
+ * - `$WOPAL_HOME/dsh` is the Ellamaka territory root (`dshHome`) — it is NOT
+ *   the DSH home.
+ * - `$WOPAL_HOME/dsh/home` is the DSH home (`homeDir`): a 100% official-layout
+ *   harness home (`profiles/`, `.agent-presets/`, `sessions/`, `settings.yaml`,
+ *   ...). Both official resolution paths converge there: A-class config
+ *   injection and B-class `$DSH_HOME` env reads (the env is set by the host at
+ *   process start; integration code itself never reads it).
  */
 
 /** The one runtime status a manager run can end in. */
@@ -17,10 +26,14 @@ export interface InstallAnchor {
   genId: string
 }
 
-/** The immutable directory layout of the single DSH home (DESIGN §3.4.2). */
+/** The immutable directory layout of the DSH territory (DESIGN §3.4.2). */
 export interface DshLayout {
-  /** `$WOPAL_HOME/dsh` — the single home (never `$DSH_HOME`). */
+  /** `$WOPAL_HOME/dsh` — the Ellamaka territory root (NOT the DSH home). */
   readonly dshHome: string
+  /** `dsh/home` — the DSH home: a 100% official-layout harness home. */
+  readonly homeDir: string
+  /** `dsh/home/profiles` — official-semantics profile area, preserved across versions. */
+  readonly profileDir: string
   /** `dsh/closures` — immutable closures named by content fingerprint. */
   readonly closuresDir: string
   /** `dsh/staging` — transient materialisation area (self-managed). */
@@ -29,27 +42,41 @@ export interface DshLayout {
   readonly locksDir: string
   /** `dsh/locks/materialize.lock` — cross-process materialisation mutex. */
   readonly lockFile: string
-  /** `dsh/profiles` — user profiles, preserved across versions. */
-  readonly profileDir: string
-  /** `dsh/state` — DSH runtime data, preserved across versions. */
-  readonly stateDir: string
 }
 
 /**
- * Derive the single DSH home layout from `$WOPAL_HOME`. `$DSH_HOME` is never
- * consulted — Ellamaka always uses `$WOPAL_HOME/dsh` (DESIGN §3.4.2).
+ * Derive the DSH territory layout from `$WOPAL_HOME`. `$DSH_HOME` is never
+ * consulted — Ellamaka always uses `$WOPAL_HOME/dsh` as the territory root and
+ * `$WOPAL_HOME/dsh/home` as the DSH home (DESIGN §3.4.2).
  */
 export function resolveDshLayout(wopalHome: string): DshLayout {
   const dshHome = join(wopalHome, "dsh")
+  const homeDir = dshHomeDirOf(dshHome)
   return {
     dshHome,
+    homeDir,
+    profileDir: homeProfilesDirOf(dshHome),
     closuresDir: join(dshHome, "closures"),
     stagingDir: join(dshHome, "staging"),
     locksDir: join(dshHome, "locks"),
     lockFile: join(dshHome, "locks", "materialize.lock"),
-    profileDir: join(dshHome, "profiles"),
-    stateDir: join(dshHome, "state"),
   }
+}
+
+/**
+ * The DSH home of a territory root (`<dshRoot>/home`): the 100% official-layout
+ * harness home that both official resolution paths (A-class config injection
+ * and B-class `$DSH_HOME` env reads) converge on. Modules that receive the
+ * territory root as a parameter derive their DSH-home paths here instead of
+ * re-calling `resolveDshLayout(dirname(...))`.
+ */
+export function dshHomeDirOf(dshRoot: string): string {
+  return join(dshRoot, "home")
+}
+
+/** The official-semantics profiles area of a territory root (`<dshRoot>/home/profiles`). */
+export function homeProfilesDirOf(dshRoot: string): string {
+  return join(dshHomeDirOf(dshRoot), "profiles")
 }
 
 /**
