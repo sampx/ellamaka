@@ -1,4 +1,5 @@
-import { readStore } from "./store.js"
+import { readProfileManifest } from "./profile-manifest.js"
+import { profileDirOf } from "./compose.js"
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type PluginLayerPatch } from "./compose.js"
 
 /**
@@ -166,12 +167,18 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
     if (stopped) return
     let hash: string | undefined
     try {
-      const store = readStore(options.home)
-      hash = storeHash(store)
+      // The truth source is each container's profile manifest (the official
+      // composition file). The hash covers every watched container's
+      // manifest, so an install touching any of them replays.
+      const manifests = containers.map((container) =>
+        JSON.stringify(readProfileManifest(profileDirOf(options.home, container.profile)).raw),
+      )
+      hash = storeHash(manifests)
     } catch (error) {
-      // A corrupt store mid-write must never crash the watcher: log and skip
-      // this tick; the atomic store write means the next tick sees good state.
-      logger.warn("plugin store read failed", { error: (error as Error).message })
+      // A corrupt manifest mid-write must never crash the watcher: log and
+      // skip this tick; the atomic manifest write means the next tick sees
+      // good state.
+      logger.warn("plugin manifest read failed", { error: (error as Error).message })
       return
     }
     if (hash === lastHash) return // short-circuit: nothing changed

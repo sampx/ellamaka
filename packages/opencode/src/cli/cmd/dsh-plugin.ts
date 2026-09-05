@@ -7,7 +7,8 @@ import {
   NotInstalledError,
   removePackage,
 } from "@wopal/ellamaka-cordis/plugins/installer"
-import { readStore, setEnabled, updateStore } from "@wopal/ellamaka-cordis/plugins"
+import { readProfileManifest, withProfileManifestWrite } from "@wopal/ellamaka-cordis/plugins"
+import { listInstalled } from "@wopal/ellamaka-cordis/plugins/installer"
 import { parseProfiles, parseRegistrySpec } from "./dsh-plugin-profiles"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 
@@ -104,39 +105,46 @@ export const DshPluginCommand = effectCmd({
       // One locked read-modify-write (rook B-04): the read happens INSIDE the
       // plugins mutex, so two concurrent CLI processes never overwrite each
       // other's profile flips.
-      const finalProfiles: string[] = yield* Effect.tryPromise({
+      // enable: the requested profiles (alias-expanded). disable without
+      // --profile: both built-ins; with --profile: exactly those.
+      const targets = enabled
+        ? parseProfiles(args.profile as string | undefined)
+        : args.profile
+          ? parseProfiles(args.profile as string)
+          : ["web", "ellamaka-tools"]
+      yield* Effect.tryPromise({
         try: async () => {
-          const result = await updateStore<string[]>(home, (store) => {
-            const entry = store.plugins.find((p) => p.name === pkg)
-            if (!entry) throw new NotInstalledError(pkg)
-            // enable: the requested profiles (alias-expanded). disable without
-            // --profile: both built-ins; with --profile: exactly those.
-            const targets = enabled
-              ? parseProfiles(args.profile as string | undefined)
-              : args.profile
-                ? parseProfiles(args.profile as string)
-                : ["web", "ellamaka-tools"]
-            for (const profile of targets) {
-              setEnabled(store, pkg, profile, enabled)
-            }
-            return { result: entry.enabledIn.slice(), store }
-          })
-          return result ?? []
+          let touched = false
+          for (const profile of targets) {
+            const manifest = readProfileManifest(join(home, "home", "profiles", profile))
+            const installed = pkg in manifest.dependencies || manifest.bundles.includes(pkg)
+            if (!installed) continue
+            touched = true
+            await withProfileManifestWrite(join(home, "home", "profiles", profile), (raw) => {
+              const dsh = (raw.dsh ??= {}) as Record<string, unknown>
+              const profileSection = (dsh.profile ??= {}) as Record<string, unknown>
+              const bundles = (profileSection.bundles ??= []) as string[]
+              const index = bundles.indexOf(pkg)
+              if (enabled && index === -1) bundles.push(pkg)
+              if (!enabled && index !== -1) bundles.splice(index, 1)
+            })
+          }
+          if (!touched) throw new NotInstalledError(pkg)
         },
         catch: toCliError,
       })
       log.success(`${enabled ? "Enabled" : "Disabled"} ${pkg}`)
-      log.info(`Enabled in: ${finalProfiles.length ? finalProfiles.join(", ") : "(none)"}`)
+      log.info(`Enabled in: ${targets.join(", ")}`)
       return
     }
 
     if (action === "list") {
       const plugins = yield* Effect.try({
-        try: () => readStore(home).plugins,
+        try: () => listInstalled(home, parseProfiles(args.profile as string | undefined)[0] ?? "web"),
         catch: toCliError,
       })
       if (args.json) {
-        process.stdout.write(JSON.stringify({ schema: "ellamaka.dsh-plugins/v1", plugins }) + "\n")
+        process.stdout.write(JSON.stringify({ plugins }) + "\n")
         return
       }
       if (plugins.length === 0) {
@@ -144,7 +152,7 @@ export const DshPluginCommand = effectCmd({
         return
       }
       for (const entry of plugins) {
-        log.info(`${entry.name}@${entry.version}  [${entry.source}]  enabled: ${entry.enabledIn.join(", ") || "(none)"}`)
+        log.info(`${entry.name}@${entry.version}`)
       }
       return
     }

@@ -52,5 +52,6 @@ export {
   removePluginSymlink,
 } from "./plugins/compose.js"
 export type { DshPluginStackContext, InsertRow, PluginLayerPatch } from "./plugins/compose.js"
+export { migratePluginStore } from "./plugins/migrate-store.js"
 export { resolveRowSpecifier } from "./plugins/resolve-specifiers.js"
 export type { ResolveRowOptions, ResolvableRow } from "./plugins/resolve-specifiers.js"

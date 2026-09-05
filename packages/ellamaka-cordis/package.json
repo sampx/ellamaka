@@ -14,13 +14,14 @@
     "./dsh-web": "./src/dsh-web.ts",
     "./runtime": "./src/runtime/manager.ts",
     "./runtime/loader": "./src/runtime/loader.ts",
-    "./plugins": "./src/plugins/store.ts",
+    "./plugins": "./src/plugins/profile-manifest.ts",
     "./plugins/compose": "./src/plugins/compose.ts",
     "./plugins/resolve-specifiers": "./src/plugins/resolve-specifiers.ts",
     "./plugins/installer": "./src/plugins/installer.ts",
     "./plugins/resolver": "./src/plugins/resolver.ts",
     "./plugins/runtime": "./src/plugins/runtime.ts",
-    "./diagnostics/dump-config": "./src/diagnostics/dump-config.ts"
+    "./diagnostics/dump-config": "./src/diagnostics/dump-config.ts",
+    "./plugins/migrate-store": "./src/plugins/migrate-store.ts"
   },
   "files": [
     "dist"
