@@ -257,7 +257,7 @@ describe("dsh plugin installer", () => {
     await removePackage("upgradable", { home })
 
     // The remove must have cleaned the profiles/node_modules link.
-    const link = join(home, "profiles", "node_modules", "upgradable")
+    const link = join(home, "home", "profiles", "node_modules", "upgradable")
     expect(existsSync(link)).toBe(false)
 
     // Build a v2 source with the SAME package name, different version.
@@ -275,7 +275,7 @@ describe("dsh plugin installer", () => {
     expect(readd.name).toBe("upgradable")
     expect(readd.version).toBe("2.0.0")
     expect(
-      realpathSync(join(home, "profiles", "node_modules", "upgradable")),
+      realpathSync(join(home, "home", "profiles", "node_modules", "upgradable")),
     ).toBe(realpathSync(join(home, PLUGINS_DIR, "upgradable", "2.0.0")))
   })
 

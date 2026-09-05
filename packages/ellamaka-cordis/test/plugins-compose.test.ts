@@ -125,7 +125,7 @@ describe("healPluginsModuleFallback", () => {
       ],
     })
     healPluginsModuleFallback(home)
-    const link = join(home, "profiles", "node_modules", "link-me")
+    const link = join(home, "home", "profiles", "node_modules", "link-me")
     expect(existsSync(link)).toBe(true)
     expect(realpathSync(link)).toBe(realpathSync(dir))
   })
@@ -141,7 +141,7 @@ describe("healPluginsModuleFallback", () => {
       ],
     })
     // Seed a stale link pointing at the old version.
-    const modulesDir = join(home, "profiles", "node_modules")
+    const modulesDir = join(home, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
     symlinkSync(oldDir, join(modulesDir, "mover"), "dir")
     healPluginsModuleFallback(home)
@@ -153,7 +153,7 @@ describe("healPluginsModuleFallback", () => {
     const dir = installedPlugin(home, "resurrected", "1.0.0")
     // Seed a link whose target no longer exists: realpathSync fails on it,
     // and a naive symlinkSync would fail EEXIST.
-    const modulesDir = join(home, "profiles", "node_modules")
+    const modulesDir = join(home, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
     symlinkSync(join(home, "gone-plugin-dir"), join(modulesDir, "resurrected"), "dir")
     await writeStore(home, {
@@ -168,7 +168,7 @@ describe("healPluginsModuleFallback", () => {
 
   test("keeps non-plugin entries already present in profiles/node_modules", async () => {
     const home = tempHome()
-    const modulesDir = join(home, "profiles", "node_modules")
+    const modulesDir = join(home, "home", "profiles", "node_modules")
     mkdirSync(modulesDir, { recursive: true })
     const foreign = join(home, "elsewhere")
     mkdirSync(foreign)
@@ -190,7 +190,7 @@ describe("healPluginsModuleFallback", () => {
     })
     writeFileSync(join(home, "unrelated.txt"), "not a store")
     healPluginsModuleFallback(home)
-    expect(lstatSync(join(home, "profiles", "node_modules", "plain")).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(home, "home", "profiles", "node_modules", "plain")).isSymbolicLink()).toBe(true)
   })
 })
 
