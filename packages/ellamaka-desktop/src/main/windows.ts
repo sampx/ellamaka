@@ -26,7 +26,12 @@ const oc2Background = {
 }
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
-const dshProxy = createDshProxy((url, init) => net.fetch(url.toString(), init))
+// The DSH proxy forwards the browser-auth token exchange, which answers with
+// a 303 + Set-Cookie. Electron's `net.fetch` cannot surface manual redirects
+// (`redirect: "manual"` throws "Redirect was cancelled"), so the proxy uses
+// the Node/undici `fetch` — it returns the 303 response as-is and lets the
+// proxy capture the session cookie for subsequent requests.
+const dshProxy = createDshProxy((url, init) => fetch(url.toString(), init))
 
 protocol.registerSchemesAsPrivileged([
   {
