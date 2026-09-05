@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } f
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
-import { createDshProxy, isDshPath } from "./dsh-proxy"
+import { createDshHttpProxy, createDshProxy, isDshPath } from "./dsh-proxy"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowShowGuard } from "./window-show-guard"
@@ -32,6 +32,17 @@ const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 // the Node/undici `fetch` — it returns the 303 response as-is and lets the
 // proxy capture the session cookie for subsequent requests.
 const dshProxy = createDshProxy((url, init) => fetch(url.toString(), init))
+// The packaged renderer origin (`oc://renderer`) refuses WebSocket URLs, so
+// the DSH iframe targets this standard-HTTP proxy (with WS upgrade support)
+// instead of the oc:// handler. Both proxies share the same sidecar target.
+const dshHttpProxy = createDshHttpProxy()
+let dshHttpProxyPort: number | undefined
+void dshHttpProxy.listen(4123).then((port) => {
+  dshHttpProxyPort = port
+  writeLog("protocol", "dsh http proxy listening", { port })
+}).catch((error) => {
+  writeLog("protocol", "dsh http proxy listen failed", { error }, "error")
+})
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -68,6 +79,12 @@ export function getBackgroundColor(): string | undefined {
 
 export function setDshProxyTarget(url?: string) {
   dshProxy.setTarget(url)
+  dshHttpProxy.setTarget(url)
+}
+
+/** The standard-HTTP DSH proxy origin (packaged iframe target); undefined before listen. */
+export function getDshHttpProxyOrigin(): string | undefined {
+  return dshHttpProxyPort === undefined ? undefined : `http://127.0.0.1:${dshHttpProxyPort}`
 }
 
 function iconsDir() {

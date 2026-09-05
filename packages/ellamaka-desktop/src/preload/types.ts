@@ -30,6 +30,8 @@ export type TitlebarTheme = {
 export type WindowConfig = {
   updaterEnabled: boolean
   version: string
+  /** The standard-HTTP DSH proxy origin (packaged iframe target); absent before ready. */
+  dshProxyOrigin?: string
 }
 
 export type FatalRendererError = {

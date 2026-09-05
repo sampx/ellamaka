@@ -3,6 +3,7 @@ import { createResource, type JSX } from "solid-js"
 import h from "solid-js/h"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
+import { usePlatform } from "@/context/platform"
 import { useWorkbenchState } from "./view-store"
 
 /**
@@ -98,11 +99,21 @@ export function DshSurface(props: { children: JSX.Element }): JSX.Element {
   const wb = useWorkbenchState()
   const server = useServer()
   const sdk = useServerSDK()
+  const platform = usePlatform()
   const [entry] = createResource(
     () => wb.dshVisible,
     (visible) => (visible ? sdk.client.workbench.dshUrl() : undefined),
   )
-  const src = () => dshIframeSrc(server.current?.http.url, entry()?.data?.url, globalThis.location?.origin)
+  // The packaged desktop renderer lives on the privileged `oc://renderer`
+  // origin, where Chromium refuses WebSocket URLs; the DSH realtime channel
+  // needs WebSocket, so the iframe targets the main-process standard-HTTP
+  // proxy instead. Dev desktop (http://localhost:5173) and serve mode use
+  // the serving page origin directly.
+  const pageOrigin = () => {
+    if (globalThis.location?.protocol === "oc:") return platform.dshProxyOrigin
+    return globalThis.location?.origin
+  }
+  const src = () => dshIframeSrc(server.current?.http.url, entry()?.data?.url, pageOrigin())
   const visible = () => wb.dshVisible
   return (
     <>
