@@ -1,36 +1,29 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve, sep } from "node:path"
-import {
-  emptyStore,
-  PLUGINS_DIR,
-  pluginsDir,
-  readStore,
-  STORE_FILENAME,
-  withPluginsLock,
-  writeStoreLocked,
-  type DshPluginEntry,
-} from "./store.js"
-import { removePluginSymlink, healPluginsModuleFallback } from "./compose.js"
+import { withPluginsLock, writeProfileManifestLocked, readProfileManifest, setDependency, dropPlugin, appendBundle } from "./profile-manifest.js"
+import { profileDirOf, healPluginsModuleFallback, removePluginSymlink } from "./compose.js"
 import { resolveTree, type ResolveSpec, type ResolvedTree } from "./resolver.js"
 
 /**
  * Plugin installer: the install/remove pipeline of the dsh plugin supply
- * chain (DESIGN-dsh-poc §9.4).
+ * chain, rewritten to the OFFICIAL end state (DESIGN-dsh-poc 「Bun 安装器流水线」).
  *
  * Registry pipeline: resolveTree → per-package extract into a staging dir
- * (pacote in production via the injectable {@link InstallDeps.extract}) →
- * entry-manifest `dsh.bundle.patch` validation → atomic rename into
- * `plugins/<name>/<version>/` (transitive deps flat under its
- * `node_modules/`) → store entry written (directory first, store second —
- * the watcher only reads the store, so it never sees a half-install).
+ * (pacote in production via the injectable {@link ExtractLike}) → entry +
+ * transitive deps moved into `<profile>/node_modules/` (parent-walk
+ * resolvable; official `@deepseek-ai/*` packages are skipped — the shared
+ * profiles/node_modules heal satisfies them) → the profile `package.json`
+ * declares the dependency + appends the bundle row (official CLI
+ * reconcilePlugins semantics, atomic write under the plugins lock).
  *
- * `--dir` pipeline: copy the directory tree into place + store entry. Local
+ * `--dir` pipeline: copy the directory tree into place + declare. Local
  * directories carry no registry manifest, so no resolution happens.
  *
- * Failure semantics (DESIGN §9.6 #5): any failure before the store write
- * cleans staging and leaves the store untouched; the error propagates with
- * diagnostics.
+ * Failure semantics (DESIGN 验收基线 #5): any failure before the declaration
+ * write cleans staging and leaves the profile directory UNTOUCHED; the error
+ * propagates with diagnostics. Same-name re-add overwrites (official CLI
+ * replace semantics — no AlreadyInstalledError).
  */
 
 /** `pacote.extract`-shaped download boundary (production: dynamic import). */
@@ -43,7 +36,7 @@ export type InstallSpec = ResolveSpec
 export interface InstallOptions {
   /**
    * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
-   * plugin install area (`plugins/`) lives under it.
+   * profiles live under `home/profiles/`.
    */
   home: string
   /** Injected extract (production: pacote). Tests inject fakes. */
@@ -52,7 +45,16 @@ export interface InstallOptions {
   resolve?: (spec: InstallSpec) => Promise<ResolvedTree>
   /** Registry for the extract boundary; defaults to npm. */
   registry?: string
-  /** The profiles to record in the entry's enabledIn (default: none). */
+  /**
+   * The profiles to install into (default: `["web"]`). Each requested
+   * profile receives the package entity and the manifest declaration.
+   */
+  profiles?: string[]
+  /**
+   * Legacy CLI alias for {@link profiles} (the old store's `enabledIn`
+   * semantics: which profiles see the plugin). Kept so the CLI shape is
+   * stable across the Task-7 retarget.
+   */
   enabledIn?: string[]
 }
 
@@ -71,14 +73,6 @@ export interface InstallResult {
   warning?: string
 }
 
-/** Same name and version are already installed (DESIGN §9.2: replace manually). */
-export class AlreadyInstalledError extends Error {
-  constructor(name: string, version: string) {
-    super(`dsh plugin installer: ${name}@${version} is already installed (remove it first to replace)`)
-    this.name = "AlreadyInstalledError"
-  }
-}
-
 /** Removal requested for a plugin that is not installed. */
 export class NotInstalledError extends Error {
   constructor(name: string) {
@@ -87,15 +81,18 @@ export class NotInstalledError extends Error {
   }
 }
 
+/** The default install profile (official CLI default). */
+const DEFAULT_PROFILES = ["web"]
+
 /**
  * npm package-name rule (simplified but strict): scope/name segments of
  * lowercase URL-safe characters, no leading `.|_|-`, no path separators — a
- * name doubles as a directory name under `plugins/`, so anything else
+ * name doubles as a directory name under `node_modules/`, so anything else
  * (including `../`) is rejected (rook B-08).
  */
 const PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/
 
-/** Exact semver (the installer pins one version per install area entry). */
+/** Exact semver (the installer pins one version per profile manifest entry). */
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 
 /** Validate an untrusted name+version pair from a package manifest. */
@@ -109,16 +106,29 @@ export function assertSafePackageIdentity(name: string, version: string): void {
 }
 
 /**
- * Ensure a computed install target stays INSIDE the plugins area — the last
- * line of defence against a crafted manifest escaping the install area with
- * `../` segments (rook B-08).
+ * GitHub-source transports are phase 2 (git clone + build); phase 1 gives a
+ * clear error with the npm alternative instead of a confusing resolver
+ * failure (D-07).
  */
-function assertTargetInsidePluginsArea(pluginsArea: string, target: string): void {
-  const area = resolve(pluginsArea)
+export function assertNotGithubSource(spec: string): void {
+  if (/^github:/i.test(spec)) {
+    throw new Error(
+      `dsh plugin installer: github sources are not supported yet ("${spec}") — install the npm published package instead (e.g. "ellamaka dsh plugin add <npm-package-name>")`,
+    )
+  }
+}
+
+/**
+ * Ensure a computed install target stays INSIDE the profile's node_modules —
+ * the last line of defence against a crafted manifest escaping the install
+ * area with `../` segments (rook B-08).
+ */
+function assertTargetInsideProfileModules(profileModulesDir: string, target: string): void {
+  const area = resolve(profileModulesDir)
   const resolvedTarget = resolve(target)
   if (resolvedTarget !== area && !resolvedTarget.startsWith(area + sep)) {
     throw new Error(
-      `dsh plugin installer: install target ${resolvedTarget} escapes the plugins area ${area} — refusing`,
+      `dsh plugin installer: install target ${resolvedTarget} escapes the profile node_modules ${area} — refusing`,
     )
   }
 }
@@ -129,7 +139,7 @@ async function createRealExtract(): Promise<ExtractLike> {
   return (spec, dest, opts) => pacote.extract(spec, dest, { registry: opts?.registry, ignoreScripts: true })
 }
 
-/** Read the entry package's manifest from an installed tree. */
+/** Read a package manifest from a directory. */
 function readManifest(pkgDir: string): Record<string, unknown> {
   const manifestPath = join(pkgDir, "package.json")
   if (!existsSync(manifestPath)) {
@@ -144,29 +154,12 @@ export function manifestIsBundle(manifest: Record<string, unknown>): boolean {
   return typeof dsh?.bundle?.patch === "string" && dsh.bundle.patch.length > 0
 }
 
-/** Official packages never extract into the user install area (DESIGN §9.2). */
+/** Official packages never download into a profile (shared heal covers them). */
 function isOfficialPackage(name: string): boolean {
   return name.startsWith("@deepseek-ai/")
 }
 
-/** Extract one resolved package into `parent/node_modules/<name>`. */
-async function extractPackage(
-  pkg: { name: string; version: string; tarball: string },
-  parentDir: string,
-  extract: ExtractLike,
-  registry: string | undefined,
-): Promise<void> {
-  if (isOfficialPackage(pkg.name)) return // resolved via profiles symlink heal
-  const spec = `${pkg.name}@${pkg.version}`
-  await extract(spec, parentDir, registry ? { registry } : undefined)
-}
-
-/**
- * Install a plugin (registry or local dir) into `home/plugins/` and register
- * it in the store. Holds the cross-process plugins mutex for the whole
- * pipeline; on any failure the staging area is cleaned and the store is
- * untouched.
- */
+/** Install a plugin (registry or local dir). Holds the plugins mutex. */
 export async function installPackage(spec: InstallSpec, options: InstallOptions): Promise<InstallResult> {
   return withPluginsLock(options.home, () =>
     spec.kind === "dir" ? installFromDir(spec.path, options) : installFromRegistry(spec, options),
@@ -187,49 +180,87 @@ function manifestIdentity(dir: string): { name: string; version: string; manifes
   return { name, version, manifest }
 }
 
-/** The `--dir` pipeline: copy + validate + register. */
-function installFromDir(path: string, options: InstallOptions): InstallResult {
-  if (!existsSync(join(path, "package.json"))) {
-    throw new Error(`dsh plugin installer: ${path} has no package.json`)
-  }
-  const { name, version, manifest } = manifestIdentity(path)
-  assertNotInstalled(options.home, name, version)
+function noBundleWarning(name: string): string {
+  return `${name} declares no "dsh.bundle.patch" in its package.json: installed as a plain dependency, but it provides no dsh bundle to mount`
+}
 
-  const pluginsArea = pluginsDir(options.home)
-  const target = join(pluginsArea, name, version)
-  assertTargetInsidePluginsArea(pluginsArea, target)
-  if (existsSync(target)) {
-    rmSync(target, { recursive: true, force: true })
-  }
-  mkdirSync(target, { recursive: true })
-  cpSync(path, target, { recursive: true })
+/**
+ * Place the staged entry package + its flat transitive tree into ONE
+ * profile's node_modules, then declare it in that profile's manifest.
+ * Any throw propagates to the staging cleanup (profile untouched).
+ */
+function placeIntoProfile(
+  profile: string,
+  entryName: string,
+  entryVersion: string,
+  source: "registry" | "dir",
+  isBundle: boolean,
+  options: InstallOptions,
+  place: (entityDir: string) => void,
+): InstallResult {
+  const profileDir = profileDirOf(options.home, profile)
+  const modulesDir = join(profileDir, "node_modules")
+  const entityDir = join(modulesDir, ...entryName.split("/"))
+  assertTargetInsideProfileModules(modulesDir, entityDir)
+  mkdirSync(modulesDir, { recursive: true })
+  // Replace semantics: an existing entity (same or different version) is
+  // overwritten (official CLI reinstall semantics).
+  rmSync(entityDir, { recursive: true, force: true })
+  place(entityDir)
 
-  const isBundle = manifestIsBundle(manifest)
-  registerStoreEntry(options.home, {
-    name,
-    version,
-    source: "dir",
-    enabledIn: [...(options.enabledIn ?? [])],
-    installedAt: new Date().toISOString(),
+  writeProfileManifestLocked(profileDir, (manifest) => {
+    setDependency(manifest, entryName, entryVersion)
+    if (isBundle) appendBundle(manifest, entryName)
+    else dropBundleRowIfPresent(manifest, entryName)
   })
-  // Spike-report contract: add must re-run the symlink heal so the freshly
-  // installed package resolves immediately (also replaces any dangling link
-  // a remove left behind, rook B-06).
-  healPluginsModuleFallback(options.home)
   return {
-    name,
-    version,
-    source: "dir",
+    name: entryName,
+    version: entryVersion,
+    source,
     isBundle,
-    warning: isBundle ? undefined : noBundleWarning(name),
+    warning: isBundle ? undefined : noBundleWarning(entryName),
   }
 }
 
-/** The registry pipeline: resolve → stage → validate → activate → register. */
+/**
+ * Drop a bundle row when the package is present but no longer declares a
+ * bundle patch (a later update that loses the declaration deactivates the
+ * layer, official reconcilePlugins symmetric).
+ */
+function dropBundleRowIfPresent(manifest: Record<string, unknown>, name: string): void {
+  const bundles = (manifest.dsh as { profile?: { bundles?: unknown } } | undefined)?.profile?.bundles
+  if (Array.isArray(bundles)) {
+    const list = bundles as unknown[]
+    const index = list.indexOf(name)
+    if (index !== -1) list.splice(index, 1)
+  }
+}
+
+/**
+ * Copy a staged registry tree into place: the staged entry package becomes
+ * the entity; EVERY non-official package of the tree lands under the entry
+ * package's `node_modules/` (parent-walk resolvable, rook B-03).
+ */
+function placeStagedTree(staging: string, entryName: string, tree: ResolvedTree, entityDir: string): void {
+  mkdirSync(dirname(entityDir), { recursive: true })
+  renameSync(join(staging, "node_modules", ...entryName.split("/")), entityDir)
+  for (const dep of tree.packages.values()) {
+    if (dep.name === entryName || isOfficialPackage(dep.name)) continue
+    const stagedDep = join(staging, "node_modules", ...dep.name.split("/"))
+    if (!existsSync(stagedDep)) continue
+    const depTarget = join(entityDir, "node_modules", ...dep.name.split("/"))
+    rmSync(depTarget, { recursive: true, force: true })
+    mkdirSync(dirname(depTarget), { recursive: true })
+    renameSync(stagedDep, depTarget)
+  }
+}
+
+/** The registry pipeline: resolve → stage → place per profile → declare. */
 async function installFromRegistry(
   spec: { name: string; version?: string },
   options: InstallOptions,
 ): Promise<InstallResult> {
+  assertNotGithubSource(spec.version ?? spec.name)
   const resolve = options.resolve ?? ((s: InstallSpec) => resolveTree(s, { registry: options.registry }))
   const tree = await resolve({ kind: "registry", name: spec.name, version: spec.version })
 
@@ -238,127 +269,132 @@ async function installFromRegistry(
   if (!rootPkg) {
     throw new Error(`dsh plugin installer: resolved tree for ${rootId} is missing its root package`)
   }
-  assertNotInstalled(options.home, tree.root.name, tree.root.version)
+  assertSafePackageIdentity(rootPkg.name, rootPkg.version)
+
+  const profiles = options.profiles ?? options.enabledIn ?? DEFAULT_PROFILES
+  // PRE-FLIGHT: validate every target profile BEFORE staging so a bad
+  // profile name never leaves a half state anywhere.
+  for (const profile of profiles) {
+    assertSafeProfileName(profile)
+  }
 
   const extract = options.extract ?? (await createRealExtract())
-  const pluginsArea = pluginsDir(options.home)
-  // Untrusted registry manifest fields become path segments — validate before
-  // any path math (rook B-08).
-  assertSafePackageIdentity(rootPkg.name, rootPkg.version)
-  // Staging scene: a sibling of the target area, never inside it (a failed
-  // staging must not be resolvable as an install, DESIGN §9.6 #6).
+  // Staging scene: a temp dir OUTSIDE the profile; a failed staging is never
+  // resolvable as an install (DESIGN 失败语义).
   const staging = mkdtempSync(join(tmpdir(), "dsh-plugins-stage-"))
   try {
-    // Extract every package of the tree into the staging parent; pacote
-    // materialises each under `<staging>/node_modules/<name>/`.
     for (const pkg of tree.packages.values()) {
-      await extractPackage(pkg, staging, extract, options.registry)
+      if (isOfficialPackage(pkg.name)) continue // shared heal resolves them
+      const spec2 = `${pkg.name}@${pkg.version}`
+      await extract(spec2, staging, options.registry ? { registry: options.registry } : undefined)
     }
     const stagedRoot = join(staging, "node_modules", ...rootPkg.name.split("/"))
     if (!existsSync(join(stagedRoot, "package.json"))) {
       throw new Error(`dsh plugin installer: staged tree missing the entry package at ${stagedRoot}`)
     }
-    // Move the entry package into place first (directory first, store last),
-    // THEN flatten EVERY non-official package of the tree under
-    // `target/node_modules/` (rook B-03): the runtime resolves nested deps by
-    // directory parent-walk, so second-level and deeper transitive packages
-    // must land inside the entry package's node_modules too — leaving them in
-    // staging would drop them at cleanup.
-    const target = join(pluginsArea, rootPkg.name, rootPkg.version)
-    assertTargetInsidePluginsArea(pluginsArea, target)
-    // rename(2) requires the destination PARENT to exist: create
-    // `plugins/<name>/` before moving the staged entry package in.
-    rmSync(target, { recursive: true, force: true })
-    mkdirSync(dirname(target), { recursive: true })
-    renameSync(stagedRoot, target)
-    for (const dep of tree.packages.values()) {
-      if (dep === rootPkg || isOfficialPackage(dep.name)) continue
-      const stagedDep = join(staging, "node_modules", ...dep.name.split("/"))
-      if (!existsSync(stagedDep)) continue
-      const depTarget = join(target, "node_modules", ...dep.name.split("/"))
-      rmSync(depTarget, { recursive: true, force: true })
-      mkdirSync(dirname(depTarget), { recursive: true })
-      renameSync(stagedDep, depTarget)
-    }
+    const stagedManifest = readManifest(stagedRoot)
+    const isBundle = manifestIsBundle(stagedManifest)
 
-    const manifest = readManifest(target)
-    const isBundle = manifestIsBundle(manifest)
-    registerStoreEntry(options.home, {
-      name: rootPkg.name,
-      version: rootPkg.version,
-      source: "registry",
-      enabledIn: [...(options.enabledIn ?? [])],
-      installedAt: new Date().toISOString(),
-    })
-    healPluginsModuleFallback(options.home)
-    return {
-      name: rootPkg.name,
-      version: rootPkg.version,
-      source: "registry",
-      isBundle,
-      warning: isBundle ? undefined : noBundleWarning(rootPkg.name),
+    let result: InstallResult | undefined
+    for (const profile of profiles) {
+      result = placeIntoProfile(
+        profile,
+        rootPkg.name,
+        rootPkg.version,
+        "registry",
+        isBundle,
+        options,
+        (entityDir) => placeStagedTree(staging, rootPkg.name, tree, entityDir),
+      )
     }
+    if (!result) throw new Error("dsh plugin installer: no target profiles")
+    healPluginsModuleFallback(options.home)
+    return result
   } finally {
     // Staging is always drained: on success the packages were renamed out of
-    // it; on failure this removes the partial scene (DESIGN §9.4 失败语义).
+    // it; on failure this removes the partial scene.
     rmSync(staging, { recursive: true, force: true })
   }
 }
 
-/** Throw {@link AlreadyInstalledError} when the entry already exists. */
-function assertNotInstalled(home: string, name: string, version: string): void {
-  const store = readStore(home)
-  const hit = store.plugins.find((p) => p.name === name)
-  if (hit && hit.version === version) {
-    throw new AlreadyInstalledError(name, version)
-  }
-  // A different version of the same package: the plan's upgrade story is
-  // remove + add, so installing over another version is refused with a
-  // clear diagnostic rather than silently skewing.
-  if (hit) {
-    throw new AlreadyInstalledError(name, hit.version)
+/** Valid profile name: no separators, no traversal (it is a path segment). */
+function assertSafeProfileName(profile: string): void {
+  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(profile) || profile === "node_modules") {
+    throw new Error(`dsh plugin installer: unsafe profile name ${JSON.stringify(profile)}`)
   }
 }
 
-/** Append the entry to the store (caller holds the plugins mutex). */
-function registerStoreEntry(home: string, entry: DshPluginEntry): void {
-  const store = readStore(home)
-  store.plugins = [...store.plugins.filter((p) => p.name !== entry.name), entry]
-  writeStoreLocked(home, store)
-}
+/** The `--dir` pipeline: copy + validate + declare per profile. */
+function installFromDir(path: string, options: InstallOptions): InstallResult {
+  if (!existsSync(join(path, "package.json"))) {
+    throw new Error(`dsh plugin installer: ${path} has no package.json`)
+  }
+  const { name, version, manifest } = manifestIdentity(path)
+  const profiles = options.profiles ?? options.enabledIn ?? DEFAULT_PROFILES
+  for (const profile of profiles) {
+    assertSafeProfileName(profile)
+  }
+  const isBundle = manifestIsBundle(manifest)
 
-function noBundleWarning(name: string): string {
-  return `${name} declares no "dsh.bundle.patch" in its package.json: installed as a plain dependency, but it provides no dsh bundle to mount`
+  let result: InstallResult | undefined
+  for (const profile of profiles) {
+    result = placeIntoProfile(profile, name, version, "dir", isBundle, options, (entityDir) => {
+      cpSync(path, entityDir, { recursive: true })
+    })
+  }
+  if (!result) throw new Error("dsh plugin installer: no target profiles")
+  healPluginsModuleFallback(options.home)
+  return result
 }
 
 /**
- * Remove an installed plugin: delete `plugins/<name>/<version>/` and drop
- * the store entry. Holding the plugins mutex for the whole operation keeps
- * CLI-side writers serialised (DESIGN §9.4 并发).
+ * Remove an installed plugin from every profile that declares it: delete
+ * `<profile>/node_modules/<name>/` and drop the dependency + bundle
+ * declaration. Holding the plugins mutex for the whole operation keeps
+ * CLI-side writers serialised.
  */
 export async function removePackage(name: string, options: { home: string }): Promise<void> {
-  return withPluginsLock(options.home, () => {
-    const store = readStore(options.home)
-    const entry = store.plugins.find((p) => p.name === name)
-    if (!entry) {
+  assertSafePackageIdentity(name, "0.0.0")
+  return withPluginsLock(options.home, async () => {
+    const profilesDir = join(options.home, "home", "profiles")
+    let removed = false
+    for (const profile of listProfileNames(options.home)) {
+      const manifest = readProfileManifest(join(profilesDir, profile))
+      const hasDependency = name in manifest.dependencies
+      const hasBundle = manifest.bundles.includes(name)
+      if (!hasDependency && !hasBundle) continue
+      removed = true
+      const entityDir = join(profileDirOf(options.home, profile), "node_modules", ...name.split("/"))
+      rmSync(entityDir, { recursive: true, force: true })
+      writeProfileManifestLocked(join(profilesDir, profile), (manifest2) => {
+        dropPlugin(manifest2, name)
+      })
+      removePluginSymlink(options.home, name)
+    }
+    if (!removed) {
+      // Nothing declared the package anywhere: not installed.
       throw new NotInstalledError(name)
     }
-    const target = join(pluginsDir(options.home), name)
-    if (existsSync(target)) {
-      rmSync(target, { recursive: true, force: true })
-    }
-    // Drop the profiles/node_modules link we own: a stale link would dangle
-    // and block any later reinstall under the same name (rook B-06).
-    removePluginSymlink(options.home, name)
-    const next = emptyStore()
-    next.plugins = store.plugins.filter((p) => p.name !== name)
-    writeStoreLocked(options.home, next)
+    healPluginsModuleFallback(options.home)
   })
 }
 
-/** List installed plugins from the store (thin re-export for CLI use). */
-export function listInstalled(home: string): DshPluginEntry[] {
-  return readStore(home).plugins
+/**
+ * List installed plugins from the profile manifest user bundles (the truth
+ * source; thin re-export for CLI use).
+ */
+export function listInstalled(home: string, profile = "web"): { name: string; version: string }[] {
+  const manifest = readProfileManifest(profileDirOf(home, profile))
+  return manifest.bundles
+    .filter((name) => !isOfficialPackage(name))
+    .map((name) => ({ name, version: manifest.dependencies[name] ?? "unknown" }))
 }
 
-export { PLUGINS_DIR, STORE_FILENAME }
+/** The profile names currently present under the home (safe subset). */
+function listProfileNames(home: string): string[] {
+  const profilesDir = join(home, "home", "profiles")
+  if (!existsSync(profilesDir)) return []
+  return readdirSync(profilesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
+    .map((entry) => entry.name)
+}

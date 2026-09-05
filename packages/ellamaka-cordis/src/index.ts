@@ -32,7 +32,8 @@ export type {
   ResolveSpec,
 } from "./plugins/resolver.js"
 export {
-  AlreadyInstalledError,
+  assertNotGithubSource,
+  assertSafePackageIdentity,
   installPackage,
   listInstalled,
   manifestIsBundle,

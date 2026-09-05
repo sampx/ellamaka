@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { join } from "node:path"
 import { Global } from "@wopal/ellamaka-core/global"
 import {
-  AlreadyInstalledError,
   installPackage,
   NotInstalledError,
   removePackage,
@@ -31,7 +30,7 @@ function dshHome(): string {
 
 /** Map a store/installer error to a user-visible CliError. */
 function toCliError(error: unknown): CliError {
-  if (error instanceof AlreadyInstalledError || error instanceof NotInstalledError) {
+  if (error instanceof NotInstalledError) {
     return new CliError({ message: error.message })
   }
   return new CliError({ message: error instanceof Error ? error.message : String(error) })

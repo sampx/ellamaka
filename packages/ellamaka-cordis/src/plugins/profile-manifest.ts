@@ -107,6 +107,31 @@ export function profileManifestFile(profileDir: string): string {
 }
 
 /**
+ * Locked atomic write (caller must already hold the plugins mutex): read,
+ * mutate, persist atomically (tmp sibling + rename inside the profile dir).
+ * The installer pipelines run inside `withPluginsLock` and use this entry to
+ * write per-profile manifests without re-entering the (non-reentrant) lock.
+ * When the mutator throws, the file on disk stays untouched.
+ */
+export function writeProfileManifestLocked(
+  profileDir: string,
+  mutate: (manifest: Record<string, unknown>) => void,
+): void {
+  const raw = readProfileManifest(profileDir).raw
+  mutate(raw)
+  mkdirSync(profileDir, { recursive: true })
+  // Write to a tmp sibling in the SAME directory, then rename: rename within
+  // one filesystem is atomic, so a reader never observes a torn document.
+  const tmp = join(profileDir, `.${PROFILE_MANIFEST_FILENAME}.tmp-${process.pid}`)
+  writeFileSync(tmp, JSON.stringify(raw, null, 2) + "\n", "utf-8")
+  try {
+    renameSync(tmp, join(profileDir, PROFILE_MANIFEST_FILENAME))
+  } finally {
+    rmSync(tmp, { force: true })
+  }
+}
+
+/**
  * Atomically persist the manifest (tmp sibling + rename inside the profile
  * dir) while holding the cross-process plugins mutex. The mutator receives
  * the freshly read manifest document; when it throws, the file on disk stays

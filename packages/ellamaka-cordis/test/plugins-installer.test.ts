@@ -117,21 +117,21 @@ describe("Bun installer: registry pipeline (official end state)", () => {
     const root = tempRoot()
     const fake = fakeExtract()
     await installPackage(
-      { kind: "registry", name: "my-plugin", version: "1.0.0" },
+      { kind: "registry", name: "is-odd", version: "3.0.1" },
       {
         home: root,
         extract: fake.extract,
         resolve: fakeResolveTree([
-          ["my-plugin", "1.0.0", ["@deepseek-ai/cordis@4.0.2"]],
+          ["is-odd", "3.0.1", ["@deepseek-ai/cordis@4.0.2"]],
           ["@deepseek-ai/cordis", "4.0.2", []],
         ]),
       },
     )
     // The official package was not extracted.
-    expect(fake.extracted.map((e) => e.spec)).toEqual(["my-plugin@1.0.0"])
+    expect(fake.extracted.map((e) => e.spec)).toEqual(["is-odd@3.0.1"])
     const manifest = readProfileManifest(profileDirOf(root, "web"))
-    expect(manifest.dependencies).toEqual({ "my-plugin": "1.0.0" })
-    expect(manifest.bundles).toEqual(["my-plugin"])
+    expect(manifest.dependencies).toEqual({ "is-odd": "3.0.1" })
+    expect(manifest.bundles).toEqual(["is-odd"])
   })
 
   test("a non-bundle package installs with isBundle:false, declared as dependency but not bundle", async () => {
@@ -245,7 +245,10 @@ describe("Bun installer: failure semantics (profile untouched)", () => {
         {
           home: root,
           extract: fakeExtract().extract,
-          resolve: fakeResolveTree([["../escape", "1.0.0", []]]),
+          resolve: async () => ({
+            root: { name: "../escape", version: "1.0.0" },
+            packages: new Map([["../escape@1.0.0", { name: "../escape", version: "1.0.0", dependencies: [], tarball: "" }]]),
+          }) as never,
         },
       ),
     ).rejects.toThrow(/unsafe package name/)
