@@ -276,9 +276,10 @@ export function createSidecarEnv(password: string): Record<string, string> {
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     // Official rc.1 packages resolve their harness home through $DSH_HOME
     // directly (e.g. dsh-agent-presets' user preset root), bypassing every
-    // ctx/config seam the integration owns. Point it at the poc state dir so
-    // those resolutions land inside $WOPAL_HOME/dsh/state and never touch ~/.dsh.
-    DSH_HOME: join(process.env.WOPAL_HOME ?? "", "dsh", "state"),
+    // ctx/config seam the integration owns. Point it at the official-layout
+    // home so those resolutions land inside $WOPAL_HOME/dsh/home (A1 layout
+    // alignment) and never touch ~/.dsh.
+    DSH_HOME: join(process.env.WOPAL_HOME ?? "", "dsh", "home"),
   }, getCapturedSidecarExperimentalConfig())
 }
 

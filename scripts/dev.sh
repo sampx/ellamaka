@@ -605,9 +605,10 @@ start_backend() {
   local -a env_args=(WOPAL_DEBUG_LOG_DIR="$DEV_DIR" OPENCODE_MODELS_PATH="$root/.ci/models.json" MIN_WOPAL_CLI_VERSION="$(resolve_min_wopal_cli_version "$root")")
   # Official rc.1 packages resolve their harness home through $DSH_HOME
   # directly (e.g. dsh-agent-presets' user preset root), bypassing every
-  # ctx/config seam the integration owns. Point it at the poc state dir so
-  # those resolutions land inside $WOPAL_HOME/dsh/state and never touch ~/.dsh.
-  env_args+=(DSH_HOME="${WOPAL_HOME:-$HOME/.wopal}/dsh/state")
+  # ctx/config seam the integration owns. Point it at the official-layout
+  # home so those resolutions land inside $WOPAL_HOME/dsh/home (A1 layout
+  # alignment) and never touch ~/.dsh.
+  env_args+=(DSH_HOME="${WOPAL_HOME:-$HOME/.wopal}/dsh/home")
   local -a args=(serve --port "$port" --print-logs)
   if [ "$debug" = true ]; then
     plugin_modules="$(plugin_debug_modules "$debug_modules")"
