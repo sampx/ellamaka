@@ -180,7 +180,7 @@ describe("dumpDshConfig", () => {
     // bundle list (so loadProfile resolves bundle layers) plus a user patch
     // file. defaultOnly must skip the patch file via userLayer:false — not
     // merely because the file is absent.
-    const webDir = join(home, "profiles", "web")
+    const webDir = join(home, "home", "profiles", "web")
     mkdirSync(webDir, { recursive: true })
     writeFileSync(
       join(webDir, "package.json"),

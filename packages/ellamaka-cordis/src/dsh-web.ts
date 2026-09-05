@@ -31,7 +31,7 @@ import {
 import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
 import { dshHomeDirOf } from "./runtime/status.js"
-import { stateHomePatches as makeStateHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
+import { homePatches as makeHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
 import type { Entry } from "@deepseek-ai/cordis-plugin-loader"
 
 /** The bundled web profile: dsh-base + dsh-web-app. */
@@ -377,17 +377,20 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   const runtime = opts.runtime ?? createPackageDshRuntimeApi()
   // dsh runtime isolation (DESIGN-dsh-poc §3.4): every dsh engine runtime byte
   // (settings/sessions/storages/credentials/.../home-patch) lands under
-  // `$WOPAL_HOME/dsh/state`, NOT `~/.dsh`. Done via pure config injection —
+  // `$WOPAL_HOME/dsh/home`, NOT `~/.dsh`. Done via pure config injection —
   // this mount never reads `process.env.DSH_HOME` for its own paths. When
   // the caller omits `home`, fall
   // back to the standard `$WOPAL_HOME/dsh` so isolation still holds.
-  const resolvedHome = home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
-  const homeDir = dshHomeDirOf(resolvedHome)
-  const stateDir = join(resolvedHome, "state")
+  const dshRoot = home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  // The DSH home (100% official layout) derived from the territory root: both
+  // official resolution paths (A-class config injection and B-class env reads)
+  // converge there.
+  const homeDir = dshHomeDirOf(dshRoot)
   // Profile patch rows that give the dsh plugins that read `config.dshHome`
-  // (via `resolveDshHome(config.dshHome)`) an explicit home rooted at state.
-  // These rows REPLACE each plugin's whole config, so any non-home fields the
-  // base bundle sets (e.g. agent-instructions `maxBytes`) are restated here.
+  // (via `resolveDshHome(config.dshHome)`) an explicit home rooted at the
+  // DSH home. These rows REPLACE each plugin's whole config, so any non-home
+  // fields the base bundle sets (e.g. agent-instructions `maxBytes`) are
+  // restated here.
   //
   // Two plugins are genuine exceptions (B-02) that resolve the anonymous-user-id
   // and/or the upload index via `resolveDshHome()` with NO configurable home
@@ -398,12 +401,13 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   //     on by an inherited `DSH_TELEMETRY_MODE` env, not just the default
   //     DISABLED).
   // `resolveDshHome()` falls back to `~/.dsh` when `DSH_HOME` is unset. The
-  // host now sets `DSH_HOME=$WOPAL_HOME/dsh/state` at process launch
+  // host sets `DSH_HOME=$WOPAL_HOME/dsh/home` at process launch
   // (dev.sh / Desktop sidecar, constraint #10 2026-09-05 revision), so an
-  // env-resolving plugin lands in state. These two still stay DISABLED
-  // until their env-resolution paths are re-verified against the live env —
-  // re-enable only after confirming every write lands inside state.
-  const stateHomePatches = makeStateHomePatches(stateDir)
+  // env-resolving plugin lands in the DSH home too — both resolution paths
+  // agree. These two still stay DISABLED until their env-resolution paths
+  // are re-verified against the live env — re-enable only after confirming
+  // every write lands inside the home.
+  const homePatches = makeHomePatches(homeDir)
   // The dsh installation anchor: resolve the @deepseek-ai/dsh package.json
   // from this host package so loadProfile finds the bundle layers in the
   // host's node_modules closure. Desktop packaged mode overrides it to the
@@ -450,7 +454,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // under the same profiles/node_modules fallback, so a bare plugin-layer
   // name resolves by parent-walk. Self-owned — the official closure heal is
   // untouched; this only adds the user install area's links.
-  healPluginsModuleFallback(resolvedHome)
+  healPluginsModuleFallback(dshRoot)
 
   // The tool-container profile seeds its default patch layer (disable the
   // agent-loop-only plugins) on first mount. The file is user-owned: once the
@@ -485,10 +489,10 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // is layer order; profiles never carry a bundles manifest for plugins.
   // Bare names resolve at this composition point (B1 拆雷): Bridge-owned rows
   // reach the Loader as absolute file:// URLs (closure -> profiles order).
-  const pluginLayers: PluginLayerPatch[] = composePluginLayers(resolvedHome, profileName, {
+  const pluginLayers: PluginLayerPatch[] = composePluginLayers(dshRoot, profileName, {
     installAnchor,
   })
-  // The full patch stack (bundle -> plugin -> user -> extras -> state), composed
+  // The full patch stack (bundle -> plugin -> user -> extras -> home), composed
   // by the ONE function the hot replay also calls (rook B-01): boot and hot
   // reload are the same composition, so a replay never drops official layers.
   const stackContext: DshPluginStackContext = {
@@ -496,7 +500,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     pluginLayers,
     userPatches: profile.patches,
     extraPatches,
-    stateHomePatches,
+    homePatches,
   }
   const patches = composeFullPatchStack(stackContext)
   const rootConfig = join(profile.dir, "cordis.yml")
@@ -507,11 +511,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // Replay the dsh boot() sequence on the host context (single container).
   ctx.baseUrl = pathToFileURL(dirname(rootConfig)).href + "/"
   // Override the ctx-injected `dshHomePath` so `!!js dshHomePath('sessions')`
-  // (etc.) expressions in the bundle patch layers resolve under state/ — the
-  // default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4 A-type);
-  // the host sets `DSH_HOME` to this same state dir at launch, so both
-  // resolution paths agree.
-  ctx.provide("dshHomePath", (...segments: string[]) => join(stateDir, ...segments))
+  // (etc.) expressions in the bundle patch layers resolve under the DSH home
+  // — the default resolver reads `$DSH_HOME`/`~/.dsh` (DESIGN-dsh-poc §3.4
+  // A-type); the host sets `DSH_HOME` to this same home dir at launch, so
+  // both resolution paths agree.
+  ctx.provide("dshHomePath", (...segments: string[]) => join(homeDir, ...segments))
   const loaderFiber = await ctx.registry.plugin(runtime.pluginLoader)
   // B1 拆雷 (DESIGN-dsh-poc 「Bun 下不伪造 loader.internal（拆雷）」): the
   // Bridge no longer injects a fake `loader.internal` when the runtime
@@ -546,7 +550,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // root include mount below (the only consumer of internal.import).
   const preparedLoader = ctx.get("loader")
   if (preparedLoader !== undefined && preparedLoader.internal !== undefined) {
-    wrapInternalWithProfilesFallback(preparedLoader.internal, resolvedHome)
+    wrapInternalWithProfilesFallback(preparedLoader.internal, dshRoot)
   }
   // Bare package names in the patch layers (e.g. `@deepseek-ai/dsh-web-app`)
   // must resolve against the closure the install anchor lives in, not the
@@ -612,11 +616,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
 export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<DshWebHost> {
   const runtime = opts.runtime ?? createPackageDshRuntimeApi()
   // Resolve home once so mountProfile and the agent-presets user root agree.
-  const resolvedHome = opts.home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
+  const dshRoot = opts.home ?? join(process.env.WOPAL_HOME ?? join(homedir(), ".wopal"), "dsh")
   const virtualWebServer = new VirtualWebServer(ctx, { host: "127.0.0.1", port: opts.port, runtime })
   const host = await mountProfile(ctx, {
     ...opts,
-    home: resolvedHome,
+    home: dshRoot,
     profileName: WEB_PROFILE_NAME,
     requireWebServer: true,
     virtualWebServer,

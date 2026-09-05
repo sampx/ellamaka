@@ -11,6 +11,7 @@ import {
   composePluginLayers,
   type PluginLayerPatch,
 } from "../plugins/compose.js"
+import { dshHomeDirOf } from "../runtime/status.js"
 
 const require = createRequire(import.meta.url)
 
@@ -36,8 +37,8 @@ export interface ComposeDshDumpLayersInput {
   pluginLayers: PluginLayerPatch[]
   /** Loader patch rows passed verbatim (the Bridge's builders emit them). */
   extraPatches: Record<string, unknown>[]
-  /** Loader patch rows passed verbatim (the Bridge's builders emit them). */
-  stateHomePatches: Record<string, unknown>[]
+  /** Loader patch rows for the official home (the Bridge's builders emit them). */
+  homePatches: Record<string, unknown>[]
 }
 
 /**
@@ -46,7 +47,7 @@ export interface ComposeDshDumpLayersInput {
  * -> plugin layers (when non-empty, label = "ellamaka plugin layers (installed.json)", patches = [{ insert: pluginLayers }])
  * -> user patch layer (when non-empty, label = profile.patchPath, patches = profile.patches)
  * -> extra layers (when non-empty, label = "ellamaka bridge extra patches", patches = extraPatches)
- * -> state layers (when non-empty, label = "ellamaka state home patches", patches = stateHomePatches)
+ * -> home layers (when non-empty, label = "ellamaka home patches", patches = homePatches)
  */
 export function composeDshDumpLayers(input: ComposeDshDumpLayersInput): ConfigDumpLayer[] {
   const layers: ConfigDumpLayer[] = []
@@ -83,11 +84,11 @@ export function composeDshDumpLayers(input: ComposeDshDumpLayersInput): ConfigDu
     })
   }
 
-  // 5. State home layer (when non-empty)
-  if (input.stateHomePatches.length > 0) {
+  // 5. Home layer (when non-empty)
+  if (input.homePatches.length > 0) {
     layers.push({
-      label: "ellamaka state home patches",
-      patches: input.stateHomePatches,
+      label: "ellamaka home patches",
+      patches: input.homePatches,
     })
   }
 
@@ -95,17 +96,17 @@ export function composeDshDumpLayers(input: ComposeDshDumpLayersInput): ConfigDu
 }
 
 /**
- * State home patch rows that give plugins an explicit home rooted under state/
- * (DESIGN-dsh-poc §3.4).
+ * Home patch rows that give plugins an explicit home rooted at the DSH home
+ * (`<dshRoot>/home`, official layout; DESIGN-dsh-poc §3.4).
  */
-export function stateHomePatches(stateDir: string): Record<string, unknown>[] {
+export function homePatches(homeDir: string): Record<string, unknown>[] {
   return [
-    { id: "settings", config: { dshHome: stateDir } },
-    { id: "credentials", config: { dshHome: stateDir } },
-    { id: "attachment-local", config: { dshHome: stateDir } },
-    { id: "shell-env", config: { dshHome: stateDir } },
-    { id: "agent-instructions", config: { dshHome: stateDir, maxBytes: 65536 } },
-    { id: "skill-filesystem", config: { dshHome: stateDir } },
+    { id: "settings", config: { dshHome: homeDir } },
+    { id: "credentials", config: { dshHome: homeDir } },
+    { id: "attachment-local", config: { dshHome: homeDir } },
+    { id: "shell-env", config: { dshHome: homeDir } },
+    { id: "agent-instructions", config: { dshHome: homeDir, maxBytes: 65536 } },
+    { id: "skill-filesystem", config: { dshHome: homeDir } },
     { id: "llm-deepseek", disabled: true },
     { id: "session-telemetry-otel", disabled: true },
   ]
@@ -189,7 +190,7 @@ export interface DshDumpPayload {
 
 /**
  * Load a profile and compose its FULL dump layer list (bundle -> plugin ->
- * user -> extra -> state). The ONE composition both dump outputs share: the
+ * user -> extra -> home). The ONE composition both dump outputs share: the
  * YAML path renders it through the official `renderConfigDump`, the JSON
  * path emits it as the `DshDumpPayload.layers` — one composition, no drift.
  */
@@ -199,8 +200,10 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
 }> {
   const runtime = options.runtime ?? createPackageDshRuntimeApi()
   const wopalHome = options.wopalHome ?? process.env.WOPAL_HOME ?? join(homedir(), ".wopal")
-  const dshHome = options.dshHome ?? join(wopalHome, "dsh")
-  const stateDir = join(dshHome, "state")
+  // `dshHome`/`dshRoot` here is the Ellamaka territory root (`$WOPAL_HOME/dsh`),
+  // NOT the DSH home; the official-layout home derives from it.
+  const dshRoot = options.dshHome ?? join(wopalHome, "dsh")
+  const homeDir = dshHomeDirOf(dshRoot)
   const installAnchor = realpathSync(
     options.installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json"),
   )
@@ -209,7 +212,7 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
     "ellamaka",
     options.profileName,
     installAnchor,
-    dshHome,
+    homeDir,
     { userLayer: options.defaultOnly === true ? false : undefined },
   )
 
@@ -227,7 +230,7 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
   const pluginLayers: PluginLayerPatch[] =
     options.defaultOnly === true
       ? []
-      : composePluginLayers(dshHome, options.profileName, { installAnchor })
+      : composePluginLayers(dshRoot, options.profileName, { installAnchor })
 
   let extra: Record<string, unknown>[] = []
   if (options.defaultOnly !== true) {
@@ -249,14 +252,14 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
     },
     pluginLayers,
     extraPatches: extra,
-    stateHomePatches: options.defaultOnly === true ? [] : stateHomePatches(stateDir),
+    homePatches: options.defaultOnly === true ? [] : homePatches(homeDir),
   })
   return { rootConfig, layers }
 }
 
 /**
  * Dump the effective dsh config patch stack for a profile.
- * Zero-state-write, boot-free diagnostic using official renderConfigDump.
+ * Zero-write, boot-free diagnostic using official renderConfigDump.
  */
 export async function dumpDshConfig(options: DumpDshConfigOptions): Promise<string> {
   const runtime = options.runtime ?? createPackageDshRuntimeApi()

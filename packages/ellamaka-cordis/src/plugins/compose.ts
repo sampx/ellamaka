@@ -50,8 +50,8 @@ export interface DshPluginStackContext {
   userPatches: unknown[]
   /** The Bridge's extraPatches for this mount. */
   extraPatches: unknown[]
-  /** The state-home config injection rows. */
-  stateHomePatches: unknown[]
+  /** The home config injection rows (official home semantics). */
+  homePatches: unknown[]
 }
 
 /**
@@ -98,8 +98,8 @@ function resolvePluginLayerPatch(entry: DshPluginEntry, dshRoot: string, install
 
 /**
  * The full patch stack of one container (D-01/D-03): bundle layers ->
- * plugin layers (store order) -> user patch layer -> extra patches -> state
- * home patches. Boot AND hot reload call this ONE function — a hot replay
+ * plugin layers (store order) -> user patch layer -> extra patches -> home
+ * patches. Boot AND hot reload call this ONE function — a hot replay
  * must rebuild the entire stack (not only the plugin rows), because the
  * include re-applies `config.patches` over the raw config on every update and
  * replacing the list would drop the official bundle/user/home rows.
@@ -109,14 +109,14 @@ export function composeFullPatchStack(layers: {
   pluginLayers: PluginLayerPatch[]
   userPatches: unknown[]
   extraPatches: unknown[]
-  stateHomePatches: unknown[]
+  homePatches: unknown[]
 }): unknown[] {
   return [
     ...layers.profileLayers.flatMap((layer) => layer.patches),
     ...(layers.pluginLayers.length > 0 ? [{ insert: layers.pluginLayers }] : []),
     ...layers.userPatches,
     ...layers.extraPatches,
-    ...layers.stateHomePatches,
+    ...layers.homePatches,
   ]
 }
 

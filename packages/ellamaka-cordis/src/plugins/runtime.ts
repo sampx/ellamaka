@@ -97,9 +97,9 @@ function defaultLogger(): DshPluginServiceLogger {
 
 /**
  * The patch stack a hot replay must restore: the FULL boot composition
- * (bundle -> plugin -> user -> extra -> state) with freshly composed plugin
+ * (bundle -> plugin -> user -> extra -> home) with freshly composed plugin
  * rows. `profilePatches` carries the per-profile boot context (bundle layer
- * patches, user patch list, extras, state patches) captured at mount time —
+ * patches, user patch list, extras, home patches) captured at mount time —
  * these layers are store-independent and stay byte-identical across replays.
  */
 export interface DshPluginStackContext {
@@ -109,8 +109,8 @@ export interface DshPluginStackContext {
   userPatches: unknown[]
   /** The Bridge's extraPatches for this mount. */
   extraPatches: unknown[]
-  /** The state-home patches for this mount. */
-  stateHomePatches: unknown[]
+  /** The home patches for this mount. */
+  homePatches: unknown[]
 }
 
 /**
@@ -135,7 +135,7 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
     })
     // Rebuild the FULL patch stack (B-01): the include re-applies
     // config.patches over the raw config on every update, so replacing the
-    // list with plugin rows only would drop the bundle/user/state layers.
+    // list with plugin rows only would drop the bundle/user/home layers.
     // Boot captured this container's stack context on its handle.
     const stack = (container as { stackContext?: DshPluginStackContext }).stackContext
     const patches = stack
@@ -144,7 +144,7 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
           pluginLayers,
           userPatches: stack.userPatches,
           extraPatches: stack.extraPatches,
-          stateHomePatches: stack.stateHomePatches,
+          homePatches: stack.homePatches,
         })
       : [{ insert: pluginLayers }]
     // Shallow-merge contract (spike 2): spread the previous config, replace
