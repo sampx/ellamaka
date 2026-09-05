@@ -17,17 +17,20 @@ describe("dsh runtime isolation", () => {
   test("never sets process.env.DSH_HOME", async () => {
     // The mount itself must not set the env; an ambient value inherited from
     // the surrounding process (e.g. running inside a dsh session) is not the
-    // mount's doing, so isolate it for the duration of the assertion.
+    // mount's doing, so isolate it for the duration of the assertion. The
+    // mount stays inside try: a throw must still restore the env and release
+    // the context.
     const prevDshHome = process.env.DSH_HOME
     delete process.env.DSH_HOME
     const home = mkdtempSync(join(tmpdir(), "dsh-isolate-env-"))
     const ctx = new Context()
-    const host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
+    let host: Awaited<ReturnType<typeof mountDshWeb>> | undefined
     try {
+      host = await mountDshWeb(ctx, { home, port: 4097, disableCodeRuntime: true })
       expect(process.env.DSH_HOME).toBeUndefined()
     } finally {
       if (prevDshHome !== undefined) process.env.DSH_HOME = prevDshHome
-      await host.dispose()
+      await host?.dispose()
       await ctx.fiber.dispose()
     }
   }, 30_000)

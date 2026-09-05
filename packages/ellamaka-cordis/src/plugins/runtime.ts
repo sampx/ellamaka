@@ -14,8 +14,8 @@ import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, 
  * SHALLOW merge, so each replay spreads the previous config back and REPLACES
  * `patches` with the FULL composition rebuilt by
  * {@link composeFullPatchStack}: bundle layers -> plugin layers -> user patch
- * layer -> extra patches -> state home patches. Replacing the stack with only
- * the plugin rows would drop the official bundle/user/state rows on the first
+ * layer -> extra patches -> home patches. Replacing the stack with only
+ * the plugin rows would drop the official bundle/user/home rows on the first
  * tick (the include re-applies `config.patches` over the raw config). The
  * loader diffs entries by explicit id, so mount/unmount of individual plugins
  * is transactional — add/remove/enable/disable all share this one path.
@@ -54,7 +54,10 @@ export interface DshPluginContainer {
 
 /** Options for {@link startDshPluginService}. */
 export interface DshPluginServiceOptions {
-  /** The dsh home (`$WOPAL_HOME/dsh`) whose plugins/ store is watched. */
+  /**
+   * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
+   * `plugins/` store under it is watched.
+   */
   home: string
   /** The containers to replay plugin layers into. */
   containers: DshPluginContainer[]

@@ -8,7 +8,8 @@ import { acquireMaterializeLock, releaseMaterializeLock, type LockToken } from "
  * (DESIGN-dsh-poc §9.2). Every upper layer (installer / runtime service /
  * compose) reads and writes the store only through this module.
  *
- * Layout under the dsh home (`$WOPAL_HOME/dsh`):
+ * Layout under the Ellamaka territory root (`$WOPAL_HOME/dsh`, not the DSH
+ * home):
  *   plugins/installed.json   — the store document
  *   plugins.lock             — cross-process mutex in `locks/` (CLI writers)
  *

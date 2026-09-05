@@ -39,13 +39,13 @@ describe("composeDshDumpLayers", () => {
       { id: "dsh-plugin:my-plugin", name: "file:///mock/my-plugin/index.js" },
     ]
     const extraPatches = [{ id: "webserver", disabled: true }]
-    const statePatches = [{ id: "settings", config: { dshHome: "/state/dir" } }]
+    const homePatches = [{ id: "settings", config: { dshHome: "/home/dir" } }]
 
     const layers = composeDshDumpLayers({
       profile: mockProfile,
       pluginLayers,
       extraPatches,
-      homePatches: statePatches,
+      homePatches,
     })
 
     // Expect 5 layers:
@@ -54,7 +54,7 @@ describe("composeDshDumpLayers", () => {
     // 3. ellamaka plugin layers (installed.json) -> [{ insert: pluginLayers }]
     // 4. user layer (/mock/profile/dir/cordis.patch.yml) -> profile.patches
     // 5. bridge extra patches -> extraPatches
-    // 6. home patches -> statePatches
+    // 6. home patches -> homePatches
     expect(layers).toHaveLength(6)
     expect(layers[0]).toEqual({
       label: "@deepseek-ai/dsh-base",
@@ -78,7 +78,7 @@ describe("composeDshDumpLayers", () => {
     })
     expect(layers[5]).toEqual({
       label: "ellamaka home patches",
-      patches: statePatches,
+      patches: homePatches,
     })
   })
 
@@ -157,7 +157,14 @@ describe("dumpDshConfig", () => {
     expect(output).toContain("demo-plugin")
     // Contains home patch injection
     expect(output).toContain("settings")
-    expect(output).toContain("dshHome:")
+    // The injected dshHome value must be EXACTLY the derived DSH home
+    // (<root>/home), never the territory root itself — pins the
+    // territory-root -> homeDir derivation against a dshRoot mispass.
+    const renderedHomeValues = output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line === join(home, "home"))
+    expect(renderedHomeValues.length).toBeGreaterThan(0)
   })
 
   test("defaultOnly produces bundle layers only without user/plugin/extra/state layers", async () => {

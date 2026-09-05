@@ -176,6 +176,10 @@ export interface DumpDshConfigOptions {
   profileName: string
   defaultOnly?: boolean
   runtime?: DshRuntimeApi
+  /**
+   * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
+   * official-layout DSH home (`<root>/home`) is derived internally.
+   */
   dshHome?: string
   installAnchor?: string
 }

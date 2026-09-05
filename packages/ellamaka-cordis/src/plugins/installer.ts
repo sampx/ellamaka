@@ -41,7 +41,10 @@ export type InstallSpec = ResolveSpec
 
 /** Options accepted by {@link installPackage} / {@link removePackage}. */
 export interface InstallOptions {
-  /** The dsh home (`$WOPAL_HOME/dsh`) hosting the plugin install area. */
+  /**
+   * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
+   * plugin install area (`plugins/`) lives under it.
+   */
   home: string
   /** Injected extract (production: pacote). Tests inject fakes. */
   extract?: ExtractLike

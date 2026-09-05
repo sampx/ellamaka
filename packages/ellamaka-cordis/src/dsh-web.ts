@@ -46,7 +46,7 @@ const require = createRequire(import.meta.url)
  * official `agent-presets` row in the dsh-web-app bundle — `default: standard`,
  * the shipped set bundled inside `@deepseek-ai/dsh-agent-presets`
  * (`includeShippedRoot`), and the harness-home user root derived from the
- * `dshHomePath` service this mount provides (pointed at `state/`). rc.2-era
+ * `dshHomePath` service this mount provides (pointed at `home/`). rc.2-era
  * hosts assembled an anchor-relative `config/agent-presets` root by hand; rc.1
  * removed that directory and the host-side assembly with it.
  */
@@ -291,7 +291,10 @@ export interface DshWebHost {
 }
 
 export interface DshHostOptions {
-  /** The dsh home directory (`$WOPAL_HOME/dsh`). */
+  /**
+   * The Ellamaka territory root (`$WOPAL_HOME/dsh`), NOT the DSH home; the
+   * official-layout DSH home (`<root>/home`) is derived internally.
+   */
   home?: string
   /** The loopback port for the dsh webserver; `0` asks the OS for a free one. */
   port: number
