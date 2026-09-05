@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import {
   closureNameForFingerprint,
+  dshHomeDirOf,
   expandCacheDir,
+  homeProfilesDirOf,
   isDshEnabled,
   resolveDshLayout,
   resolveInstallAnchor,
@@ -25,15 +27,23 @@ describe("isDshEnabled (Gate)", () => {
 })
 
 describe("resolveDshLayout", () => {
-  test("derives the single dsh home under wopalHome (never DSH_HOME)", () => {
+  test("derives the official-layout home under the territory root (never DSH_HOME)", () => {
     const layout = resolveDshLayout("/tmp/wh")
     expect(layout.dshHome).toBe("/tmp/wh/dsh")
+    expect(layout.homeDir).toBe("/tmp/wh/dsh/home")
+    expect(layout.profileDir).toBe("/tmp/wh/dsh/home/profiles")
     expect(layout.closuresDir).toBe("/tmp/wh/dsh/closures")
     expect(layout.stagingDir).toBe("/tmp/wh/dsh/staging")
     expect(layout.locksDir).toBe("/tmp/wh/dsh/locks")
     expect(layout.lockFile).toBe("/tmp/wh/dsh/locks/materialize.lock")
-    expect(layout.profileDir).toBe("/tmp/wh/dsh/profiles")
-    expect(layout.stateDir).toBe("/tmp/wh/dsh/state")
+    expect("stateDir" in layout).toBe(false)
+  })
+})
+
+describe("dshHomeDirOf / homeProfilesDirOf", () => {
+  test("derives the DSH home and the profiles area from a territory root", () => {
+    expect(dshHomeDirOf("/tmp/wh/dsh")).toBe("/tmp/wh/dsh/home")
+    expect(homeProfilesDirOf("/tmp/wh/dsh")).toBe("/tmp/wh/dsh/home/profiles")
   })
 })
 
