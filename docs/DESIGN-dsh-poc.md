@@ -613,7 +613,7 @@ $DSH_HOME/profiles/
     └── .dsh-market/             ← 市场状态（装了市场后由市场自管）
 ```
 
-组合顺序：bundle 层（`dsh.profile.bundles` 逐包应用各自 `cordis.patch.yml`）→ 用户补丁层 → Bridge extra patches → state home patches。官方 CLI 的 `dsh plugin add`、市场的安装、Ellamaka 的 `ellamaka dsh plugin add` 写的都是同一套文件。
+组合顺序：bundle 层（`dsh.profile.bundles` 逐包应用各自 `cordis.patch.yml`）→ 用户补丁层 → Bridge extra patches → home patches。官方 CLI 的 `dsh plugin add`、市场的安装、Ellamaka 的 `ellamaka dsh plugin add` 写的都是同一套文件。
 
 ### `ellamaka dsh` shim 命令面
 
@@ -659,7 +659,7 @@ Ellamaka 容器常驻注入这两个 service；`desktopPnpm.runPlugin(args, dir,
 
 ### 实现决策
 
-- **D-01**：容器完整补丁栈 = bundle layers（profile `dsh.profile.bundles`）→ 用户补丁层 → Bridge extra patches → state home patches，逐层覆盖。
+- **D-01**：容器完整补丁栈 = bundle layers（profile `dsh.profile.bundles`）→ 用户补丁层 → Bridge extra patches → home patches，逐层覆盖。
 - **D-02**：热挂载触发 = 监听 profile 组合文件（package.json / cordis.patch.yml）变化；CLI 与市场安装都是纯磁盘操作 + 触发组合事件；由 B2 bun-hmr 的 `registerConfig` 承载。
 - **D-03**：include `entry.update()` 重放契约——按 entry id diff 事务性插拔，浅合并（更新 patches 先展开旧 config）。
 - **D-04**：profile `package.json` 是插件安装唯一真相源；官方 CLI 与市场与 `ellamaka dsh plugin` 写同一套文件；无第二清单。
