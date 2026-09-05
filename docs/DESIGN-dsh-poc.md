@@ -410,7 +410,7 @@ dsh-adapter（`.wopal/plugins/dsh-adapter`）把工具容器中的工具投影�
 
 **escalation 策略**：`ellamaka.dsh.sandbox.escalation: "ask" | "never"`（默认 `ask`）。`never` 时 adapter 向每个 facade seed `approval/policy` session 事件（dsh 原生 fold 语义，LAST 优先），approval 服务在 waterfall 之前确定性拒绝，answerer 零调用。沙箱关闭（full-access）时 escalation 字段不广告，无需处理。
 
-**沙箱三态切换（per-session）**：Workbench chat composer 底栏 `ComposerSandboxControl` 下拉（只读 / 工作区写入 / 完全访问），选择按会话存浏览器 storage（workspace 存储，按 sessionID 分桶），不改写任何 settings 文件。选择随消息携带：提交时经 `FollowupDraft.sandboxMode` 进入 prompt payload，`UserMessage.sandboxMode` 持久化（fork/queue 继承），`SessionTools.resolve` 透传进 `Tool.Context.extra`；adapter 在每次 `tools.execute()` 读取 `extra.sandboxMode`，有值即 append `sandbox/mode` 事件（LAST-wins，立即生效）。无选择回落空间默认（「配置与隔离 · 沙箱配置」）。`full-access` 映射事件值 `danger-full-access`（见「沙箱语义」）。显示条件：dock composer 且空间配置含 dsh-adapter 插件。不使用 dsh permission-presets。
+**沙箱三态切换（per-session）**：Workbench chat composer 底栏 `ComposerSandboxControl` 下拉（只读 / 工作区写入 / 完全访问），选择按会话存浏览器 storage（workspace 存储，按 sessionID 分桶），不改写任何 settings 文件。选择随消息携带：提交时经 `FollowupDraft.sandboxMode` 进入 prompt payload，`UserMessage.sandboxMode` 持久化（fork/queue 继承），`SessionTools.resolve` 透传进 `Tool.Context.extra`；adapter 在每次 `tools.execute()` 读取 `extra.sandboxMode`，有值即 append `sandbox/mode` 事件（LAST-wins，立即生效）。无选择回落空间默认（「配置与隔离 · 沙箱配置」）。`full-access` 映射事件值 `danger-full-access`（见「沙箱语义」）。显示条件（运行时事实，非配置字符串）：dock composer 且 DSH 运行时状态为 `ready`（kill switch 开、非 `degraded`）且实例级（目录）生效配置含 dsh-adapter 插件；任一不满足即隐藏。运行时状态由 `/global/health` 的 `dsh` 字段提供（`disabled`/`ready`/`degraded`）。不使用 dsh permission-presets。
 
 **fold 不变量**：显式选择必须总是追加事件，即使该值等于空间默认。事件日志按 LAST-wins 折叠，"恢复默认"只能靠显式写入默认值；把"等于默认"优化成"不追加"会让会话滞留在上一次的 override 上。`extra.sandboxMode` 缺失才是"沿用当前折叠值"的唯一信号。
 

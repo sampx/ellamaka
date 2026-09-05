@@ -75,7 +75,8 @@ import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { designPromptPlaceholder, promptPlaceholder } from "./prompt-input/placeholder"
 import { ImagePreview } from "@wopal/ui/image-preview"
 import { useQueries } from "@tanstack/solid-query"
-import { useQueryOptions, useServerSync } from "@/context/server-sync"
+import { useQueryOptions } from "@/context/server-sync"
+import { useCheckServerHealth } from "@/utils/server-health"
 import { pathKey } from "@/utils/path-key"
 import { base64Encode } from "@wopal/ellamaka-core/util/encode"
 import { displayName } from "@/pages/layout/helpers"
@@ -83,7 +84,7 @@ import {
   SANDBOX_PRESETS,
   readDshAdapterSandbox,
   sandboxToPreset,
-  hasDshAdapterPlugin,
+  shouldShowSandboxControl,
   setPendingSessionSandbox,
   drainPendingSessionSandbox,
   NEW_SESSION_SANDBOX_KEY,
@@ -154,7 +155,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
-  const serverSync = useServerSync()
   const { params, tabs, view } = useSessionLayout()
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
@@ -329,15 +329,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const shell = createMemo(() => motion(1 - buttonsSpring()))
   const control = createMemo(() => ({ height: "28px", ...buttons() }))
 
-  // Sandbox tri-state control: visible only for dock composers in spaces whose
-  // global config loads the dsh-adapter plugin. The mode is a PER-SESSION
+  // Sandbox tri-state control: visible only for dock composers when all three
+  // hold — the DSH kill switch is open (`ELLAMAKA_DSH` not `0`), the DSH runtime
+  // is actually `ready` (not degraded), and the instance-level (directory)
+  // effective config loads the dsh-adapter plugin. The mode is a PER-SESSION
   // choice kept in browser storage; the space-level `ellamaka.dsh.sandbox`
-  // default in the global config is the fallback when the session has no
+  // default in the effective config is the fallback when the session has no
   // explicit choice. The choice rides on the prompt payload (`sandboxMode`);
   // settings files are never written from here.
-  const sandboxPlugin = createMemo(() => serverSync.data.config.plugin)
-  const sandboxVisible = createMemo(
-    () => props.variant === "dock" && hasDshAdapterPlugin(sandboxPlugin() as Parameters<typeof hasDshAdapterPlugin>[0]),
+  const checkServerHealth = useCheckServerHealth()
+  const [sandboxHealth] = createResource(
+    () => server.current,
+    (current) => checkServerHealth(current.http).catch(() => undefined),
+  )
+  const [sandboxConfig] = createResource(
+    () => pathKey(sdk.directory),
+    (directory) =>
+      sdk
+        .createClient({ directory })
+        .config.get()
+        .then((r) => r.data ?? undefined)
+        .catch(() => undefined),
+  )
+  const sandboxPlugin = createMemo(() => sandboxConfig()?.plugin)
+  const sandboxVisible = createMemo(() =>
+    shouldShowSandboxControl({
+      variant: props.variant,
+      dshStatus: sandboxHealth()?.dsh,
+      plugins: sandboxPlugin() as Parameters<typeof shouldShowSandboxControl>[0]["plugins"],
+    }),
   )
   const sandboxDefaultPreset = createMemo(() =>
     sandboxToPreset(readDshAdapterSandbox(sandboxPlugin() as Parameters<typeof readDshAdapterSandbox>[0])),

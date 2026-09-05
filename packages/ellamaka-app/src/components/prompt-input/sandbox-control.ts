@@ -115,3 +115,28 @@ export function drainPendingSessionSandbox(sessionKey: string): SandboxPreset | 
   if (preset) pendingSessionSandbox.delete(sessionKey)
   return preset
 }
+
+// The sandbox tri-state selector is visible only when the DSH sandbox is a
+// runtime fact, not a config string (Issue #221). All three must hold:
+//   1. The composer is a dock composer (`variant === "dock"`).
+//   2. The DSH runtime is `ready` — the kill switch is open (`ELLAMAKA_DSH`
+//      not `0`, which maps to `disabled`) AND the runtime materialised and
+//      mounted successfully (not `degraded`). `ready` therefore implies the
+//      kill switch check; `dshEnabled` is kept explicit for clarity.
+//   3. The instance-level (directory) effective config loads dsh-adapter.
+// The DSH runtime status is the terminal status reported by /global/health.
+export type DshRuntimeStatus = "disabled" | "preparing" | "ready" | "degraded"
+
+export function shouldShowSandboxControl(input: {
+  variant: string | undefined
+  dshStatus: DshRuntimeStatus | undefined
+  plugins: PluginSpec[] | undefined
+}): boolean {
+  if (input.variant !== "dock") return false
+  if (input.dshStatus === undefined) return false
+  // Kill switch: `disabled` means `ELLAMAKA_DSH=0`; any other status means the
+  // switch is open. `ready` additionally proves the runtime actually works.
+  if (input.dshStatus === "disabled") return false
+  if (input.dshStatus !== "ready") return false
+  return hasDshAdapterPlugin(input.plugins)
+}

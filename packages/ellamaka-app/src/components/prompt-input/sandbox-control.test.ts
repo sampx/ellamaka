@@ -9,6 +9,7 @@ import {
   promptSandboxMode,
   setPendingSessionSandbox,
   drainPendingSessionSandbox,
+  shouldShowSandboxControl,
   type SandboxOptions,
 } from "./sandbox-control"
 
@@ -76,6 +77,42 @@ describe("dsh-adapter visibility", () => {
     expect(hasDshAdapterPlugin(["dsh-adapter"])).toBe(true)
     expect(hasDshAdapterPlugin(["adapter-dsh"])).toBe(false)
     expect(hasDshAdapterPlugin(["notdsh-adapterx"])).toBe(true)
+  })
+})
+
+describe("sandbox control visibility matrix (Issue #221)", () => {
+  const plugins = ["file:///x/plugins/dsh-adapter/index.ts"]
+  const base = { variant: "dock", plugins }
+
+  test("dock composer + ready runtime + dsh-adapter config shows the control", () => {
+    expect(shouldShowSandboxControl({ ...base, dshStatus: "ready" })).toBe(true)
+  })
+
+  test("non-dock composer never shows the control", () => {
+    for (const variant of ["new-session", "inline", "shell"]) {
+      expect(shouldShowSandboxControl({ variant, dshStatus: "ready", plugins })).toBe(false)
+    }
+  })
+
+  test("unknown runtime status (probe pending/undefined) hides the control", () => {
+    expect(shouldShowSandboxControl({ ...base, dshStatus: undefined })).toBe(false)
+  })
+
+  test("kill switch closed (disabled) hides the control even with config declared", () => {
+    expect(shouldShowSandboxControl({ ...base, dshStatus: "disabled" })).toBe(false)
+  })
+
+  test("degraded runtime hides the control even with config declared", () => {
+    expect(shouldShowSandboxControl({ ...base, dshStatus: "degraded" })).toBe(false)
+  })
+
+  test("preparing runtime hides the control (not yet ready)", () => {
+    expect(shouldShowSandboxControl({ ...base, dshStatus: "preparing" })).toBe(false)
+  })
+
+  test("ready runtime but no dsh-adapter in the effective config hides the control", () => {
+    expect(shouldShowSandboxControl({ variant: "dock", dshStatus: "ready", plugins: ["file:///x/other.ts"] })).toBe(false)
+    expect(shouldShowSandboxControl({ variant: "dock", dshStatus: "ready", plugins: undefined })).toBe(false)
   })
 })
 
