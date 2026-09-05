@@ -283,6 +283,13 @@ export async function materializeClosure(options: MaterializeOptions): Promise<M
  * Extract every locked package with bounded concurrency (the SEA binary's
  * network stack is reliable for concurrent small downloads; 16 keeps peak
  * memory modest while saturating the fastest registry's throughput).
+ *
+ * Optional packages (npm `optionalDependencies`, e.g. platform-specific
+ * native-binding packages like `@koromix/koffi-*`) follow npm semantics: a
+ * download/extract failure is skipped with a warning, never failing the whole
+ * closure. A registry mirror may legitimately lack a platform package that
+ * the official registry serves. Required packages always fail hard — a missing
+ * required package is a genuine tree defect that must surface.
  */
 async function extractAll(
   lock: DshRuntimeLockV1,
@@ -295,11 +302,30 @@ async function extractAll(
   const CONCURRENCY = 16
   let cursor = 0
   let done = 0
+  let skippedOptional = 0
   const worker = async () => {
     while (cursor < paths.length) {
       const path = paths[cursor++]
-      const spec = `${packageNameFromLockPath(path)}@${lock.packages[path]!.version}`
-      await extract(spec, join(stagingDir, ...path.split("/")), { registry })
+      const entry = lock.packages[path]!
+      const spec = `${packageNameFromLockPath(path)}@${entry.version}`
+      const dest = join(stagingDir, ...path.split("/"))
+      try {
+        await extract(spec, dest, { registry })
+      } catch (error) {
+        if (entry.optional === true) {
+          skippedOptional++
+          log?.warn("materializer.extract.optional.skip", {
+            package: spec,
+            error: (error as Error).message,
+          })
+          // Pacote may leave a partial directory behind on failure; a skipped
+          // optional package must not shadow a later activation's verification.
+          rmSync(dest, { recursive: true, force: true })
+          done++
+          continue
+        }
+        throw error
+      }
       done++
       if (done % 64 === 0) {
         log?.info("materializer.extract.progress", { done, total: paths.length })
@@ -307,7 +333,10 @@ async function extractAll(
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, paths.length) }, worker))
-  log?.info("materializer.extract.done", { packages: done })
+  log?.info("materializer.extract.done", {
+    packages: done,
+    ...(skippedOptional > 0 ? { skippedOptional } : {}),
+  })
 }
 
 /** Direct dependency package.json paths missing under a closure dir. */

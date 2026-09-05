@@ -30,7 +30,10 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Arborist } from "@npmcli/arborist"
-import { parseDshRuntimeManifest } from "../src/runtime/manifest.ts"
+import {
+  buildDshRuntimeManifest,
+  parseDshRuntimeManifest,
+} from "../src/runtime/manifest.ts"
 import { DSH_RUNTIME_LOCK_SCHEMA, type DshRuntimeLockV1 } from "../src/runtime/lockfile.ts"
 
 // Locate the package root (two levels up from this script) regardless of cwd.
@@ -47,10 +50,28 @@ function fatal(message: string): never {
   process.exit(1)
 }
 
+/** Read a JSON file typed as the package.json subset the manifest builder needs. */
+function readPackageJson(path: string) {
+  return JSON.parse(readFileSync(path, "utf8")) as { dependencies?: Record<string, string> }
+}
+
 if (!existsSync(manifestPath)) {
   fatal(`manifest not found at ${manifestPath}; run generate-dsh-runtime-manifest.ts first`)
 }
 const manifest = parseDshRuntimeManifest(readFileSync(manifestPath, "utf8"))
+
+// Freshness gate: the manifest is a pure function of this package's DSH
+// dependencies (manifest.ts), so recompute it from package.json here and
+// refuse to bind a lock to a stale manifest file. Binding the tree to an
+// outdated manifest once produced a lock whose fingerprint matched nothing
+// in package.json — the runtime drift gate then rejected it at materialise
+// time, after minutes of resolution work had been invested.
+const expectedManifest = buildDshRuntimeManifest(readPackageJson(join(pkgRoot, "package.json")))
+if (manifest.fingerprint !== expectedManifest.fingerprint) {
+  fatal(
+    `manifest at ${manifestPath} is out of date with package.json (file binds ${manifest.fingerprint}, package.json needs ${expectedManifest.fingerprint}); run generate-dsh-runtime-manifest.ts first`,
+  )
+}
 
 /** Read the in-repo lock, or `null` when missing/malformed. */
 function readExistingLock(): DshRuntimeLockV1 | null {
@@ -67,7 +88,7 @@ function readExistingLock(): DshRuntimeLockV1 | null {
 }
 
 /** Resolve the full transitive tree with Arborist in a throwaway staging dir. */
-async function resolveLock(): Promise<Record<string, { version: string }>> {
+async function resolveLock(): Promise<Record<string, { version: string; optional?: boolean }>> {
   const staging = mkdtempSync(join(tmpdir(), "dsh-lock-"))
   process.stdout.write(`resolving the full dependency tree (~several minutes, one-off per version bump)...\n`)
   try {
@@ -88,14 +109,31 @@ async function resolveLock(): Promise<Record<string, { version: string }>> {
     // repeat runs. The staged package-lock.json IS the resolved tree.
     await arborist.reify({ save: true, saveType: "prod" })
     const lock = JSON.parse(readFileSync(join(staging, "package-lock.json"), "utf8")) as {
-      packages?: Record<string, { version?: unknown }>
+      packages?: Record<string, { version?: unknown; optional?: unknown }>
     }
     const packages = lock.packages ?? {}
-    const out: Record<string, { version: string }> = {}
+    const out: Record<string, { version: string; optional?: boolean }> = {}
     for (const [path, entry] of Object.entries(packages)) {
       if (path === "") continue // the root entry carries no version
       if (typeof entry.version !== "string") continue
-      out[path] = { version: entry.version }
+      // macOS /tmp is a symlink chain (/tmp -> /private/tmp, $TMPDIR ->
+      // /private/var/folders/...), and Arborist records package paths
+      // relative to the REAL staging root while the process sees the logical
+      // one — polluted keys carry "../.." escapes before the staging
+      // "node_modules/" segment. The runtime lock contract is root-relative
+      // paths, so anchor every key at its staging "node_modules/" marker.
+      const marker = path.indexOf("/node_modules/")
+      const normalized = marker === -1 ? path : path.slice(marker + 1)
+      if (!normalized.startsWith("node_modules/")) {
+        fatal(`arborist produced a non-root-relative package path "${path}"`)
+      }
+      // Preserve npm's `optional` marker: platform-specific native-binding
+      // packages (e.g. @koromix/koffi-*) are optionalDependencies and may be
+      // absent from a given registry mirror. The materialiser skips download
+      // failures for optional packages instead of failing the whole closure.
+      const entryOut: { version: string; optional?: boolean } = { version: entry.version }
+      if (entry.optional === true) entryOut.optional = true
+      out[normalized] = entryOut
     }
     return out
   } finally {

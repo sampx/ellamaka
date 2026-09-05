@@ -53,6 +53,24 @@ describe("parseDshRuntimeLock", () => {
       parseDshRuntimeLock(JSON.stringify({ schema: "ellamaka.dsh-runtime-lock/v1" })),
     ).toThrow(/packages|fingerprint/i)
   })
+
+  test("accepts and preserves the optional flag on entries", () => {
+    const lock = lockWith({
+      "node_modules/@deepseek-ai/dsh": { version: "0.1.1-rc.2" },
+      "node_modules/@koromix/koffi-android-x64": { version: "3.2.1", optional: true },
+    })
+    const parsed = parseDshRuntimeLock(JSON.stringify(lock))
+    expect(parsed.packages["node_modules/@koromix/koffi-android-x64"]?.optional).toBe(true)
+    expect(parsed.packages["node_modules/@deepseek-ai/dsh"]?.optional).toBeUndefined()
+  })
+
+  test("rejects an entry whose optional flag is not a boolean", () => {
+    const lock = lockWith({
+      "node_modules/@deepseek-ai/dsh": { version: "0.1.1-rc.2" },
+      "node_modules/@koromix/koffi-android-x64": { version: "3.2.1", optional: "yes" },
+    })
+    expect(() => parseDshRuntimeLock(JSON.stringify(lock))).toThrow(/optional/)
+  })
 })
 
 describe("validateEmbeddedLock", () => {

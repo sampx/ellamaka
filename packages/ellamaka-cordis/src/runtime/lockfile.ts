@@ -19,6 +19,15 @@ import type { DshRuntimeManifestV1 } from "./manifest.js"
 
 export interface DshRuntimeLockEntryV1 {
   version: string
+  /**
+   * Whether this package is an optional dependency of its parent (npm
+   * `optionalDependencies` semantics, e.g. platform-specific native binding
+   * packages). Optional packages that fail to download are skipped at
+   * materialisation time (a warning is logged) instead of failing the whole
+   * closure; required packages always fail hard. Absent/`undefined` means
+   * required.
+   */
+  optional?: boolean
 }
 
 export interface DshRuntimeLockV1 {
@@ -56,6 +65,9 @@ function assertLockShape(raw: unknown): DshRuntimeLockV1 {
   for (const [path, entry] of Object.entries(lock.packages)) {
     if (!path.startsWith("node_modules/") || typeof entry.version !== "string") {
       throw new Error(`dsh runtime lock: malformed packages entry "${path}"`)
+    }
+    if (entry.optional !== undefined && typeof entry.optional !== "boolean") {
+      throw new Error(`dsh runtime lock: malformed packages entry "${path}" — \`optional\` must be a boolean`)
     }
   }
   return lock as DshRuntimeLockV1

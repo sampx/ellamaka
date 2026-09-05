@@ -126,6 +126,72 @@ describe("materializeClosure", () => {
     expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
   })
 
+  test("an optional package that fails to extract is skipped, closure still activates", async () => {
+    const home = tmpHome()
+    const lock: DshRuntimeLockV1 = {
+      ...LOCK,
+      packages: {
+        ...LOCK.packages,
+        // an optional platform package the registry mirror lacks
+        "node_modules/@koromix/koffi-android-x64": { version: "3.2.1", optional: true },
+      },
+    }
+    const failed = new Set<string>()
+    const deps: NonNullable<MaterializeDeps> = {
+      fetch: async () => ({ status: 200, ok: true }),
+      extract: async (spec: string, dest: string) => {
+        if (spec.startsWith("@koromix/koffi-android-x64@")) {
+          failed.add(spec)
+          throw new Error("404 Not Found - GET .../koffi-android-x64")
+        }
+        const name = spec.slice(0, spec.lastIndexOf("@"))
+        const body: Record<string, string> = { name, version: spec.slice(spec.lastIndexOf("@") + 1) }
+        if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+        mkdirSync(dest, { recursive: true })
+        writeFileSync(join(dest, "package.json"), JSON.stringify(body))
+      },
+    }
+    const result = await materializeClosure({ home, manifest: MANIFEST, lock, deps })
+    // the optional package failed but was skipped, not fatal
+    expect(failed.size).toBe(1)
+    const closureDir = join(resolveDshLayout(home).closuresDir, closureNameForFingerprint(MANIFEST.fingerprint!))
+    expect(existsSync(result.anchor)).toBe(true)
+    // every required package is present
+    for (const path of Object.keys(lock.packages)) {
+      if (path.includes("koffi-android-x64")) continue
+      expect(existsSync(join(closureDir, ...path.split("/"), "package.json"))).toBe(true)
+    }
+    // the skipped optional package leaves no residual directory
+    expect(existsSync(join(closureDir, "node_modules", "@koromix", "koffi-android-x64"))).toBe(false)
+  })
+
+  test("a required package that fails to extract still rejects (no closure activated)", async () => {
+    const home = tmpHome()
+    const lock: DshRuntimeLockV1 = {
+      ...LOCK,
+      packages: {
+        ...LOCK.packages,
+        // NOT optional — a genuine missing required package
+        "node_modules/@koromix/koffi-android-x64": { version: "3.2.1" },
+      },
+    }
+    const deps: NonNullable<MaterializeDeps> = {
+      fetch: async () => ({ status: 200, ok: true }),
+      extract: async (spec: string, dest: string) => {
+        if (spec.startsWith("@koromix/koffi-android-x64@")) {
+          throw new Error("404 Not Found - GET .../koffi-android-x64")
+        }
+        const name = spec.slice(0, spec.lastIndexOf("@"))
+        const body: Record<string, string> = { name, version: spec.slice(spec.lastIndexOf("@") + 1) }
+        if (name === "@deepseek-ai/dsh") body.bin = "lib/bin.js"
+        mkdirSync(dest, { recursive: true })
+        writeFileSync(join(dest, "package.json"), JSON.stringify(body))
+      },
+    }
+    await expect(materializeClosure({ home, manifest: MANIFEST, lock, deps })).rejects.toThrow(/404/)
+    expect(existsSync(resolveDshLayout(home).closuresDir)).toBe(false)
+  })
+
   test("rejects when the injected lock does not bind the manifest fingerprint", async () => {
     const home = tmpHome()
     const drifted: DshRuntimeLockV1 = { ...LOCK, manifestFingerprint: "sha256:stale" }

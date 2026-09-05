@@ -1,7 +1,10 @@
 {
   "schema": "ellamaka.dsh-runtime-lock/v1",
-  "manifestFingerprint": "sha256:971a81a0370054b5483aa87447dbe0147a95585d0e7ab6c7282210a15b0f1745",
+  "manifestFingerprint": "sha256:892d593303e0a34708d57c1fcb37f3c919d1eb7060fa22faa366846106189bbc",
   "packages": {
+    "node_modules/@agentclientprotocol/sdk": {
+      "version": "1.4.0"
+    },
     "node_modules/@anthropic-ai/sdk": {
       "version": "0.91.1"
     },
@@ -30,7 +33,7 @@
       "version": "3.972.72"
     },
     "node_modules/@aws-sdk/credential-provider-http/node_modules/@smithy/node-http-handler": {
-      "version": "4.11.3"
+      "version": "4.12.1"
     },
     "node_modules/@aws-sdk/credential-provider-ini": {
       "version": "3.973.15"
@@ -39,7 +42,7 @@
       "version": "3.972.77"
     },
     "node_modules/@aws-sdk/credential-provider-node": {
-      "version": "3.972.81"
+      "version": "3.972.82"
     },
     "node_modules/@aws-sdk/credential-provider-process": {
       "version": "3.972.70"
@@ -66,7 +69,7 @@
       "version": "3.997.44"
     },
     "node_modules/@aws-sdk/nested-clients/node_modules/@smithy/node-http-handler": {
-      "version": "4.11.3"
+      "version": "4.12.1"
     },
     "node_modules/@aws-sdk/signature-v4-multi-region": {
       "version": "3.996.46"
@@ -117,166 +120,190 @@
       "version": "1.8.3"
     },
     "node_modules/@deepseek-ai/dsh": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-acp": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-acp-app": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent-default-model": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent-instructions": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent-loop": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent-presets": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-agent-tool-presentation": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-anonymous-user-id": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-api-gateway": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-api-remotes": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-api-session-controller": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-api-settings-controller": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-api-workspace-controller": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-app-boot": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-atomic-write": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-attachment": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-attachment-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-authorization": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-base": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-bash-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-bash-sandbox": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-brand": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-connection": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-hmr": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-locale": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-modules": {
-      "version": "0.1.1-rc.2"
-    },
-    "node_modules/@deepseek-ai/dsh-client-runtime": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-agent-preset": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-client-ui-approval": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-attachment": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-brand-official": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-client-ui-chat": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-commands": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-conversation": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-cordis": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-deliverables": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-directory-picker-browse": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-directory-picker-native": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-goal": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-input-trigger": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-jobs": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-layout": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-message-feedback": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-model-selection": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-permission-presets": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-plan": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-reference": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-renderer": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-client-ui-schedule": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-client-ui-session": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-settings": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-settings-general": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-settings-models": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-settings-plugin-inventory": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-settings-plugins": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-sidebar": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-skill": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-subagent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-theme": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-tool": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-trajectory": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-trajectory/node_modules/@tanstack/react-virtual": {
       "version": "3.14.10"
@@ -288,250 +315,283 @@
       "version": "19.2.8"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-user-questions": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-workflow-run": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-client-ui-workspace": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-cmdline": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-code-runtime": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-code-runtime-worker-thread": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-command-compact": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-command-feedback": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-command-goal": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-commands": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-compaction": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-compaction-basic": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-compaction-tool-result-pruner": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-cordis-client-runner": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-cordis-host-runner": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-credentials": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-credentials-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-deepseek-llm-api-extensions": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-deque": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-file-reference": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-file-reference-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-fs": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-fs-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-fs-observation-policy": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-fs-sandbox": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-goal": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-goal-round-driver": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-headless": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-home-paths": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
-    "node_modules/@deepseek-ai/dsh-host-apiproxy": {
-      "version": "0.1.1-rc.2"
+    "node_modules/@deepseek-ai/dsh-hook-protocol": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-hooks-claude-code": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-hooks-codex": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-directory-picker": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-directory-picker-auto": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-directory-picker-browse": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-directory-picker-native": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-frontend-static": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-plugin-inventory": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-host-webserver": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-invariants": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-jobs": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-jobs-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-launch-environment": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-llm": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-llm-deepseek": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-llm-pi-ai": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-llm-retry": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-mcp-client": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-message-feedback": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-native-command": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-output-retention": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-permission-presets": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-persona": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-plan-mode": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-plugin-package-inventory-deepseek": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-pwsh-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-pwsh-sandbox": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-repeat-tool-reminder": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-sandbox": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-sandbox-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-sandbox-policy": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-sandbox-windows-acl": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-schedule": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-scope": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-sdk-app": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-sdk-jsonrpc-server": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-sdk-minimal": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-sdk-protocol": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-checkpoint-policy": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-session-log-deepseek": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-log-export": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-persistence": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-persistence-jsonl": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-projection": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-projection-cache": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-query": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-query-sqlite": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-reference": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-stats": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-telemetry": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-telemetry-otel": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-title": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-title-first-prompt-llm": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-session-title-llm": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-session-turn-outline": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-settings": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-settings-file": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-shell": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-shell-env": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-skill": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-skill-badge": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-skill-filesystem": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-skill-filesystem/node_modules/chokidar": {
       "version": "5.0.0"
@@ -540,181 +600,205 @@
       "version": "5.1.1"
     },
     "node_modules/@deepseek-ai/dsh-spill": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-spill-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-spill-policy": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-storage": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-storage-domain": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-storage-json": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subagent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subagent-fork-in-process": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subagent-in-process-driver": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subagent-spawn-in-process": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subprocess": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-subprocess-local": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-system-prompt": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-terminal": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-terminal-bash": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-time-context": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-timeout": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tmux-context": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-token-meter": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-ask-user": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-bash": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-bash-persistent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-call-timeout-policy": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-cordis": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-fs": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-fs-search": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-goal": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-jobs": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-pwsh": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-pwsh-persistent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-ralph": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-skill": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-str-replace-editor": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-subagent": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-subagent-control": {
-      "version": "0.1.1-rc.2"
-    },
-    "node_modules/@deepseek-ai/dsh-tool-subagent-report": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-todo": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-web": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tool-workflow": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-tools": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-typert-loader": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-typert-protocol": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-typert-registry": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-user-approval": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-user-questions": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-util-crypto": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-util-time": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-util-values": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-util-workspace-path": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-web": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-web-app": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-web-fetch-http": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-web-frontend": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-web-search-deepseek": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-webhook": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-webhook-github": {
+      "version": "0.1.2-rc.1"
+    },
+    "node_modules/@deepseek-ai/dsh-win32-process": {
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-workflow": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-workflow-worker-thread": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/dsh-workspace": {
-      "version": "0.1.1-rc.2"
+      "version": "0.1.2-rc.1"
     },
     "node_modules/@deepseek-ai/node-addon-landlock-run": {
       "version": "0.1.1"
     },
     "node_modules/@deepseek-ai/node-addon-landlock-run-linux-arm64": {
-      "version": "0.1.1"
+      "version": "0.1.1",
+      "optional": true
     },
     "node_modules/@deepseek-ai/node-addon-landlock-run-linux-x64": {
-      "version": "0.1.1"
+      "version": "0.1.1",
+      "optional": true
     },
     "node_modules/@deepseek-ai/schemastery": {
       "version": "3.18.2"
     },
     "node_modules/@earendil-works/pi-ai": {
-      "version": "0.82.1"
+      "version": "0.84.4"
     },
-    "node_modules/@earendil-works/pi-ai/node_modules/@opentelemetry/api": {
-      "version": "1.9.0"
+    "node_modules/@earendil-works/pi-telemetry": {
+      "version": "0.84.4"
     },
     "node_modules/@emnapi/runtime": {
-      "version": "1.11.3"
+      "version": "1.11.3",
+      "optional": true
     },
     "node_modules/@google/genai": {
       "version": "1.52.0"
@@ -726,139 +810,240 @@
       "version": "1.1.0"
     },
     "node_modules/@img/sharp-darwin-arm64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-darwin-x64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-freebsd-wasm32": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-darwin-arm64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-darwin-x64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-arm": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-arm64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-ppc64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-riscv64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-s390x": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linux-x64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linuxmusl-arm64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-libvips-linuxmusl-x64": {
-      "version": "1.3.3"
+      "version": "1.3.3",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-arm": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-arm64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-ppc64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-riscv64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-s390x": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linux-x64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linuxmusl-arm64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-linuxmusl-x64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-wasm32": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-webcontainers-wasm32": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-win32-arm64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-win32-ia32": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@img/sharp-win32-x64": {
-      "version": "0.35.4"
+      "version": "0.35.4",
+      "optional": true
     },
     "node_modules/@joplin/turndown-plugin-gfm": {
       "version": "1.0.67"
     },
+    "node_modules/@koromix/koffi-android-arm64": {
+      "version": "3.2.1",
+      "optional": true
+    },
+    "node_modules/@koromix/koffi-android-x64": {
+      "version": "3.2.1",
+      "optional": true
+    },
     "node_modules/@koromix/koffi-darwin-arm64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-darwin-x64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-freebsd-arm64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-freebsd-ia32": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-freebsd-x64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
+    },
+    "node_modules/@koromix/koffi-linux-arm": {
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-linux-arm64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-linux-ia32": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-linux-loong64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-linux-riscv64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-linux-x64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-openbsd-ia32": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-openbsd-x64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-win32-arm64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-win32-ia32": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
     "node_modules/@koromix/koffi-win32-x64": {
-      "version": "3.1.6"
+      "version": "3.2.1",
+      "optional": true
     },
-    "node_modules/@mistralai/mistralai": {
-      "version": "2.2.6"
+    "node_modules/@lexical/clipboard": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/dragon": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/extension": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/history": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/html": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/internal": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/list": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/plain-text": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/selection": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/text": {
+      "version": "0.49.0"
+    },
+    "node_modules/@lexical/utils": {
+      "version": "0.49.0"
     },
     "node_modules/@mixmark-io/domino": {
       "version": "2.2.0"
     },
     "node_modules/@modelcontextprotocol/sdk": {
       "version": "1.30.0"
+    },
+    "node_modules/@octokit/openapi-types": {
+      "version": "29.0.1"
+    },
+    "node_modules/@octokit/openapi-webhooks-types": {
+      "version": "12.1.0"
+    },
+    "node_modules/@octokit/request-error": {
+      "version": "7.1.2"
+    },
+    "node_modules/@octokit/types": {
+      "version": "18.0.0"
+    },
+    "node_modules/@octokit/webhooks": {
+      "version": "14.2.0"
+    },
+    "node_modules/@octokit/webhooks-methods": {
+      "version": "6.0.0"
     },
     "node_modules/@opentelemetry/api": {
       "version": "1.9.1"
@@ -882,10 +1067,10 @@
       "version": "2.9.0"
     },
     "node_modules/@opentelemetry/resources": {
-      "version": "2.10.0"
+      "version": "2.11.0"
     },
     "node_modules/@opentelemetry/resources/node_modules/@opentelemetry/core": {
-      "version": "2.10.0"
+      "version": "2.11.0"
     },
     "node_modules/@opentelemetry/sdk-logs": {
       "version": "0.220.0"
@@ -907,6 +1092,9 @@
     },
     "node_modules/@opentelemetry/semantic-conventions": {
       "version": "1.43.0"
+    },
+    "node_modules/@preact/signals-core": {
+      "version": "1.14.4"
     },
     "node_modules/@protobufjs/aspromise": {
       "version": "1.1.2"
@@ -942,7 +1130,7 @@
       "version": "4.5.2"
     },
     "node_modules/@smithy/fetch-http-handler": {
-      "version": "5.7.2"
+      "version": "5.8.0"
     },
     "node_modules/@smithy/is-array-buffer": {
       "version": "2.2.0"
@@ -954,7 +1142,7 @@
       "version": "5.7.3"
     },
     "node_modules/@smithy/types": {
-      "version": "4.17.2"
+      "version": "4.18.0"
     },
     "node_modules/@smithy/util-buffer-from": {
       "version": "2.2.0"
@@ -969,49 +1157,67 @@
       "version": "3.17.8"
     },
     "node_modules/@types/node": {
-      "version": "26.4.0"
+      "version": "26.4.1"
     },
     "node_modules/@types/retry": {
       "version": "0.12.0"
+    },
+    "node_modules/@types/trusted-types": {
+      "version": "2.0.7"
     },
     "node_modules/@vscode/ripgrep": {
       "version": "1.18.0"
     },
     "node_modules/@vscode/ripgrep-darwin-arm64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-darwin-x64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-arm": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-arm64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-ia32": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-ppc64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-riscv64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-s390x": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-linux-x64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-win32-arm64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-win32-ia32": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
     },
     "node_modules/@vscode/ripgrep-win32-x64": {
-      "version": "1.18.0"
+      "version": "1.18.0",
+      "optional": true
+    },
+    "node_modules/@xterm/headless": {
+      "version": "6.0.0"
     },
     "node_modules/accepts": {
       "version": "2.0.0"
@@ -1040,6 +1246,12 @@
     "node_modules/body-parser/node_modules/content-type": {
       "version": "2.1.0"
     },
+    "node_modules/body-parser/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/body-parser/node_modules/ms": {
+      "version": "2.1.3"
+    },
     "node_modules/bowser": {
       "version": "2.14.1"
     },
@@ -1067,6 +1279,15 @@
     "node_modules/commander": {
       "version": "15.0.0"
     },
+    "node_modules/compressible": {
+      "version": "2.0.18"
+    },
+    "node_modules/compression": {
+      "version": "1.8.1"
+    },
+    "node_modules/compression/node_modules/negotiator": {
+      "version": "0.6.4"
+    },
     "node_modules/content-disposition": {
       "version": "1.1.0"
     },
@@ -1089,7 +1310,7 @@
       "version": "4.0.1"
     },
     "node_modules/debug": {
-      "version": "4.4.3"
+      "version": "2.6.9"
     },
     "node_modules/default-browser": {
       "version": "5.5.1"
@@ -1148,6 +1369,18 @@
     "node_modules/express-rate-limit": {
       "version": "8.7.0"
     },
+    "node_modules/express-rate-limit/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/express-rate-limit/node_modules/ms": {
+      "version": "2.1.3"
+    },
+    "node_modules/express/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/express/node_modules/ms": {
+      "version": "2.1.3"
+    },
     "node_modules/extend": {
       "version": "3.0.2"
     },
@@ -1155,7 +1388,7 @@
       "version": "3.1.3"
     },
     "node_modules/fast-uri": {
-      "version": "3.1.6"
+      "version": "3.1.7"
     },
     "node_modules/fetch-blob": {
       "version": "3.2.0"
@@ -1165,6 +1398,12 @@
     },
     "node_modules/finalhandler": {
       "version": "2.1.1"
+    },
+    "node_modules/finalhandler/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/finalhandler/node_modules/ms": {
+      "version": "2.1.3"
     },
     "node_modules/formdata-polyfill": {
       "version": "4.0.10"
@@ -1214,14 +1453,23 @@
     "node_modules/http-proxy-agent": {
       "version": "7.0.2"
     },
+    "node_modules/http-proxy-agent/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/http-proxy-agent/node_modules/ms": {
+      "version": "2.1.3"
+    },
     "node_modules/https-proxy-agent": {
       "version": "7.0.6"
     },
+    "node_modules/https-proxy-agent/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/https-proxy-agent/node_modules/ms": {
+      "version": "2.1.3"
+    },
     "node_modules/iconv-lite": {
       "version": "0.7.3"
-    },
-    "node_modules/immer": {
-      "version": "10.2.0"
     },
     "node_modules/inherits": {
       "version": "2.0.4"
@@ -1230,7 +1478,7 @@
       "version": "10.7.0"
     },
     "node_modules/ipaddr.js": {
-      "version": "1.9.1"
+      "version": "2.5.0"
     },
     "node_modules/is-docker": {
       "version": "3.0.0"
@@ -1251,7 +1499,7 @@
       "version": "2.0.0"
     },
     "node_modules/jose": {
-      "version": "6.2.10"
+      "version": "6.2.11"
     },
     "node_modules/js-tokens": {
       "version": "4.0.0"
@@ -1278,7 +1526,10 @@
       "version": "4.0.1"
     },
     "node_modules/koffi": {
-      "version": "3.1.6"
+      "version": "3.2.1"
+    },
+    "node_modules/lexical": {
+      "version": "0.49.0"
     },
     "node_modules/long": {
       "version": "5.3.2"
@@ -1302,7 +1553,7 @@
       "version": "3.0.2"
     },
     "node_modules/ms": {
-      "version": "2.1.3"
+      "version": "2.0.0"
     },
     "node_modules/negotiator": {
       "version": "1.1.0"
@@ -1320,25 +1571,32 @@
       "version": "0.1.5"
     },
     "node_modules/node-addon-require-builtin-darwin-arm64": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-darwin-x64": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-linux-arm64-gnu": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-linux-x64-gnu": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-win32-arm64-msvc": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-win32-ia32-msvc": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-addon-require-builtin-win32-x64-msvc": {
-      "version": "0.1.5"
+      "version": "0.1.5",
+      "optional": true
     },
     "node_modules/node-domexception": {
       "version": "1.0.0"
@@ -1358,6 +1616,9 @@
     "node_modules/on-finished": {
       "version": "2.4.1"
     },
+    "node_modules/on-headers": {
+      "version": "1.1.0"
+    },
     "node_modules/once": {
       "version": "1.4.0"
     },
@@ -1365,7 +1626,7 @@
       "version": "11.0.2"
     },
     "node_modules/openai": {
-      "version": "6.26.0"
+      "version": "6.40.0"
     },
     "node_modules/p-retry": {
       "version": "4.6.2"
@@ -1400,6 +1661,9 @@
     "node_modules/proxy-addr": {
       "version": "2.0.7"
     },
+    "node_modules/proxy-addr/node_modules/ipaddr.js": {
+      "version": "1.9.1"
+    },
     "node_modules/qs": {
       "version": "6.16.0"
     },
@@ -1418,11 +1682,20 @@
     "node_modules/require-from-string": {
       "version": "2.0.2"
     },
+    "node_modules/resolve.exports": {
+      "version": "2.0.3"
+    },
     "node_modules/retry": {
       "version": "0.13.1"
     },
     "node_modules/router": {
       "version": "2.2.0"
+    },
+    "node_modules/router/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/router/node_modules/ms": {
+      "version": "2.1.3"
     },
     "node_modules/run-applescript": {
       "version": "7.1.0"
@@ -1441,6 +1714,12 @@
     },
     "node_modules/send": {
       "version": "1.2.1"
+    },
+    "node_modules/send/node_modules/debug": {
+      "version": "4.4.3"
+    },
+    "node_modules/send/node_modules/ms": {
+      "version": "2.1.3"
     },
     "node_modules/serve-static": {
       "version": "2.2.1"
@@ -1491,7 +1770,10 @@
       "version": "2.1.0"
     },
     "node_modules/typebox": {
-      "version": "1.1.38"
+      "version": "1.3.7"
+    },
+    "node_modules/undici": {
+      "version": "8.10.1"
     },
     "node_modules/undici-types": {
       "version": "8.3.0"
@@ -1531,9 +1813,6 @@
     },
     "node_modules/zod-to-json-schema": {
       "version": "3.25.2"
-    },
-    "node_modules/zustand": {
-      "version": "4.4.7"
     }
   }
 }
