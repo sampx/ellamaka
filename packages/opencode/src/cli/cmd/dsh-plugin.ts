@@ -6,20 +6,27 @@ import {
   installPackage,
   NotInstalledError,
   removePackage,
+  listInstalled,
 } from "@wopal/ellamaka-cordis/plugins/installer"
-import { readProfileManifest, withProfileManifestWrite } from "@wopal/ellamaka-cordis/plugins"
-import { listInstalled } from "@wopal/ellamaka-cordis/plugins/installer"
+import { migratePluginStore } from "@wopal/ellamaka-cordis/plugins/migrate-store"
+import { disableRow, enableRow, readUserPatchState } from "@wopal/ellamaka-cordis/plugins/patch-layer"
+import { assertNotGithubSource } from "@wopal/ellamaka-cordis/plugins/installer"
 import { parseProfiles, parseRegistrySpec } from "./dsh-plugin-profiles"
 import { CliError, effectCmd, fail } from "../effect-cmd"
 
 /**
- * `ellamaka dsh plugin` command group (DESIGN-dsh-poc §9.3).
+ * `ellamaka dsh plugin` command group (DESIGN-dsh-poc 插件供应链, A2 retarget).
  *
- * Every subcommand is a pure disk operation (install dir + store write); the
- * running server process watches the store and hot-mounts (D-02). The CLI
- * never touches containers directly. All store mutations go through
- * `updateStore` (read-modify-write under the plugins mutex), so concurrent
- * CLI processes never lose updates (rook B-04).
+ * Every subcommand is a pure disk operation writing the OFFICIAL end state:
+ * the package entity lands in `<profile>/node_modules/`, the declaration in
+ * the profile `package.json`, and enable/disable writes the user patch layer
+ * (`cordis.patch.yml`, official patch.ts semantics). The running server
+ * watches those composition files and hot-replays (D-02/D-03) — the CLI
+ * never touches containers directly.
+ *
+ * Before any operation the legacy plugin store (if present) is migrated
+ * once into the profile manifests (idempotent; the retired file is kept for
+ * rollback).
  */
 
 const RISK_NOTE =
@@ -29,12 +36,22 @@ function dshHome(): string {
   return join(Global.Path.wopalHome, "dsh")
 }
 
-/** Map a store/installer error to a user-visible CliError. */
+/** Map an installer/migration error to a user-visible CliError. */
 function toCliError(error: unknown): CliError {
   if (error instanceof NotInstalledError) {
     return new CliError({ message: error.message })
   }
   return new CliError({ message: error instanceof Error ? error.message : String(error) })
+}
+
+/** One-time legacy-store migration hook (idempotent, runs before anything). */
+async function ensureMigrated(home: string): Promise<void> {
+  await migratePluginStore(home)
+}
+
+/** The profile patch file path for one profile. */
+function patchPathOf(home: string, profile: string): string {
+  return join(home, "home", "profiles", profile, "cordis.patch.yml")
 }
 
 export const DshPluginCommand = effectCmd({
@@ -70,21 +87,38 @@ export const DshPluginCommand = effectCmd({
     const pkg = args.pkg ? String(args.pkg) : undefined
     const home = dshHome()
 
+    yield* Effect.tryPromise({
+      try: () => ensureMigrated(home),
+      catch: toCliError,
+    })
+
     if (action === "add") {
       const profiles = parseProfiles(args.profile as string | undefined)
       if (!pkg && !args.dir) return yield* fail("dsh plugin add requires <pkg> or --dir <path>")
       if (pkg && args.dir) return yield* fail("dsh plugin add accepts either <pkg> or --dir, not both")
+      if (pkg) {
+        // Phase-1 transport policy: github sources get a clear error with the
+        // npm alternative before any network activity (D-07).
+        yield* Effect.try({
+          try: () => {
+            const spec = parseRegistrySpec(pkg)
+            assertNotGithubSource(spec.kind === "registry" ? (spec.version ?? spec.name) : spec.name)
+            return RISK_NOTE
+          },
+          catch: toCliError,
+        })
+      }
       const result = yield* Effect.tryPromise({
         try: () =>
           args.dir
-            ? installPackage({ kind: "dir", path: args.dir }, { home, enabledIn: profiles })
-            : installPackage(parseRegistrySpec(pkg!), { home, enabledIn: profiles }),
+            ? installPackage({ kind: "dir", path: args.dir }, { home, profiles })
+            : installPackage(parseRegistrySpec(pkg!), { home, profiles }),
         catch: toCliError,
       })
       log.success(`Installed ${result.name}@${result.version} (${result.source})`)
       log.info(`Enabled in: ${profiles.join(", ")}`)
       if (result.warning) log.warn(result.warning)
-      log.info("A running ellamaka server picks this up within ~2s; otherwise it mounts at next boot.")
+      log.info("A running ellamaka server hot-mounts it via composition-file watching; otherwise it mounts at next boot.")
       return
     }
 
@@ -95,16 +129,13 @@ export const DshPluginCommand = effectCmd({
         catch: toCliError,
       })
       log.success(`Removed ${pkg}`)
-      log.info("A running ellamaka server unmounts it within ~2s.")
+      log.info("A running ellamaka server unmounts it via composition-file watching.")
       return
     }
 
     if (action === "enable" || action === "disable") {
       if (!pkg) return yield* fail(`dsh plugin ${action} requires <pkg>`)
       const enabled = action === "enable"
-      // One locked read-modify-write (rook B-04): the read happens INSIDE the
-      // plugins mutex, so two concurrent CLI processes never overwrite each
-      // other's profile flips.
       // enable: the requested profiles (alias-expanded). disable without
       // --profile: both built-ins; with --profile: exactly those.
       const targets = enabled
@@ -116,18 +147,13 @@ export const DshPluginCommand = effectCmd({
         try: async () => {
           let touched = false
           for (const profile of targets) {
-            const manifest = readProfileManifest(join(home, "home", "profiles", profile))
-            const installed = pkg in manifest.dependencies || manifest.bundles.includes(pkg)
+            // Only a package the profile declares can flip state.
+            const patchPath = patchPathOf(home, profile)
+            const installed = readUserPatchState(patchPath).inserts.includes(pkg)
             if (!installed) continue
             touched = true
-            await withProfileManifestWrite(join(home, "home", "profiles", profile), (raw) => {
-              const dsh = (raw.dsh ??= {}) as Record<string, unknown>
-              const profileSection = (dsh.profile ??= {}) as Record<string, unknown>
-              const bundles = (profileSection.bundles ??= []) as string[]
-              const index = bundles.indexOf(pkg)
-              if (enabled && index === -1) bundles.push(pkg)
-              if (!enabled && index !== -1) bundles.splice(index, 1)
-            })
+            if (enabled) await enableRow(patchPath, pkg)
+            else await disableRow(patchPath, pkg)
           }
           if (!touched) throw new NotInstalledError(pkg)
         },

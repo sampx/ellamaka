@@ -21,7 +21,8 @@
     "./plugins/resolver": "./src/plugins/resolver.ts",
     "./plugins/runtime": "./src/plugins/runtime.ts",
     "./diagnostics/dump-config": "./src/diagnostics/dump-config.ts",
-    "./plugins/migrate-store": "./src/plugins/migrate-store.ts"
+    "./plugins/migrate-store": "./src/plugins/migrate-store.ts",
+    "./plugins/patch-layer": "./src/plugins/patch-layer.ts"
   },
   "files": [
     "dist"
