@@ -80,6 +80,7 @@
 | 界面演进（iframe → 原生） | S3 的插槽纪律保证定制件可无损迁移 | DESIGN-dsh-poc「空间皮肤插件」 |
 | 插件 entry 级配置命令（`plugin config`） | 供应链 Plan 的 Out of Scope，独立后续 | DESIGN-dsh-poc「插件供应链 · 配置与信任」 |
 | dsh 协处理器（借引擎跑子任务） | 不紧急；涉及托管会话语义设计，暂挂起 | — |
+| **dshmarket 插件市场接入 poc 宿主** | 官方市场已在用户 `~/.dsh` 安装验证（research 文档 2026-09-05）。poc 需「换底座 + 割依赖」：`profileDirectory` + `desktopPnpm` 兼容注入走 Desktop 分支、安装动作转 `installPackage`、禁用市场自带的 hot/patch/restart。**待 B3/B2 完成后执行**，先做只读探针（client.inject 依赖是最大不确定点），再定方案 | DESIGN-dsh-poc「dsh 插件市场在 Ellamaka 宿主中的应用（待实验）」 |
 
 ---
 
@@ -92,3 +93,4 @@
 | 2026-09-02 | 供应链 Plan 全周期完成：实施 6 Task + rook 审查（8 Blocker 修复）+ Wopal 自审 PASS + 用户实机验证（hello 插件热挂载 + settings 页 GUI）；验收达成进入维护态。审批桥接 Plan 同日归档。hello-dsh-plugin 前置实证（dsh.client 自动手写 bundle）完成 |
 | 2026-09-03 | 界面改造：DSH 从 titlebar 临时按钮迁入「助理」tab——health 增加 `dsh` 字段 + SDK 重生成；dshVisible 派生化；iframe keep-alive 化；`ELLAMAKA_DSH=0` 回落原生助理。四场景实机验证通过（记为 P7） |
 | 2026-09-03 | 设计文档完全重写为**无章节号**版本（按标题文字交叉引用）；主线确立为「空间 × Agent 配置体系」（设计定稿，S1 待执行）；workbench WC 吸收降级为门槛轨道（前提：插件用起来 + workbench slot 化）；PLAN-TODOS 改为小步快跑（S1–S4）推进模型 |
+| 2026-09-05 | dshmarket 插件市场接入 poc 宿主的设计思路与实验步骤写入 DESIGN-dsh-poc（待实验）；PLAN-TODOS 待定事项登记，排在 B3/B2 之后 |
