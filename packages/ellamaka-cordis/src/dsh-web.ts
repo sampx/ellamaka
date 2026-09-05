@@ -28,7 +28,7 @@ import {
   createPackageDshRuntimeApi,
   type DshRuntimeApi,
 } from "./runtime/loader.js"
-import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
+import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, isOfficialBundleRow, type DshPluginStackContext, type PluginLayerPatch } from "./plugins/compose.js"
 import { wrapInternalWithProfilesFallback } from "./plugins/resolve-specifiers.js"
 import { dshHomeDirOf } from "./runtime/status.js"
 import { homePatches as makeHomePatches, webExtraPatches, toolsExtraPatches } from "./diagnostics/dump-config.js"
@@ -498,8 +498,11 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // The full patch stack (bundle -> plugin -> user -> extras -> home), composed
   // by the ONE function the hot replay also calls (rook B-01): boot and hot
   // reload are the same composition, so a replay never drops official layers.
+  // The stack's bundle layer carries ONLY official rows: the manifest's user
+  // bundles are the Bridge-owned plugin layer (composed above) — keeping both
+  // would duplicate every user entry id (loader id diff throws).
   const stackContext: DshPluginStackContext = {
-    profileLayers: profile.layers,
+    profileLayers: profile.layers.filter((layer) => isOfficialBundleRow(layer.packageName)),
     pluginLayers,
     userPatches: profile.patches,
     extraPatches,

@@ -9,19 +9,34 @@ import {
   webExtraPatches,
   toolsExtraPatches,
 } from "../src/diagnostics/dump-config"
-import { healPluginsModuleFallback, type PluginLayerPatch } from "../src/plugins/compose"
-import { writeStore } from "../src/plugins/store"
+import { healPluginsModuleFallback, profileDirOf, type PluginLayerPatch } from "../src/plugins/compose"
+import { appendBundle, withProfileManifestWrite } from "../src/plugins/profile-manifest"
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), "dsh-dump-config-"))
 }
 
-function installedPlugin(home: string, name: string, version = "1.0.0"): string {
-  const dir = join(home, "plugins", name, version)
+async function installedPlugin(home: string, name: string, version = "1.0.0"): Promise<void> {
+  const profileDir = profileDirOf(home, "web")
+  const dir = join(profileDir, "node_modules", name)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name, version, type: "module", main: "index.js" }))
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name, version, type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
+  )
   writeFileSync(join(dir, "index.js"), `export const name = ${JSON.stringify(name)}\n`)
-  return dir
+  writeFileSync(
+    join(dir, "cordis.patch.yml"),
+    `- insert:\n    - id: dsh-plugin:${name}\n      name: ${name}\n`,
+  )
+  await withProfileManifestWrite(profileDir, (manifest) => {
+    // Seed the official web template bundles first (initProfile semantics
+    // for a pre-created manifest), then the fixture plugin.
+    const dsh = (manifest.dsh ??= {}) as Record<string, unknown>
+    const profile = (dsh.profile ??= {}) as Record<string, unknown>
+    profile.bundles = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"]
+    appendBundle(manifest, name)
+  })
 }
 
 describe("composeDshDumpLayers", () => {
@@ -51,7 +66,7 @@ describe("composeDshDumpLayers", () => {
     // Expect 5 layers:
     // 1. bundle @deepseek-ai/dsh-base
     // 2. bundle @deepseek-ai/dsh-web-app
-    // 3. ellamaka plugin layers (installed.json) -> [{ insert: pluginLayers }]
+    // 3. ellamaka plugin layers (profile) -> [{ insert: pluginLayers }]
     // 4. user layer (/mock/profile/dir/cordis.patch.yml) -> profile.patches
     // 5. bridge extra patches -> extraPatches
     // 6. home patches -> homePatches
@@ -65,7 +80,7 @@ describe("composeDshDumpLayers", () => {
       patches: [{ id: "web-entry" }],
     })
     expect(layers[2]).toEqual({
-      label: "ellamaka plugin layers (installed.json)",
+      label: "ellamaka plugin layers (profile)",
       patches: [{ insert: pluginLayers }],
     })
     expect(layers[3]).toEqual({
@@ -122,7 +137,7 @@ describe("composeDshDumpLayers", () => {
 
     expect(layers.map((l) => l.label)).toEqual([
       "@deepseek-ai/dsh-base",
-      "ellamaka plugin layers (installed.json)",
+      "ellamaka plugin layers (profile)",
     ])
   })
 })
@@ -130,19 +145,7 @@ describe("composeDshDumpLayers", () => {
 describe("dumpDshConfig", () => {
   test("dumps configuration for web profile with comments, plugin layers, and home patches", async () => {
     const home = tempHome()
-    installedPlugin(home, "demo-plugin", "1.0.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        {
-          name: "demo-plugin",
-          version: "1.0.0",
-          source: "dir",
-          enabledIn: ["web"],
-          installedAt: "2026-09-04T00:00:00.000Z",
-        },
-      ],
-    })
+    await installedPlugin(home, "demo-plugin", "1.0.0")
     healPluginsModuleFallback(home)
 
     const output = await dumpDshConfig({
@@ -173,19 +176,7 @@ describe("dumpDshConfig", () => {
 
   test("defaultOnly produces bundle layers only without user/plugin/extra/home layers", async () => {
     const home = tempHome()
-    installedPlugin(home, "demo-plugin", "1.0.0")
-    await writeStore(home, {
-      schema: "ellamaka.dsh-plugins/v1",
-      plugins: [
-        {
-          name: "demo-plugin",
-          version: "1.0.0",
-          source: "dir",
-          enabledIn: ["web"],
-          installedAt: "2026-09-04T00:00:00.000Z",
-        },
-      ],
-    })
+    await installedPlugin(home, "demo-plugin", "1.0.0")
     healPluginsModuleFallback(home)
     // A real, already-initialised profile dir: a manifest carrying the web
     // bundle list (so loadProfile resolves bundle layers) plus a user patch

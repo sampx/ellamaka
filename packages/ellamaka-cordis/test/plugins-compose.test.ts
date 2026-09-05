@@ -163,7 +163,8 @@ describe("composePluginLayers (profile manifest truth source)", () => {
 
   test("a bundle row whose patch file is missing throws a named diagnostic", () => {
     const root = tempRoot()
-    installedPlugin(root, "patchless-bundle", { bundle: "./missing.yml" })
+    const dir = installedPlugin(root, "patchless-bundle", { bundle: "./missing.yml" })
+    rmSync(join(dir, "missing.yml")) // the fixture writes it; the test needs it gone
     seedManifest(root, { dsh: { profile: { bundles: ["patchless-bundle"] } } })
     expect(() => composePluginLayers(root, "web")).toThrow(/missing\.yml/)
   })
@@ -271,12 +272,20 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
     writeFileSync(join(src, "index.js"), "export const name = \"fixture-dsh-plugin\"\nexport function apply(ctx) { ctx.provide(\"fixture-dsh-plugin.marker\", \"mounted\") }\n")
     // The official install-area layout: the package entity under the
     // profile's node_modules (mountDshTools inits the web profile template).
-    const profileDir = profileDirOf(root)
+    // mountDshTools mounts the "ellamaka-tools" profile: the fixture must
+    // target THAT profile's manifest and node_modules.
+    const profileDir = profileDirOf(root, "ellamaka-tools")
     mkdirSync(join(profileDir, "node_modules"), { recursive: true })
     cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
     await withProfileManifestWrite(profileDir, (manifest) => {
+      // Seed the official tools template bundles first (initProfile
+      // semantics for a pre-created manifest), then the fixture.
+      const dsh = (manifest.dsh ??= {}) as Record<string, unknown>
+      const profile = (dsh.profile ??= {}) as Record<string, unknown>
+      profile.bundles = ["@deepseek-ai/dsh-base"]
       appendBundle(manifest, "fixture-dsh-plugin")
     })
+    healPluginsModuleFallback(root)
 
     const ctx = new Context()
     const host = await mountDshTools(ctx, { home: root, port: 0 })
@@ -351,12 +360,20 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
     )
     writeFileSync(join(src, "cordis.patch.yml"), "- insert:\n    - id: dsh-plugin:fixture-dsh-plugin\n      name: fixture-dsh-plugin\n")
     writeFileSync(join(src, "index.js"), "export const name = \"fixture-dsh-plugin\"\nexport function apply(ctx) { ctx.provide(\"fixture-dsh-plugin.marker\", \"mounted\") }\n")
-    const profileDir = profileDirOf(root)
+    // mountDshTools mounts the "ellamaka-tools" profile: the fixture must
+    // target THAT profile's manifest and node_modules.
+    const profileDir = profileDirOf(root, "ellamaka-tools")
     mkdirSync(join(profileDir, "node_modules"), { recursive: true })
     cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
     await withProfileManifestWrite(profileDir, (manifest) => {
+      // Seed the official tools template bundles first (initProfile
+      // semantics for a pre-created manifest), then the fixture.
+      const dsh = (manifest.dsh ??= {}) as Record<string, unknown>
+      const profile = (dsh.profile ??= {}) as Record<string, unknown>
+      profile.bundles = ["@deepseek-ai/dsh-base"]
       appendBundle(manifest, "fixture-dsh-plugin")
     })
+    healPluginsModuleFallback(root)
 
     const ctx = new Context()
     const host = await mountDshTools(ctx, { home: root, port: 0 })
@@ -375,7 +392,10 @@ describe("resolveComposedRows (B1: Bridge rows reach the Loader as file:// URLs)
       // trigger exactly one replay. We append+remove a dependency to change
       // the serialized document, then restore it.
       await withProfileManifestWrite(profileDir, (manifest) => {
-        appendBundle(manifest, "phantom-hot-plugin")
+        // Dependencies-only mutation: the serialized manifest changes (the
+        // watch fires) without adding an unresolvable bundle row.
+        const deps = (manifest.dependencies ??= {}) as Record<string, string>
+        deps["phantom-hot-plugin"] = "1.0.0"
       })
       await waitFor(() => updates, 1)
 
@@ -416,12 +436,20 @@ describe("loader.internal.import profiles fallback (rook W-01, post-B1)", () => 
       join(src, "index.js"),
       'export const name = "fixture-dsh-plugin"\nexport function apply(ctx) { ctx.provide("fixture-dsh-plugin.marker", "mounted") }\n',
     )
-    const profileDir = profileDirOf(root)
+    // mountDshTools mounts the "ellamaka-tools" profile: the fixture must
+    // target THAT profile's manifest and node_modules.
+    const profileDir = profileDirOf(root, "ellamaka-tools")
     mkdirSync(join(profileDir, "node_modules"), { recursive: true })
     cpSync(src, join(profileDir, "node_modules", "fixture-dsh-plugin"), { recursive: true })
     await withProfileManifestWrite(profileDir, (manifest) => {
+      // Seed the official tools template bundles first (initProfile
+      // semantics for a pre-created manifest), then the fixture.
+      const dsh = (manifest.dsh ??= {}) as Record<string, unknown>
+      const profile = (dsh.profile ??= {}) as Record<string, unknown>
+      profile.bundles = ["@deepseek-ai/dsh-base"]
       appendBundle(manifest, "fixture-dsh-plugin")
     })
+    healPluginsModuleFallback(root)
 
     const ctx = new Context()
     const host = await mountDshTools(ctx, {

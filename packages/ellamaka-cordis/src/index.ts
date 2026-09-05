@@ -42,12 +42,14 @@ export {
 export type { ExtractLike, InstallOptions, InstallResult, InstallSpec } from "./plugins/installer.js"
 export {
   PLUGIN_ENTRY_ID_PREFIX,
-  PLUGIN_LAYER_DIRNAME,
+  composeFullPatchStack,
   composePluginLayers,
   healPluginsModuleFallback,
-  pluginLayerPatch,
-  pluginPackageDir,
+  isOfficialBundleRow,
+  profileDirOf,
+  readBundleInsertRows,
+  removePluginSymlink,
 } from "./plugins/compose.js"
-export type { PluginLayerPatch } from "./plugins/compose.js"
+export type { DshPluginStackContext, InsertRow, PluginLayerPatch } from "./plugins/compose.js"
 export { resolveRowSpecifier } from "./plugins/resolve-specifiers.js"
 export type { ResolveRowOptions, ResolvableRow } from "./plugins/resolve-specifiers.js"

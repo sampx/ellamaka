@@ -1,34 +1,37 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs"
+import { createRequire } from "node:module"
 import { join } from "node:path"
-import { pluginsDir, readStore, type DshPluginEntry } from "./store.js"
+import { pathToFileURL } from "node:url"
+import { readProfileManifest } from "./profile-manifest.js"
 import { homeProfilesDirOf } from "../runtime/status.js"
 import { resolveRowSpecifier } from "./resolve-specifiers.js"
 
 /**
- * Plugin layer composition (DESIGN-dsh-poc §9, D-03/D-04).
+ * Plugin layer composition (DESIGN-dsh-poc 「真相源与目录布局」, A2 retarget).
  *
- * The store is the ONLY composition source: the boot composition and the hot
- * reload composition are the same function. Boot order is bundle layers ->
- * plugin layers (store order) -> user patch layer -> Bridge extraPatches;
- * the loader diffs entries by id, so add/remove/enable/disable of a plugin
- * all replay through one include `entry.update` with the layers this module
- * composes.
+ * The profile manifest is the ONLY composition source: the boot composition
+ * and the hot reload composition are the same function. Boot order is bundle
+ * layers (official, `@deepseek-ai/*`, carried by loadProfile) -> plugin layers
+ * (user bundles, composed HERE from the profile `package.json`) -> user patch
+ * layer -> Bridge extraPatches -> home patches; the loader diffs entries by
+ * id, so add/remove/enable/disable of a plugin all replay through one include
+ * `entry.update` with the layers this module composes.
  *
- * Each plugin layer is a patch row `{ id: "dsh-plugin:<name>", name: "<pkg>" }`
- * — the explicit stable id makes the loader's id diff deterministic (the
- * include contract, spike 2 path B). The bare package name is resolved at the
- * composition point to an absolute `file://` URL (B1 拆雷:
- * {@link composeResolvedPluginLayers}, closure -> profiles order) so the row
- * reaches the Loader final — the fake `loader.internal` injection is gone and
- * profiles-only packages cannot resolve natively.
+ * Each user plugin layer is the package's own `cordis.patch.yml` patch list —
+ * the official bundle-layer semantics (`loadProfile` applies exactly the same
+ * file shape for `@deepseek-ai/*` bundles). The package's own insert rows
+ * carry the explicit `dsh-plugin:<name>` ids, so the Loader's id diff stays
+ * deterministic. The bare package name is resolved at the composition point
+ * to an absolute `file://` URL (B1 拆雷: {@link resolveRowSpecifier},
+ * closure -> profiles order) so the row reaches the Loader final — the fake
+ * `loader.internal` injection is gone and profiles-only packages cannot
+ * resolve natively.
  */
-/** The install-area directory name this module composes packages from. */
-export const PLUGIN_LAYER_DIRNAME = "plugins"
 
-/** The explicit entry-id prefix for plugin layers (loader id diff stability). */
+/** The explicit entry-id prefix for user plugin rows (loader id diff stability). */
 export const PLUGIN_ENTRY_ID_PREFIX = "dsh-plugin:"
 
-/** One plugin patch row as consumed by the root include patches. */
+/** One user plugin patch row as consumed by the root include patches. */
 export interface PluginLayerPatch {
   id: string
   name: string
@@ -36,10 +39,10 @@ export interface PluginLayerPatch {
 
 /**
  * The per-container patch-stack context captured at boot: every
- * store-independent layer of the container's composition. The Plugin Runtime
- * Service passes this back to {@link composeFullPatchStack} so a hot replay
- * rebuilds the ENTIRE stack (rook B-01) instead of replacing it with plugin
- * rows only.
+ * manifest-independent layer of the container's composition. The Plugin
+ * Runtime Service passes this back to {@link composeFullPatchStack} so a hot
+ * replay rebuilds the ENTIRE stack (rook B-01) instead of replacing it with
+ * plugin rows only.
  */
 export interface DshPluginStackContext {
   /** The profile's bundle layers (`loadProfile(...).layers`). */
@@ -66,40 +69,195 @@ export interface ComposeLayersOptions {
   installAnchor?: string
 }
 
+/** The profile directory of one profile name under a territory root. */
+export function profileDirOf(dshRoot: string, profile: string): string {
+  return join(homeProfilesDirOf(dshRoot), profile)
+}
+
 /**
- * Compose the plugin patch rows for one profile from the store.
+ * Whether a bundle row is official (an in-box `@deepseek-ai/*` package).
+ * Official rows are the loadProfile bundle layer — never Bridge-owned.
+ */
+export function isOfficialBundleRow(name: string): boolean {
+  return name.startsWith("@deepseek-ai/")
+}
+
+/** One inserted plugin row: the explicit entry id and the package specifier. */
+export interface InsertRow {
+  id: string
+  name: string
+}
+
+/**
+ * Read ONE patch file's insert rows (the official `cordis.patch.yml` subset:
+ * a top-level `- insert:` list whose items carry `id` + `name`). Supports the
+ * two official item shapes:
+ *   - insert:
+ *       - id: dsh-market
+ *         name: dshmarket
+ *   - insert:
+ *       - id: dsh-plugin:x
+ *         name: "x"
+ * A row the Loader cannot consume is a misconfiguration and throws a named
+ * diagnostic (official parsePatchList same stance).
+ */
+export function readBundleInsertRows(content: string, file: string): InsertRow[] {
+  const rows: InsertRow[] = []
+  const lines = content.split("\n")
+  let index = 0
+  while (index < lines.length) {
+    const line = lines[index].replace(/\t/g, "  ")
+    index++
+    if (!line.trim() || line.trim().startsWith("#")) continue
+    if (!/^-\s+insert:\s*$/.test(line.trim())) {
+      throw new Error(`dsh plugin compose: unsupported patch row in ${file}: ${JSON.stringify(line.trim())}`)
+    }
+    // Consume the item rows belonging to this insert block (deeper indented).
+    const items: { id?: string; name?: string }[] = []
+    let current: { id?: string; name?: string } | undefined
+    while (index < lines.length) {
+      const raw = lines[index]
+      if (!raw.trim() || raw.trim().startsWith("#")) {
+        index++
+        continue
+      }
+      const line = raw.replace(/\t/g, "  ")
+      if (!/^\s/.test(line)) break // dedented: next top-level row
+      const itemMatch = /^\s+-\s*(?:(id|name):\s*(.*))?\s*$/.exec(line)
+      if (itemMatch) {
+        if (itemMatch[1]) {
+          // `- id: x` starts a NEW item when a current one is complete.
+          if (current && current.id !== undefined && current.name !== undefined) {
+            items.push(current)
+            current = {}
+          }
+          if (!current) current = {}
+          current[itemMatch[1] as "id" | "name"] = unquote(itemMatch[2] ?? "")
+        } else {
+          if (!current) current = {}
+        }
+        index++
+        continue
+      }
+      const fieldMatch = /^\s+(id|name):\s*(.*?)\s*$/.exec(line)
+      if (fieldMatch && current) {
+        current[fieldMatch[1] as "id" | "name"] = unquote(fieldMatch[2])
+        index++
+        continue
+      }
+      // Anything else ends the insert block.
+      break
+    }
+    if (current) items.push(current)
+    for (const item of items) {
+      if (item.id === undefined || item.name === undefined) {
+        throw new Error(`dsh plugin compose: insert row in ${file} needs both "id" and "name"`)
+      }
+      rows.push({ id: item.id!, name: item.name! })
+    }
+  }
+  return rows
+}
+
+/** Strip one pair of matching YAML quotes from a scalar value. */
+function unquote(value: string): string {
+  if ((value.startsWith("'") && value.endsWith("'")) || (value.startsWith('"') && value.endsWith('"'))) {
+    return value.slice(1, -1)
+  }
+  return value
+}
+
+/**
+ * Load the patch rows of ONE user bundle package: locate the package under
+ * the profile node_modules (or via the specifier resolver for closure
+ * packages), read its `dsh.bundle.patch` file, and return its insert rows
+ * with bare names resolved to absolute file:// URLs.
  *
- * Missing/empty store -> no layers (a fresh home boots nothing). Plugins not
- * enabled in the requested profile are skipped. Store order is composition
- * order (install order), which keeps layer diffs append-only across installs.
+ * A missing package entity, missing patch declaration, or missing patch file
+ * throws a named diagnostic — a bundle row that cannot be applied is a
+ * misconfiguration, not "no patches" (official loadProfile same semantics).
+ */
+function loadUserBundleRows(
+  packageName: string,
+  dshRoot: string,
+  profile: string,
+  options?: ComposeLayersOptions,
+): InsertRow[] {
+  const packageDir = join(profileDirOf(dshRoot, profile), "node_modules", ...packageName.split("/"))
+  const manifestPath = join(packageDir, "package.json")
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `dsh plugin compose: bundle ${JSON.stringify(packageName)} has no package.json at ${packageDir} (not installed in the profile?)`,
+    )
+  }
+  let manifest: Record<string, unknown>
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>
+  } catch (error) {
+    throw new Error(`dsh plugin compose: failed to parse ${manifestPath}: ${(error as Error).message}`, { cause: error })
+  }
+  const declared = (manifest.dsh as { bundle?: { patch?: unknown } } | undefined)?.bundle?.patch
+  if (typeof declared !== "string" || declared.length === 0) {
+    throw new Error(
+      `dsh plugin compose: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json at ${packageDir}`,
+    )
+  }
+  const patchPath = join(packageDir, declared)
+  if (!existsSync(patchPath)) {
+    throw new Error(
+      `dsh plugin compose: profile bundle ${JSON.stringify(packageName)} patch file ${patchPath} is missing`,
+    )
+  }
+  const rows = readBundleInsertRows(readFileSync(patchPath, "utf-8"), patchPath)
+  return rows.map((row) => {
+    // Resolve the row's package specifier. A bare name MUST resolve to the
+    // profile's own entity first (the official profile-local install
+    // semantics): anchor the parent-walk at the package's own directory
+    // inside the profile node_modules — `<profile>/node_modules/<pkg>` finds
+    // its siblings and its own subtree natively.
+    let name = row.name
+    if (!name.startsWith("file://") && !name.startsWith(".") && !name.startsWith("cordis:")) {
+      try {
+        name = pathToFileURL(createRequire(join(packageDir, "package.json")).resolve(name)).href
+      } catch {
+        // Fall through to the shared closure -> profiles anchor order.
+        name = resolveRowSpecifier(row.name, { dshRoot, installAnchor: options?.installAnchor })
+      }
+    }
+    return { ...row, name }
+  })
+}
+
+/**
+ * Compose the user plugin patch rows for one profile from the profile
+ * manifest (the official truth source).
+ *
+ * Missing/empty manifest -> no layers (a fresh profile boots nothing).
+ * Official bundle rows (`@deepseek-ai/*`) are SKIPPED — they are the
+ * loadProfile bundle layer and never Bridge-owned. Manifest bundle order is
+ * composition order, which keeps layer diffs append-only across installs.
  *
  * Bare names are resolved HERE, at the composition point, so boot and hot
  * replay share one rewrite and the Loader never sees a bare Bridge-owned
  * name (B1 拆雷). An unresolvable name throws the original resolution error.
  */
 export function composePluginLayers(dshRoot: string, profile: string, options?: ComposeLayersOptions): PluginLayerPatch[] {
-  if (!existsSync(join(dshRoot, PLUGIN_LAYER_DIRNAME))) return []
-  const store = readStore(dshRoot)
-  return store.plugins
-    .filter((entry) => entry.enabledIn.includes(profile))
-    .map((entry) => resolvePluginLayerPatch(entry, dshRoot, options?.installAnchor))
-}
-
-/** The patch row for one installed plugin entry (bare name, unresolved). */
-export function pluginLayerPatch(entry: DshPluginEntry): PluginLayerPatch {
-  return { id: `${PLUGIN_ENTRY_ID_PREFIX}${entry.name}`, name: entry.name }
-}
-
-/** One resolved patch row: the bare name replaced by its absolute file URL. */
-function resolvePluginLayerPatch(entry: DshPluginEntry, dshRoot: string, installAnchor?: string): PluginLayerPatch {
-  const row = pluginLayerPatch(entry)
-  return { ...row, name: resolveRowSpecifier(row.name, { dshRoot, installAnchor }) }
+  const manifest = readProfileManifest(profileDirOf(dshRoot, profile))
+  const rows: PluginLayerPatch[] = []
+  for (const bundleName of manifest.bundles) {
+    if (isOfficialBundleRow(bundleName)) continue
+    const insertRows = loadUserBundleRows(bundleName, dshRoot, profile, options)
+    for (const row of insertRows) {
+      rows.push({ id: row.id, name: row.name })
+    }
+  }
+  return rows
 }
 
 /**
  * The full patch stack of one container (D-01/D-03): bundle layers ->
- * plugin layers (store order) -> user patch layer -> extra patches -> home
- * patches. Boot AND hot reload call this ONE function — a hot replay
+ * plugin layers (manifest order) -> user patch layer -> extra patches ->
+ * home patches. Boot AND hot reload call this ONE function — a hot replay
  * must rebuild the entire stack (not only the plugin rows), because the
  * include re-applies `config.patches` over the raw config on every update and
  * replacing the list would drop the official bundle/user/home rows.
@@ -121,36 +279,39 @@ export function composeFullPatchStack(layers: {
 }
 
 /**
- * The install directory of one plugin entry (`plugins/<name>/<version>/`).
- */
-export function pluginPackageDir(dshRoot: string, entry: DshPluginEntry): string {
-  return join(pluginsDir(dshRoot), entry.name, entry.version)
-}
-
-/**
- * Maintain the plugin half of the flat module fallback
+ * Maintain the user half of the flat module fallback
  * `$DSH_HOME/profiles/node_modules` (the territory's `home/profiles/node_modules`):
- * one symlink per installed plugin, so a
- * bare package name in a plugin layer resolves through the ordinary
- * Node parent-walk from the profile directory (spike 2: the profiles-anchor
- * require finds `node_modules/<pkg>` beside it).
+ * one symlink per user-declared plugin package, so a bare package name in a
+ * plugin layer resolves through the ordinary Node parent-walk from the
+ * profile directory (spike 2: the profiles-anchor require finds
+ * `node_modules/<pkg>` beside it).
  *
  * This is self-owned (it does not touch the official
  * `healProfilesModuleFallback`): the official function links the closure's
- * dependency BFS; this one links the user install area. Idempotent — correct
- * links are kept, stale links (reinstalled version) are re-pointed, entries
- * not owned by the store are left alone.
+ * dependency BFS; this one links the profile's declared user packages.
+ * Idempotent — correct links are kept, stale links are re-pointed, entries
+ * not declared by the manifest are left alone.
  */
-export function healPluginsModuleFallback(dshRoot: string, store?: ReturnType<typeof readStore>): void {
+export function healPluginsModuleFallback(dshRoot: string): void {
   const modulesDir = join(homeProfilesDirOf(dshRoot), "node_modules")
   mkdirSync(modulesDir, { recursive: true })
-  const entries = (store ?? readStore(dshRoot)).plugins
-  for (const entry of entries) {
-    const target = pluginPackageDir(dshRoot, entry)
-    const link = join(modulesDir, entry.name)
-    if (!existsSync(join(target, "package.json"))) continue // damaged install: skip, mount will fail loud
-    mkdirSync(join(modulesDir, ...entry.name.split("/").slice(0, -1)), { recursive: true })
-    rePointSymlink(link, target)
+  const profilesDir = homeProfilesDirOf(dshRoot)
+  const profileNames = existsSync(profilesDir)
+    ? readdirSync(profilesDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
+        .map((entry) => entry.name)
+    : []
+  for (const profile of profileNames) {
+    const profileDir = join(profilesDir, profile)
+    const manifest = readProfileManifest(profileDir)
+    for (const packageName of manifest.bundles) {
+      if (isOfficialBundleRow(packageName)) continue
+      const target = join(profileDir, "node_modules", ...packageName.split("/"))
+      const link = join(modulesDir, packageName)
+      if (!existsSync(join(target, "package.json"))) continue // damaged install: skip, compose will fail loud
+      mkdirSync(join(modulesDir, ...packageName.split("/").slice(0, -1)), { recursive: true })
+      rePointSymlink(link, target)
+    }
   }
 }
 
@@ -195,11 +356,6 @@ function rePointSymlink(link: string, target: string): void {
     // Lost a race with another healer that just created the same link.
     if (!existsSync(link)) throw new Error(`dsh plugin compose: failed to link ${link} -> ${target}`)
   }
-}
-
-/** Read helper re-exported for tests (the store file's raw JSON). */
-export function readStoreRaw(dshRoot: string): string {
-  return readFileSync(join(pluginsDir(dshRoot), "installed.json"), "utf-8")
 }
 
 /**

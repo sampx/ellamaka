@@ -183,7 +183,7 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
     try {
       // Heal BEFORE composing: a newly installed plugin needs its
       // profiles/node_modules symlink to exist for the loader's import.
-      healPluginsModuleFallback(options.home, readStore(options.home))
+      healPluginsModuleFallback(options.home)
       lastHash = hash
       let failed = false
       for (const container of containers) {
