@@ -58,6 +58,7 @@
     "@deepseek-ai/dsh-web-app": "0.1.2-rc.1",
     "@deepseek-ai/dsh-workflow": "0.1.2-rc.1",
     "@npmcli/arborist": "9.4.0",
+    "chokidar": "4.0.3",
     "pacote": "22.0.0"
   },
   "peerDependencies": {
