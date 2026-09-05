@@ -203,19 +203,26 @@ export class VirtualWebServer {
 
   /**
    * Rewrite DSH static asset URLs to the `/dsh` mount and drop the PWA
-   * manifest link (the iframe does not need it). External URLs and already
-   * `/dsh`-prefixed URLs stay unchanged.
+   * manifest link (the iframe does not need it). The rc.1 dist uses
+   * document-relative `./assets/...` URLs anchored by the official injected
+   * `<base href="/">`, which under the iframe would resolve outside the
+   * mount — so both root-relative and `./`-relative URLs are absolutized onto
+   * the prefix. External and already `/dsh`-prefixed URLs stay unchanged.
    */
   rewriteIndex(html: string): string {
     const prefix = DSH_MOUNT_PREFIX
     const rewrite = (url: string): string => {
       if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("//")) return url
       if (url.startsWith(prefix)) return url
-      return prefix + url
+      return prefix + url.replace(/^\.\//, "/")
     }
     // Drop the PWA manifest link.
     let out = html.replace(/<link[^>]*rel=["']manifest["'][^>]*>/gi, "")
-    // Rewrite href/src attributes that reference root-relative DSH assets.
+    // Rewrite href/src attributes that reference DSH assets (root-relative or
+    // document-relative forms).
+    out = out.replace(/(href|src)=(["'])(\.\.?\/[^"']*)\2/gi, (match, attr, quote, url) => {
+      return `${attr}=${quote}${rewrite(url)}${quote}`
+    })
     out = out.replace(/(href|src)=(["'])(\/[^"']*)\2/gi, (match, attr, quote, url) => {
       return `${attr}=${quote}${rewrite(url)}${quote}`
     })
@@ -289,12 +296,61 @@ export class VirtualWebServer {
   }
 
   /**
+   * Rewrite a root-relative redirect Location onto the `/dsh` mount — the
+   * outbound twin of {@link rewriteIndex}. The official browser-auth flow
+   * answers its token exchange with `303 Location: /` (and 303s to `/` when a
+   * token-bearing index is re-fetched), which in the single-port scheme is the
+   * Ellamaka root, not the DSH surface. External and already-prefixed
+   * locations pass through unchanged.
+   */
+  rewriteLocation(value: string): string {
+    if (!value.startsWith("/") || value.startsWith(DSH_MOUNT_PREFIX)) return value
+    return DSH_MOUNT_PREFIX + value
+  }
+
+  /**
+   * Adapt one outbound response: `writeHead` and `setHeader` Location headers
+   * are prefixed onto the `/dsh` mount (see {@link rewriteLocation}). Applied
+   * per request, so a handler that never writes a redirect is untouched.
+   */
+  private adaptResponse(res: ServerResponse): void {
+    const rewrite = (value: string): string => this.rewriteLocation(value)
+    const originalWriteHead = res.writeHead.bind(res)
+    const wrappedWriteHead = (...args: unknown[]): ServerResponse => {
+      for (let at = 1; at < args.length; at += 1) {
+        const arg = args[at]
+        if (Array.isArray(arg)) {
+          for (let index = 0; index + 1 < arg.length; index += 2) {
+            if (typeof arg[index] === "string" && String(arg[index]).toLowerCase() === "location" && typeof arg[index + 1] === "string") {
+              arg[index + 1] = rewrite(arg[index + 1] as string)
+            }
+          }
+        } else if (typeof arg === "object" && arg !== null) {
+          for (const [name, value] of Object.entries(arg)) {
+            if (name.toLowerCase() === "location" && typeof value === "string") {
+              ;(arg as Record<string, unknown>)[name] = rewrite(value)
+            }
+          }
+        }
+      }
+      return originalWriteHead(...(args as Parameters<ServerResponse["writeHead"]>))
+    }
+    res.writeHead = wrappedWriteHead as typeof res.writeHead
+    const originalSetHeader = res.setHeader.bind(res)
+    res.setHeader = (name: string, value: number | string | readonly string[]): ServerResponse => {
+      if (name.toLowerCase() === "location" && typeof value === "string") return originalSetHeader(name, rewrite(value))
+      return originalSetHeader(name, value)
+    }
+  }
+
+  /**
    * Dispatch a request through the virtual route tables. Matched paths go to
    * the registered handler; everything else falls back or 404s. Usable as a
    * `NodeRouteMount.request` so the Ellamaka listener can mount this server
    * under `/dsh`.
    */
   request(req: IncomingMessage, res: ServerResponse): void {
+    this.adaptResponse(res)
     const path = pathnameOf(req.url)
     const route = this.match(path)
     if (route !== undefined) {

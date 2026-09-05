@@ -7,6 +7,7 @@ import {
   resolveInstallAnchor,
 } from "@wopal/ellamaka-cordis/runtime"
 import { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
+import { setDshUrlGetter } from "@/workbench/dsh-url"
 
 export interface DshEngineMountOptions {
   /** Override the wopal home; defaults to `$WOPAL_HOME`. */
@@ -94,6 +95,16 @@ export async function mountDshEngine(
       request: (req, res) => dsh.webServer.request(req, res),
       upgrade: (req, socket, head) => dsh.webServer.upgrade(req, socket, head),
     })
+    // The Workbench iframe enters the DSH surface through the official rc.1
+    // browser-auth launch token; publish the mount-computed entry getter so
+    // the /workbench/dsh-url endpoint answers with it (undefined until now).
+    setDshUrlGetter(() => {
+      try {
+        return new URL(dsh.authenticatedPath, server.url?.origin ?? "http://127.0.0.1").toString()
+      } catch {
+        return undefined
+      }
+    })
     console.log(`dsh web engine mounted at ${dsh.mountPath}`)
     webHub.ctx.logger("dsh-web").info("dsh engine mounted")
 
@@ -139,6 +150,7 @@ export async function mountDshEngine(
       dispose: async () => {
         // dsh.dispose() closes the VirtualWebServer's upgrade sockets first,
         // then unmounts the dsh plugin tree from the web hub.
+        setDshUrlGetter(() => undefined)
         unmountDsh?.()
         await pluginService?.stop()
         await dsh.dispose()

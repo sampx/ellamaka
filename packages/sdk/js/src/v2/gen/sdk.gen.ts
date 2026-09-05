@@ -282,6 +282,8 @@ import type {
   WopalSpaceSpacesResponses,
   WorkbenchCreateSessionErrors,
   WorkbenchCreateSessionResponses,
+  WorkbenchDshUrlErrors,
+  WorkbenchDshUrlResponses,
   WorkbenchLocationsErrors,
   WorkbenchLocationsResponses,
   WorkbenchSessionGroupsErrors,
@@ -687,6 +689,18 @@ export class Workbench extends HeyApiClient {
       WorkbenchSessionGroupsErrors,
       ThrowOnError
     >({ url: "/workbench/session-groups", ...options })
+  }
+
+  /**
+   * Resolve the authenticated DSH iframe entry
+   *
+   * Returns the launch-token iframe URL for the mounted dsh web engine, or url: undefined when the engine is disabled or not yet mounted.
+   */
+  public dshUrl<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<WorkbenchDshUrlResponses, WorkbenchDshUrlErrors, ThrowOnError>({
+      url: "/workbench/dsh-url",
+      ...options,
+    })
   }
 
   /**

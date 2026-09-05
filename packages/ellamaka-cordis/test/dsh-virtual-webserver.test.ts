@@ -282,6 +282,52 @@ describe("VirtualWebServer iframe prefix adaptation", () => {
   })
 })
 
+describe("VirtualWebServer outbound redirect rewriting", () => {
+  test("3xx Location at root is prefixed with /dsh; already-prefixed and external stay unchanged", async () => {
+    const ctx = makeCtx()
+    const vws = new VirtualWebServer(ctx, { host: "127.0.0.1", port: 0 })
+    const server = makeServer()
+    const { baseUrl } = await listen(server)
+    vws.attach(server)
+
+    vws.register({ kind: "exact", path: "/login", handler: (req, res) => { res.writeHead(303, { location: "/" }); res.end() } })
+    vws.register({ kind: "exact", path: "/clean", handler: (req, res) => { res.writeHead(303, { location: "/assets/x" }); res.end() } })
+    vws.register({ kind: "exact", path: "/prefixed", handler: (req, res) => { res.writeHead(303, { location: "/dsh/y" }); res.end() } })
+    vws.register({ kind: "exact", path: "/external", handler: (req, res) => { res.writeHead(303, { location: "http://example.com/" }); res.end() } })
+    vws.register({ kind: "exact", path: "/ok", handler: (req, res) => { res.writeHead(200, { "x-hint": "/" }); res.end("ok") } })
+
+    const login = await fetch(baseUrl + "/login", { redirect: "manual" })
+    expect(login.status).toBe(303)
+    expect(login.headers.get("location")).toBe("/dsh/")
+    const clean = await fetch(baseUrl + "/clean", { redirect: "manual" })
+    expect(clean.headers.get("location")).toBe("/dsh/assets/x")
+    const prefixed = await fetch(baseUrl + "/prefixed", { redirect: "manual" })
+    expect(prefixed.headers.get("location")).toBe("/dsh/y")
+    const external = await fetch(baseUrl + "/external", { redirect: "manual" })
+    expect(external.headers.get("location")).toBe("http://example.com/")
+    const ok = await fetch(baseUrl + "/ok")
+    expect(ok.status).toBe(200)
+    expect(ok.headers.get("x-hint")).toBe("/")
+
+    server.close()
+  })
+
+  test("fallback-seat redirects are rewritten too", async () => {
+    const ctx = makeCtx()
+    const vws = new VirtualWebServer(ctx, { host: "127.0.0.1", port: 0 })
+    const server = makeServer()
+    const { baseUrl } = await listen(server)
+    vws.attach(server)
+    vws.registerFallback((req, res) => { res.writeHead(302, { Location: "/welcome" }); res.end() })
+
+    const res = await fetch(baseUrl + "/deep/path", { redirect: "manual" })
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe("/dsh/welcome")
+
+    server.close()
+  })
+})
+
 describe("VirtualWebServer upgrade socket cleanup", () => {
   test("host dispose closes sockets dispatched through the virtual webserver", async () => {
     const ctx = makeCtx()

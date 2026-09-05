@@ -1,20 +1,65 @@
 /** @jsx h */
-import { type JSX } from "solid-js"
+import { createResource, type JSX } from "solid-js"
 import h from "solid-js/h"
 import { useServer } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
 import { useWorkbenchState } from "./view-store"
+
+/**
+ * Loopback hosts are the same physical server under different names
+ * (localhost / 127.0.0.1 / ::1). The backend mints its authenticated entry on
+ * the address it bound (127.0.0.1) while the frontend SDK may remember the
+ * server URL on localhost; a literal origin comparison would discard a valid
+ * launch-token entry as "different origin". Normalize loopback hosts before
+ * comparing so the token entry is honored across alias spellings.
+ */
+function sameOrigin(a: URL, b: URL): boolean {
+  if (a.origin !== b.origin) {
+    const loopback = (url: URL) =>
+      url.protocol === "http:" || url.protocol === "https:"
+        ? url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"
+        : false
+    if (!(loopback(a) && loopback(b)) || a.protocol !== b.protocol || a.port !== b.port) return false
+  }
+  return true
+}
 
 /**
  * Derive the DSH iframe URL from the active server URL. The DSH web UI is
  * mounted under the backend origin's `/dsh/` path (single-port scheme,
- * DESIGN-dsh-poc §2.1). The iframe must point at the backend origin, not the
- * frontend origin — in the dev two-server topology the Vite app and the
- * backend listen on different ports, so a relative `/dsh/` would resolve
- * against the frontend origin and miss the DSH mount.
+ * DESIGN-dsh-poc §2.1).
+ *
+ * rc.1 browser-auth: the mounted engine publishes an authenticated entry
+ * (launch-token URL, `/workbench/dsh-url` endpoint). The entry wins when it
+ * shares the iframe's target origin; otherwise — engine disabled, not yet
+ * mounted, or stale server info — the plain `/dsh/` derivation is the
+ * fallback (browser-auth disabled deployments).
+ *
+ * `pageOrigin` retargets the iframe onto the serving page's origin (the Vite
+ * dev server proxies `/dsh` to the backend): the browser-auth cookie is
+ * SameSite=Strict, so the iframe and the cookie must share one origin for
+ * the exchange and every later API request to carry it. Desktop and
+ * production serve both from one origin and never pass a different one.
  */
-export function dshIframeSrc(serverUrl: string | undefined): string | undefined {
+export function dshIframeSrc(
+  serverUrl: string | undefined,
+  authenticatedEntry?: string,
+  pageOrigin?: string,
+): string | undefined {
   if (!serverUrl) return undefined
-  return new URL("/dsh/", serverUrl).toString()
+  const targetOrigin = pageOrigin ?? new URL(serverUrl).origin
+  if (authenticatedEntry) {
+    try {
+      const entry = new URL(authenticatedEntry)
+      if (sameOrigin(entry, new URL(targetOrigin))) return authenticatedEntry
+      if (sameOrigin(entry, new URL(serverUrl)) && pageOrigin) {
+        return targetOrigin + entry.pathname + entry.search
+      }
+    } catch {
+      // Malformed entry — fall through to the plain derivation.
+    }
+  }
+  return new URL("/dsh/", targetOrigin).toString()
 }
 
 /**
@@ -54,7 +99,12 @@ export function dshSurfaceStyle(visible: boolean): { display: string } {
 export function DshSurface(props: { children: JSX.Element }): JSX.Element {
   const wb = useWorkbenchState()
   const server = useServer()
-  const src = () => dshIframeSrc(server.current?.http.url)
+  const sdk = useServerSDK()
+  const [entry] = createResource(
+    () => wb.dshVisible,
+    (visible) => (visible ? sdk.client.workbench.dshUrl() : undefined),
+  )
+  const src = () => dshIframeSrc(server.current?.http.url, entry()?.data?.url, globalThis.location?.origin)
   const visible = () => wb.dshVisible
   return (
     <>

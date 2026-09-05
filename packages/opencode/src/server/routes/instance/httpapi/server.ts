@@ -92,6 +92,7 @@ import { CliContract } from "@/wopal/cli-contract"
 import { SessionProvisioner } from "@/workbench/session-provisioner"
 import { SessionProjection } from "@/workbench/session-projection"
 import { SessionDirectoryHealth } from "@/workbench/session-directory-health"
+import { WorkbenchDshUrl, layer as workbenchDshUrlLayer } from "@/workbench/dsh-url"
 import { instanceContextLayer } from "./middleware/instance-context"
 import { workspaceRoutingLayer } from "./middleware/workspace-routing"
 import { disposeMiddleware } from "./lifecycle"
@@ -131,6 +132,7 @@ const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide(SessionProvisioner.defaultLayer),
   Layer.provide(SessionProjection.defaultLayer),
   Layer.provide(SessionDirectoryHealth.defaultLayer),
+  Layer.provide(workbenchDshUrlLayer),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
 )

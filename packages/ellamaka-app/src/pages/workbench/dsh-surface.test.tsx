@@ -21,6 +21,46 @@ describe("dshIframeSrc", () => {
     expect(dshIframeSrc("http://localhost:4097/base")).toBe("http://localhost:4097/dsh/")
   })
 
+  test("uses the authenticated entry when the server reports one", () => {
+    expect(dshIframeSrc("http://localhost:4097", "http://localhost:4097/dsh/?token=abc")).toBe(
+      "http://localhost:4097/dsh/?token=abc",
+    )
+    // An authenticated entry from a genuinely different host (stale server
+    // info) is not used; the derivation falls back to the current server URL.
+    expect(dshIframeSrc("http://localhost:4097", "http://192.168.1.111:4097/dsh/?token=abc")).toBe(
+      "http://localhost:4097/dsh/",
+    )
+  })
+
+  test("treats loopback aliases (localhost / 127.0.0.1) as one origin", () => {
+    // The backend reports its entry on 127.0.0.1 while the frontend SDK
+    // remembered the server URL on localhost — the same physical loopback
+    // server. The launch-token entry must be honored, not discarded as stale.
+    expect(dshIframeSrc("http://localhost:4097", "http://127.0.0.1:4097/dsh/?token=abc")).toBe(
+      "http://127.0.0.1:4097/dsh/?token=abc",
+    )
+    // In the proxied dev topology the entry retargets onto the page origin.
+    expect(
+      dshIframeSrc("http://localhost:4097", "http://127.0.0.1:4097/dsh/?token=abc", "http://localhost:3000"),
+    ).toBe("http://localhost:3000/dsh/?token=abc")
+  })
+
+  test("retargets the entry onto the page origin in the proxied dev topology", () => {
+    // The backend reports :4097; the Vite page proxies /dsh on :3000 — the
+    // SameSite=Strict cookie forces iframe and cookie onto one origin.
+    expect(
+      dshIframeSrc("http://127.0.0.1:4097", "http://127.0.0.1:4097/dsh/?token=abc", "http://localhost:3000"),
+    ).toBe("http://localhost:3000/dsh/?token=abc")
+    // Tokenless fallback derivation also lands on the page origin.
+    expect(dshIframeSrc("http://127.0.0.1:4097", undefined, "http://localhost:3000")).toBe(
+      "http://localhost:3000/dsh/",
+    )
+    // Same-origin deployments (Desktop, production) ignore the page origin.
+    expect(
+      dshIframeSrc("http://127.0.0.1:4097", "http://127.0.0.1:4097/dsh/?token=abc", "http://127.0.0.1:4097"),
+    ).toBe("http://127.0.0.1:4097/dsh/?token=abc")
+  })
+
   test("returns undefined for an empty server URL", () => {
     expect(dshIframeSrc("")).toBeUndefined()
     expect(dshIframeSrc(undefined)).toBeUndefined()

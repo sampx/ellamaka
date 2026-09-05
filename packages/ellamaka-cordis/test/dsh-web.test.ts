@@ -12,7 +12,6 @@ import {
   migrateToolsProfileApprovalPatch,
   mountDshWeb,
   mountDshTools,
-  shippedPresetRoot,
 } from "../src/dsh-web"
 
 /** Attach a VirtualWebServer to a raw server and return its base URL. */
@@ -26,7 +25,28 @@ async function attachAndListen(webServer: { attach(server: Server): void }) {
   return { server, baseUrl: `http://127.0.0.1:${port}` }
 }
 
-/** Run a browser script in an isolated VM with fake fetch/WebSocket/EventSource. */
+/**
+ * Run the official browser-auth flow against a virtually mounted host: GET the
+ * authenticated entry URL (the token exchange), assert the 303 and its
+ * mount-prefixed Location, and return the minted signed cookie for follow-up
+ * requests. `baseUrl + query` mirrors the Ellamaka listener mounting the
+ * VirtualWebServer under /dsh — the mount strips the prefix, so the exchange
+ * lands on the webserver's index as `/?token=...`.
+ */
+async function loginCookie(baseUrl: string, authenticatedPath: string): Promise<string> {
+  const entry = new URL(authenticatedPath, "http://dsh.invalid")
+  const res = await fetch(baseUrl + entry.search, { redirect: "manual" })
+  expect(res.status).toBe(303)
+  expect(res.headers.get("location")).toBe("/dsh/")
+  const setCookie = res.headers.get("set-cookie")
+  expect(setCookie).toBeDefined()
+  expect(setCookie).toContain("HttpOnly")
+  return setCookie!.split(";")[0]!
+}
+
+/**
+ * Run a browser script in an isolated VM with fake fetch/WebSocket/EventSource.
+ */
 function runInIsolatedVm(script: string, calls: { fetch: unknown[]; ws: unknown[]; es: unknown[] }) {
   const sandbox = {
     fetch: (...args: unknown[]) => {
@@ -51,6 +71,33 @@ function runInIsolatedVm(script: string, calls: { fetch: unknown[]; ws: unknown[
 }
 
 /**
+ * A per-call session fake carrying the rc.1 session face the sandbox chain
+ * reads: `snapshotEvents(fromSeq, toSeqExclusive)` for the sandbox-mode
+ * projection (LAST-wins over the seeded `events`), plus `append` and the seq
+ * accessors the audit-pair appends rely on. Mirrors the official tool-fs test
+ * fake's shape.
+ */
+function makeSessionFake(id: string, cwd: string, seeded: { type: string; data: Record<string, unknown> }[] = []) {
+  const events: { type: string; seq: number; time: number; data: Record<string, unknown> }[] = seeded.map(
+    (record, index) => ({ type: record.type, seq: index, time: index, data: record.data ?? {} }),
+  )
+  return {
+    header: { id, cwd },
+    get seq() {
+      return events.length
+    },
+    eventAt: (seq: number) => events[seq],
+    snapshotEvents: (fromSeq = 0, toSeqExclusive = events.length) => events.slice(fromSeq, toSeqExclusive),
+    append: (type: string, data: Record<string, unknown>) => {
+      const event = { type, seq: events.length, time: events.length, data }
+      events.push(event)
+      return event
+    },
+    events,
+  }
+}
+
+/**
  * Mount the dsh web engine virtually: the official web profile registers its
  * routes on a VirtualWebServer instead of a second listening socket (final
  * scheme, DESIGN-dsh-poc §2.1). Uses a temp DSH_HOME so the test never touches
@@ -71,22 +118,36 @@ describe("dsh web engine", () => {
       // The official web profile registered its routes on the VirtualWebServer.
       const { server, baseUrl } = await attachAndListen(host.webServer)
       try {
-        // Index dispatch: 200, __DSH_BOOT__ present, static URLs carry /dsh.
-        const root = await fetch(baseUrl + "/")
-        expect(root.status).toBe(200)
-        const html = await root.text()
-        expect(html).toContain("__DSH_BOOT__")
-        expect(html).toContain("/dsh/assets/")
-        expect(html).toContain("/dsh/favicon.svg")
-        expect(html).not.toContain("manifest.webmanifest")
+      // rc.1 browser-auth: a tokenless index request is 401; the launch-token
+      // entry URL exchanges the token for a signed cookie (official flow).
+      const unauth = await fetch(baseUrl + "/", { redirect: "manual" })
+      expect(unauth.status).toBe(401)
 
-        // The /api RPC channel is alive through the virtual server.
-        const rpc = await fetch(baseUrl + "/api/host.describe", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({}),
-        })
-        expect(rpc.status).toBe(200)
+      // The handle exposes the authenticated iframe entry path with a token.
+      const entry = new URL(host.authenticatedPath, "http://dsh.invalid")
+      expect(entry.pathname).toBe("/dsh/")
+      expect(entry.searchParams.get("token")).toBeTruthy()
+
+      const cookie = await loginCookie(baseUrl, host.authenticatedPath)
+
+      // The minted cookie serves the index; static asset URLs carry /dsh and
+      // the manifest link stays dropped.
+      const root = await fetch(baseUrl + "/", { headers: { cookie } })
+      expect(root.status).toBe(200)
+      const html = await root.text()
+      expect(html).toContain("__DSH_BOOT__")
+      expect(html).toContain("/dsh/assets/")
+      expect(html).toContain("/dsh/favicon.svg")
+      expect(html).not.toContain("manifest.webmanifest")
+
+      // The /api RPC channel routes through the virtual server once the
+      // cookie rides along (the official Host/Origin fence + browserAuth).
+      // rc.1 ships no host.describe (ApiProxy removed); the exact Fetch route
+      // /api/session.export answers 400 on a missing sessionId — any server
+      // answer other than 401/403/404 proves the authenticated path reaches
+      // the route owner.
+      const rpc = await fetch(baseUrl + "/api/session.export", { headers: { cookie } })
+      expect(rpc.status).toBe(400)
       } finally {
         server.close()
       }
@@ -101,28 +162,12 @@ describe("dsh web engine", () => {
     }
   }, 30_000)
 
-  describe("shippedPresetRoot", () => {
-    test("derives the agent-preset root from an explicit install anchor", () => {
-      // A fake anchor in a temp closure: the root must resolve beside it,
-      // not beside the module's own node_modules closure.
-      const anchorDir = mkdtempSync(join(tmpdir(), "dsh-anchor-"))
-      const anchor = join(anchorDir, "package.json")
-      writeFileSync(anchor, JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0-test" }))
-
-      expect(shippedPresetRoot(anchor)).toBe(join(anchorDir, "config", "agent-presets"))
-    })
-
-    test("omitting the anchor resolves beside this module's dsh closure", () => {
-      const req = createRequire(import.meta.url)
-      const workspaceAnchor = req.resolve("@deepseek-ai/dsh/package.json")
-      expect(shippedPresetRoot()).toBe(join(dirname(workspaceAnchor), "config", "agent-presets"))
-    })
-  })
-
   test("mountDshWeb with an explicit installAnchor discovers presets from that closure", async () => {
     // Packaged-CLI scheme: the anchor lives in the materialised closure under
     // the dsh home, not in the module graph (DESIGN-dsh-poc §2.2). The preset
-    // roster must come from that closure.
+    // roster itself is bundled inside @deepseek-ai/dsh-agent-presets (rc.1);
+    // this test pins that the mounted roster resolves from the mount's own
+    // closure and carries the shipped `standard` preset.
     const home = mkdtempSync(join(tmpdir(), "dsh-host-anchor-"))
     const req = createRequire(import.meta.url)
     const anchor = req.resolve("@deepseek-ai/dsh/package.json")
@@ -133,8 +178,9 @@ describe("dsh web engine", () => {
       const presets = await ctx.agentPresets.list()
       const standard = presets.find((p) => p.id === "standard")
       expect(standard).toBeDefined()
-      // The discovered preset file must live under the anchor's preset root.
-      expect(standard!.path.startsWith(join(dirname(anchor), "config", "agent-presets"))).toBe(true)
+      // rc.1 bundles the shipped roster inside dsh-agent-presets; the shipped
+      // set must come from that package, not an anchor-relative directory.
+      expect(standard!.path.includes("@deepseek-ai/dsh-agent-presets")).toBe(true)
     } finally {
       await host.dispose()
       await ctx.fiber.dispose()
@@ -149,7 +195,8 @@ describe("dsh web engine", () => {
       expect(host.mountPath).toBe("/dsh")
       const { server, baseUrl } = await attachAndListen(host.webServer)
       try {
-        const root = await fetch(baseUrl + "/")
+        const cookie = await loginCookie(baseUrl, host.authenticatedPath)
+        const root = await fetch(baseUrl + "/", { headers: { cookie } })
         expect(root.status).toBe(200)
       } finally {
         server.close()
@@ -169,7 +216,8 @@ describe("dsh web engine", () => {
       try {
         // The rendered index must carry the adapter inside a <script> node, not
         // as a bare text splice (a bare splice would not execute in a browser).
-        const root = await fetch(baseUrl + "/")
+        const cookie = await loginCookie(baseUrl, host.authenticatedPath)
+        const root = await fetch(baseUrl + "/", { headers: { cookie } })
         const html = await root.text()
         const adapterMatch = html.match(/<script>\(\(\) => \{\n  const prefix = "\/dsh"[\s\S]*?<\/script>/)
         expect(adapterMatch).not.toBeNull()
@@ -207,12 +255,21 @@ describe("dsh web engine", () => {
     const port = (server.address() as { port: number }).port
     let socketClosed = false
     try {
-      // Open a raw WebSocket upgrade to the DSH downlink. The official
-      // client-hmr plugin owns /plugins/events; the downlink is /api/events.mux.
+      // rc.1 upgrade surface: the official mux lives at /api/remote.mux behind
+      // browserAuth, so this test mounts its own upgrade route on the virtual
+      // webserver — the invariant under test is "any socket dispatched through
+      // the VirtualWebServer is closed on host dispose", not the official
+      // route's protocol.
+      host.webServer.registerUpgrade({
+        path: "/test/events.mux",
+        handler: (req, socket) => {
+          socket.once("close", () => { socketClosed = true })
+        },
+      })
       const socket = connect(port, "127.0.0.1")
       socket.once("close", () => { socketClosed = true })
       socket.write(
-        "GET /api/events.mux HTTP/1.1\r\n" +
+        "GET /test/events.mux HTTP/1.1\r\n" +
           "Host: 127.0.0.1\r\n" +
           "Connection: Upgrade\r\n" +
           "Upgrade: websocket\r\n" +
@@ -224,9 +281,14 @@ describe("dsh web engine", () => {
       expect(socketClosed).toBe(false)
 
       // Host dispose must close the upgraded socket (D-12 / DESIGN §2.1 item 10).
-      await host.dispose()
+      // The VirtualWebServer is disposed FIRST in the handle's dispose chain,
+      // so the socket close — the invariant under test — lands while the
+      // loader teardown is still settling; await the close first, then the
+      // full dispose.
+      const disposePromise = host.dispose()
       await once(socket, "close")
       expect(socketClosed).toBe(true)
+      await disposePromise
     } finally {
       server.close()
       await ctx.fiber.dispose()
@@ -244,7 +306,8 @@ describe("dsh web engine", () => {
       // land in the dedicated file via the registered Exporter.
       const { server, baseUrl } = await attachAndListen(host.webServer)
       try {
-        const root = await fetch(baseUrl + "/")
+        const cookie = await loginCookie(baseUrl, host.authenticatedPath)
+        const root = await fetch(baseUrl + "/", { headers: { cookie } })
         expect(root.status).toBe(200)
       } finally {
         server.close()
@@ -377,7 +440,7 @@ describe("dsh tools profile", () => {
           error?: { info?: { code?: string } }
         }>
       }
-      const session = { header: { id: "tools-fs-session", cwd: workspace }, events: [] }
+      const session = makeSessionFake("tools-fs-session", workspace)
       const execute = (name: string, arguments_: Record<string, unknown>) =>
         tools.execute({
           callId: `tools-fs-${name}`,
@@ -428,10 +491,7 @@ describe("dsh tools profile", () => {
           error?: { info?: { code?: string } }
         }>
       }
-      const session = {
-        header: { id: "tools-readonly-session", cwd: workspace },
-        events: [{ type: "sandbox/mode", data: { mode: "read-only" } }],
-      }
+      const session = makeSessionFake("tools-readonly-session", workspace, [{ type: "sandbox/mode", data: { mode: "read-only" } }])
       const result = await tools.execute({
         callId: "tools-readonly-write",
         name: "write",
@@ -464,7 +524,7 @@ describe("dsh tools profile", () => {
           error?: { info?: { code?: string } }
         }>
       }
-      const session = { header: { id: "tools-editor-session", cwd: workspace }, events: [] }
+      const session = makeSessionFake("tools-editor-session", workspace)
       let call = 0
       const execute = (arguments_: Record<string, unknown>) =>
         tools.execute({
@@ -524,7 +584,7 @@ describe("dsh tools profile", () => {
           content?: { type: string; text?: string }[]
         }>
       }
-      const session = { header: { id: "tools-bash-session", cwd: workspace }, events: [{ type: "sandbox/mode", data: { mode } }] }
+      const session = makeSessionFake("tools-bash-session", workspace, [{ type: "sandbox/mode", data: { mode } }])
       let call = 0
       const execute = (arguments_: Record<string, unknown>) =>
         tools.execute({
@@ -607,13 +667,10 @@ describe("dsh tools profile", () => {
         return Promise.resolve("allowed-once")
       })
 
-      const session = {
-        header: { id: "esc-session-1", cwd: workspace },
-        events: [{ type: "sandbox/mode", data: { mode: "workspace-write" } }, { type: "turn/start", data: {} }],
-        append(type: string, data: unknown) {
-          this.events.push({ type, data })
-        },
-      }
+      const session = makeSessionFake("esc-session-1", workspace, [
+        { type: "sandbox/mode", data: { mode: "workspace-write" } },
+        { type: "turn/start", data: {} },
+      ])
       // ApproveEscalation's ordered fail-closed sequence: the strictly-wider
       // check passes (workspace-write -> danger-full-access), the approval
       // channel resolves, the answerer maps to allowed-once, and the granted
@@ -645,13 +702,7 @@ describe("dsh tools profile", () => {
 
     try {
       const approval = ctx.get("approval") as { request(req: unknown): Promise<string> }
-      const session = {
-        header: { id: "esc-session-2", cwd: workspace },
-        events: [{ type: "sandbox/mode", data: { mode: "workspace-write" } }],
-        append(type: string, data: unknown) {
-          this.events.push({ type, data })
-        },
-      }
+const session = makeSessionFake("esc-session-2", workspace, [{ type: "sandbox/mode", data: { mode: "workspace-write" } }])
       // No turn/start: the service must refuse before appending anything.
       await expect(
         approval.request({
@@ -683,19 +734,13 @@ describe("dsh tools profile", () => {
         return Promise.resolve("allowed-once")
       })
 
-      const session = {
-        header: { id: "esc-session-3", cwd: workspace },
-        // The adapter seeds the policy override for `escalation: "never"`:
-        // the LAST approval/policy event is the session's effective policy.
-        events: [
-          { type: "sandbox/mode", data: { mode: "workspace-write" } },
-          { type: "approval/policy", data: { policy: "never" } },
-          { type: "turn/start", data: {} },
-        ],
-        append(type: string, data: unknown) {
-          this.events.push({ type, data })
-        },
-      }
+      // The adapter seeds the policy override for `escalation: "never"`:
+      // the LAST approval/policy event is the session's effective policy.
+      const session = makeSessionFake("esc-session-3", workspace, [
+        { type: "sandbox/mode", data: { mode: "workspace-write" } },
+        { type: "approval/policy", data: { policy: "never" } },
+        { type: "turn/start", data: {} },
+      ])
       const outcome = await approval.request({
         agent: { session },
         toolName: "bash",

@@ -204,6 +204,8 @@ $WOPAL_HOME/dsh/
 
 **内嵌锁**是构建期由清单解析出的完整传递依赖树快照，记录每个包的名称、精确版本与 `node_modules` 相对路径（含嵌套安装的同名不同版本条目）。它由 `Bun.build` 编译期内联成 JS 常量打进二进制，运行时通过静态 `import` 直接读取内存对象，不读任何磁盘文件。锁与清单指纹绑定：清单直接依赖版本变化必然触发锁重新生成，二者永远同步。
 
+**optional 语义**：锁条目可选携带 `optional: true`，对应 npm `optionalDependencies`（典型如 `@koromix/koffi-*` 平台原生绑定子包）。物化器对这些包对齐 npm 语义——下载/解压失败记 warning 跳过，不阻断整个闭包；必装包任何失败照旧硬失败。某个 registry 镜像可能缺少官方源存在的平台包，optional 标记使镜像差异不阻断物化。
+
 **锁的生成与漂移门禁**：锁是构建生成物，随代码入仓库（`generated/dsh-runtime-lock.json`），不由开发者手工维护。构建门禁比对锁绑定的 `manifestFingerprint` 与当前清单指纹，不一致或缺失时自动重新解析并写回，随代码一同提交；release/CI 构建只做 `--check` 漂移校验，锁过期即拦截构建。开发者升级依赖的唯一流程：改版本 → `bun install` → 构建。
 
 运行时物化器只消费发布物内嵌的清单与内嵌锁，不读取 `latest`，不自行选择兼容版本，也不依赖源码仓库中的 `package.json`。普通配置不提供 DSH 版本覆盖项——Bridge 与 DSH runtime 作为一个经过验证的兼容组合随 Ellamaka 版本发布。未来如需独立升级 DSH，由发布流程交付新的完整运行时清单。
@@ -927,3 +929,52 @@ dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench �
 - **信任面**：WC 与 workbench 同页面上下文，可信度等同 dsh 插件同进程执行（用户显式安装 + `add` 风险提示，见「插件供应链 · 配置与信任」），不新增权限体系。
 - **单真相源**：installed.json 不新增第二清单；实现决策 D-04 保持。
 - **官方闭包不变**：`ellamaka.ui` 面仅消费方为 ellamaka，不触碰官方闭包、不进入 dsh GUI 运行时。
+
+---
+
+## dsh 插件市场在 Ellamaka 宿主中的应用（待实验）
+
+**定位**：dshmarket 是官方 dsh 生态的可视化插件市场（Settings → Plugin Market），浏览/安装/更新/卸载社区插件。官方安装与机制已在 `docs/products/wopal-space/research/dsh/dsh-market-installation-analysis.md` 记录（2026-09-05，官方 `~/.dsh/profiles/web` 实测）。本节回答：poc 宿主高度定制，市场要如何在其中运行。
+
+**结论**：市场不能直接照搬。poc 需要「换底座 + 割依赖」——先把市场对官方 CLI/pnpm/home 的依赖桥接成 poc 的 store/compose 机制，再决定 UI 落点。
+
+### 三层结构差异
+
+| 层 | 官方 `~/.dsh/profiles/web` | poc `$WOPAL_HOME/dsh` |
+|----|------|------|
+| 安装机制 | `dsh plugin` → pnpm add，写 profile `package.json` dependencies + `dsh.profile.bundles` | `ellamaka dsh plugin` → 自研 resolver+pacote，写 `plugins/installed.json`（store 是唯一真相源） |
+| 插件实体 | `web/node_modules/` | `plugins/<name>/<version>/` |
+| 注册 | `dsh.profile.bundles` | store `enabledIn`，运行时 `composePluginLayers` 合成 |
+| 组合 | 官方 loader 读 bundles + patch | 桥自研 `composeFullPatchStack` + include replay |
+
+市场的安装动作是 `spawn('dsh', ['plugin', ...])`（dsh-cli.ts）。poc 没有 `dsh` 命令，只有 `ellamaka dsh plugin`。这是第一道要换的底座。
+
+### 兼容性分层评估
+
+**服务端挂载（可行，改动最少）**：poc 的 web 容器完整提供市场 `apply(ctx, config)` 需要的两个服务——`webServer`（`dsh-web.ts` VirtualWebServer）+ `loader`。市场通过 `process.argv` 找 `--profile`，poc serve 无此 argv，需传 `config.profile = 'web'` 显式指定。市场路由挂在 `webServer` 上，需按 `/dsh` mount 前缀重写（与官方 web 资产重写同理）。市场本体可像普通 bundle 一样被 include 组合，UI 能出现在 Settings。
+
+**安装/卸载动作（必须换底座）**，两条路：
+
+- **A（推荐，最小侵入）**：市场支持显式 `profileDirectory`（Desktop 分支专为「宿主自己管 profile 目录」设计）。poc 给它注入一个 `profileDirectory = $WOPAL_HOME/dsh/plugins/<name>/<version>` + 一个假 `desktopPnpm` 服务（实现 `DesktopPnpmLike` 接口），让它走 Desktop 分支，把 pnpm add 换成 poc 的 `installPackage`。市场 UI 的 install/uninstall/update 全指向 poc store。
+- **B（更「正统」）**：给 poc 补 `dsh` CLI 兼容层或让市场可配置 CLI 名，市场原样走 `ellamaka dsh plugin add`。好处是热挂载逻辑直接复用 poc include replay；坏处是市场的 pnpm 假设（pnpm-workspace、store v11、.modules.yaml）在 poc 里不存在，校验会误判。
+
+倾向 A。poc 已有完整 include replay 热挂载，市场自带的 `hot.ts`（cordis-plugin-include 的 Include 子类）与 poc 的 `entry.update` replay 是两套并存机制，poc 里应**禁用市场自己的 hot/patch/restart**，只留「目录浏览 + 安装编排」，实际安装落点由桥接管。
+
+**断裂点（poc 侧必须处理）**：
+
+| 市场能力 | 问题 | poc 处理 |
+|----------|------|---------|
+| `client.inject`（前端模块注入） | 官方 web 靠它把市场 UI 注入 Settings | 需实测：poc `renderIndex` 只处理 `webserver/index-inject` 注入表，不转发 bundle 的 `client.inject` 到 ellamaka 前端。若市场 UI 完全走自己挂的 `/dsh-market/*` 路由则不需要；若依赖则需桥转发 |
+| pnpm 假设 | nodeLinker hoisted、.modules.yaml、store v11 | 不适用；poc 用 symlink heal + flat node_modules，校验逻辑需绕过 |
+| `$DSH_HOME`/`~/.dsh` | 市场 `resolveDshHome()` 读 `DSH_HOME` env | poc 从不设 `DSH_HOME`，运行时数据在 `$WOPAL_HOME/dsh/state`。市场必须经注入的 profileDirectory 定位，不能碰 `~/.dsh`（隔离红线） |
+| 自重启 / SIGTERM | `restart.ts` 直杀宿主进程 | poc 禁用（`allowRestart: false`），宿主进程生命周期归用户 |
+| 快照/备份 | 读 profile 目录 + manifest+lockfile | poc store 无 lockfile；快照改为 store + `plugins/` 目录 |
+
+### 实验步骤（B3/B2 之后执行）
+
+1. **只读探针**：在 poc web 容器以目录插件方式挂 dshmarket（`ellamaka dsh plugin add dshmarket --dir` 或注入 patch），验证 `apply()` 能过 `inject(['webServer','loader'])`、UI 路由能出现在 `/dsh` 下。这是最大不确定点（client.inject 依赖）。
+2. **换底座**：实现 `DesktopPnpmLike` 兼容注入，让市场走 Desktop 分支，`profileDirectory` 指到 poc store，安装动作转 `installPackage`。
+3. **禁用破坏面**：`allowRestart: false`，禁用 `hot.ts`/`patch.ts`/`restart.ts`，隔离红线不碰 `~/.dsh`。
+4. **快照/备份适配**：poc store + `plugins/` 目录；目录 UI 的「已安装列表」从 store 读。
+
+**风险**：dshmarket 是 4400 行 routes 的成熟生态插件，poc 当前「工具容器优先」，web 容器刚过浏览器认证。市场 UI 依赖的前端注入链（client.inject → Settings 面板）是最大不确定点——先做第 1 步探针，一次实机验证后再定方案，避免先写适配代码才发现 UI 链路不通。

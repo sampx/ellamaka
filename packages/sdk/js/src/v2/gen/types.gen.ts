@@ -4285,6 +4285,33 @@ export type WorkbenchSessionGroupsResponses = {
 
 export type WorkbenchSessionGroupsResponse = WorkbenchSessionGroupsResponses[keyof WorkbenchSessionGroupsResponses]
 
+export type WorkbenchDshUrlData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/workbench/dsh-url"
+}
+
+export type WorkbenchDshUrlErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkbenchDshUrlError = WorkbenchDshUrlErrors[keyof WorkbenchDshUrlErrors]
+
+export type WorkbenchDshUrlResponses = {
+  /**
+   * Authenticated DSH iframe entry URL
+   */
+  200: {
+    url: string
+  }
+}
+
+export type WorkbenchDshUrlResponse = WorkbenchDshUrlResponses[keyof WorkbenchDshUrlResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never

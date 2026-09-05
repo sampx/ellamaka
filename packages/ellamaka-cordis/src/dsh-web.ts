@@ -40,22 +40,14 @@ const TOOLS_PROFILE_NAME = "ellamaka-tools"
 const require = createRequire(import.meta.url)
 
 /**
- * Shipped agent-preset root, beside the `@deepseek-ai/dsh` install anchor's
- * own config (`config/agent-presets/`). Carries the built-in `standard` preset
- * (and friends) the web UI defaults to. Mirrors how the dsh CLI's
- * `composeProfile` assembles the SHIPPED root — `loadProfile` alone does not.
- *
- * Resolved lazily from the given install anchor (or, when omitted, this
- * module's own closure): the root must track the anchor the mount actually
- * resolves the dsh packages from — a bundled host (packaged CLI, Desktop
- * sidecar) passes the materialised closure copy under `$WOPAL_HOME/dsh`
- * (DESIGN-dsh-poc §2.2), and a module-load-time constant would silently
- * point at the wrong closure or crash the whole module on resolve.
+ * Shipped agent-preset composition (rc.1): the preset roster is owned by the
+ * official `agent-presets` row in the dsh-web-app bundle — `default: standard`,
+ * the shipped set bundled inside `@deepseek-ai/dsh-agent-presets`
+ * (`includeShippedRoot`), and the harness-home user root derived from the
+ * `dshHomePath` service this mount provides (pointed at `state/`). rc.2-era
+ * hosts assembled an anchor-relative `config/agent-presets` root by hand; rc.1
+ * removed that directory and the host-side assembly with it.
  */
-export function shippedPresetRoot(installAnchor?: string): string {
-  const anchor = installAnchor ?? require.resolve("@deepseek-ai/dsh/package.json")
-  return join(dirname(anchor), "config", "agent-presets")
-}
 
 /**
  * Default patch layer for the `ellamaka-tools` profile. Written on first
@@ -105,6 +97,9 @@ const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profi
 # adapter's per-call context has no live session, so this would throw.
 - { id: session-checkpoint-policy, disabled: true }
 - { id: agent, disabled: true }
+# rc.1 base row: the DeepSeek plugin inventory publishes against the agents
+# surface; the tool container carries none.
+- { id: plugin-package-inventory-deepseek, disabled: true }
 - { id: agent-loop, disabled: true }
 - { id: agent-default-model, disabled: true }
 - { id: agent-instructions, disabled: true }
@@ -113,14 +108,24 @@ const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profi
 - { id: session-title, disabled: true }
 - { id: session-title-llm, disabled: true }
 - { id: session-persistence-jsonl, disabled: true }
+# rc.1 base row: the DeepSeek-native session log stream needs live sessions.
+- { id: session-log-deepseek, disabled: true }
 - { id: session-query-sqlite, disabled: true }
-- { id: session-projection, disabled: true }
+# \`session-projection\` stays ENABLED (it is the provider of the
+# \`sessionProjections\` service, not a session consumer): rc.1 made the
+# sandbox policy session-aware (\`sandboxMode\` is a projection), so the
+# whole sandbox chain hangs off that service. The registry stays empty
+# without session event streams, and \`stateOf\` falls back to the
+# deployment default mode — exactly the tool container's semantics.
+- { id: session-projection-cache, disabled: true }
 - { id: session-telemetry-otel, disabled: true }
 
 # --- llm runtime & credentials (no model calls in the tool container) ---
 - { id: llm, disabled: true }
 - { id: llm-retry, disabled: true }
 - { id: llm-deepseek, disabled: true }
+# rc.1 base row: DeepSeek LLM API extensions belong to the llm face.
+- { id: deepseek-llm-api-extensions, disabled: true }
 - { id: llm-pi-ai, disabled: true }
 - { id: settings, disabled: true }
 - { id: credentials, disabled: true }
@@ -178,6 +183,9 @@ const TOOLS_PROFILE_PATCH = `# Patch layer for the ellamaka tool-container profi
 # --- web search (needs llm + credentials) ---
 - { id: web, disabled: true }
 - { id: web-search-deepseek, disabled: true }
+# rc.1 base row: the http fetcher is the 'web' service provider; disabled
+# with the rest of the web face.
+- { id: web-fetch-http, disabled: true }
 - { id: tool-web, disabled: true }
 
 # --- attachments / todo / reminders (agent-loop UX) ---
@@ -195,6 +203,40 @@ export function migrateToolsProfileApprovalPatch(content: string): string {
   const lines = content.split("\n")
   const next = lines.filter((line) => line.trim() !== LEGACY_APPROVAL_DISABLED_ROW)
   return next.length === lines.length ? content : next.join("\n")
+}
+
+// Revision 2 migration (rc.1): the sandbox chain became session-aware —
+// `dsh-sandbox-policy` now injects the `sessionProjections` service, so the
+// tool container must enable the `session-projection` provider (the registry
+// stays empty with no session stream and `stateOf` falls back to the
+// deployment default mode). User profiles seeded by the rc.2-era host row
+// disabled it, and rc.1 added session/agent-face base rows that must stay
+// disabled here. Like revision 1: migrate only these exact host-owned rows,
+// preserve every other byte, and never overwrite a user-owned patch.
+const LEGACY_SESSION_PROJECTION_DISABLED_ROW = "- { id: session-projection, disabled: true }"
+const RC1_TOOLS_DISABLED_ROWS = [
+  "- { id: session-log-deepseek, disabled: true }",
+  "- { id: plugin-package-inventory-deepseek, disabled: true }",
+  "- { id: session-projection-cache, disabled: true }",
+  "- { id: web-fetch-http, disabled: true }",
+  "- { id: deepseek-llm-api-extensions, disabled: true }",
+]
+
+export function migrateToolsProfileRc1Patch(content: string): string {
+  let lines = content.split("\n")
+  let changed = false
+  const withoutLegacy = lines.filter((line) => line.trim() !== LEGACY_SESSION_PROJECTION_DISABLED_ROW)
+  if (withoutLegacy.length !== lines.length) {
+    lines = withoutLegacy
+    changed = true
+  }
+  for (const row of RC1_TOOLS_DISABLED_ROWS) {
+    if (!lines.some((line) => line.trim() === row)) {
+      lines.push(row)
+      changed = true
+    }
+  }
+  return changed ? lines.join("\n") : content
 }
 
 /** A handle to a mounted dsh engine. */
@@ -233,6 +275,15 @@ export interface DshWebHost {
   readonly includeEntry: Entry
   /** The full boot patch-stack context (hot replay input, rook B-01). */
   readonly stackContext: DshPluginStackContext
+  /**
+   * The iframe entry path under the Ellamaka origin carrying the official
+   * browser-auth launch token (`/dsh/?token=...`): the first visit exchanges
+   * the token for a persistent signed cookie (official `BrowserAuth`), and the
+   * outbound Location rewrite on {@link webServer} keeps the follow-up 303 on
+   * the mount. Computed on read from the official `connection` service, never
+   * persisted.
+   */
+  readonly authenticatedPath: string
   /** Unmount the dsh plugin tree; the host context stays alive. */
   dispose(): Promise<void>
 }
@@ -397,8 +448,9 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
 
   // Link the profiles/node_modules fallback in the (possibly temp) home so the
   // profile's plugin rows resolve against this installation's dependency
-  // closure (matches how the dsh launcher boots a profile).
-  healProfilesModuleFallback(installAnchor, resolvedHome)
+  // closure (matches how the dsh launcher boots a profile). rc.1 API: an
+  // options object + async (was `(anchor, home?)` sync in rc.2).
+  await healProfilesModuleFallback({ installAnchor, home: resolvedHome })
   // Plugin supply chain heal (D-05): one symlink per installed user plugin
   // under the same profiles/node_modules fallback, so a bare plugin-layer
   // name resolves by parent-walk. Self-owned — the official closure heal is
@@ -423,7 +475,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
       if (stripped === "[]") {
         writeFileSync(patchPath, TOOLS_PROFILE_PATCH)
       } else {
-        const migrated = migrateToolsProfileApprovalPatch(current)
+        const migrated = migrateToolsProfileRc1Patch(migrateToolsProfileApprovalPatch(current))
         if (migrated !== current) writeFileSync(patchPath, migrated)
       }
     } catch {
@@ -572,28 +624,6 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
     requireWebServer: true,
     virtualWebServer,
     extraPatches: [
-      // Assemble the SHIPPED agent-preset root (`standard` etc.) the same way
-      // the dsh CLI's composeProfile does — loadProfile alone does not inject
-      // it, so without this the roster is empty and sessions cannot start.
-      // Derived from the same install anchor the profile resolves packages
-      // from, so a bundled host reads the materialised closure's presets.
-      //
-      // The USER root lives under state/.agent-presets (DESIGN-dsh-poc 双根
-      // 发现). The stock `includeUserRoot` appends the dsh-home-paths default
-      // (~/.dsh or $DSH_HOME), which the integration must never own (constraint
-      // #10: never use/set DSH_HOME, never read/write ~/.dsh). We supply the
-      // correct user root explicitly and disable the stock one.
-      {
-        id: "agent-presets",
-        config: {
-          default: "standard",
-          includeUserRoot: false,
-          roots: [
-            { path: shippedPresetRoot(opts.installAnchor), trust: "system" },
-            { path: join(resolvedHome, "state", ".agent-presets"), trust: "user" },
-          ],
-        },
-      },
       // code-runtime depends on node:module.stripTypeScriptTypes (Node 22.18+),
       // which the bun dev runtime lacks. It is a code-execution capability, not
       // part of the web UI chat surface. The CLI serve path (bun) disables it
@@ -628,6 +658,21 @@ export async function mountDshWeb(ctx: Context, opts: DshHostOptions): Promise<D
     ctx: host.ctx!,
     includeEntry: host.includeEntry!,
     stackContext: host.stackContext!,
+    get authenticatedPath(): string {
+      // The official HostConnectionService mints the process launch token and
+      // carries `authenticatedUrl`; the web profile always mounts it. A
+      // missing service means the profile composition changed — fail loud
+      // rather than hand the iframe an unauthenticated entry URL.
+      const connection = host.ctx!.get("connection") as
+        | { authenticatedUrl(baseUrl: string): string }
+        | undefined
+      if (connection === undefined) {
+        throw new Error("ellamaka-cordis: dsh web profile did not provide the connection service")
+      }
+      const url = new URL(connection.authenticatedUrl("http://dsh.invalid"))
+      url.pathname = `${DSH_MOUNT_PREFIX}/`
+      return `${url.pathname}?${url.searchParams}`
+    },
     // Dispose the VirtualWebServer first (closes every upgrade socket it
     // dispatched, per DESIGN-dsh-poc §2.1 item 10) before unmounting the
     // Loader, so Node closeAllConnections() does not strand raw WebSockets.
@@ -683,6 +728,9 @@ export async function bootDshWeb(opts: DshHostOptions): Promise<DshWebHost> {
     ctx: host.ctx!,
     includeEntry: host.includeEntry!,
     stackContext: host.stackContext!,
+    get authenticatedPath() {
+      return host.authenticatedPath
+    },
     dispose: async () => {
       await host.dispose()
       await ctx.fiber.dispose()
