@@ -154,7 +154,7 @@ Dsh 不依赖 Ellamaka DSH Bridge。依赖方向始终是 `Ellamaka → Bridge �
 
 #### 唯一 home 与目录所有权
 
-**唯一 home**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。`~/.dsh` 归 dsh 官方 CLI 独立试验专用，Ellamaka 不在其内读写。
+**唯一领地根（territory root）**：`$WOPAL_HOME/dsh`。serve、web、TUI、Workbench 后端与 Desktop sidecar 读取同一位置。`~/.dsh` 归 dsh 官方 CLI 独立试验专用，Ellamaka 不在其内读写。
 
 **`DSH_HOME` 指向 `$WOPAL_HOME/dsh/home`**。宿主在进程启动时设置 `DSH_HOME=$WOPAL_HOME/dsh/home`（dev.sh 注入 backend、Desktop sidecar env 注入）。官方包在包级代码里直接 import `dshHomePath()`（读 `$DSH_HOME` env，如 `dsh-agent-presets` 的用户配置单根），这类 env 直读是官方生态的既定机制，逐包重新适配不可接受；设置 env 让官方语义的 home 解析落在 Ellamaka 领地内，永不落到 `~/.dsh`。Ellamaka 自己的集成代码（bridge/adapter/配置注入路径）不读这个 env，路径一律由调用参数与配置注入。
 
@@ -166,7 +166,6 @@ $WOPAL_HOME/dsh/                          ← Ellamaka 领地根（不是 DSH_HO
 │       ├── package-lock.json
 │       ├── runtime-manifest.json
 │       └── node_modules/
-├── home/                                 ← DSH_HOME：100% 官方布局的 harness home
 ├── home/                                 ← DSH_HOME：100% 官方布局的 harness home
 │   ├── profiles/                         ← 官方语义的 profile 区（跨版本保留）
 │   │   ├── node_modules/                 ← 宿主共享依赖层：官方包 symlink 到闭包（heal 归位）

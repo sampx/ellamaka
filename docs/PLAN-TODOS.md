@@ -30,7 +30,7 @@
 
 | 步 | 名称 | 交付成果 | 验收标准 | 实施形态 | 状态 |
 |---|------|---------|---------|---------|------|
-| **A1** | home 布局迁移 | `state/`→`home/`、`profiles/`→`home/profiles/`、`.agent-presets`→`home/.agent-presets`；dev.sh + Desktop sidecar env 改指 `home/`；state README 退役 | preset 发现正常；dsh 会话 bash 的 DSH_HOME 指向 home；官方包 env 直读落 home | 迁移脚本 + 代码 retarget + TDD | **进行中**（代码+脚本已落地；live 迁移待引擎停止后执行） |
+| **A1** | home 布局迁移 | `state/`→`home/`、`profiles/`→`home/profiles/`、`.agent-presets`→`home/.agent-presets`；dev.sh + Desktop sidecar env 改指 `home/`；state README 退役 | preset 发现正常；dsh 会话 bash 的 DSH_HOME 指向 home；官方包 env 直读落 home | 迁移脚本 + 代码 retarget + TDD | **已完成**（代码+脚本+live 迁移落地；待用户验证） |
 | **A2** | 安装器 retarget + bun-hmr | 一个 Plan 完成：① Bun 安装器写官方终态（profile node_modules + package.json 声明），`installed.json`/`composePluginLayers`/旧 store 轮询退役（风暴缺陷随之消灭）；② bun-hmr 适配器（`registerConfig` 配置监听 + generation 候选校验 + 空闲窗口原子替换），watch 对象直接指向 profile 组合文件，Node 路径保持官方插件 | add/remove/install 产出官方语义终态；引擎加载新装插件；编辑 profile 补丁层运行中容器热应用；候选校验失败保留旧栈；失败不触碰 profile | dev-flow Plan（TDD + rook 审查） | 待排期 |
 | **A3** | 宿主安装工契约 + 市场端到端验收 | `desktopProfiles` + `desktopPnpm` 注入 web 容器；dshmarket 以官方声明形态安装进 poc profile；通过 dshmarket 安装 dsh-better-sidebar | ① dshmarket 安装后 Settings → Plugin Market 页面可见可用；② 通过 market 一键安装 dsh-better-sidebar，引擎加载成功，右侧 sidebar UI 可见（含 explorer/git/terminal tab）；③ 已装列表与 profile package.json 声明一致；④ 禁用/启用 better-sidebar 后引擎热应用生效 | dev-flow Plan（依赖 A2） | 待排期 |
 | **A4** | 生态互操作回归 | 官方 CLI（同一 home）↔ 引擎互操作验证；已装 poc 插件迁移官方声明形态 | 官方 CLI 装的插件引擎直接加载；已有 poc 插件迁移后热挂载正常 | 运营 + 回归清单 | 待排期 |
@@ -96,3 +96,4 @@
 | 2026-09-05 | **生态对齐定稿**：preset 消失事故实证官方包 env 直读绕开 config 注入；确立对齐方向——home 布局对齐官方、真相源改为官方 profile package.json（installed.json 退役）、Bun 执行器 shim 官方 dsh（零 pnpm）、dshmarket 走宿主安装工契约 |
 | 2026-09-05 | **编号体系重排**：历史批次统一为 P1–P9；执行轨道重编为 A（生态对齐）、W（wopal 插件包）、G（门槛轨道）；原 B2 并入 A2，原 S 线更名 W 线，B4 保留原名入独立事项 |
 | 2026-09-05 | **A1 代码+脚本落地**（Plan feature-dsh-a1-home-layout-migration Task 1–4 + Task 5 脚本，rook 两轮审查通过）：`DshLayout` 单点重定义 `homeDir=dsh/home`、供应链/mount/dump 三层 retarget、`stateHomePatches`→`homePatches`、dev.sh/sidecar env 改指 `home/`、迁移脚本 `scripts/dsh-migrate-home.sh`（幂等+守卫+哨兵）；live home 迁移待引擎停止后执行 |
+| 2026-09-05 | **A1 live 迁移完成**（引擎停止后由 wopal 亲自执行）：`state/*`→`home/`、`profiles/*`→`home/profiles/`，state/profiles 退役，`home/README.md` 哨兵就位；AC#5/#6/#7 实证通过，二次执行 no-op。A1 全部落地，待用户验证 |

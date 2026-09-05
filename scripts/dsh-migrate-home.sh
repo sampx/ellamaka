@@ -31,8 +31,15 @@ info() { echo "dsh-migrate-home: $*"; }
 guard_engine_stopped() {
   local dir="$1"
   [[ -d "$dir" ]] || return 0
+  command -v lsof >/dev/null 2>&1 || die "lsof not found — cannot verify the engine is stopped; aborting for safety"
+  local lsof_out rc=0
+  lsof_out="$(lsof +D "$dir" 2>/dev/null)" || rc=$?
+  # lsof exit codes: 0 = matches listed, 1 = no matches (clean), >=2 = error.
+  if [[ $rc -ge 2 ]]; then
+    die "lsof scan of $dir failed (exit $rc) — aborting for safety"
+  fi
   local offenders
-  offenders="$(lsof +D "$dir" 2>/dev/null | awk 'NR>1 {print $1}' | sort -u | grep -Ei '^(bun|node|ellamaka)' || true)"
+  offenders="$(printf '%s\n' "$lsof_out" | awk 'NR>1 {print $1}' | sort -u | grep -Ei '^(bun|node|ellamaka)' || true)"
   if [[ -n "$offenders" ]]; then
     die "engine appears to be running (lsof found: $offenders holding $dir). Stop the engine, then re-run."
   fi
@@ -42,23 +49,24 @@ guard_engine_stopped "$STATE_DIR"
 guard_engine_stopped "$PROFILES_DIR"
 
 # --- idempotency ------------------------------------------------------------
-if [[ ! -e "$STATE_DIR" && -d "$HOME_DIR/profiles" ]]; then
-  info "already migrated ($STATE_DIR absent, $HOME_DIR/profiles in place) — no-op"
-  exit 0
-fi
-if [[ ! -e "$STATE_DIR" && ! -d "$HOME_DIR" ]]; then
-  info "nothing to migrate ($STATE_DIR absent, no $HOME_DIR yet) — no-op"
+# A prior completed migration leaves BOTH legacy dirs absent. Only then is this
+# a no-op. If either legacy dir is still present, we must (re)run its migration;
+# silently skipping would strand leftover entries forever.
+if [[ ! -d "$STATE_DIR" && ! -d "$PROFILES_DIR" ]]; then
+  info "already migrated (legacy state/ and profiles/ both absent) — no-op"
   exit 0
 fi
 
 [[ -d "$DSH_DIR" ]] || die "$DSH_DIR does not exist"
-[[ -d "$STATE_DIR" ]] || die "$STATE_DIR missing but home is not established — inspect manually"
 
 # --- migrate ----------------------------------------------------------------
 mkdir -p "$HOME_DIR"
 
-# Drop junk files; they are deleted, never migrated.
-rm -f "$STATE_DIR/.DS_Store" "$PROFILES_DIR/.DS_Store" 2>/dev/null || true
+# Drop junk files (recursively); they are deleted, never migrated.
+for _junk_dir in "$STATE_DIR" "$PROFILES_DIR"; do
+  [[ -d "$_junk_dir" ]] || continue
+  find "$_junk_dir" -name '.DS_Store' -type f -delete
+done
 
 move_entries() {
   local src_dir="$1" dest_dir="$2"
@@ -86,8 +94,12 @@ info "migrating $PROFILES_DIR -> $HOME_DIR/profiles"
 move_entries "$PROFILES_DIR" "$HOME_DIR/profiles"
 
 # --- retire the legacy directories ------------------------------------------
-rmdir "$STATE_DIR" 2>/dev/null || die "$STATE_DIR not empty after migration — inspect manually"
-rmdir "$PROFILES_DIR" 2>/dev/null || info "note: $PROFILES_DIR left in place (absent or removed already)"
+if [[ -d "$STATE_DIR" ]]; then
+  rmdir "$STATE_DIR" 2>/dev/null || die "$STATE_DIR not empty after migration — inspect manually"
+fi
+if [[ -d "$PROFILES_DIR" ]]; then
+  rmdir "$PROFILES_DIR" 2>/dev/null || die "$PROFILES_DIR not empty after migration — inspect manually"
+fi
 
 # --- sentinel README ---------------------------------------------------------
 cat > "$HOME_DIR/README.md" <<'README'
