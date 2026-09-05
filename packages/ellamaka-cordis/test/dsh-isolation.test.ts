@@ -101,7 +101,7 @@ describe("dsh runtime isolation", () => {
     }
   }, 30_000)
 
-  test("omitted home falls back to $WOPAL_HOME/dsh for state and profile paths (W-01)", async () => {
+  test("omitted home falls back to $WOPAL_HOME/dsh for home and profile paths (W-01)", async () => {
     // When `home` is omitted, mountProfile must use the standard $WOPAL_HOME/dsh
     // consistently across the home dir AND the profile pathing (healProfilesModule
     // fallback / loadProfile), never ~/.dsh.

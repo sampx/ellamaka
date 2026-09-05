@@ -160,14 +160,18 @@ describe("dumpDshConfig", () => {
     // The injected dshHome value must be EXACTLY the derived DSH home
     // (<root>/home), never the territory root itself — pins the
     // territory-root -> homeDir derivation against a dshRoot mispass.
-    const renderedHomeValues = output
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line === join(home, "home"))
-    expect(renderedHomeValues.length).toBeGreaterThan(0)
+    // renderConfigDump emits each config value as a YAML folded scalar: a
+    // `dshHome: >-` key line followed by the path indented on its own line,
+    // so the value is read from the line after each key.
+    const outputLines = output.split("\n")
+    const dshHomeValues = outputLines
+      .map((line, i) => (line.trim() === "dshHome: >-" ? outputLines[i + 1]?.trim() : undefined))
+      .filter((v): v is string => v !== undefined)
+    expect(dshHomeValues.length).toBeGreaterThan(0)
+    expect(dshHomeValues.every((v) => v === join(home, "home"))).toBe(true)
   })
 
-  test("defaultOnly produces bundle layers only without user/plugin/extra/state layers", async () => {
+  test("defaultOnly produces bundle layers only without user/plugin/extra/home layers", async () => {
     const home = tempHome()
     installedPlugin(home, "demo-plugin", "1.0.0")
     await writeStore(home, {
@@ -214,7 +218,7 @@ describe("dumpDshConfig", () => {
     })
 
     expect(output).toContain("# ==")
-    // defaultOnly should NOT contain plugin layers, extra/state patches, or
+    // defaultOnly should NOT contain plugin layers, extra/home patches, or
     // the user patch file's marker (userLayer:false skips the patch file).
     expect(output).not.toContain("demo-plugin")
     expect(output).not.toContain("ellamaka plugin layers")

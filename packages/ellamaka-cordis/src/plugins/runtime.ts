@@ -46,7 +46,7 @@ export interface DshPluginContainer {
   /**
    * The container's boot patch-stack context (DshHost.stackContext): passed
    * to `composeFullPatchStack` so a replay rebuilds the ENTIRE stack
-   * (bundle -> plugin -> user -> extra -> state), never dropping the
+   * (bundle -> plugin -> user -> extra -> home), never dropping the
    * official layers (rook B-01).
    */
   stackContext?: unknown

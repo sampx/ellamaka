@@ -256,7 +256,7 @@ export interface DshHost {
   readonly includeEntry?: Entry
   /**
    * The full patch-stack context this container booted with (bundle layers,
-   * user patches, extras, state patches). The Plugin Runtime Service passes
+   * user patches, extras, home patches). The Plugin Runtime Service passes
    * it to `composeFullPatchStack` so a hot replay rebuilds the ENTIRE stack
    * instead of replacing it with plugin rows only (rook B-01).
    */
