@@ -641,6 +641,7 @@ ellamaka dsh dump-config --profile web [--default-only] [--json]   # 已实现�
         → 运行中容器热挂载（组合文件监听触发，同官方 include 机制）
 ```
 
+- **peer dependency 处理**：peer 依赖不下载、不摆放。官方生态插件的 peer（`@deepseek-ai/cordis`、`@deepseek-ai/dsh-settings`、`@deepseek-ai/schemastery` 等）由共享层 heal 的 `profiles/node_modules/@deepseek-ai/*` symlink 满足——插件 `node_modules/` 向上 parent-walk 找到共享层即命中。Bun 安装器只下载 `dependencies` 的传递树，peer 解析交给运行时 parent-walk。闭包版本与 peer 版本范围的匹配在安装器的组合校验步骤确认（`hasLoadableEntry` 通过 = peer 可达）。
 - **失败语义**：解析/下载失败不触碰 profile 目录；半安装状态只存在于 staging 临时目录。
 - **并发**：`locks/plugins.lock` 跨进程锁串行化写操作。
 - **Bun 宿主兼容性预检**（D-06 保留）：静态 Node 私有 loader 扫描 + 隔离挂载，在落盘前执行。
@@ -984,6 +985,8 @@ dsh 容器 HTTP 面挂在主 server `/dsh/*`（VirtualWebServer），workbench �
 
 ### 实施步骤
 
-1. **探针**：以官方声明形态（Bun 安装器写入 profile）挂载 dshmarket，验证 `apply()`、路由挂载、Settings 入口（client.inject 链路实测确认）。
-2. **宿主安装工**：实现 `desktopProfiles` + `desktopPnpm` 注入与 Bun 安装器三动词。
-3. **验收**：按「插件供应链 · 验收基线」#2 执行市场全流程。
+1. **宿主安装工**：实现 `desktopProfiles` + `desktopPnpm` 注入（service 定义 + Bun 安装器三动词桥接）。
+2. **dshmarket 安装探针**：用 Bun 安装器以官方声明形态安装 dshmarket 进 profile，验证 `apply()`、路由挂载、Settings → Plugin Market 入口可见（client.inject 链路实测确认）。
+3. **端到端验收——通过市场安装真实插件**：在 dshmarket UI 中一键安装 `dsh-better-sidebar`，确认引擎加载成功、右侧 sidebar UI 可见可用（含 explorer/git/terminal tab）。这是 A 系列生态对齐的端到端证明——市场代码零修改、安装工链路打通、引擎正确加载第三方插件、client 注入链路生效。
+4. **市场后续操作验收**：禁用/启用 better-sidebar 后引擎热应用生效；快照/恢复验证；已装列表与 profile package.json 声明一致。
+5. **收尾**：按「插件供应链 · 验收基线」#2 完成市场全流程验收。
