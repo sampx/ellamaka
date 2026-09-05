@@ -9,7 +9,7 @@ import {
   listInstalled,
 } from "@wopal/ellamaka-cordis/plugins/installer"
 import { migratePluginStore } from "@wopal/ellamaka-cordis/plugins/migrate-store"
-import { disableRow, enableRow, readUserPatchState } from "@wopal/ellamaka-cordis/plugins/patch-layer"
+import { disableRow, enableRow } from "@wopal/ellamaka-cordis/plugins/patch-layer"
 import { assertNotGithubSource } from "@wopal/ellamaka-cordis/plugins/installer"
 import { parseProfiles, parseRegistrySpec } from "./dsh-plugin-profiles"
 import { CliError, effectCmd, fail } from "../effect-cmd"
@@ -147,9 +147,13 @@ export const DshPluginCommand = effectCmd({
         try: async () => {
           let touched = false
           for (const profile of targets) {
-            // Only a package the profile declares can flip state.
+            // Only a package the profile's manifest declares can flip state;
+            // the patch layer is the enable/disable surface, not the install
+            // record.
             const patchPath = patchPathOf(home, profile)
-            const installed = readUserPatchState(patchPath).inserts.includes(pkg)
+            const { readProfileManifest } = await import("@wopal/ellamaka-cordis/plugins")
+            const manifest = readProfileManifest(join(home, "home", "profiles", profile))
+            const installed = pkg in manifest.dependencies || manifest.bundles.includes(pkg)
             if (!installed) continue
             touched = true
             if (enabled) await enableRow(patchPath, pkg)
