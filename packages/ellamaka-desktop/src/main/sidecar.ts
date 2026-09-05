@@ -191,10 +191,16 @@ function dshLaunch(command: StartCommand) {
  */
 async function mountDshIfPresent(command: StartCommand): Promise<void> {
   const { wopalHome, logFile, home } = dshLaunch(command)
-  const { bootDshWeb } = await import("virtual:opencode-server")
+  const { bootDshWeb, setDshUrlGetter, Log } = await import("virtual:opencode-server")
+  const sidecarLog = Log.create({ service: "dsh-desktop" })
   try {
+    sidecarLog.info("dsh.desktop.web.start", { home, logFile })
     const launch = await initDshLaunch(command)
-    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
+    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) {
+      sidecarLog.warn("dsh.desktop.web.skip", { status: launch.status })
+      return
+    }
+    sidecarLog.info("dsh.desktop.web.boot", { anchor: launch.anchor.path })
     const runtime = launch.runtime
     const host = await bootDshWeb({
       home,
@@ -214,13 +220,26 @@ async function mountDshIfPresent(command: StartCommand): Promise<void> {
       includeEntry: host.includeEntry,
       stackContext: host.stackContext,
       dispose: async () => {
+        setDshUrlGetter(() => undefined)
         unmount?.()
         await host.dispose()
       },
     }
+    // rc.1 browser-auth: publish the launch-token entry on the same
+    // process-singleton holder the CLI mount uses, so the `/workbench/dsh-url`
+    // endpoint answers with it and the Workbench iframe enters through the
+    // authenticated flow instead of the unauthenticated `/dsh/` fallback.
+    setDshUrlGetter(() => {
+      try {
+        return new URL(host.authenticatedPath, `http://${command.hostname}:${listener?.port ?? command.port}`).toString()
+      } catch {
+        return undefined
+      }
+    })
+    sidecarLog.info("dsh.desktop.web.mounted", { mountPath: host.mountPath })
   } catch (error) {
     // A broken closure must never exit the sidecar (B-06).
-    console.error(`dsh web mount failed: ${(error as Error).message}`)
+    sidecarLog.error("dsh.desktop.web.failed", { error: error instanceof Error ? error.stack ?? error.message : String(error) })
   }
 }
 
@@ -235,11 +254,16 @@ async function mountDshIfPresent(command: StartCommand): Promise<void> {
  */
 async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
   const { logFile, home } = dshLaunch(command)
-  const { bootDshTools } = await import("virtual:opencode-server")
+  const { bootDshTools, Log } = await import("virtual:opencode-server")
+  const sidecarLog = Log.create({ service: "dsh-desktop" })
   try {
     const launch = await initDshLaunch(command)
-    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) return
+    if (launch.status !== "ready" || !launch.anchor || !launch.runtime) {
+      sidecarLog.warn("dsh.desktop.tools.skip", { status: launch.status })
+      return
+    }
     const runtime = launch.runtime
+    sidecarLog.info("dsh.desktop.tools.boot", { anchor: launch.anchor.path })
     const host = await bootDshTools({
       home,
       port: 0,
@@ -254,9 +278,10 @@ async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
       dispose: () => host.dispose(),
     }
     ;(globalThis as Record<string, unknown>).__ellamakaDshContainer = host.ctx
+    sidecarLog.info("dsh.desktop.tools.mounted")
   } catch (error) {
     // A broken closure must never exit the sidecar (B-06).
-    console.error(`dsh tool container mount failed: ${(error as Error).message}`)
+    sidecarLog.error("dsh.desktop.tools.failed", { error: error instanceof Error ? error.stack ?? error.message : String(error) })
   }
 }
 
@@ -271,16 +296,21 @@ async function mountDshToolsIfPresent(command: StartCommand): Promise<void> {
 async function initDshLaunch(command: StartCommand): Promise<NonNullable<typeof dshLaunchState>> {
   if (dshLaunchState) return dshLaunchState
   const { wopalHome, logFile } = dshLaunch(command)
-  const { DEFAULT_DSH_RUNTIME_MANIFEST, initializeDshRuntime, resolveInstallAnchor, createDshRuntimeApi } =
+  const { DEFAULT_DSH_RUNTIME_MANIFEST, initializeDshRuntime, resolveInstallAnchor, createDshRuntimeApi, setDshStatus, Log } =
     await import("virtual:opencode-server")
+  const sidecarLog = Log.create({ service: "dsh-desktop" })
   const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+  sidecarLog.info("dsh.desktop.init.start", { wopalHome, logFile })
   const status = await initializeDshRuntime({ wopalHome, logFile, entry: "tui", manifest })
+  setDshStatus(status)
+  sidecarLog.info("dsh.desktop.init.status", { status })
   if (status !== "ready") {
     dshLaunchState = { status }
     return dshLaunchState
   }
   const anchor = resolveInstallAnchor(wopalHome, manifest)
   const runtime = createDshRuntimeApi(anchor.path)
+  sidecarLog.info("dsh.desktop.init.ready", { anchor: anchor.path, genId: anchor.genId })
   dshLaunchState = { status, anchor, runtime }
   return dshLaunchState
 }
@@ -293,10 +323,17 @@ async function initDshLaunch(command: StartCommand): Promise<NonNullable<typeof 
  * degrades without crashing the sidecar (B-06).
  */
 async function startDshPluginWatcher(command: StartCommand): Promise<void> {
-  if (!dshHost?.includeEntry || !dshToolsHost?.includeEntry) return
+  if (!dshHost?.includeEntry || !dshToolsHost?.includeEntry) {
+    const { Log } = await import("virtual:opencode-server")
+    Log.create({ service: "dsh-desktop" }).warn("dsh.desktop.watcher.skip", {
+      reason: "one or both containers missing",
+    })
+    return
+  }
   const { home } = dshLaunch(command)
   try {
-    const { startDshPluginService } = await import("virtual:opencode-server")
+    const { startDshPluginService, Log } = await import("virtual:opencode-server")
+    const sidecarLog = Log.create({ service: "dsh-desktop" })
     dshPluginService = startDshPluginService({
       home,
       containers: [
@@ -309,10 +346,14 @@ async function startDshPluginWatcher(command: StartCommand): Promise<void> {
         },
       ],
     })
+    sidecarLog.info("dsh.desktop.watcher.started")
   } catch (error) {
     // A failed watcher must never exit the sidecar (B-06); installs simply
     // apply at next launch.
-    console.error(`dsh plugin runtime service failed to start: ${(error as Error).message}`)
+    const { Log } = await import("virtual:opencode-server")
+    Log.create({ service: "dsh-desktop" }).error("dsh.desktop.watcher.failed", {
+      error: error instanceof Error ? error.stack ?? error.message : String(error),
+    })
   }
 }
 

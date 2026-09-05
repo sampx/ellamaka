@@ -6,8 +6,8 @@ import { Installation } from "@/installation"
 import { CliContract } from "@/wopal/cli-contract"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@wopal/ellamaka-core/installation/version"
-import { Flag } from "@wopal/ellamaka-core/flag/flag"
 import * as Log from "@wopal/ellamaka-core/util/log"
+import { getDshStatus } from "@/workbench/dsh-status"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -80,7 +80,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         healthy: true as const,
         version: InstallationVersion,
         cli: yield* cliContract.inspect(),
-        dsh: Flag.ELLAMAKA_DSH,
+        dsh: getDshStatus(),
       }
     })
 

@@ -8,6 +8,7 @@ import {
 } from "@wopal/ellamaka-cordis/runtime"
 import { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
 import { setDshUrlGetter } from "@/workbench/dsh-url"
+import { setDshStatus } from "@/workbench/dsh-status"
 
 export interface DshEngineMountOptions {
   /** Override the wopal home; defaults to `$WOPAL_HOME`. */
@@ -49,6 +50,15 @@ export async function mountDshEngine(
   const wopalHome = opts.wopalHome ?? Global.Path.wopalHome
   const logFile = opts.logFile ?? join(Global.Path.log, "dsh-plugins.log")
   const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+  const home = join(wopalHome, "dsh")
+
+  // B-class official-layout resolution (`resolveDshHome()` env reads) looks
+  // up `$DSH_HOME` and falls back to `~/.dsh` when it is unset. Point it at
+  // the DSH home so agent presets and every other env-reading plugin land in
+  // `$WOPAL_HOME/dsh/home`, matching the dev.sh / Desktop-sidecar host
+  // contract (constraint #10). The env write is process-local: the CLI host
+  // never mutates the caller's shell environment.
+  process.env.DSH_HOME = join(home, "home")
 
   const status = await initializeDshRuntime({
     wopalHome,
@@ -56,10 +66,12 @@ export async function mountDshEngine(
     entry: opts.entry ?? "serve",
     manifest,
   })
+  // Publish the terminal runtime status so /global/health can answer with a
+  // runtime fact (disabled / ready / degraded) instead of the raw kill switch.
+  setDshStatus(status)
   if (status !== "ready") return undefined
 
   const anchor = resolveInstallAnchor(wopalHome, manifest)
-  const home = join(wopalHome, "dsh")
 
   // Degrade boundary (B-06): a closure whose module exports are broken must
   // never crash the CLI host. Load the closure runtime, then init+mount; any

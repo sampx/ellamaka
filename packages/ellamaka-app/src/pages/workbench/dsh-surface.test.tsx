@@ -7,9 +7,8 @@ import { DshIframe, dshIframeSrc, dshSurfaceStyle } from "./dsh-surface"
 /**
  * The DSH iframe embeds the DSH web UI under the backend origin's `/dsh/` path
  * (single-port scheme, DESIGN-dsh-poc §2.1). The iframe src is derived from the
- * active server URL so it points at the backend origin, not the frontend origin
- * (which differs in the dev two-server topology: Vite serves the app, the
- * backend serves /dsh).
+ * active server URL. A serving page that owns a `/dsh` proxy retargets the
+ * iframe onto its own origin.
  */
 describe("dshIframeSrc", () => {
   test("derives the backend /dsh/ URL from a server URL", () => {
@@ -55,10 +54,12 @@ describe("dshIframeSrc", () => {
     expect(dshIframeSrc("http://127.0.0.1:4097", undefined, "http://localhost:3000")).toBe(
       "http://localhost:3000/dsh/",
     )
-    // Same-origin deployments (Desktop, production) ignore the page origin.
+    // The packaged Desktop renderer owns the proxy through its privileged
+    // `oc://renderer` origin.
     expect(
-      dshIframeSrc("http://127.0.0.1:4097", "http://127.0.0.1:4097/dsh/?token=abc", "http://127.0.0.1:4097"),
-    ).toBe("http://127.0.0.1:4097/dsh/?token=abc")
+      dshIframeSrc("http://127.0.0.1:4097", "http://127.0.0.1:4097/dsh/?token=abc", "oc://renderer"),
+    ).toBe("oc://renderer/dsh/?token=abc")
+    expect(dshIframeSrc("http://127.0.0.1:4097", undefined, "oc://renderer")).toBe("oc://renderer/dsh/")
   })
 
   test("returns undefined for an empty server URL", () => {

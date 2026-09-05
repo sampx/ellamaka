@@ -19,6 +19,8 @@ declare module "virtual:opencode-server" {
   export namespace Log {
     export const init: typeof import("@wopal/ellamaka-core/util/log").Log.init
     export const setLevel: typeof import("@wopal/ellamaka-core/util/log").Log.setLevel
+    export const create: typeof import("@wopal/ellamaka-core/util/log").Log.create
+    export type Logger = import("@wopal/ellamaka-core/util/log").Log.Logger
   }
   export namespace Database {
     export const getPath: typeof import("../../../opencode/dist/types/src/node").Database.getPath
@@ -84,6 +86,8 @@ declare module "virtual:opencode-server" {
 
   export interface DshWebHost {
     mountPath: "/dsh"
+    /** The rc.1 browser-auth launch-token entry path (`/dsh/?token=...`). */
+    readonly authenticatedPath: string
     webServer: {
       request(req: unknown, res: unknown): void
       upgrade(req: unknown, socket: unknown, head: unknown): void
@@ -123,4 +127,8 @@ declare module "virtual:opencode-server" {
   export const startDshPluginService: (options: DshPluginServiceOptions) => {
     stop(): Promise<void>
   }
+  /** Publish the DSH runtime terminal status for `/global/health`. */
+  export const setDshStatus: (status: DshRuntimeStatus) => void
+  /** Publish (or clear with `() => undefined`) the authenticated entry getter. */
+  export const setDshUrlGetter: (get: () => string | undefined) => void
 }

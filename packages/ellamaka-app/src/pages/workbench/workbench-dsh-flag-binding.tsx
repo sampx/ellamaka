@@ -3,6 +3,10 @@ import { useServer } from "@/context/server"
 import { useCheckServerHealth } from "@/utils/server-health"
 import { useWorkbenchState } from "./view-store"
 
+export function isDshReady(status: unknown): boolean {
+  return status === true || status === "ready"
+}
+
 /**
  * Binds the server health probe's `dsh` flag (the server-side `ELLAMAKA_DSH`
  * kill switch) into the WorkbenchState store. Mounted inside the provider
@@ -24,7 +28,7 @@ export function WorkbenchDshFlagBinding() {
       return
     }
     void checkHealth(current.http).then((health) => {
-      wb.setDshEnabled(health.dsh === true)
+      wb.setDshEnabled(isDshReady(health.dsh))
     })
   })
 

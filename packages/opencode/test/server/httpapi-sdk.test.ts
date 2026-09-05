@@ -349,6 +349,9 @@ describe("HttpApi SDK", () => {
           requiredVersion: "0.3.16",
         },
       })
+      // `dsh` exposes the DSH runtime terminal status (Issue #221): no mount in
+      // this test process means the holder defaults to `disabled`.
+      expect(health.data?.dsh).toBe("disabled")
       expect(yield* firstEvent((signal) => sdk.global.event({ signal }))).toMatchObject({
         payload: { type: "server.connected" },
       })

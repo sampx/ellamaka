@@ -1041,6 +1041,9 @@ cmd_desktop() {
   else
     require_free_ports 5173 || return 1
   fi
+  local desktop_sidecar_port="${OPENCODE_PORT:-4097}"
+  choose_free_port desktop-sidecar "$desktop_sidecar_port"
+  desktop_sidecar_port="$SELECTED_PORT"
   export OPENCODE_CHANNEL="$CHANNEL"
   # Keep the schema dependency floor in lockstep with .ci/versions.json
   # before resolving MIN_WOPAL_CLI_VERSION (idempotent no-op when aligned).
@@ -1063,7 +1066,7 @@ cmd_desktop() {
 
   mkdir -p "$DEV_DIR"
   local plugin_modules=""
-  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$DEV_DIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION")
+  local -a desktop_env=(ELAMAKA_DESKTOP_DEV=1 ELAMAKA_DESKTOP_LOG_LEVEL="$($debug && echo DEBUG || echo INFO)" WOPAL_DEBUG_LOG_DIR="$DEV_DIR" WOPAL_DEV=1 WOPAL_DEV_CLI_PATH="$space/projects/wopal-cli/src/cli.ts" MIN_WOPAL_CLI_VERSION="$MIN_WOPAL_CLI_VERSION" OPENCODE_PORT="$desktop_sidecar_port" ELLAMAKA_DSH_PROXY_TARGET="http://127.0.0.1:$desktop_sidecar_port")
   if $cdp_debug; then
     desktop_env+=(ELAMAKA_DESKTOP_CDP=1)
   fi

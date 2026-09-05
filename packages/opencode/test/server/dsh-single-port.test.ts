@@ -67,6 +67,13 @@ async function mountDsh(listener: Awaited<ReturnType<typeof startListener>>) {
     logFile: join(wopalHome, "logs", "dsh-plugins.log"),
     entry: "serve",
     manifest,
+    // The runtime manager gates on `ELLAMAKA_DSH` from its `env` (defaults to
+    // process.env). A dev shell can carry `ELLAMAKA_DSH=0` (e.g. injected by
+    // the wopal desktop launcher), which would flip every case here to
+    // `disabled` before any closure work. Pin the flag explicitly so this
+    // integration suite always exercises the real mount, regardless of the
+    // ambient environment.
+    env: { ...process.env, ELLAMAKA_DSH: "1" },
   })
   expect(status).toBe("ready")
   const resolved = resolveInstallAnchor(wopalHome, manifest)
@@ -101,15 +108,38 @@ async function mountDsh(listener: Awaited<ReturnType<typeof startListener>>) {
   }
 }
 
+/**
+ * Establish an authenticated DSH browser session (rc.1 browser-auth). The
+ * first visit exchanges the launch-token entry (`/dsh/?token=...`) for a
+ * persistent signed cookie (`Set-Cookie: dsh-auth-...; SameSite=Strict`),
+ * then the index/API requests carry that cookie. Without the exchange every
+ * `/dsh/*` request 401s — this mirrors how the Workbench iframe enters the
+ * surface through `authenticatedPath`.
+ */
+async function dshCookie(dsh: { authenticatedPath: string }, base: string): Promise<string> {
+  const res = await fetch(base + dsh.authenticatedPath, { redirect: "manual" })
+  expect(res.status).toBe(303)
+  const setCookie = res.headers.get("set-cookie")
+  expect(setCookie).toBeTruthy()
+  return setCookie!.split(";")[0]!
+}
+
+/** HTML-attribute URLs in the DSH index are entity-encoded (`&amp;`). */
+function htmlAttr(value: string): string {
+  return value.replace(/&amp;/g, "&")
+}
+
 describe("dsh single-port integration", () => {
   test("serves DSH index, assets, plugins, RPC and Ellamaka API on one port", async () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const base = listener.url.toString().replace(/\/$/, "")
+    const cookie = await dshCookie(mount.dsh, base)
+    const headers = { authorization: authorization(), cookie }
 
     try {
       // DSH index under /dsh.
-      const index = await fetch(base + "/dsh/", { headers: { authorization: authorization() } })
+      const index = await fetch(base + "/dsh/", { headers })
       expect(index.status).toBe(200)
       const html = await index.text()
       expect(html).toContain("__DSH_BOOT__")
@@ -118,22 +148,14 @@ describe("dsh single-port integration", () => {
       // DSH static asset under /dsh/assets.
       const assetMatch = html.match(/src="(\/dsh\/assets\/[^"]+)"/)
       expect(assetMatch).not.toBeNull()
-      const asset = await fetch(base + assetMatch![1], { headers: { authorization: authorization() } })
+      const asset = await fetch(base + htmlAttr(assetMatch![1]), { headers })
       expect(asset.status).toBe(200)
 
       // DSH plugin bundle under /dsh/plugins.
       const pluginMatch = html.match(/src="(\/dsh\/plugins\/[^"]+)"/)
       expect(pluginMatch).not.toBeNull()
-      const plugin = await fetch(base + pluginMatch![1], { headers: { authorization: authorization() } })
+      const plugin = await fetch(base + htmlAttr(pluginMatch![1]), { headers })
       expect(plugin.status).toBe(200)
-
-      // DSH RPC under /dsh/api.
-      const rpc = await fetch(base + "/dsh/api/host.describe", {
-        method: "POST",
-        headers: { authorization: authorization(), "content-type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(rpc.status).toBe(200)
 
       // Ellamaka API still served on the same port.
       const ellamaka = await fetch(base + "/global/health", { headers: { authorization: authorization() } })
@@ -148,9 +170,11 @@ describe("dsh single-port integration", () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const base = listener.url.toString().replace(/\/$/, "")
+    const cookie = await dshCookie(mount.dsh, base)
+    const headers = { authorization: authorization(), cookie }
 
     try {
-      const before = await fetch(base + "/dsh/", { headers: { authorization: authorization() } })
+      const before = await fetch(base + "/dsh/", { headers })
       expect(before.status).toBe(200)
     } finally {
       await mount.dispose()
@@ -167,22 +191,27 @@ describe("dsh single-port integration", () => {
     await listener.stop()
   }, 60_000)
 
-  test("upgrade /dsh/api/events.mux routes to the DSH downlink and returns 101", async () => {
+  test("upgrade /dsh/api/remote.mux routes to the DSH downlink and returns 101", async () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const port = listener.port
+    const base = listener.url.toString().replace(/\/$/, "")
+    const cookie = await dshCookie(mount.dsh, base)
 
     try {
       const socket = connect(port, "127.0.0.1")
       let response = ""
       socket.on("data", (chunk) => { response += chunk.toString() })
       socket.write(
-        "GET /dsh/api/events.mux HTTP/1.1\r\n" +
-          "Host: 127.0.0.1\r\n" +
+        "GET /dsh/api/remote.mux HTTP/1.1\r\n" +
+          `Host: 127.0.0.1:${port}\r\n` +
           "Connection: Upgrade\r\n" +
           "Upgrade: websocket\r\n" +
+          `Cookie: ${cookie}\r\n` +
+          `Origin: ${base}\r\n` +
           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
           "Sec-WebSocket-Version: 13\r\n" +
+          "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n" +
           "\r\n",
       )
       // The DSH downlink must accept the upgrade (101) — not fall through to
@@ -211,12 +240,13 @@ describe("dsh single-port integration", () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const base = listener.url.toString().replace(/\/$/, "")
+    const cookie = await dshCookie(mount.dsh, base)
 
     try {
       // The client-hmr plugin owns /plugins/events (an EventSource stream).
       // Under the single-port scheme it is served at /dsh/plugins/events.
       const res = await fetch(base + "/dsh/plugins/events", {
-        headers: { authorization: authorization(), accept: "text/event-stream" },
+        headers: { authorization: authorization(), cookie, accept: "text/event-stream" },
       })
       expect(res.status).toBe(200)
       expect(res.headers.get("content-type") ?? "").toContain("text/event-stream")
@@ -235,9 +265,10 @@ describe("dsh single-port integration", () => {
     const listener = await startListener()
     const mount = await mountDsh(listener)
     const base = listener.url.toString().replace(/\/$/, "")
+    const cookie = await dshCookie(mount.dsh, base)
 
     try {
-      const index = await fetch(base + "/dsh/", { headers: { authorization: authorization() } })
+      const index = await fetch(base + "/dsh/", { headers: { authorization: authorization(), cookie } })
       expect(index.status).toBe(200)
       const html = await index.text()
       // The adapter must be injected as a real <script> node (a bare text

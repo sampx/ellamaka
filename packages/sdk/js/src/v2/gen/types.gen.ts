@@ -4029,7 +4029,7 @@ export type GlobalHealthResponses = {
       actualVersion?: string
       reason?: string
     }
-    dsh?: boolean
+    dsh?: "disabled" | "preparing" | "ready" | "degraded"
   }
 }
 

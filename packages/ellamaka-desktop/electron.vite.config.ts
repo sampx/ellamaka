@@ -14,6 +14,7 @@ const channel = (() => {
 })()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+const dshProxyTarget = process.env.ELLAMAKA_DSH_PROXY_TARGET ?? `http://127.0.0.1:${process.env.OPENCODE_PORT ?? "4097"}`
 
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
@@ -103,6 +104,25 @@ export default defineConfig({
   },
   renderer: {
     plugins: [appPlugin, sentry],
+    server: {
+      proxy: {
+        "/dsh": {
+          target: dshProxyTarget,
+          changeOrigin: true,
+          ws: true,
+          configure: (proxy) => {
+            const rewrite = (
+              proxyReq: { setHeader(key: string, value: string): void },
+              req: { headers: Record<string, string | string[] | undefined> },
+            ) => {
+              if (req.headers.origin) proxyReq.setHeader("origin", dshProxyTarget)
+            }
+            proxy.on("proxyReq", rewrite)
+            proxy.on("proxyReqWs", rewrite)
+          },
+        },
+      },
+    },
     publicDir: "../../../ellamaka-app/public",
     root: "src/renderer",
     build: {

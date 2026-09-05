@@ -53,6 +53,20 @@ describe("server entry points wire the shared dsh assembly", () => {
     expect(source).not.toMatch(/new CordisHub\(null\)/)
   })
 
+  test("dsh-mount points B-class $DSH_HOME reads at the official-layout home", () => {
+    // The host sets DSH_HOME=$WOPAL_HOME/dsh/home at process launch (dev.sh /
+    // Desktop sidecar, constraint #10). The CLI serve/web assembly must match:
+    // B-class env-reading plugins (e.g. agent presets) must land in the DSH
+    // home, never fall back to ~/.dsh when DSH_HOME is unset.
+    const source = readFileSync(join(import.meta.dir, "../../../src/cli/cmd/dsh-mount.ts"), "utf-8")
+    expect(source).toContain('process.env.DSH_HOME = join(home, "home")')
+    // The env write must precede the manager run (the call site, not the import).
+    const call = source.indexOf("initializeDshRuntime({")
+    const env = source.indexOf("process.env.DSH_HOME")
+    expect(call).toBeGreaterThan(-1)
+    expect(env).toBeLessThan(call)
+  })
+
   test("web opens the browser before suspending on the dsh mount", () => {
     // Regression: the dsh mount block suspended on Effect.never BEFORE the
     // open(browser) call, so ELLAMAKA_DSH=1 web never opened a browser.

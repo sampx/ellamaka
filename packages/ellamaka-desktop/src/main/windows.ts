@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } f
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
+import { createDshProxy, isDshPath } from "./dsh-proxy"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowShowGuard } from "./window-show-guard"
@@ -25,6 +26,7 @@ const oc2Background = {
 }
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
+const dshProxy = createDshProxy((url, init) => net.fetch(url.toString(), init))
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -57,6 +59,10 @@ export function setBackgroundColor(color: string) {
 
 export function getBackgroundColor(): string | undefined {
   return backgroundColor
+}
+
+export function setDshProxyTarget(url?: string) {
+  dshProxy.setTarget(url)
 }
 
 function iconsDir() {
@@ -203,6 +209,17 @@ export function registerRendererProtocol() {
     if (url.host !== rendererHost) {
       writeLog("protocol", "rejected host", { url: request.url }, "warn")
       return new Response("Not found", { status: 404 })
+    }
+
+    if (isDshPath(url.pathname)) {
+      try {
+        const response = await dshProxy.handle(request)
+        if (response) return response
+        return new Response("DSH unavailable", { status: 503 })
+      } catch (error) {
+        writeLog("protocol", "dsh proxy error", { url: request.url, error }, "error")
+        return new Response("DSH unavailable", { status: 502 })
+      }
     }
 
     const file = resolve(rendererRoot, `.${decodeURIComponent(url.pathname)}`)

@@ -11,7 +11,9 @@ export type WopalCliHealth = {
   reason?: string
 }
 
-export type ServerHealth = { healthy: boolean; version?: string; cli?: WopalCliHealth; dsh?: boolean }
+export type DshRuntimeStatus = "disabled" | "preparing" | "ready" | "degraded"
+
+export type ServerHealth = { healthy: boolean; version?: string; cli?: WopalCliHealth; dsh?: DshRuntimeStatus }
 
 interface CheckServerHealthOptions {
   timeoutMs?: number

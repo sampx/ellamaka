@@ -6,6 +6,7 @@ import {
   resolveInstallAnchor,
 } from "@wopal/ellamaka-cordis/runtime"
 import { createDshRuntimeApi } from "@wopal/ellamaka-cordis/runtime/loader"
+import { setDshStatus } from "@/workbench/dsh-status"
 
 const CONTAINER_KEY = "__ellamakaDshContainer"
 
@@ -38,6 +39,15 @@ export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<Dsh
   const wopalHome = opts.wopalHome ?? Global.Path.wopalHome
   const logFile = opts.logFile ?? join(Global.Path.log, "dsh-plugins.log")
   const manifest = DEFAULT_DSH_RUNTIME_MANIFEST
+  const home = join(wopalHome, "dsh")
+
+  // B-class official-layout resolution (`resolveDshHome()` env reads) looks
+  // up `$DSH_HOME` and falls back to `~/.dsh` when it is unset. Point it at
+  // the DSH home so agent presets and every other env-reading plugin land in
+  // `$WOPAL_HOME/dsh/home`, matching the dev.sh / Desktop-sidecar host
+  // contract (constraint #10). The env write is process-local: the TUI never
+  // mutates the caller's shell environment.
+  process.env.DSH_HOME = join(home, "home")
 
   const status = await initializeDshRuntime({
     wopalHome,
@@ -45,10 +55,12 @@ export async function mountDshIfEnabled(opts: DshMountOptions = {}): Promise<Dsh
     entry: "tui",
     manifest,
   })
+  // Publish the terminal runtime status so /global/health answers with a
+  // runtime fact even when the TUI (not the workbench) hosts the server.
+  setDshStatus(status)
   if (status !== "ready") return undefined
 
   const anchor = resolveInstallAnchor(wopalHome, manifest)
-  const home = join(wopalHome, "dsh")
 
   // Degrade boundary (B-06): a broken closure must never crash the TUI host.
   // Load the closure runtime, then init+mount; any failure is logged, partial

@@ -35,11 +35,9 @@ function sameOrigin(a: URL, b: URL): boolean {
  * mounted, or stale server info — the plain `/dsh/` derivation is the
  * fallback (browser-auth disabled deployments).
  *
- * `pageOrigin` retargets the iframe onto the serving page's origin (the Vite
- * dev server proxies `/dsh` to the backend): the browser-auth cookie is
- * SameSite=Strict, so the iframe and the cookie must share one origin for
- * the exchange and every later API request to carry it. Desktop and
- * production serve both from one origin and never pass a different one.
+ * `pageOrigin` retargets the iframe onto the serving page's origin. Each
+ * serving surface owns a `/dsh` proxy, so the browser-auth cookie stays on
+ * the iframe's same origin through its token exchange and API requests.
  */
 export function dshIframeSrc(
   serverUrl: string | undefined,

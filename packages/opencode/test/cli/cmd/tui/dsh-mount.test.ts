@@ -25,6 +25,7 @@ function tmpWopalHome(): string {
 
 afterEach(() => {
   delete process.env.ELLAMAKA_DSH
+  delete process.env.DSH_HOME
   delete (globalThis as Record<string, unknown>)[CONTAINER_KEY]
   for (const dir of dshHomes.splice(0)) {
     rmSync(dir, { recursive: true, force: true })
@@ -37,6 +38,22 @@ describe("tui dsh mount", () => {
     const handle = await mountDshIfEnabled({ wopalHome: tmpWopalHome() })
     expect(handle).toBeUndefined()
     expect((globalThis as Record<string, unknown>)[CONTAINER_KEY]).toBeUndefined()
+  })
+
+  test("points B-class $DSH_HOME reads at the official-layout home on a ready mount", async () => {
+    process.env.ELLAMAKA_DSH = "1"
+    const wopalHome = tmpWopalHome()
+    seedDshClosure(wopalHome)
+    const handle = await mountDshIfEnabled({
+      wopalHome,
+      logFile: join(wopalHome, "logs", "dsh-plugins.log"),
+    })
+    expect(handle).toBeDefined()
+    // The host sets DSH_HOME=$WOPAL_HOME/dsh/home at process launch; the TUI
+    // mount must match so env-reading plugins (e.g. agent presets) land in the
+    // DSH home, never fall back to ~/.dsh.
+    expect(process.env.DSH_HOME).toBe(join(wopalHome, "dsh", "home"))
+    await handle!.dispose()
   })
 
   test("mounts the tool container and executes grep without a live session", async () => {

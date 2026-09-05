@@ -24,6 +24,7 @@ import {
   createLoadingWindow,
   createMainWindow,
   registerRendererProtocol,
+  setDshProxyTarget,
   setRelaunchHandler,
   setBackgroundColor,
   setDockIcon,
@@ -222,7 +223,10 @@ const startWorkbench = (opts: StartWorkbenchOpts = {}) =>
     })
 
     setSidecarLogLevelHandler((level) => supervisor?.setLogLevel(level))
-    supervisor.subscribe((state: SidecarRuntimeState) => broadcastSidecarState(state))
+    supervisor.subscribe((state: SidecarRuntimeState) => {
+      setDshProxyTarget(state.status === "ready" ? state.connection?.url : undefined)
+      broadcastSidecarState(state)
+    })
 
     // Replace any previously-registered handlers (onboarding stubs during
     // in-process transition; no-op on fresh boot since none were registered)
