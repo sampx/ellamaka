@@ -886,6 +886,15 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 - **测试与受测服务同副本**：bun 的多副本物化使 Symbol/WeakMap 跨副本失联（B3 scope-instances 4 测试重写的教训）；bun-hmr 测试中任何服务位断言必须与受测容器同副本解析 cordis。
 - **lock/manifest 物料链已闭环**（B3 提交 `5e587e8b2c`）：lock 生成器自带新鲜度门禁与键规范化，optional 语义落地；B2 涉及闭包再生物料时直接复用，无需另建防护。
 
+### 打包 Desktop 实机验证记录（B2 收尾，2026-09-06）
+
+> probe 构建 + DEBUG 日志 + CDP 实测，打包 Desktop（Electron utilityProcess sidecar）端到端验证 bun-hmr 适配器。记录来自 `docs/PLAN-bun-host.md` 头部验证小结（该计划已归档，本节为设计落位）。
+
+- **适配器 HMR 链路完整工作**：watcher 启动 → patch 文件 change 事件 → 内容 hash 变化 → runReplay（web + ellamaka-tools 双容器）→ `includeEntry.update` 成功，patchCount 随编辑正确增减。
+- **热启用有效**：移除 `disabled` 行后插件重新挂载（设置页 Hello Plugin section 恢复，无需重启 app）。
+- **Electron utilityProcess 不暴露 Node internal 模块**：`--expose-internals` 仅进入 execArgv，`internal/modules/*` 仍不可 require——官方 `cordis-plugin-hmr` 在打包 Desktop 同样不可用，**bun-hmr 适配器即 Desktop 路径**（Node 路径"官方插件可用"的假设在打包 sidecar 下不成立，统一回退适配器）。
+- **已知限制（后续处理）**：热禁用后服务端卸载，client 设置导航残留至页面刷新。
+
 ### tool-cordis 注册冲突的宿主侧缓解
 
 上游未修（进程级 id 去重），宿主侧在本闭包版本内执行缓解：
@@ -902,7 +911,7 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 2. **manifests 再生**：`dsh-runtime-manifest.json` 与 `dsh-runtime-lock.json` 已再生（582 包、66 optional 条目、指纹 892d5933），Runtime Manager 实机物化新闭包成功，旧闭包保留。
 3. **stateHomePatches 复核**：`dshHomePath` override seam 未变（实机 state 目录行为正常）；`session-persistence-jsonl` 在 web 容器保持禁用（tools 容器语义不变）。
 4. **agent-presets 行为回归**：双根发现与 standing mount 复检随 B3 实机验证通过。
-5. **Bun 路径回归清单**：serve（Bun）下 web+tools 双容器挂载、wopal 配置单挂载、`/global/health`、`/dsh` iframe 全链路（token 交换 → cookie → 对话 E2E）已实机全绿；插件 add/enable/remove 热挂载与 Desktop sidecar（Node）同清单回归留待 B2 验证窗口一并执行。
+5. **Bun 路径回归清单**：serve（Bun）下 web+tools 双容器挂载、wopal 配置单挂载、`/global/health`、`/dsh` iframe 全链路（token 交换 → cookie → 对话 E2E）已实机全绿；插件 add/enable/remove 热挂载与 Desktop sidecar（Node）同清单回归已随 B2 验证窗口执行完毕（2026-09-06，见「打包 Desktop 实机验证记录」）。
 6. **升级收益（修订）**：base bundle 的 PTC tools mode env seam、http-proxy 版本对齐等 rc.1 修复已随升级获得；watch-only patch 热加载在 Bun 下不可用（官方回退被构造器守卫阻断），该项收益由 B2 的 bun-hmr 兑现。
 
 ### 非目标
