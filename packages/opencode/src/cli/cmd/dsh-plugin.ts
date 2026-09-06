@@ -58,6 +58,9 @@ export const DshPluginCommand = effectCmd({
   command: "plugin <action> [pkg]",
   describe: "manage dsh plugins (add/remove/enable/disable/list)",
   instance: false,
+  // Engine-free shim: pure profile-file operations, no AppLayer boot
+  // (DESIGN-dsh-poc — `ellamaka dsh` must not start the engine).
+  light: true,
   builder: (yargs) =>
     yargs
       .positional("action", {

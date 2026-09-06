@@ -17,6 +17,9 @@ export const DshDumpConfigCommand = effectCmd({
   command: "dump-config",
   describe: "dump composed dsh patch layers for a profile without booting",
   instance: false,
+  // Documented "without booting" — the handler only reads closure + profile
+  // files; AppRuntime construction would violate that contract.
+  light: true,
   builder: (yargs) =>
     yargs
       .option("profile", {
