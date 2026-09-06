@@ -55,9 +55,11 @@ describe("B-01: production mount sites inject the closure-resolved runtime", () 
       join(import.meta.dir, "..", "..", "..", "packages", "ellamaka-desktop", "src", "main", "sidecar.ts"),
       "utf-8",
     )
-    // Both mount functions catch and continue (B-06).
-    expect(source).toMatch(/dsh web mount failed/)
-    expect(source).toMatch(/dsh tool container mount failed/)
+    // Both mount functions catch and continue (B-06): the structured log
+    // tags the sidecar writes on mount failure (the console.error lines were
+    // renamed to structured tags in 0ea73aa0aa).
+    expect(source).toMatch(/dsh\.desktop\.web\.failed/)
+    expect(source).toMatch(/dsh\.desktop\.tools\.failed/)
     // The runtime is initialised once per launch (W-02).
     expect(source).toMatch(/initDshLaunch/)
     expect(source).toMatch(/dshLaunchState/)
