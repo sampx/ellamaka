@@ -118,6 +118,17 @@ rc.1 为 dsh web 面引入官方 `browser-auth`（`dsh-client-connection`）：�
 - **前端消费**：`DshSurface` 经 SDK 取 URL，origin 与活跃 server 一致才采用，否则回落 `<server>/dsh/` 派生（browser-auth 关闭的部署）。
 - **dev 拓扑（SameSite 修复）**：cookie 是 SameSite=Strict，Vite :3000 → 后端 :4097 的跨站 iframe 带不上 cookie。`vite.config.ts` 把 `/dsh` 代理到后端（`ELLAMAKA_DSH_PROXY_TARGET` 可覆盖，ws: true），iframe 与 cookie 同 origin；Desktop/生产同源天然成立。`dshIframeSrc` 的 `pageOrigin` 参数把 entry URL 重定向到页面 origin。
 
+#### 认证联盟的架构定位（2026-09-06 定稿）
+
+ellamaka Basic 认证与 dsh browser-auth 是**两个信任域各守各的门**，不是重复建设：Basic 守外层（token 的分发面），cookie 守内层（dsh 自己的 `/api` 通道与 index）。iframe 内部跑的是 dsh 自己的 JS，其请求不携带 ellamaka 前端的 Basic 凭证——内层必须有一张 dsh 自认的凭证，官方形态即 cookie。**不做 Basic-only 统一**：认证机制不是 connection 插件的配置项，覆盖只有修改官方闭包一条路，违反「approval 原生边界」与生态对齐原则。用户感知上的统一（一次 Basic 登录，token/cookie 后台无感流转）已经成立，token 只经 Basic 保护的 `/workbench/dsh-url` 下发。
+
+该联盟当前存在四个缺口，修复项如下（与「运行时机制 · 单端口分发」的挂载边界直接相关）：
+
+1. **`trustedHosts` 配置化（auth-fix-1）**：dsh connection 的 fence 对非 loopback Host 强制匹配 `trustedHosts`，而挂载层硬编码空数组——LAN 部署（配了 `OPENCODE_SERVER_PASSWORD` 的场景）下 Basic 认证的 ellamaka API 远程可用，DSH iframe 却静默 403。修复：把 `trustedHosts` 暴露为 ellamaka 配置项（`ellamaka.dsh.trustedHosts`，默认值层进 `settings.jsonc`），经 profile 补丁层注入 connection 插件配置。官方 fence 本为此设计，零官方改动、零自造会话。
+2. **iframe 401 自愈（auth-fix-2）**：cookie 过期（30 天）或引擎重启（新进程 = 新 token + 新签名密钥）后，dsh 返回裸 401 文本，iframe 停在死页。修复：`DshSurface` 增加 401 探测，命中即重取 `/workbench/dsh-url` 并重载 iframe src——token URL 重载即重新 303 铸 cookie，无感恢复。
+3. **挂载认证策略显式化（auth-fix-3）**：`NodeRouteMount` 只有 `prefix/request/upgrade`，挂载即绕过 ellamaka 认证栈；今天安全成立靠 dsh 自身 fence 的隐式巧合。E 线实验 profile 是新的 self-auth 挂载前缀，必须防踩空。修复：`NodeRouteMount` 增加强制 `auth` 声明（`"self" | "public"`），dispatcher 固化不变量——新 mount 不允许默认无认证。
+4. **WS upgrade 认证探针（auth-fix-4）**：`/dsh/api` HTTP 通道过 fence + cookie，但 WebSocket downlink 握手的认证路径未经实证。修复：探针测试未带 cookie 的 upgrade 请求；若不被拒，在宿主挂载层补 upgrade 前置 cookie 检查。
+
 ### iframe 地址派生
 
 `DshIframe` 的 src 优先取 `/workbench/dsh-url` 的认证入口（见上），回落 `<server url>/dsh/` 派生，不写死相对路径。原因：ellamaka-app 的 dev 模式由 Vite 服务前端（默认 3000），后端 serve 独立监听（默认 4097）；相对 `/dsh/` 在 `:3000/workbench` 页面会解析到前端 origin。dev 下经 vite 代理指向页面 origin 的 `/dsh/`、Desktop 与生产指向后端 origin，两侧都命中 DSH 挂载点。

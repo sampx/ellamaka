@@ -85,6 +85,21 @@
 
 ---
 
+## 独立主线：B5（认证联盟修补，2026-09-06 立项）
+
+设计真相见 `DESIGN-dsh-poc.md`「浏览器认证（rc.1 browser-auth）· 认证联盟的架构定位」。Basic（ellamaka 外层）与 browser-auth cookie（dsh 内层）双信任域格局定稿，不做 Basic-only 统一；修补联盟的四个缺口。auth-fix-3 是 E 线（实验 profile 多挂载）的前置。
+
+| 步 | 名称 | 交付成果 | 验收标准 | 实施形态 | 状态 |
+|---|------|---------|---------|---------|------|
+| **B5a** | trustedHosts 配置化 | `ellamaka.dsh.trustedHosts` 配置项（settings.jsonc 默认值层）经 profile 补丁层注入 connection 插件 | LAN 部署（`OPENCODE_SERVER_PASSWORD` + 声明 trustedHosts）下 DSH iframe 正常认证可用；默认空数组行为不变（loopback-only） | dev-flow Plan（TDD + rook 审查） | 待排期 |
+| **B5b** | iframe 401 自愈 | `DshSurface` 401 探测 + 自动重取 `/workbench/dsh-url` 重载 iframe（token 重载即重新铸 cookie） | cookie 过期或引擎重启后 iframe 自动恢复，无需用户手动刷新；恢复过程无感 | dev-flow Plan（TDD + rook 审查） | 待排期 |
+| **B5c** | 挂载认证策略显式化 | `NodeRouteMount` 增加强制 `auth: "self" \| "public"` 声明；dispatcher 固化「新 mount 不允许默认无认证」不变量 | 现有 `/dsh` 挂载声明为 `self`；新增 mount 缺少声明时报错；E 线实验 profile 挂载复用该契约 | dev-flow Plan（依赖项，E2 前置） | 待排期 |
+| **B5d** | WS upgrade 认证探针 | 探针测试：未带 cookie 对 `/dsh/api/events*` 发起 upgrade，实证认证路径 | 探针给出确定结论：握手被拒（记录官方机制事实）或未被拒（宿主挂载层补 upgrade 前置 cookie 检查） | 探针测试（.tmp 或 test/） | 待排期 |
+
+**执行顺序**：B5d（探针先行，结论决定是否需要宿主侧补防护）→ B5a → B5b → B5c（B5c 可与 E 线 E2 合并实施）。B5 各步独立可交付，不阻塞 A 线。
+
+---
+
 ## 待定事项（未排期）
 
 | 事项 | 说明 | 关联设计 |
