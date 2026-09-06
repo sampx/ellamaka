@@ -52,50 +52,7 @@ export function selectUserPatchHmr(input: { isBun: boolean; loaderInternal: unkn
   return input.isBun || input.loaderInternal === undefined ? "adapter" : "official"
 }
 
-/**
- * Rescue the Node internal module loader when the cordis-plugin-loader's own
- * `ModuleLoader.fromInternal()` returned `undefined` despite the runtime
- * having `--expose-internals`.
- *
- * This happens in Electron 41 utilityProcess: the loader plugin's
- * `createRequire(import.meta.url)` resolves from the closure's
- * `node_modules/` tree where `require('internal/modules/esm/loader')` can
- * fail under certain ESM hook setups. Calling the same sequence from the
- * HOST module (this file, inside the sidecar bundle) succeeds because its
- * `import.meta.url` resolves in a different module scope.
- *
- * The classified loader (`{ version, ...raw }`) is assigned directly onto
- * `loader.internal` so the official HMR plugin's constructor guard passes.
- */
-export function rescueLoaderInternal(loader: { internal?: unknown }): boolean {
-  if (loader.internal !== undefined) return false
-  if (process.versions.bun !== undefined) return false
-  const [major] = process.versions.node.split(".").map(Number)
-  if (major < 22) return false
-  try {
-    const hostRequire = createRequire(import.meta.url)
-    let mod: Record<string, unknown> | undefined
-    if (process.execArgv.includes("--expose-internals")) {
-      try { mod = hostRequire("internal/modules/esm/loader") } catch {}
-    }
-    if (!mod) {
-      try { mod = hostRequire("node-addon-require-builtin").requireBuiltin("internal/modules/esm/loader") } catch {}
-    }
-    if (!mod) return false
-    const cascaded = (mod as { getOrInitializeCascadedLoader?: () => unknown }).getOrInitializeCascadedLoader?.()
-    if (!cascaded || typeof cascaded !== "object") return false
-    const raw = cascaded as Record<string, unknown>
-    const version =
-      typeof raw.getOrCreateModuleJob === "function" ? "v2"
-      : typeof raw.getModuleJobForImport === "function" ? "v1"
-      : undefined
-    if (!version) return false
-    loader.internal = Object.assign(raw, { version })
-    return true
-  } catch {
-    return false
-  }
-}
+
 
 /**
  * Shipped agent-preset composition (rc.1): the preset roster is owned by the
@@ -611,17 +568,6 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   // `prepare` so an internal injected there is wrapped too, and BEFORE the
   // root include mount below (the only consumer of internal.import).
   const preparedLoader = ctx.get("loader")
-  // D-07 rescue: the cordis-plugin-loader's ModuleLoader.fromInternal() can
-  // return undefined in packaged Electron utilityProcess even with
-  // --expose-internals active (the closure-rooted createRequire misresolves
-  // internal modules under ESM hook registration). Acquire the internal loader
-  // from the host module scope and inject it before any consumer reads it.
-  if (preparedLoader !== undefined && preparedLoader.internal === undefined) {
-    const rescued = rescueLoaderInternal(preparedLoader)
-    if (rescued) {
-      ctx.logger.info("[dsh] Rescued Node internal loader from host module scope")
-    }
-  }
   if (preparedLoader !== undefined && preparedLoader.internal !== undefined) {
     wrapInternalWithProfilesFallback(preparedLoader.internal, dshRoot)
   }
