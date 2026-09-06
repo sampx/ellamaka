@@ -43,6 +43,16 @@ const TOOLS_PROFILE_NAME = "ellamaka-tools"
 const require = createRequire(import.meta.url)
 
 /**
+ * Select the patch-file watcher from the capability that the running loader
+ * actually exposes. Electron utility processes may run Node without its
+ * private ESM loader even when their fork arguments contain
+ * `--expose-internals`; the official HMR plugin rejects that shape.
+ */
+export function selectUserPatchHmr(input: { isBun: boolean; loaderInternal: unknown }): "adapter" | "official" {
+  return input.isBun || input.loaderInternal === undefined ? "adapter" : "official"
+}
+
+/**
  * Shipped agent-preset composition (rc.1): the preset roster is owned by the
  * official `agent-presets` row in the dsh-web-app bundle — `default: standard`,
  * the shipped set bundled inside `@deepseek-ai/dsh-agent-presets`
@@ -580,23 +590,27 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
   await runtime.appBoot.assertEntriesActivated(ctx, "ellamaka")
 
-  // User patch-layer hot reload, per runtime (DESIGN-dsh-poc 「Bun 宿主 HMR
-  // 适配器」, D-04): under Bun the official `cordis-plugin-hmr` cannot run
-  // (its constructor requires the Node internal loader, `--expose-internals`),
-  // so the Bridge mounts the Bun adapter and wires the profile's user patch
-  // layer through the official caller. Under Node (Desktop sidecar) the
-  // official hmr plugin is mounted the same way the official closure
-  // `profile-boot` does (`ctx.loader.create` with an empty root) and the
-  // identical `watchUserPatches` caller consumes it — a patch-file change
-  // recomposes the FULL stack (the same composition the Plugin Runtime
-  // Service replays) transactionally by include id diff.
+  // User patch-layer reload is selected by the loader capability, not merely
+  // by the runtime name. Bun has no Node private loader. Packaged Electron
+  // utility processes can also lack it after packaging. The adapter implements
+  // the exact watchUserPatches contract (registerConfig + serial refresh),
+  // while a fully-capable Node host retains the official empty-root watcher.
   const patchFile = join(profile.dir, "cordis.patch.yml")
+  const loader = ctx.get("loader") as
+    | { internal?: unknown; create(options: { name: string; config?: unknown }): Promise<unknown> }
+    | undefined
+  const hmrBackend = selectUserPatchHmr({
+    isBun: process.versions.bun !== undefined,
+    loaderInternal: loader?.internal,
+  })
   let hmrStop: () => Promise<void> = async () => {}
   let watchAvailable = true
-  if (process.versions.bun) {
-    // Bun path: the Bridge's bun-hmr adapter provides the `hmr` service bit
-    // (registerConfig + serial refresh), mirroring the official caller's
-    // two-method consumption surface exactly.
+  if (hmrBackend === "adapter") {
+    if (process.versions.bun === undefined) {
+      ctx.logger.warn(
+        new Error("[dsh] Node loader internals unavailable; using the compatible configuration HMR adapter"),
+      )
+    }
     const bunHmr = createBunHmr({
       containers: [{ profile: profileName, ctx, includeEntry: includeEntry as unknown as { id: string; update(o: unknown): Promise<void> } }],
       dshRoot,
@@ -605,30 +619,17 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     })
     await bunHmr.mount()
     hmrStop = () => bunHmr.stop()
-  } else {
-    // Node path (Desktop sidecar): mount the official cordis-plugin-hmr the
-    // way the official closure `profile-boot` does — an empty-root HMR
-    // instance whose `registerConfig` serves `watchUserPatches`. The Node
-    // sidecar runs with `--expose-internals`, so `loader.internal` exists and
-    // the official constructor guard passes.
-    const loader = ctx.get("loader") as
-      | { create(options: { name: string; config?: unknown }): Promise<unknown> }
-      | undefined
-    if (ctx.get("hmr") === undefined) {
-      if (loader?.create !== undefined) {
-        // The official hmr plugin injects `loader` and `timer`; ensure the
-        // timer service exists first, mirroring the official closure
-        // `profile-boot` hmr section.
-        if (ctx.get("timer") === undefined) {
-          await loader.create({ name: "@deepseek-ai/cordis-plugin-timer" })
-        }
-        await loader.create({ name: "@deepseek-ai/cordis-plugin-hmr", config: { root: [] } })
-      } else {
-        // No loader.create means the official hmr cannot mount; the container
-        // keeps its boot composition (patch changes apply at next launch).
-        console.warn("[dsh] official hmr plugin requires a loader with create(); user patch-layer watching unavailable")
-        watchAvailable = false
+  } else if (ctx.get("hmr") === undefined) {
+    // The official empty-root instance supplies registerConfig to
+    // watchUserPatches when the loader exposes the required internals.
+    if (loader?.create !== undefined) {
+      if (ctx.get("timer") === undefined) {
+        await loader.create({ name: "@deepseek-ai/cordis-plugin-timer" })
       }
+      await loader.create({ name: "@deepseek-ai/cordis-plugin-hmr", config: { root: [] } })
+    } else {
+      ctx.logger.warn(new Error("[dsh] official HMR requires a loader with create(); patch watching unavailable"))
+      watchAvailable = false
     }
   }
   const watchDispose =

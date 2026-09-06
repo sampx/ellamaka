@@ -834,7 +834,7 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 
 ### Bun 宿主 HMR 适配器（bun-hmr）
 
-**定位**：Bun 容器内实现官方「配置热加载」契约；模块级热换降级为安全的事务性重载。适配器以 `@wopal/ellamaka-cordis/bun-hmr` 提供，在 Bun 路径以同一 `hmr` 服务位替代官方插件；Node 路径（Desktop sidecar）继续用官方 `@deepseek-ai/cordis-plugin-hmr`。
+**定位**：Bun 容器内实现官方「配置热加载」契约；模块级热换降级为安全的事务性重载。适配器以 `@wopal/ellamaka-cordis/bun-hmr` 提供，在 Bun 路径以同一 `hmr` 服务位替代官方插件。Node 路径按能力选择：仅当运行时 Loader 实际公开 `internal` 时才使用官方 `@deepseek-ai/cordis-plugin-hmr`；打包 Electron utility sidecar 缺少该能力时同样回退到适配器，避免官方构造器让整个 profile 挂载失败。
 
 **兼容契约（B3 实证收窄）**：官方调用方 `watchUserPatches`（闭包 `dsh-app-boot/lib/index.js:1075-1095`）对 `hmr` 服务位的消费面**精确两个方法**——`registerConfig(filename, refresh)`（监听单文件、变更时串行 refresh、返回 disposer；重复注册同路径抛错）与经 `entry.update({ config: { patches } })` 的组合重放。refresh 闭包由官方提供（重读 patch 文件 → `compose` → `entry.update`），bun-hmr 只负责「检测变更 + 串行调度」。因此 bun-hmr 不需要复刻官方 hmr 的模块根/watcher 配置面：官方 `watchUserPatches` 以 `config: { root: [] }`（空根）挂载，语义就是「无模块监听、只要配置监听」；构造器守卫（`loader.internal`）在 bun-hmr 中不存在。错误契约对齐：`registerConfig` 在服务未激活时抛错、官方调用方对 `INACTIVE_EFFECT` 错误码静默降级为 no-op disposer——bun-hmr 保持同样的错误形状。实现时以 rc.1 闭包 `cordis-plugin-hmr/lib/index.js` 的 `registerConfig` 为对齐基准（`findWatchRoot`、路径去重、串行 refresh），不参考 rc.2 时代设计稿。
 

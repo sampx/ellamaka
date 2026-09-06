@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { createBunHmr } from "../src/plugins/bun-hmr"
-import { mountDshTools } from "../src/dsh-web"
+import { mountDshTools, selectUserPatchHmr } from "../src/dsh-web"
 import { withProfileManifestWrite, appendBundle } from "../src/plugins/profile-manifest"
 import { profileDirOf } from "../src/plugins/compose"
 
@@ -12,7 +12,32 @@ function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "bun-hmr-"))
 }
 
+function installPlugin(root: string, name: string): void {
+  const dir = join(profileDirOf(root, "ellamaka-tools"), "node_modules", name)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name, version: "1.0.0", type: "module", main: "index.js", dsh: { bundle: { patch: "./cordis.patch.yml" } } }),
+  )
+  writeFileSync(join(dir, "index.js"), `export function apply(ctx) { ctx.provide(${JSON.stringify(name + ".marker")}, "mounted") }\n`)
+  writeFileSync(join(dir, "cordis.patch.yml"), `- insert:\n    - id: ${name}\n      name: ${name}\n`)
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting for Bun HMR replay")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
 describe("createBunHmr: registerConfig contract", () => {
+  test("selects the adapter for an Electron/Node loader without internal modules", () => {
+    expect(selectUserPatchHmr({ isBun: false, loaderInternal: undefined })).toBe("adapter")
+    expect(selectUserPatchHmr({ isBun: false, loaderInternal: {} })).toBe("official")
+    expect(selectUserPatchHmr({ isBun: true, loaderInternal: {} })).toBe("adapter")
+  })
+
   test("a file change runs the refresh callback serially; disposer stops watching", async () => {
     const root = tempRoot()
     const file = join(root, "cordis.patch.yml")
@@ -151,4 +176,28 @@ describe("bun-hmr: composition-file replay (generation candidate replacement)", 
       rmSync(root, { recursive: true, force: true })
     }
   }, 60_000)
+
+  test("mountDshTools reloads a user disable row through the Bun HMR service", async () => {
+    const root = tempRoot()
+    const name = "bun-hmr-fixture"
+    installPlugin(root, name)
+    await withProfileManifestWrite(profileDirOf(root, "ellamaka-tools"), (manifest) => {
+      appendBundle(manifest, name)
+    })
+    const ctx = new Context()
+    const host = await mountDshTools(ctx, { home: root, port: 0 })
+    try {
+      expect(ctx.get(`${name}.marker`, false)).toBe("mounted")
+      const patchFile = join(profileDirOf(root, "ellamaka-tools"), "cordis.patch.yml")
+      const hmr = ctx.get("hmr") as { registerConfig(filename: string, refresh: () => Promise<void>): Promise<unknown> }
+      await expect(hmr.registerConfig(patchFile, async () => {})).rejects.toThrow(/already registered/)
+      writeFileSync(patchFile, `- id: ${name}\n  disabled: true\n`)
+
+      await waitFor(() => ctx.get(`${name}.marker`, false) === undefined)
+    } finally {
+      await host.dispose()
+      await ctx.fiber.dispose()
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30_000)
 })
