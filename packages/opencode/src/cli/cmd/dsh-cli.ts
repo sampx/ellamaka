@@ -9,6 +9,13 @@
  *   `--dump-config`, `--dump-default-config`) must not appear BEFORE the
  *   `plugin` subcommand.
  *
+ * Commander-semantics equivalence note: the official parser's
+ * `allowUnknownOption` + `passThroughOptions` (verbatim forwarding without
+ * declaring every flag) is implemented here as plain verbatim positionals
+ * resolved by `dshResolvePluginArgs` under the default (non-strict) child
+ * parse, with explicit unknown-verb/missing-operand errors — the behaviour
+ * is pinned by the dsh-plugin-command definition tests.
+ *
  * Kept dependency-free so the CLI glue stays trivially testable (same pattern
  * as dsh-plugin-profiles.ts).
  */
