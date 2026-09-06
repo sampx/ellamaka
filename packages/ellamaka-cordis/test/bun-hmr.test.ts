@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Context } from "@deepseek-ai/cordis"
 import { createBunHmr } from "../src/plugins/bun-hmr"
-import { mountDshTools, selectUserPatchHmr } from "../src/dsh-web"
+import { mountDshTools, selectUserPatchHmr, rescueLoaderInternal } from "../src/dsh-web"
 import { withProfileManifestWrite, appendBundle } from "../src/plugins/profile-manifest"
 import { profileDirOf } from "../src/plugins/compose"
 
@@ -36,6 +36,21 @@ describe("createBunHmr: registerConfig contract", () => {
     expect(selectUserPatchHmr({ isBun: false, loaderInternal: undefined })).toBe("adapter")
     expect(selectUserPatchHmr({ isBun: false, loaderInternal: {} })).toBe("official")
     expect(selectUserPatchHmr({ isBun: true, loaderInternal: {} })).toBe("adapter")
+  })
+
+  test("rescueLoaderInternal is a no-op when internal is already set", () => {
+    const loader = { internal: { version: "v2" } }
+    expect(rescueLoaderInternal(loader)).toBe(false)
+    expect(loader.internal).toEqual({ version: "v2" })
+  })
+
+  test("rescueLoaderInternal is a no-op under Bun", () => {
+    // Under Bun, process.versions.bun is defined, so rescue returns false
+    const loader: { internal?: unknown } = { internal: undefined }
+    const result = rescueLoaderInternal(loader)
+    // In Bun test runner, process.versions.bun is defined → rescue skips
+    expect(result).toBe(false)
+    expect(loader.internal).toBe(undefined)
   })
 
   test("a file change runs the refresh callback serially; disposer stops watching", async () => {
