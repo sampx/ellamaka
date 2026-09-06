@@ -115,18 +115,8 @@ rc.1 为 dsh web 面引入官方 `browser-auth`（`dsh-client-connection`）：�
 - **认证入口**：`mountDshWeb` 从官方 `connection` 服务现算 `authenticatedPath`（`/dsh/?token=...`，getter，不持久化 token）。
 - **出站 Location 改写**：官方 token 交换 303 的 `location` 写死 `/`；`VirtualWebServer` 对 3xx Location 头做前缀改写（`/` → `/dsh/`），单端口方案下 iframe 登录不跳出挂载点。与 index 改写同属适配层职责。
 - **下发通道**：serve 端 `mountDshEngine` 把 entry getter 发布到 `WorkbenchDshUrl`（模块级单槽，进程内单挂载）；`GET /workbench/dsh-url` 经已认证的 workbench API 现答 `{ url }`（引擎未挂载/禁用时 `url: undefined`）。token 只经 Ellamaka 已认证面下发。
-- **前端消费**：`DshSurface` 经 SDK 取 URL，origin 与活跃 server 一致才采用，否则回落 `<server>/dsh/` 派生（browser-auth 关闭的部署）。
-- **dev 拓扑（SameSite 修复）**：cookie 是 SameSite=Strict，Vite :3000 → 后端 :4097 的跨站 iframe 带不上 cookie。`vite.config.ts` 把 `/dsh` 代理到后端（`ELLAMAKA_DSH_PROXY_TARGET` 可覆盖，ws: true），iframe 与 cookie 同 origin；Desktop/生产同源天然成立。`dshIframeSrc` 的 `pageOrigin` 参数把 entry URL 重定向到页面 origin。
-
-#### 实机验证与实施偏差（2026-09-05，愚佛实机验证通过）
-
-> 方案落地的两轮实机事故修复与兜底细节。方案主体（认证流、Location 改写、WorkbenchDshUrl、vite 代理）见上；此处只录设计未覆盖的偏差。
-
-- **iframe 入口 loopback 别名（实机首验 401）**：后端权威入口 URL 绑定 `127.0.0.1:4097`，前端 SDK 记住的 serverUrl 是 `localhost:4097`（entry.tsx dev 默认），`dshIframeSrc` 的 origin 字符串比较把 loopback 别名判为不同源 → token 入口被当 stale 丢弃 → 回落无 token 的 `/dsh/` → `authorizeIndex` 401（页面显示 "dsh web authentication required"）。修复：`dshIframeSrc` 的同源判定归一化 loopback 别名（localhost/127.0.0.1/[::1] 同 host 同端口视为同源），`sameOrigin` helper + 混用 case 测试。端口占用 auto-bump（4096→4097）使该别名差异必然暴露。
-- **vite 代理 Origin 对齐（实机二验 403）**：token 交换与 cookie 铸造通过后 UI 卡「连接中」。根因：rc.1 Host/Origin trust fence（`isTrustedApiRequest`）要求 `Origin.host === Host.host`；vite `changeOrigin: true` 只改写 Host 不改 Origin（`localhost:3000`），所有 `/dsh/api/*` 与 WS upgrade 403、socket 被关（前端日志 `ws proxy error: socket hang up` 退避重连）。修复：vite 代理 `configure` 钩子在 `proxyReq`/`proxyReqWs` 把 Origin 头对齐 target origin——fence 的单源语义下代理即服务源。实现细节：vite 7 的 `proxyReq.headers` 在出站 ClientRequest 上 pre-send 不可读，Origin 须从回调第二参（原始请求）读取——首版直接读崩了 Vite 进程（dev.sh 拉起失败）。`trustedHosts` 救不了此场景（Origin 对比硬编码不走该配置）。
-- **E2E 认证探针**：`/api/host.describe` 已随 ApiProxy 移除，认证流 E2E 的 API 探针改用 rc.1 存活的 exact Fetch 路由 `GET /api/session.export`（缺 sessionId 返回 400——任何非 401/403/404 的服务端应答都证明穿过了认证栅栏）。
-- **rc.1 dist 相对资源路径**：index 用 `./assets/*` + 官方注入 `<base href="/">`；`rewriteIndex` 在根绝对改写外增加了 `./` 相对改写（绝对化后免疫 base 逃逸）。
-- **`/api/remote.mux` 是 rc.1 唯一官方 upgrade 面**（browserAuth 后面）；dispose-invariant 测试改挂自注册 upgrade 路径；`host.dispose()` 在 bun test 下收尾慢于 socket close，测试改为「先等 close（被测不变量）后等 dispose」。
+- **前端消费**：`DshSurface` 经 SDK 取 URL，origin 与活跃 server 一致才采用，否则回落 `<server>/dsh/` 派生（browser-auth 关闭的部署）。同源判定把 loopback 别名归一化（localhost/127.0.0.1/[::1] 同 host 同端口视为同源），避免权威入口绑定 127.0.0.1 而 SDK 记忆 localhost 时 token 入口被误判为 stale 而回落裸 `/dsh/`。
+- **dev 拓扑（SameSite 修复）**：cookie 是 SameSite=Strict，Vite :3000 → 后端 :4097 的跨站 iframe 带不上 cookie。`vite.config.ts` 把 `/dsh` 代理到后端（`ELLAMAKA_DSH_PROXY_TARGET` 可覆盖，ws: true），iframe 与 cookie 同 origin；Desktop/生产同源天然成立。`dshIframeSrc` 的 `pageOrigin` 参数把 entry URL 重定向到页面 origin。代理同时把 `Origin` 头对齐 target origin——rc.1 trust fence（`isTrustedApiRequest`）要求 `Origin.host === Host.host`，`changeOrigin` 只改写 Host 不改 Origin，代理必须显式改写 Origin 才能过 `/dsh/api` 与 WS upgrade 栅栏；Origin 从原始请求读取（vite 7 的 `proxyReq.headers` 在出站 ClientRequest 上 pre-send 不可读）。
 
 #### 认证联盟的架构定位（2026-09-06 定稿）
 
@@ -896,14 +886,7 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 - **测试与受测服务同副本**：bun 的多副本物化使 Symbol/WeakMap 跨副本失联（B3 scope-instances 4 测试重写的教训）；bun-hmr 测试中任何服务位断言必须与受测容器同副本解析 cordis。
 - **lock/manifest 物料链已闭环**（B3 提交 `5e587e8b2c`）：lock 生成器自带新鲜度门禁与键规范化，optional 语义落地；B2 涉及闭包再生物料时直接复用，无需另建防护。
 
-### 打包 Desktop 实机验证记录（B2 收尾，2026-09-06）
-
-> probe 构建 + DEBUG 日志 + CDP 实测，打包 Desktop（Electron utilityProcess sidecar）端到端验证 bun-hmr 适配器。记录来自 `docs/PLAN-bun-host.md` 头部验证小结（该计划已归档，本节为设计落位）。
-
-- **适配器 HMR 链路完整工作**：watcher 启动 → patch 文件 change 事件 → 内容 hash 变化 → runReplay（web + ellamaka-tools 双容器）→ `includeEntry.update` 成功，patchCount 随编辑正确增减。
-- **热启用有效**：移除 `disabled` 行后插件重新挂载（设置页 Hello Plugin section 恢复，无需重启 app）。
-- **Electron utilityProcess 不暴露 Node internal 模块**：`--expose-internals` 仅进入 execArgv，`internal/modules/*` 仍不可 require——官方 `cordis-plugin-hmr` 在打包 Desktop 同样不可用，**bun-hmr 适配器即 Desktop 路径**（Node 路径"官方插件可用"的假设在打包 sidecar 下不成立，统一回退适配器）。
-- **已知限制（后续处理）**：热禁用后服务端卸载，client 设置导航残留至页面刷新。
+**打包 Desktop 的 HMR 路径（已验证）**：Electron utilityProcess 不暴露 Node internal 模块——`--expose-internals` 仅进入 execArgv，`internal/modules/*` 仍不可 require。因此官方 `cordis-plugin-hmr` 在打包 Desktop 同样不可用，bun-hmr 适配器即 Desktop 路径（统一回退适配器，Node 路径"官方插件可用"的假设不成立）。热禁用后服务端卸载，client 设置导航残留至页面刷新（已知限制）。
 
 ### tool-cordis 注册冲突的宿主侧缓解
 
@@ -915,13 +898,13 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 
 ### 闭包升级路径（0.1.1-rc.2 → 0.1.2-rc.1）——**已由 B3 执行完毕（2026-09-05）**
 
-> 以下 1-5 条作为已执行的升级记录保留（验收清单供 Desktop sidecar 回归时复用）；第 6 条「升级收益」中 watch-only patch 热加载一项经实机证伪——见「官方 0.1.2-rc.1 机制事实」的 Node-only 修订，该收益改由 bun-hmr 兑现。实施偏差（记录 6-12）已落入「浏览器认证 · 实机验证与实施偏差」小节。
+> 以下 1-5 条作为已执行的升级记录保留（验收清单供 Desktop sidecar 回归时复用）；第 6 条「升级收益」中 watch-only patch 热加载一项经实机证伪——见「官方 0.1.2-rc.1 机制事实」的 Node-only 修订，该收益改由 bun-hmr 兑现。实施偏差（loopback 别名、vite Origin 对齐）已并入「浏览器认证」相应条目。
 
 1. **版本提升**：`packages/ellamaka-cordis/package.json` 六个 `@deepseek-ai/*` 直接依赖提升至 `0.1.2-rc.1`（`cordis`/`cordis-plugin-loader` 保持 4.0.2/1.0.3，官方未变更）——已随提交 `1bb2d2674f` 落地，且 manifest 携带全量 closure 依赖集。
 2. **manifests 再生**：`dsh-runtime-manifest.json` 与 `dsh-runtime-lock.json` 已再生（582 包、66 optional 条目、指纹 892d5933），Runtime Manager 实机物化新闭包成功，旧闭包保留。
 3. **stateHomePatches 复核**：`dshHomePath` override seam 未变（实机 state 目录行为正常）；`session-persistence-jsonl` 在 web 容器保持禁用（tools 容器语义不变）。
 4. **agent-presets 行为回归**：双根发现与 standing mount 复检随 B3 实机验证通过。
-5. **Bun 路径回归清单**：serve（Bun）下 web+tools 双容器挂载、wopal 配置单挂载、`/global/health`、`/dsh` iframe 全链路（token 交换 → cookie → 对话 E2E）已实机全绿；插件 add/enable/remove 热挂载与 Desktop sidecar（Node）同清单回归已随 B2 验证窗口执行完毕（2026-09-06，见「打包 Desktop 实机验证记录」）。
+5. **Bun 路径回归清单**：serve（Bun）下 web+tools 双容器挂载、wopal 配置单挂载、`/global/health`、`/dsh` iframe 全链路（token 交换 → cookie → 对话 E2E）已实机全绿；插件 add/enable/remove 热挂载与 Desktop sidecar（Node）同清单回归已随 B2 验证窗口执行完毕（2026-09-06，见「打包 Desktop 的 HMR 路径」）。
 6. **升级收益（修订）**：base bundle 的 PTC tools mode env seam、http-proxy 版本对齐等 rc.1 修复已随升级获得；watch-only patch 热加载在 Bun 下不可用（官方回退被构造器守卫阻断），该项收益由 B2 的 bun-hmr 兑现。
 
 ### 非目标
