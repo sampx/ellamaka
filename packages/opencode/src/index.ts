@@ -40,6 +40,7 @@ import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { DshPluginCommand } from "./cli/cmd/dsh-plugin"
 import { DshDumpConfigCommand } from "./cli/cmd/dsh-dump-config"
+import { dshRootFlagsBeforePlugin } from "./cli/cmd/dsh-cli"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@wopal/ellamaka-core/util/opencode-process"
@@ -212,10 +213,55 @@ const cli = yargs(args)
   .command(SessionCommand)
   .command(PluginCommand)
   .command({
-    command: "dsh",
-    describe: "dsh commands",
-    builder: (y) => y.command(DshPluginCommand).command(DshDumpConfigCommand),
-    handler: () => {},
+    command: "dsh [args...]",
+    describe: "dsh profile launcher surface (official dsh CLI shape)",
+    builder: (y) =>
+      y
+        .positional("args", {
+          type: "string",
+          array: true,
+          default: [] as string[],
+          describe: "launch arguments after the dsh flags (boot mode is served by `ellamaka serve`)",
+        })
+        // The launcher flags the official dsh parser owns (official order);
+        // yargs hoists parent options, so they parse in every position.
+        .option("profile", {
+          type: "string",
+          describe: "the profile under $WOPAL_HOME/dsh/home/profiles to operate on",
+        })
+        .option("patch", {
+          type: "string",
+          nargs: 1,
+          array: true,
+          describe: "extra patch-list overlay applied after the profile layer (repeatable, argv order)",
+        })
+        .option("dump-config", {
+          type: "boolean",
+          describe: "print the composed profile tree and exit",
+        })
+        .option("dump-default-config", {
+          type: "boolean",
+          describe: "print the profile's bundle layers (no user layer) and exit",
+        })
+        .middleware(() => {
+          // Official rejectParentOptions (bin.js): launcher flags must not
+          // precede the `plugin` subcommand. yargs hoists parent options, so
+          // the position check runs on the raw argv, not parsed values.
+          if (dshRootFlagsBeforePlugin(args)) {
+            throw new Error(
+              "error: dsh plugin takes none of parent --profile, --patch, --dump-config, or --dump-default-config before the subcommand (official dsh semantics); use: `ellamaka dsh plugin --profile <name> add <package>`",
+            )
+          }
+        })
+        .command(DshPluginCommand)
+        .command(DshDumpConfigCommand),
+    handler: (argv) => {
+      // Boot mode (`dsh --profile <name> <args...>` without a dump flag) is
+      // served by `ellamaka serve` (Plan 223 D-01, Out of Scope); the dump
+      // path is wired in the dump-config task. The middleware rejects the
+      // parent-flags-before-subcommand shape.
+      void argv
+    },
   })
   .command(DbCommand)
   .fail((msg, err) => {
