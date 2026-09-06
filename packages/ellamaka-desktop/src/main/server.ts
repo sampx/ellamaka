@@ -94,7 +94,7 @@ export async function spawnLocalServer(
     env: createSidecarEnv(password),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
-    execArgv: ["--experimental-strip-types"],
+    execArgv: ["--experimental-strip-types", "--expose-internals"],
   })
   let exited = false
   const exit = defer<number>()

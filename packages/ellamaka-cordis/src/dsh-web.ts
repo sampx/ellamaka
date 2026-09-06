@@ -580,45 +580,85 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
   }
   await runtime.appBoot.assertEntriesActivated(ctx, "ellamaka")
 
-  // Bun host HMR adapter (DESIGN-dsh-poc 「Bun 宿主 HMR 适配器」, 0 -> 1):
-  // the official `watchUserPatches` needs a `hmr` service with
-  // `registerConfig`; under Bun the official cordis-plugin-hmr cannot run
-  // (Node internal loader required), so the Bridge mounts the Bun adapter
-  // and wires the profile's user patch layer through the official caller —
-  // a patch-file change recomposes the FULL stack (the same composition the
-  // Plugin Runtime Service replays) transactionally by include id diff.
-  const bunHmr = createBunHmr({
-    containers: [{ profile: profileName, ctx, includeEntry: includeEntry as unknown as { id: string; update(o: unknown): Promise<void> } }],
-    dshRoot,
-    ctx,
-    installAnchor,
-  })
-  await bunHmr.mount()
-  const watchDispose = await runtime.appBoot
-    .watchUserPatches(ctx, {
-      binName: "ellamaka",
-      filename: join(profile.dir, "cordis.patch.yml"),
-      compose: (userRows): typeof userRows => {
-        // The candidate composition: official bundle rows are carried by the
-        // boot-time stack context; the plugin layer is recomposed fresh from
-        // the profile manifest; the refreshed user rows replace the snapshot
-        // captured at boot.
-        const pluginLayers = composePluginLayers(dshRoot, profileName, { installAnchor })
-        return composeFullPatchStack({
-          profileLayers: stackContext.profileLayers,
-          pluginLayers,
-          userPatches: [...userRows],
-          extraPatches: stackContext.extraPatches,
-          homePatches: stackContext.homePatches,
-        }) as typeof userRows
-      },
+  // User patch-layer hot reload, per runtime (DESIGN-dsh-poc 「Bun 宿主 HMR
+  // 适配器」, D-04): under Bun the official `cordis-plugin-hmr` cannot run
+  // (its constructor requires the Node internal loader, `--expose-internals`),
+  // so the Bridge mounts the Bun adapter and wires the profile's user patch
+  // layer through the official caller. Under Node (Desktop sidecar) the
+  // official hmr plugin is mounted the same way the official closure
+  // `profile-boot` does (`ctx.loader.create` with an empty root) and the
+  // identical `watchUserPatches` caller consumes it — a patch-file change
+  // recomposes the FULL stack (the same composition the Plugin Runtime
+  // Service replays) transactionally by include id diff.
+  const patchFile = join(profile.dir, "cordis.patch.yml")
+  let hmrStop: () => Promise<void> = async () => {}
+  let watchAvailable = true
+  if (process.versions.bun) {
+    // Bun path: the Bridge's bun-hmr adapter provides the `hmr` service bit
+    // (registerConfig + serial refresh), mirroring the official caller's
+    // two-method consumption surface exactly.
+    const bunHmr = createBunHmr({
+      containers: [{ profile: profileName, ctx, includeEntry: includeEntry as unknown as { id: string; update(o: unknown): Promise<void> } }],
+      dshRoot,
+      ctx,
+      installAnchor,
     })
-    .catch((error: unknown) => {
-      // The official caller degrades when the file cannot be watched; the
-      // container keeps its boot composition (bun-hmr logs via the loader).
-      console.warn("[dsh] user patch-layer watching unavailable:", (error as Error).message)
-      return async () => {}
-    })
+    await bunHmr.mount()
+    hmrStop = () => bunHmr.stop()
+  } else {
+    // Node path (Desktop sidecar): mount the official cordis-plugin-hmr the
+    // way the official closure `profile-boot` does — an empty-root HMR
+    // instance whose `registerConfig` serves `watchUserPatches`. The Node
+    // sidecar runs with `--expose-internals`, so `loader.internal` exists and
+    // the official constructor guard passes.
+    const loader = ctx.get("loader") as
+      | { create(options: { name: string; config?: unknown }): Promise<unknown> }
+      | undefined
+    if (ctx.get("hmr") === undefined) {
+      if (loader?.create !== undefined) {
+        // The official hmr plugin injects `loader` and `timer`; ensure the
+        // timer service exists first, mirroring the official closure
+        // `profile-boot` hmr section.
+        if (ctx.get("timer") === undefined) {
+          await loader.create({ name: "@deepseek-ai/cordis-plugin-timer" })
+        }
+        await loader.create({ name: "@deepseek-ai/cordis-plugin-hmr", config: { root: [] } })
+      } else {
+        // No loader.create means the official hmr cannot mount; the container
+        // keeps its boot composition (patch changes apply at next launch).
+        console.warn("[dsh] official hmr plugin requires a loader with create(); user patch-layer watching unavailable")
+        watchAvailable = false
+      }
+    }
+  }
+  const watchDispose =
+    watchAvailable === false
+      ? async () => {}
+      : await runtime.appBoot
+          .watchUserPatches(ctx, {
+            binName: "ellamaka",
+            filename: patchFile,
+            compose: (userRows): typeof userRows => {
+              // The candidate composition: official bundle rows are carried by
+              // the boot-time stack context; the plugin layer is recomposed
+              // fresh from the profile manifest; the refreshed user rows
+              // replace the snapshot captured at boot.
+              const pluginLayers = composePluginLayers(dshRoot, profileName, { installAnchor })
+              return composeFullPatchStack({
+                profileLayers: stackContext.profileLayers,
+                pluginLayers,
+                userPatches: [...userRows],
+                extraPatches: stackContext.extraPatches,
+                homePatches: stackContext.homePatches,
+              }) as typeof userRows
+            },
+          })
+          .catch((error: unknown) => {
+            // The official caller degrades when the file cannot be watched; the
+            // container keeps its boot composition (hmr logs via the loader).
+            console.warn("[dsh] user patch-layer watching unavailable:", (error as Error).message)
+            return async () => {}
+          })
 
   const dispose = async () => {
     try {
@@ -626,7 +666,7 @@ async function mountProfile(ctx: Context, opts: MountProfileOptions): Promise<Ds
     } catch {
       // Already disposed.
     }
-    await bunHmr.stop()
+    await hmrStop()
     const loader = ctx.get("loader")
     if (loader !== undefined) await loader.remove(includeEntry.id)
     await loaderFiber.dispose()
