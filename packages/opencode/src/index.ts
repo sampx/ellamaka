@@ -211,8 +211,12 @@ const cli = yargs(args)
   .command(PrCommand)
   .command(SessionCommand)
   .command(PluginCommand)
-  .command(DshPluginCommand)
-  .command(DshDumpConfigCommand)
+  .command({
+    command: "dsh",
+    describe: "dsh commands",
+    builder: (y) => y.command(DshPluginCommand).command(DshDumpConfigCommand),
+    handler: () => {},
+  })
   .command(DbCommand)
   .fail((msg, err) => {
     if (

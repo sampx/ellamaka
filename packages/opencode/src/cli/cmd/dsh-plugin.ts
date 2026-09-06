@@ -55,7 +55,7 @@ function patchPathOf(home: string, profile: string): string {
 }
 
 export const DshPluginCommand = effectCmd({
-  command: "dsh plugin <action> [pkg]",
+  command: "plugin <action> [pkg]",
   describe: "manage dsh plugins (add/remove/enable/disable/list)",
   instance: false,
   builder: (yargs) =>

@@ -107,6 +107,10 @@ export function readBundleInsertRows(content: string, file: string): InsertRow[]
     const line = lines[index].replace(/\t/g, "  ")
     index++
     if (!line.trim() || line.trim().startsWith("#")) continue
+    // An empty patch list (`[]`, the template shape) contributes no rows —
+    // the official `parsePatchList` treats it the same way (a top-level empty
+    // array mounts nothing). A bundle that ships an empty patch file is valid.
+    if (/^\[\s*\]/.test(line.trim())) continue
     if (/^-\s+insert:\s*$/.test(line.trim())) {
       rows.push(...readInsertBlockItems())
       continue

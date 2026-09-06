@@ -14,7 +14,7 @@ import {
 import { CliError, effectCmd } from "../effect-cmd"
 
 export const DshDumpConfigCommand = effectCmd({
-  command: "dsh dump-config",
+  command: "dump-config",
   describe: "dump composed dsh patch layers for a profile without booting",
   instance: false,
   builder: (yargs) =>
