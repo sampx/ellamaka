@@ -60,7 +60,8 @@
     "@deepseek-ai/dsh-workflow": "0.1.2-rc.1",
     "@npmcli/arborist": "9.4.0",
     "chokidar": "4.0.3",
-    "pacote": "22.0.0"
+    "pacote": "22.0.0",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "effect": "catalog:"

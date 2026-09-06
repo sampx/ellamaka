@@ -24,7 +24,7 @@ describe("readUserPatchState", () => {
     writeFileSync(
       patchPathOf(root),
       [
-        "[]",
+        "# header comment stays valid",
         "- id: plugin-a",
         "  disabled: true",
         "- id: plugin-b",
@@ -62,7 +62,8 @@ describe("disableRow", () => {
     // Second disable is a no-op (no duplicate row).
     await disableRow(patchPath, "fixture-dsh-plugin")
     const raw = readFileSync(patchPath, "utf-8")
-    expect(raw.match(/^- id: fixture-dsh-plugin$/gm) ?? []).toHaveLength(1)
+    expect((raw.match(/fixture-dsh-plugin/g) ?? []).length).toBe(1)
+    expect(raw.includes("{")).toBe(false)
   })
 
   test("rejects an unsafe row id", async () => {
@@ -72,6 +73,34 @@ describe("disableRow", () => {
     const result = await disableRow(patchPath, "bad id\n- exploit")
     expect(result.ok).toBe(false)
     expect(result.reason).toMatch(/row id/)
+  })
+
+  test("replaces the [] placeholder when comments surround it (real template shape)", async () => {
+    // The shipped profile template is comment header + `[]`; a comment can
+    // also trail it (a prior touch/annotation). The first row must REPLACE
+    // the `[]` placeholder — appending after a trailing comment would
+    // produce two YAML documents and the composition would reject the file.
+    const root = tempRoot()
+    const patchPath = patchPathOf(root)
+    writeFileSync(
+      patchPath,
+      [
+        "# Your patch layer for this dsh profile, applied after every bundle layer:",
+        "# a top-level YAML array of loader patch entries.",
+        "[]",
+        "",
+        "# touch 141039",
+        "",
+      ].join("\n"),
+    )
+    const result = await disableRow(patchPath, "fixture-dsh-plugin")
+    expect(result.ok).toBe(true)
+    const raw = readFileSync(patchPath, "utf-8")
+    // The [] placeholder is gone — exactly one top-level array remains.
+    expect(raw.includes("[]")).toBe(false)
+    // The appended row precedes any trailing comment (one document).
+    expect(raw.indexOf("- id: fixture-dsh-plugin")).toBeLessThan(raw.indexOf("# touch"))
+    expect(readUserPatchState(patchPath).disables).toEqual(["fixture-dsh-plugin"])
   })
 })
 
