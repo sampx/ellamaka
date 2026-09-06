@@ -1,4 +1,4 @@
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -33,6 +33,13 @@ export interface ProfileDumpInput {
   patches: OfficialPatchOptions[]
 }
 
+export interface DshOverlayPatches {
+  /** The overlay file path (absolute — becomes the dump layer label). */
+  file: string
+  /** The parsed patch rows from the overlay file. */
+  patches: OfficialPatchOptions[]
+}
+
 export interface ComposeDshDumpLayersInput {
   profile: ProfileDumpInput
   pluginLayers: PluginLayerPatch[]
@@ -40,6 +47,12 @@ export interface ComposeDshDumpLayersInput {
   extraPatches: Record<string, unknown>[]
   /** Loader patch rows for the official home (the Bridge's builders emit them). */
   homePatches: Record<string, unknown>[]
+  /**
+   * `--patch` overlay layers in argv order (official `dsh --dump-config
+   * --patch a.yml --patch b.yml`): appended AFTER the home layer, one layer
+   * per file, label = the absolute file path. Back-compat: optional.
+   */
+  overlayPatches?: DshOverlayPatches[]
 }
 
 /**
@@ -49,6 +62,7 @@ export interface ComposeDshDumpLayersInput {
  * -> user patch layer (when non-empty, label = profile.patchPath, patches = profile.patches)
  * -> extra layers (when non-empty, label = "ellamaka bridge extra patches", patches = extraPatches)
  * -> home layers (when non-empty, label = "ellamaka home patches", patches = homePatches)
+ * -> `--patch` overlay layers (one per file in argv order, label = absolute file path)
  */
 export function composeDshDumpLayers(input: ComposeDshDumpLayersInput): ConfigDumpLayer[] {
   const layers: ConfigDumpLayer[] = []
@@ -90,6 +104,14 @@ export function composeDshDumpLayers(input: ComposeDshDumpLayersInput): ConfigDu
     layers.push({
       label: "ellamaka home patches",
       patches: input.homePatches,
+    })
+  }
+
+  // 6. --patch overlay layers (official argv order: applied last, later wins)
+  for (const overlay of input.overlayPatches ?? []) {
+    layers.push({
+      label: overlay.file,
+      patches: overlay.patches,
     })
   }
 
@@ -183,6 +205,14 @@ export interface DumpDshConfigOptions {
    */
   dshHome?: string
   installAnchor?: string
+  /**
+   * `--patch` overlay paths in argv order (official `dsh --dump-config`).
+   * Each file is loaded through the closure's `loadOverlayPatches` — a
+   * missing file THROWS (the caller named it, its absence is a
+   * misconfiguration, never "no overlay"). Ignored when `defaultOnly` (the
+   * official CLI rejects that shape one layer up; defense in depth here).
+   */
+  overlayPatches?: string[]
 }
 
 /** The JSON-envelope payload variant: the layer list without YAML rendering. */
@@ -248,6 +278,16 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
     }
   }
 
+  // --patch overlays (official argv order, loaded LAST so a missing or
+  // unparsable file throws before any composition happens on its layer).
+  const overlays: DshOverlayPatches[] = []
+  if (options.defaultOnly !== true) {
+    for (const file of options.overlayPatches ?? []) {
+      const absolute = resolve(file)
+      overlays.push({ file: absolute, patches: runtime.appBoot.loadOverlayPatches("dsh", absolute) })
+    }
+  }
+
   const layers = composeDshDumpLayers({
     profile: {
       dir: profile.dir,
@@ -261,6 +301,7 @@ export async function composeDshDumpProfileLayers(options: DumpDshConfigOptions)
     pluginLayers,
     extraPatches: extra,
     homePatches: options.defaultOnly === true ? [] : homePatches(homeDir),
+    overlayPatches: overlays,
   })
   return { rootConfig, layers }
 }

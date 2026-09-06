@@ -39,8 +39,9 @@ import { Database } from "@/storage/db"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { DshPluginCommand } from "./cli/cmd/dsh-plugin"
-import { DshDumpConfigCommand } from "./cli/cmd/dsh-dump-config"
-import { dshRootFlagsBeforePlugin } from "./cli/cmd/dsh-cli"
+import { DshDumpConfigCommand, runDshDump } from "./cli/cmd/dsh-dump-config"
+import { dshDumpResolve, dshRootFlagsBeforePlugin } from "./cli/cmd/dsh-cli"
+import { Effect } from "effect"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@wopal/ellamaka-core/util/opencode-process"
@@ -255,12 +256,27 @@ const cli = yargs(args)
         })
         .command(DshPluginCommand)
         .command(DshDumpConfigCommand),
-    handler: (argv) => {
-      // Boot mode (`dsh --profile <name> <args...>` without a dump flag) is
-      // served by `ellamaka serve` (Plan 223 D-01, Out of Scope); the dump
-      // path is wired in the dump-config task. The middleware rejects the
-      // parent-flags-before-subcommand shape.
-      void argv
+    handler: async (argv) => {
+      // Official resolveBoot semantics (Plan 223 D-01/D-03): the root flags
+      // resolve a config dump; boot mode (`--profile <name>` without a dump
+      // flag) errors pointing at `ellamaka serve` (Out of Scope here).
+      const invocation = dshDumpResolve(
+        {
+          profile: argv.profile as string | undefined,
+          patch: argv.patch as string[] | undefined,
+          "dump-config": argv["dump-config"] === true,
+          "dump-default-config": argv["dump-default-config"] === true,
+        },
+        (argv.args ?? []) as string[],
+      )
+      await Effect.runPromise(
+        runDshDump({
+          profileName: invocation.profile,
+          defaultOnly: invocation.defaultOnly,
+          overlayPatches: invocation.patches,
+          json: false,
+        }),
+      )
     },
   })
   .command(DbCommand)

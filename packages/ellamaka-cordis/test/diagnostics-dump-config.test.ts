@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   composeDshDumpLayers,
+  composeDshDumpProfileLayers,
   dumpDshConfig,
   homePatches,
   webExtraPatches,
@@ -267,6 +268,130 @@ describe("lifted patch builders snapshot equality", () => {
       { id: "tool-bash", config: { enableRunInBackground: false } },
       { id: "custom-tool", config: {} },
     ])
+  })
+})
+
+describe("composeDshDumpLayers overlay patches (--patch, official argv order)", () => {
+  test("appends one overlay layer per patch file after the home layer, argv order", () => {
+    const mockProfile = {
+      dir: "/mock/dir",
+      patchPath: "/mock/dir/cordis.patch.yml",
+      layers: [{ packageName: "@deepseek-ai/dsh-base", patches: [] }],
+      patches: [],
+    }
+
+    const layers = composeDshDumpLayers({
+      profile: mockProfile,
+      pluginLayers: [],
+      extraPatches: [],
+      homePatches: [{ id: "settings", config: { dshHome: "/home/dir" } }],
+      overlayPatches: [
+        { file: "/abs/a.yml", patches: [{ id: "from-a" }] },
+        { file: "/abs/b.yml", patches: [{ id: "from-b" }] },
+      ],
+    })
+
+    expect(layers.map((layer) => layer.label)).toEqual([
+      "@deepseek-ai/dsh-base",
+      "ellamaka home patches",
+      "/abs/a.yml",
+      "/abs/b.yml",
+    ])
+    expect(layers[2].patches).toEqual([{ id: "from-a" }])
+    expect(layers[3].patches).toEqual([{ id: "from-b" }])
+  })
+
+  test("empty overlayPatches adds no layer (back-compat)", () => {
+    const mockProfile = {
+      dir: "/mock/dir",
+      patchPath: "/mock/dir/cordis.patch.yml",
+      layers: [{ packageName: "@deepseek-ai/dsh-base", patches: [] }],
+      patches: [],
+    }
+    const layers = composeDshDumpLayers({
+      profile: mockProfile,
+      pluginLayers: [],
+      extraPatches: [],
+      homePatches: [],
+      overlayPatches: [],
+    })
+    expect(layers).toHaveLength(1)
+  })
+
+  test("omitted overlayPatches stays back-compatible with existing callers", () => {
+    const mockProfile = {
+      dir: "/mock/dir",
+      patchPath: "/mock/dir/cordis.patch.yml",
+      layers: [{ packageName: "@deepseek-ai/dsh-base", patches: [] }],
+      patches: [],
+    }
+    const layers = composeDshDumpLayers({
+      profile: mockProfile,
+      pluginLayers: [],
+      extraPatches: [],
+      homePatches: [],
+    })
+    expect(layers).toHaveLength(1)
+  })
+})
+
+describe("composeDshDumpProfileLayers overlay loading (loadOverlayPatches semantics)", () => {
+  test("missing overlay file throws naming the file", async () => {
+    const home = tempHome()
+    const missing = join(home, "missing-overlay.yml")
+    let message = ""
+    try {
+      await composeDshDumpProfileLayers({
+        dshHome: home,
+        profileName: "web",
+        overlayPatches: [missing],
+      })
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain("failed to read overlay")
+    expect(message).toContain(missing)
+  })
+
+  test("unparsable overlay file throws instead of being skipped", async () => {
+    const home = tempHome()
+    const bad = join(home, "bad-overlay.yml")
+    writeFileSync(bad, "settings: broken\n", "utf8")
+    let message = ""
+    try {
+      await composeDshDumpProfileLayers({
+        dshHome: home,
+        profileName: "web",
+        overlayPatches: [bad],
+      })
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain("overlay")
+    expect(message).toContain(bad)
+  })
+
+  test("valid overlay lands as the last layer with an absolute-path label, argv order", async () => {
+    const home = tempHome()
+    const overlayA = join(home, "a.yml")
+    const overlayB = join(home, "b.yml")
+    writeFileSync(overlayA, "- { id: overlay-a, config: { note: a } }\n", "utf8")
+    writeFileSync(overlayB, "- { id: overlay-b, config: { note: b } }\n", "utf8")
+
+    const { layers } = await composeDshDumpProfileLayers({
+      dshHome: home,
+      profileName: "web",
+      overlayPatches: [overlayA, overlayB],
+    })
+
+    const overlayLayerIndexes = layers
+      .map((layer, index) => (layer.label === overlayA ? index : layer.label === overlayB ? index : -1))
+      .filter((index) => index >= 0)
+    expect(overlayLayerIndexes).toHaveLength(2)
+    expect(overlayLayerIndexes[0]).toBeLessThan(overlayLayerIndexes[1])
+    const last = layers[layers.length - 1]
+    expect(last.label).toBe(overlayB)
+    expect(last.patches).toEqual([{ id: "overlay-b", config: { note: "b" } }])
   })
 })
 

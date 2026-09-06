@@ -13,9 +13,20 @@ import {
 } from "@wopal/ellamaka-cordis/diagnostics/dump-config"
 import { CliError, effectCmd } from "../effect-cmd"
 
+/**
+ * `ellamaka dsh dump-config` — the ellamaka COMPATIBILITY extension form
+ * (Plan 223 D-03). The official shape is the root flags:
+ * `dsh --dump-config --profile web --patch a.yml` (wired on the `dsh` parent
+ * in src/index.ts); this subcommand keeps the pre-223 ellamaka usage working
+ * and adds the official `--patch` overlay support.
+ *
+ * Both forms share ONE execution path (runDshDump) and ONE composition
+ * (composeDshDumpProfileLayers) — the layer list can never drift between
+ * shapes or output formats.
+ */
 export const DshDumpConfigCommand = effectCmd({
   command: "dump-config",
-  describe: "dump composed dsh patch layers for a profile without booting",
+  describe: "dump composed dsh patch layers for a profile without booting (compat form of `dsh --dump-config`)",
   instance: false,
   // Documented "without booting" — the handler only reads closure + profile
   // files; AppRuntime construction would violate that contract.
@@ -32,15 +43,35 @@ export const DshDumpConfigCommand = effectCmd({
         default: false,
         describe: "dump bundle layers only (recovery diagnostic)",
       })
+      .option("patch", {
+        type: "string",
+        nargs: 1,
+        array: true,
+        describe: "extra patch-list overlay applied after the profile layer (repeatable, argv order)",
+      })
       .option("json", {
         type: "boolean",
         default: false,
         describe: "output JSON schema payload instead of rendered YAML",
       }),
   handler: Effect.fn("Cli.dshDumpConfig")(function* (args) {
-    const profileName = String(args.profile ?? "web")
-    const defaultOnly = Boolean(args["default-only"])
+    return yield* runDshDump({
+      profileName: String(args.profile ?? "web"),
+      defaultOnly: args["default-only"] === true,
+      overlayPatches: (args.patch as string[] | undefined) ?? [],
+      json: args.json === true,
+    })
+  }),
+})
 
+/** The shared dump execution for the root-flag form and the compat subcommand. */
+export const runDshDump = (options: {
+  profileName: string
+  defaultOnly: boolean
+  overlayPatches: string[]
+  json: boolean
+}): Effect.Effect<void, CliError> =>
+  Effect.fn("Cli.dshDumpRun")(function* () {
     const wopalHome = Global.Path.wopalHome
     const { runtime, anchorPath } = yield* Effect.try({
       try: () => {
@@ -58,14 +89,15 @@ export const DshDumpConfigCommand = effectCmd({
 
     const dumpOptions = {
       wopalHome,
-      profileName,
-      defaultOnly,
+      profileName: options.profileName,
+      defaultOnly: options.defaultOnly,
       runtime,
       dshHome: join(wopalHome, "dsh"),
       installAnchor: anchorPath,
+      overlayPatches: options.overlayPatches,
     } as const
 
-    if (args.json) {
+    if (options.json) {
       // The JSON envelope and the YAML dump share ONE composition
       // (composeDshDumpProfileLayers) — the layer list can never drift
       // between the two output shapes.
@@ -75,8 +107,8 @@ export const DshDumpConfigCommand = effectCmd({
       })
       const payload: DshDumpPayload = {
         schema: "ellamaka.dsh-dump-config/v1",
-        profile: profileName,
-        defaultOnly,
+        profile: options.profileName,
+        defaultOnly: options.defaultOnly,
         layers,
       }
       process.stdout.write(JSON.stringify(payload) + "\n")
@@ -88,8 +120,7 @@ export const DshDumpConfigCommand = effectCmd({
       catch: toCliErrorMessage,
     })
     process.stdout.write(dumped.endsWith("\n") ? dumped : dumped + "\n")
-  }),
-})
+  })()
 
 function toCliErrorMessage(err: unknown): CliError {
   const message = err instanceof Error ? err.message : String(err)
