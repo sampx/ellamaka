@@ -118,6 +118,16 @@ rc.1 为 dsh web 面引入官方 `browser-auth`（`dsh-client-connection`）：�
 - **前端消费**：`DshSurface` 经 SDK 取 URL，origin 与活跃 server 一致才采用，否则回落 `<server>/dsh/` 派生（browser-auth 关闭的部署）。
 - **dev 拓扑（SameSite 修复）**：cookie 是 SameSite=Strict，Vite :3000 → 后端 :4097 的跨站 iframe 带不上 cookie。`vite.config.ts` 把 `/dsh` 代理到后端（`ELLAMAKA_DSH_PROXY_TARGET` 可覆盖，ws: true），iframe 与 cookie 同 origin；Desktop/生产同源天然成立。`dshIframeSrc` 的 `pageOrigin` 参数把 entry URL 重定向到页面 origin。
 
+#### 实机验证与实施偏差（2026-09-05，愚佛实机验证通过）
+
+> 方案落地的两轮实机事故修复与兜底细节。方案主体（认证流、Location 改写、WorkbenchDshUrl、vite 代理）见上；此处只录设计未覆盖的偏差。
+
+- **iframe 入口 loopback 别名（实机首验 401）**：后端权威入口 URL 绑定 `127.0.0.1:4097`，前端 SDK 记住的 serverUrl 是 `localhost:4097`（entry.tsx dev 默认），`dshIframeSrc` 的 origin 字符串比较把 loopback 别名判为不同源 → token 入口被当 stale 丢弃 → 回落无 token 的 `/dsh/` → `authorizeIndex` 401（页面显示 "dsh web authentication required"）。修复：`dshIframeSrc` 的同源判定归一化 loopback 别名（localhost/127.0.0.1/[::1] 同 host 同端口视为同源），`sameOrigin` helper + 混用 case 测试。端口占用 auto-bump（4096→4097）使该别名差异必然暴露。
+- **vite 代理 Origin 对齐（实机二验 403）**：token 交换与 cookie 铸造通过后 UI 卡「连接中」。根因：rc.1 Host/Origin trust fence（`isTrustedApiRequest`）要求 `Origin.host === Host.host`；vite `changeOrigin: true` 只改写 Host 不改 Origin（`localhost:3000`），所有 `/dsh/api/*` 与 WS upgrade 403、socket 被关（前端日志 `ws proxy error: socket hang up` 退避重连）。修复：vite 代理 `configure` 钩子在 `proxyReq`/`proxyReqWs` 把 Origin 头对齐 target origin——fence 的单源语义下代理即服务源。实现细节：vite 7 的 `proxyReq.headers` 在出站 ClientRequest 上 pre-send 不可读，Origin 须从回调第二参（原始请求）读取——首版直接读崩了 Vite 进程（dev.sh 拉起失败）。`trustedHosts` 救不了此场景（Origin 对比硬编码不走该配置）。
+- **E2E 认证探针**：`/api/host.describe` 已随 ApiProxy 移除，认证流 E2E 的 API 探针改用 rc.1 存活的 exact Fetch 路由 `GET /api/session.export`（缺 sessionId 返回 400——任何非 401/403/404 的服务端应答都证明穿过了认证栅栏）。
+- **rc.1 dist 相对资源路径**：index 用 `./assets/*` + 官方注入 `<base href="/">`；`rewriteIndex` 在根绝对改写外增加了 `./` 相对改写（绝对化后免疫 base 逃逸）。
+- **`/api/remote.mux` 是 rc.1 唯一官方 upgrade 面**（browserAuth 后面）；dispose-invariant 测试改挂自注册 upgrade 路径；`host.dispose()` 在 bun test 下收尾慢于 socket close，测试改为「先等 close（被测不变量）后等 dispose」。
+
 #### 认证联盟的架构定位（2026-09-06 定稿）
 
 ellamaka Basic 认证与 dsh browser-auth 是**两个信任域各守各的门**，不是重复建设：Basic 守外层（token 的分发面），cookie 守内层（dsh 自己的 `/api` 通道与 index）。iframe 内部跑的是 dsh 自己的 JS，其请求不携带 ellamaka 前端的 Basic 凭证——内层必须有一张 dsh 自认的凭证，官方形态即 cookie。**不做 Basic-only 统一**：认证机制不是 connection 插件的配置项，覆盖只有修改官方闭包一条路，违反「approval 原生边界」与生态对齐原则。用户感知上的统一（一次 Basic 登录，token/cookie 后台无感流转）已经成立，token 只经 Basic 保护的 `/workbench/dsh-url` 下发。
@@ -905,7 +915,7 @@ wopal 配置单引用的一个能力件（包内 `lib/weapon-rack.js`），按�
 
 ### 闭包升级路径（0.1.1-rc.2 → 0.1.2-rc.1）——**已由 B3 执行完毕（2026-09-05）**
 
-> 以下 1-5 条作为已执行的升级记录保留（验收清单供 Desktop sidecar 回归时复用）；第 6 条「升级收益」中 watch-only patch 热加载一项经实机证伪——见「官方 0.1.2-rc.1 机制事实」的 Node-only 修订，该收益改由 bun-hmr 兑现。实施偏差全录见 `docs/PLAN-iframe-auth-rc1.md` §7（记录 6-12）。
+> 以下 1-5 条作为已执行的升级记录保留（验收清单供 Desktop sidecar 回归时复用）；第 6 条「升级收益」中 watch-only patch 热加载一项经实机证伪——见「官方 0.1.2-rc.1 机制事实」的 Node-only 修订，该收益改由 bun-hmr 兑现。实施偏差（记录 6-12）已落入「浏览器认证 · 实机验证与实施偏差」小节。
 
 1. **版本提升**：`packages/ellamaka-cordis/package.json` 六个 `@deepseek-ai/*` 直接依赖提升至 `0.1.2-rc.1`（`cordis`/`cordis-plugin-loader` 保持 4.0.2/1.0.3，官方未变更）——已随提交 `1bb2d2674f` 落地，且 manifest 携带全量 closure 依赖集。
 2. **manifests 再生**：`dsh-runtime-manifest.json` 与 `dsh-runtime-lock.json` 已再生（582 包、66 optional 条目、指纹 892d5933），Runtime Manager 实机物化新闭包成功，旧闭包保留。
