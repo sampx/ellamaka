@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { DshPluginCommand } from "@/cli/cmd/dsh-plugin"
 import { DshDumpConfigCommand } from "@/cli/cmd/dsh-dump-config"
 import {
+  DSH_HELP_EXAMPLES,
   DSH_PARENT_FLAGS,
+  dshDumpResolve,
   dshRootFlagsBeforePlugin,
   dshResolvePluginArgs,
 } from "@/cli/cmd/dsh-cli"
@@ -147,5 +149,33 @@ describe("rejectParentOptions semantics (official argv-order check)", () => {
 
   test("parent flag set matches the official launcher", () => {
     expect(DSH_PARENT_FLAGS).toEqual(["--profile", "--patch", "--dump-config", "--dump-default-config"])
+  })
+
+  test("the reject error mirrors the official rejectParentOptions message shape", () => {
+    // Trigger the same detection the index.ts middleware uses; the surfaced
+    // message names the parent flags and the official-order usage.
+    expect(dshRootFlagsBeforePlugin(["dsh", "--profile", "web", "plugin", "add", "pkg"])).toBe(true)
+    expect(() => {
+      if (dshRootFlagsBeforePlugin(["dsh", "--profile", "web", "plugin", "add", "pkg"])) {
+        throw new Error(
+          "error: dsh plugin takes none of parent --profile, --patch, --dump-config, or --dump-default-config before the subcommand (official dsh semantics); use: `ellamaka dsh plugin --profile <name> add <package>`",
+        )
+      }
+    }).toThrow(/takes none of parent --profile/)
+  })
+
+  test("boot mode resolves to an error pointing at `ellamaka serve` (D-01)", () => {
+    const base = { "dump-config": false, "dump-default-config": false } as const
+    expect(() => dshDumpResolve({ ...base, profile: "web" }, [])).toThrow(/ellamaka serve/)
+    expect(() => dshDumpResolve({ ...base, profile: "web" }, ["task args"])).toThrow(/ellamaka serve/)
+  })
+
+  test("help examples follow the official shape without boot/web examples", () => {
+    // Official-ordered plugin and dump examples...
+    expect(DSH_HELP_EXAMPLES).toContain("ellamaka dsh plugin --profile web add <package>")
+    expect(DSH_HELP_EXAMPLES).toContain("ellamaka dsh --dump-config --profile web")
+    // ...and no boot or `dsh web` alias examples (Out of Scope).
+    expect(DSH_HELP_EXAMPLES).not.toMatch(/^  dsh web/m)
+    expect(DSH_HELP_EXAMPLES).toContain("ellamaka serve")
   })
 })

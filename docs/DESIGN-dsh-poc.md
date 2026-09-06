@@ -631,17 +631,25 @@ $DSH_HOME/profiles/
 
 ### `ellamaka dsh` shim 命令面
 
-`ellamaka dsh` 是官方 `dsh` CLI 的 Bun 执行器替身，覆盖生态互操作所需的命令子集：
+`ellamaka dsh` 是官方 `dsh` CLI 的 Bun 执行器替身，命令面严格复刻官方形状（参数位置、flag 名称、互斥与报错语义），执行仍用自家 Bun 安装器与 profile manifest 真相源。`alias dsh='ellamaka dsh'` 后官方命令形状可直接使用：
 
 ```sh
-ellamaka dsh plugin add <pkg>[@version] [--profile web,ellamaka-tools]   # Bun 安装器执行，写官方终态
-ellamaka dsh plugin remove <pkg> [--profile ...]
-ellamaka dsh plugin install                       # 按当前 package.json 全量重装（市场恢复流程依赖）
-ellamaka dsh plugin list [--json]                 # 读 profile package.json
-ellamaka dsh dump-config --profile web [--default-only] [--json]   # 已实现（B1.5）
+# plugin 管理（官方序：--profile 是 plugin 子命令自有 option，可置于动词前后；省略回退默认 web,ellamaka-tools）
+ellamaka dsh plugin --profile web add <pkg>[@version]    # 官方动词，Bun 安装器执行，写官方终态
+ellamaka dsh plugin --profile web remove <pkg>           # 官方动词
+ellamaka dsh plugin --profile web install                # 官方动词：按 package.json 全量重装（市场恢复流程依赖）
+ellamaka dsh plugin add <pkg>                            # 省略 --profile：回退默认 web,ellamaka-tools（A2 兼容）
+ellamaka dsh plugin --profile web,tools add <pkg>        # 多值逗号 profile 是 ellamaka 扩展（官方单值的超集）
+ellamaka dsh plugin --profile web enable/disable <pkg>   # ellamaka 扩展动词（写用户补丁层）
+ellamaka dsh plugin --profile web list [--json]          # ellamaka 扩展动词
+
+# 配置转储（官方序：根 flags 在 dsh 根解析；--patch repeatable、argv 序、缺失文件 throw）
+ellamaka dsh --dump-config --profile web [--patch a.yml --patch b.yml]
+ellamaka dsh --dump-default-config --profile web         # 仅 bundle 层；拒绝 --patch；与 --dump-config 互斥
+ellamaka dsh dump-config --profile web [--default-only] [--json] [--patch ...]   # ellamaka 兼容扩展子命令（B1.5）
 ```
 
-`dsh web`/boot 类命令不 shim——`ellamaka serve` 就是宿主。安装即时生效由 Bridge 的组合文件监听驱动（并入 B2 bun-hmr 的 `registerConfig` 范围），补足官方"首次安装需重启"的缺口。
+官方语义对齐要点：根 flags（`--profile`/`--patch`/`--dump-config`/`--dump-default-config`）出现在 `plugin` 子命令之前时报错（官方 rejectParentOptions）；未知 plugin 动词（官方 `why` 等 pnpm 动词）不转发，明确报错；`--patch` overlay 缺失文件即配置错误 throw（官方 loadOverlayPatches 语义）。boot 模式（`dsh --profile <name> "args"`）与 `dsh web` 别名不 shim——`ellamaka serve` 就是宿主，命令面报错提示 serve。安装即时生效由 Bridge 的组合文件监听驱动（并入 B2 bun-hmr 的 `registerConfig` 范围），补足官方“首次安装需重启”的缺口。
 
 ### Bun 安装器流水线
 

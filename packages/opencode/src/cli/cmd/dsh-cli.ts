@@ -18,6 +18,25 @@ import { parseProfiles } from "./dsh-plugin-profiles"
 /** The launcher flags the official dsh parser owns (order = help-text order). */
 export const DSH_PARENT_FLAGS = ["--profile", "--patch", "--dump-config", "--dump-default-config"] as const
 
+/**
+ * Help examples in the official bin.js HELP_EXAMPLES shape, adapted to the
+ * ellamaka surface: boot examples are replaced by the `ellamaka serve` note
+ * and there is no `dsh web` command (Plan 223 D-01, Out of Scope).
+ */
+export const DSH_HELP_EXAMPLES = `
+Examples:
+  ellamaka dsh --dump-config --profile web               print the composed profile patch tree and exit
+  ellamaka dsh --dump-default-config --profile web       print the bundle layers only (no user layer) and exit
+  ellamaka dsh --dump-config --profile web --patch ./extra.yml
+                                                         apply extra overlays after the profile layer (repeatable)
+  ellamaka dsh plugin --profile web add <package>        install a plugin into the web profile (official order)
+  ellamaka dsh plugin --profile web list --json          list the profile's plugins as JSON
+  ellamaka dsh plugin --profile web install              re-install every declared plugin dependency
+
+Booting a profile is served by \`ellamaka serve\` — the official dsh boot mode
+and the \`web\` alias are not part of the ellamaka surface.
+`
+
 /** The plugin verbs: official verbatim forward + ellamaka extensions. */
 export const DSH_PLUGIN_OFFICIAL_VERBS = ["add", "remove", "install"] as const
 export const DSH_PLUGIN_EXTENSION_VERBS = ["enable", "disable", "list"] as const

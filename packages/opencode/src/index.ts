@@ -40,7 +40,7 @@ import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { DshPluginCommand } from "./cli/cmd/dsh-plugin"
 import { DshDumpConfigCommand, runDshDump } from "./cli/cmd/dsh-dump-config"
-import { dshDumpResolve, dshRootFlagsBeforePlugin } from "./cli/cmd/dsh-cli"
+import { dshDumpResolve, dshRootFlagsBeforePlugin, DSH_HELP_EXAMPLES } from "./cli/cmd/dsh-cli"
 import { Effect } from "effect"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
@@ -215,7 +215,7 @@ const cli = yargs(args)
   .command(PluginCommand)
   .command({
     command: "dsh [args...]",
-    describe: "dsh profile launcher surface (official dsh CLI shape)",
+    describe: "dsh profile tools — plugin management and config dumps (official dsh CLI shape)",
     builder: (y) =>
       y
         .positional("args", {
@@ -255,7 +255,8 @@ const cli = yargs(args)
           }
         })
         .command(DshPluginCommand)
-        .command(DshDumpConfigCommand),
+        .command(DshDumpConfigCommand)
+        .epilogue(DSH_HELP_EXAMPLES),
     handler: async (argv) => {
       // Official resolveBoot semantics (Plan 223 D-01/D-03): the root flags
       // resolve a config dump; boot mode (`--profile <name>` without a dump

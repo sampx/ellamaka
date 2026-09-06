@@ -37,6 +37,8 @@
 
 **执行顺序**：A1 → A2 → A3 → A4（严格顺序，每步落地后引擎可运行）。原 B2（bun-hmr）并入 A2，其设计主体不变、watch 对象一步到位（设计依据：`DESIGN-dsh-poc.md`「Bun 宿主 HMR 适配器（bun-hmr）」+「插件供应链 · 实现决策 D-02」）。
 
+**已交付**：A2 实施过程中 Plan 223（enhance）完成了 `ellamaka dsh` 命令面与官方 `dsh` CLI 的对齐——plugin 官方序（`plugin --profile <name> add/remove/install` + 扩展 enable/disable/list，verbatim args）、dump-config 根 flags（`--dump-config`/`--dump-default-config` + repeatable `--patch` overlay，缺失文件 throw）、rejectParentOptions 与 boot 报错提示 serve。命令面形状见 `DESIGN-dsh-poc.md`「ellamaka dsh shim 命令面」。
+
 ---
 
 ## 下一主线：W 线（wopal 插件包，A4 之后启动）
