@@ -19,6 +19,7 @@ import { readProfileManifest, withProfileManifestWrite, appendBundle } from "../
 import {
   composeFullPatchStack,
   composePluginLayers,
+  readUserPatchLayer,
   PLUGIN_ENTRY_ID_PREFIX,
   healPluginsModuleFallback,
   removePluginSymlink,
@@ -185,6 +186,17 @@ describe("composePluginLayers (profile manifest truth source)", () => {
       { id: "extra-row" },
       { id: "home-row" },
     ])
+  })
+})
+
+describe("readUserPatchLayer (fresh user patch replay)", () => {
+  test("rejects malformed YAML rather than replaying its recovered AST", () => {
+    const root = tempRoot()
+    const profileDir = profileDirOf(root)
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, "cordis.patch.yml"), "- id: dsh-plugin:x\n  disabled: [\n")
+
+    expect(() => readUserPatchLayer(root, "web")).toThrow(/failed to parse/)
   })
 })
 

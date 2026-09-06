@@ -3,6 +3,7 @@ import { createRequire } from "node:module"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { readProfileManifest } from "./profile-manifest.js"
+import { parseDocument } from "yaml"
 import { homeProfilesDirOf } from "../runtime/status.js"
 import { resolveRowSpecifier } from "./resolve-specifiers.js"
 
@@ -307,6 +308,40 @@ export function composeFullPatchStack(layers: {
     ...layers.extraPatches,
     ...layers.homePatches,
   ]
+}
+
+/**
+ * Read the profile's CURRENT user patch layer (`cordis.patch.yml`) for a hot
+ * replay. Official `loadOptionalPatches` semantics: a missing file is an
+ * empty layer; a present file must parse as a top-level YAML sequence or the
+ * error propagates (fail loud — the composition layer keeps the last good
+ * state on a replay failure).
+ *
+ * The replay path MUST call this per replay instead of reusing the boot-time
+ * snapshot: the user patch layer is the enable/disable surface, and a stale
+ * snapshot races the official `watchUserPatches` (which reads fresh bytes)
+ * and re-applies rows the user just removed.
+ */
+export function readUserPatchLayer(dshRoot: string, profile: string): unknown[] {
+  const file = join(profileDirOf(dshRoot, profile), "cordis.patch.yml")
+  let content: string
+  try {
+    content = readFileSync(file, "utf8")
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return []
+    throw error
+  }
+  const document = parseDocument(content)
+  if (document.errors.length > 0) {
+    throw new Error(`dsh plugin compose: failed to parse user patch layer ${file}: ${document.errors.map((error) => error.message).join("; ")}`)
+  }
+  const body = document.contents
+  if (body === null || body === undefined) return []
+  const rows = (body as { items?: unknown }).items
+  if (!Array.isArray(rows)) {
+    throw new Error(`dsh plugin compose: user patch layer ${file} is not a top-level YAML sequence`)
+  }
+  return rows.map((row) => (row as { toJSON?: () => unknown }).toJSON?.() ?? row)
 }
 
 /**

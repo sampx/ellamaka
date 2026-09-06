@@ -246,6 +246,37 @@ describe("dsh plugin runtime service (profile composition files, event driven)",
     }
   }, 90_000)
 
+  test("a user-layer disable row unmounts the plugin and REMOVING it hot-recovers (fresh file read)", async () => {
+    // The user patch layer (cordis.patch.yml) is the enable/disable surface.
+    // The replay must read the CURRENT file bytes, not the boot snapshot —
+    // a stale snapshot re-applies rows the user removed (live regression:
+    // disable worked, enable never recovered the fiber).
+    const home = tempRoot()
+    const web = await bootDshWeb({ home, port: 4097, disableCodeRuntime: true })
+    const tools = await bootDshTools({ home, port: 0 })
+    const service = startDshPluginService({ home, containers: [webContainer(web), toolsContainer(tools)] })
+    const patchPath = join(profileDirOf(home, "web"), "cordis.patch.yml")
+    const disableRow = () => writeFileSync(patchPath, "- id: dsh-plugin:fixture-dsh-plugin\n  disabled: true\n")
+    const clearRows = () => writeFileSync(patchPath, "[]\n")
+    try {
+      await installFixture(home)
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", () => installFixture(home))
+
+      // Disable via the user patch layer: the loader disposes the fiber.
+      disableRow()
+      await waitForWithRetry(() => marker(webCtxOf(web)), undefined, disableRow)
+      // The tools profile has no disable row — it stays mounted.
+      expect(marker(tools.ctx)).toBe("mounted")
+
+      // Enable = removing the row: the loader must restart the fiber.
+      clearRows()
+      await waitForWithRetry(() => marker(webCtxOf(web)), "mounted", clearRows)
+    } finally {
+      await service.stop()
+      await teardown([web, tools], home)
+    }
+  }, 90_000)
+
   test("stop() is idempotent and settles in-flight replays", async () => {
     const home = tempRoot()
     const web = await bootDshWeb({ home, port: 4097, disableCodeRuntime: true })

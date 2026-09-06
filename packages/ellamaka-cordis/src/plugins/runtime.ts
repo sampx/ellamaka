@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "chokidar"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, profileDirOf } from "./compose.js"
+import { composeFullPatchStack, composePluginLayers, healPluginsModuleFallback, profileDirOf, readUserPatchLayer } from "./compose.js"
 
 /**
  * Plugin Runtime Service: watches the profile composition files and replays
@@ -167,13 +167,16 @@ export function startDshPluginService(options: DshPluginServiceOptions): DshPlug
     // Rebuild the FULL patch stack (B-01): the include re-applies
     // config.patches over the raw config on every update, so replacing the
     // list with plugin rows only would drop the bundle/user/home layers.
-    // Boot captured this container's stack context on its handle.
+    // Boot captured this container's stack context on its handle; the USER
+    // patch layer is re-read FRESH here — it is the enable/disable surface,
+    // and a boot-time snapshot would race the official watchUserPatches
+    // (fresh bytes) and re-apply rows the user just removed.
     const stack = (container as { stackContext?: DshPluginStackContext }).stackContext
     const patches = stack
       ? composeFullPatchStack({
           profileLayers: stack.profileLayers,
           pluginLayers,
-          userPatches: stack.userPatches,
+          userPatches: readUserPatchLayer(options.home, container.profile),
           extraPatches: stack.extraPatches,
           homePatches: stack.homePatches,
         })
