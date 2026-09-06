@@ -1,6 +1,12 @@
 # PLAN — Bun 宿主稳定性与适配（B1–B4）
 
-> 状态：待确认 | 分支：`poc-ellamaka-cordis` | 执行模式：dsh subagent 委派（wopal 规划验证，fae 实施，rook 审查）
+> 状态：实施完成，打包 Desktop 实机验证通过（2026-09-06） | 分支：`poc-ellamaka-cordis` | 执行模式：dsh subagent 委派（wopal 规划验证，fae 实施，rook 审查）
+>
+> **打包 Desktop 验证记录**（probe 构建 + DEBUG 日志 + CDP 实测）：
+> - 适配器 HMR 链路完整工作：watcher 启动 → patch 文件 change 事件 → 内容 hash 变化 → runReplay（web + ellamaka-tools 双容器）→ includeEntry.update 成功（patchCount 随编辑正确增减）。
+> - 热启用：移除 disable 行后插件重新挂载（设置页 Hello Plugin section 恢复，无需重启 app）。
+> - Electron utilityProcess 不暴露 Node internal 模块（--expose-internals 仅进入 execArgv，internal/modules/* 仍不可 require）——官方 cordis-plugin-hmr 在打包 Desktop 不可用，适配器即 Desktop 路径。
+> - 已知限制（后续处理）：热禁用后服务端卸载，client 设置导航残留至页面刷新。
 > 设计真相：`DESIGN-dsh-poc.md`「Bun 宿主 HMR 与闭包升级」；本计划是该设计的实施分解。
 
 ## 目标
