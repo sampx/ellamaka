@@ -1,10 +1,10 @@
 # DESIGN-dsh — ellamaka 与 dsh 融合架构设计
 
-> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**wopal 插件包（Agent 配置随包发布）是当前主线**；多空间解耦与实验 profile（E 线）为独立主线（2026-09-06 立项，暂不排期）；workbench 前端插件互通为启动前提明确的后续门槛轨道。
+> **状态**：融合机制、生产物化、插件供应链均已实施并通过验收，进入维护态。**wopal 插件包（Agent 配置随包发布）是当前主线**；多空间解耦与实验 profile（E 线）为独立主线（2026-09-06 立项，暂不排期）；壳单端口化与 workbench 精简（S 线）为独立主线（2026-09-06 立项）；workbench 前端插件互通为启动前提明确的后续门槛轨道。
 > **上级架构**：`DESIGN.md`
 > **技术依据**：`research/deepseek-harness-architecture-and-integration-research.md`（dsh 全景调研）
 
-**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **wopal 插件包（当前主线）** → **多空间解耦与实验 profile（E 线，独立主线）** → workbench × dsh 前端插件互通（门槛轨道）。
+**阅读地图**：架构总览 → 运行时机制 → 能力采用 → 配置与隔离 → 已验证事实 → 设计约束 → 生产物化验收基线 → 插件供应链 → **wopal 插件包（当前主线）** → **多空间解耦与实验 profile（E 线，独立主线）** → **壳单端口化与 workbench 精简（S 线，独立主线）** → workbench × dsh 前端插件互通（门槛轨道）。
 
 本文档不使用章节号，交叉引用一律以标题文字为准（如「见「设计约束 · 不可变闭包」」）。
 
@@ -576,6 +576,7 @@ Permission 评估为 LAST-wins（`findLast`），规则表顺序 = frontmatter �
 20. **approval 原生边界**：dsh approval 插件以官方原版使用（不 fork、不修改官方闭包）。宿主侧只补齐 session facade 前置条件并经 answerer 桥接决策；审批审计对落内存不落盘，工具容器不持久化任何会话。
 21. **Bun 宿主兼容性门禁**：发布态 `ellamaka serve` 是单 Bun 进程；用户插件不得要求 Node 私有模块加载器或 `--expose-internals`。`plugin add` 必须在写入 profile 声明与触碰运行中容器前完成静态依赖扫描与 Bun 隔离挂载预检；不兼容插件拒绝安装并给出可操作诊断，绝不以伪造 `loader.internal`、切换到 Node 或降级整台宿主来绕过。官方 Node 专用 `cordis-plugin-hmr` 是宿主实现例外：Bun 路径以 Bridge 的 Bun HMR 适配器替代它，不把该例外转嫁给第三方插件。
 22. **多空间解耦与实验 profile 隔离**（见「多空间解耦与实验 profile」）：核心容器（web + ellamaka-tools）保持同进程；实验性第三方 profile 以独立进程 + 独立 DSH_HOME 运行，不进入主 Web 容器、不与主引擎共享 home/profiles（运行中引擎 `profiles/` 是引擎领地）。闭包（只读）可共享；home 必须隔离。实验 profile 的插件安装长期形态走 A2 官方声明供应链。
+23. **壳单端口不变量**（见「壳单端口化与 workbench 精简」）：renderer 永远加载唯一 http origin（server 端口）上的 UI；壳不承载引擎逻辑，不出现第二个为壳服务的监听端口。引擎产物只有一个形态——完整 CLI 二进制；禁止维护第二套分叉的引擎构建产物（sidecar 构建链是 Bun 兼容收敛前的 Phase 1 例外，收敛后退役）。`/dsh` 保持前缀挂载不升根，`/` 是设备协商前门（移动 UA → `/dsh/`，桌面 UA → `/workbench`）。
 
 ---
 
@@ -1016,7 +1017,80 @@ DSH 相关配置采用两层模型（与「配置与隔离 · 进程级共享、
 
 ---
 
-## workbench × dsh 前端插件互通（门槛轨道）
+## 壳单端口化与 workbench 精简（独立主线，S 线）
+
+> **状态**：S 线立项（2026-09-06），设计方向已定，暂不排期。本节描述目标形态与阶段边界；实现细节留待 S 线 dev-flow Plan。
+> **关联**：本节是「运行时机制 · 单端口分发」「iframe 地址派生」的壳侧演进；与 E 线（空间模型）正交，与 B5（认证联盟）互不冲突。
+
+### 定位与动机
+
+ellamaka 的终局形态是「**一个 runtime，N 个壳**」：server 是唯一完整的运行时产物（引擎 + SPA + dsh 表面），壳（desktop / 浏览器 / mobile WebView）只是找到 server 端口并加载其 UI 的容器。当前 desktop 违背这一形态——packaged renderer 住在特权 `oc://renderer` origin，导致三个结构性 workaround：
+
+1. **硬编码 4123 代理端口**：Chromium 拒绝在 `oc://` origin 发起 WebSocket（scheme 白名单硬编码），DSH realtime 通道（remote.mux）必须 WS，因此主进程额外起一个 node:http server 作为 iframe 的 http 宿主 + cookie jar + WS 转发层。
+2. **进程内 cookie jar**：`oc://` 父页面与 `http://127.0.0.1:4123` iframe 跨站，SameSite=Strict cookie 浏览器拒发，代理只能截获 set-cookie 自行管理。
+3. **双代理实现**：`createDshProxy`（fetch 版）与 `createDshHttpProxy`（node:http 版）两套镜像代码，外加 `platform.dshProxyOrigin` 全链路（main → getWindowConfig → platform → dsh-surface 的 `oc:` 特判）。
+
+硬编码端口使多个 desktop 实例或测试进程无法共存。S 线消除这一整层。
+
+### 终局路由表
+
+官方 opencode app（HomeRoute / DirectoryLayout / session 页面）从 SPA 移除，desktop 从不加载官方路由（DesktopRouter 用 memory history 强制从 `/workbench` 启动），官方 UI 只是历史包袱。移除后路由终局：
+
+| 路径 | 移除后 | 机制归属 |
+|------|--------|---------|
+| `/` | **设备协商前门**：302 移动 UA → `/dsh/`，桌面 UA → `/workbench` | Effect 栈显式路由（`GET /` 一条，静态 UA 判断，无配置项） |
+| `/workbench` | 桌面工作台，canonical 深链 | SPA 客户端路由（保留） |
+| `/workbench/*` | workbench API | Effect 显式路由（不变） |
+| `/dsh/*` | 助手表面，canonical | VirtualWebServer 挂载（不变，B5 领地） |
+| `/doc`、`/event` 等 | 引擎 API | Effect 栈（不变） |
+| `/:dir`、`/:dir/session/:id` | 删除（官方会话页随官方 app 移除） | — |
+| 其余路径 | SPA fallback → workbench | uiRoute catch-all（不变） |
+
+**`/` 选择重定向而非直挂 workbench**：保留唯一 canonical URL，避免 `/` 与 `/workbench` 双地址分裂 deep link、存储键与 e2e fixture。**`/dsh` 不升根**：适配层三块改写逻辑（index 资源绝对化、303 Location 前缀改写、base 锚定）已完成且有测试，维护成本趋零；升根则破坏「一个前缀一个自治表面」的挂载不变量（dsh 内部硬编码 `/api` 将与引擎 API 共享根命名空间）、desktop `isDshPath` 代理判据与 B5 认证联盟的信任域边界（Basic 守外层、cookie 守内层，边界就是前缀）。设备协商前门让 mobile 设计（`DESIGN-mobile.md`）的「手机浏览器直连即全屏助手」在人肉入口层面成立，移动 App 仍硬编码 `/dsh/` 直连（零跳转）。
+
+**DESIGN-mobile 的启示**：DSH 不是 workbench 的一个功能，而是横跨双端的独立产品表面（桌面内嵌 tab + 移动端全屏）。desktop 单端口化正是把 desktop 拉回「一个 listener 服务所有表面」的三端统一原则——web serve、desktop、mobile 各自只有一个端口。
+
+### 壳契约（跨阶段不变量）
+
+**壳只做一件事：找到 server 端口，loadURL 它的 `/workbench`。**
+
+- renderer 永远活在唯一一个 http origin 上（server 端口）；cookie、WS、iframe 同源、多实例隔离全部挂在这条不变量上。
+- server 端口启动时分配随机空闲端口（sidecar 已如此），多实例/测试进程天然隔离。
+- onboarding 仍住 `oc://`（sidecar 未起时没有可加载的 http origin），onboarding→workbench 转场为顺序导航到 http origin。
+- sidecar 重启保持同端口：重启是页内 reconnect UI，renderer 不随端口变化重载。
+
+### 引擎产物纪律
+
+- 引擎只有一个产物形态：**完整 CLI 二进制**（引擎 + SPA + dsh-mount，`ellamaka-release` 的 `--web-ui ellamaka-app` 默认产物）。
+- server 来源三种形态自由组合，壳代码不感知差异：外部已装 CLI（优先，版本握手，`MIN_WOPAL_CLI_VERSION` 协议地板）；随 app 捆绑的同一 CLI 二进制（兜底）；远程 ellamaka serve（多服务器场景——壳直接 loadURL 远端 `/workbench`，UI 与 API 永远同版本）。
+- 禁止维护第二套分叉的引擎构建产物（现有 sidecar.js 独立构建链在 Phase 2 退役，见下）。
+
+### 阶段边界
+
+**Phase 1（POC 内，本线执行）**：单端口壳化，sidecar 保留。dsh 生态尚未完全 Bun 兼容，desktop 引擎需要 electron node 环境（utilityProcess）承载 serve 服务——sidecar 构建链是 POC 的现实，不是设计错误。改造内容：
+
+- renderer 从 `oc://` 迁到 `http://127.0.0.1:<sidecarPort>/workbench`；sidecar 开始 serve SPA（从 resources 目录 serve electron-vite 已产出的 `out/renderer`，引擎侧 serveUI 加目录 fallback，UI 与引擎构建解耦）。
+- **删除 4123 整层**：`dshHttpProxy`、`createDshProxy`、进程内 cookie jar、`platform.dshProxyOrigin` 链路、`dsh-surface.tsx` 的 `oc:` 分支——同源后 cookie 与 WS 浏览器原生处理，desktop 走 web 模式代码路径（`pageOrigin = location.origin`，`dshIframeSrc` 回落 `<origin>/dsh/`）。
+- utilityProcess 结构化 IPC（sqlite 迁移进度、日志级别）替换为 HTTP 健康检查 + 日志流，supervisor 保持 spawn factory 接口复用。
+
+**Phase 2（dsh Bun 兼容收敛后）**：引擎产物唯一化。desktop spawn 捆绑的 CLI 二进制 serve（Bun）；sidecar 构建链（`virtual:opencode-server` 插件、`build-node.ts` 置空 gen、`source-ts-loader`、`--experimental-strip-types`）整体退役；server 来源优先级生效，壳代码零改动。Phase 1 删除 4123 的全部投资直接带入 Phase 2——sidecar 只是 Phase 2 到来前临时占据「server 来源」插槽的占位实现。
+
+### workbench 精简（同线顺带）
+
+- **i18n 收敛**：两包（ellamaka-app、@wopal/ui）各 18 语言文件收敛为 en/zh；同步收缩 `Locale` 类型、LOCALES/INTL/LABEL_KEY/loaders、设置页语言选择器、parity test。纯数据删除。
+- **theme 收敛**：37 个主题 json 收敛为 ellamaka（默认）+ 最多 1–2 个备选；保留 loader/schema/注册机制，删数据不删机制，未来加主题零成本。
+- **官方 app 移除**：删 HomeRoute / DirectoryLayout / session 三条客户端路由与官方壳（`pages/home.tsx`、`pages/directory-layout.tsx`、`pages/session.tsx`、`pages/layout.tsx` + `pages/layout/`、`components/titlebar.tsx`）；随后死代码清扫（workbench chat 依赖 `pages/session/` 下 7 个模块——composer、chat-transcript、workbench-chat-timeline、session-surface-context 等，该树不能整删，清扫以工具裁决引用）；同步清理 i18n 键与 e2e session-timeline 用例。
+
+### 与既有设计的衔接
+
+- **与 B5**：正交且互护。B5 的信任域边界（Basic 外层 / cookie 内层）在单端口后依然成立——同源只是让 cookie 回到浏览器原生管理，fence、WS 探针、`/workbench/dsh-url` 分发面全部不动。B5c 的 mount 认证声明契约是 E 线前置，与 S 线共享「前缀自治」不变量。
+- **与 E 线**：正交。E 线解决空间模型（tab 语义），S 线解决壳与端口（加载方式）；E 线的独立 profile 进程挂载继续走 `Listener.mountNodeRoute` 前缀挂载，不受影响。
+- **与移动端（DESIGN-mobile）**：S 线落地后三端统一「一个 listener，所有表面」；`/` 设备路由是 Tailcat 二维码只编码根 URL 的前提——设备自选表面，未来移动表面演进二维码不变。
+- **设计约束**：新增约束「壳单端口不变量」（见「设计约束 · 壳单端口不变量」）；其余约束（单进程、单端口分发、DSH home 唯一、Bun 宿主兼容性门禁）保持不变。
+
+---
+
+
 
 > 前身为主线方向（2026-09-02 定稿方向二）。2026-09-03 重排优先级：**wopal 插件包先行**——先把 dsh 插件用起来（自建 + 外部发现），用出真实价值后再评估 WC 化吸收。
 

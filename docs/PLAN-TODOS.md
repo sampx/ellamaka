@@ -3,7 +3,7 @@
 > **用途**：本分支（poc-ellamaka-cordis）进度索引与批次管理。
 > **分工**：`DESIGN-dsh-poc.md` 管设计真相（按标题引用，不使用章节号）；dev-flow Plan（`.wopal-space/plans/ellamaka/`）管跨文件、多任务的大步实施；本文件管总览与执行顺序。
 > **推进原则**：小步快跑，每一步交付可应用的具体成果，步内不掺杂后续步骤内容。
-> **编号规则**：P = 已完成批次（历史）；A = 生态对齐（当前执行）；W = wopal 插件包（下一主线）；E = 多空间解耦与实验 profile（独立主线）；G = 门槛轨道（workbench 互通）。编号一经分配不复用、不重排。
+> **编号规则**：P = 已完成批次（历史）；A = 生态对齐（当前执行）；W = wopal 插件包（下一主线）；E = 多空间解耦与实验 profile（独立主线）；S = 壳单端口化与 workbench 精简（独立主线）；G = 门槛轨道（workbench 互通）。编号一经分配不复用、不重排。
 
 ---
 
@@ -100,6 +100,21 @@
 
 ---
 
+## 独立主线：S 线（壳单端口化与 workbench 精简，2026-09-06 立项）
+
+设计真相见 `DESIGN-dsh-poc.md`「壳单端口化与 workbench 精简」。终局形态「一个 runtime，N 个壳」：desktop 删除 4123 代理层与 `oc://` 渲染宿主，renderer 加载 sidecar 端口上的 workbench；官方 opencode app 移除，`/` 变设备协商前门；i18n/theme 数据收敛。Phase 1（POC 内）保留 sidecar 构建链（dsh 生态 Bun 兼容未收敛，desktop 引擎需 node 环境），Phase 2（收敛后）引擎产物唯一化、sidecar 构建链退役——本线只排 Phase 1 与精简项，Phase 2 待 Bun 兼容收敛后另立批次。
+
+| 步 | 名称 | 交付成果 | 验收标准 | 实施形态 | 状态 |
+|---|------|---------|---------|---------|------|
+| **S1** | workbench 精简（数据层） | i18n：两包 18 语言收敛为 en/zh（删 30 文件 + Locale 四张表 + 设置项 + parity test 同步收缩）；theme：37 主题 json 收敛为 ellamaka（+最多 1–2 备选），default-themes.ts 清空重写，loader/注册机制保留 | 两包各剩 en/zh（theme 仅 ellamaka）；设置页语言/主题列表收敛；构建通过、e2e 通过、i18n parity 测试通过 | dev-flow Plan（纯数据删除，TDD 豁免边界内；rook 审查） | 待排期 |
+| **S2** | 官方 app 移除 + `/` 设备路由 | SPA 删 HomeRoute/`/:dir`/session 路由与官方壳（home/directory-layout/session/layout/titlebar）；服务端 `GET /` 显式 302（移动 UA → `/dsh/`，桌面 UA → `/workbench`）；dev 模式 SPA 根路由兜底 | `/` 桌面 UA 302 到 /workbench、移动 UA 302 到 /dsh/；官方路由 404/回落；workbench 与 dsh 表面回归正常；死代码清扫 + i18n 键清理 + e2e session-timeline 用例改写/删除 | dev-flow Plan（TDD + rook 审查；依赖 S1 的 i18n 收敛减少键清理面） | 待排期 |
+| **S3** | sidecar serve SPA | sidecar 从 resources 目录 serve electron-vite `out/renderer` 产物；serveUI 目录 fallback（env 指定 UI 目录）；sidecar 重启保持同端口；utilityProcess IPC（sqlite 进度/日志级别）换 HTTP 健康检查 + 日志流 | desktop renderer 能从 `http://127.0.0.1:<sidecarPort>/workbench` 完整加载工作台；sidecar 重启端口不变、页内 reconnect；web serve 模式回归正常 | dev-flow Plan（TDD + rook 审查；与 S2 无依赖可并行排期） | 待排期 |
+| **S4** | renderer 迁移 + 4123 退役 | packaged renderer 改 loadURL `http://127.0.0.1:<sidecarPort>/workbench`（onboarding 仍 oc://，转场顺序导航）；删除 `dshHttpProxy`/`createDshProxy`/cookie jar/`platform.dshProxyOrigin` 全链路/`dsh-surface.tsx` 的 `oc:` 分支；Electron 加固复核（will-navigate 守卫、preload 暴露面） | 打包 desktop 无 4123 监听；DSH iframe 同源（cookie/WS 浏览器原生处理）；两个 desktop 实例并行运行互不冲突；localStorage 重置一次性接受（PoC 裁定） | dev-flow Plan（依赖 S3；TDD + rook 审查 + 实机验收） | 待排期 |
+
+**执行顺序**：S1 → S2（S2 依赖 S1 的 i18n 收敛，减少键清理面）；S3 与 S1/S2 无依赖可并行；S4 依赖 S3 收口。S 线不阻塞 A/W/E/B5 任一线；建议 A3 排期前或穿插插入（S1/S2 纯前端数据与路由层，与 A 线供应链施工零交叠）。Phase 2（sidecar 构建链退役 + 引擎产物唯一化）待 dsh Bun 兼容收敛后另立批次，不在本线排期。
+
+---
+
 ## 待定事项（未排期）
 
 | 事项 | 说明 | 关联设计 |
@@ -127,3 +142,4 @@
 | 2026-09-05 | **A1 live 迁移完成**（引擎停止后由 wopal 亲自执行）：`state/*`→`home/`、`profiles/*`→`home/profiles/`，state/profiles 退役，`home/README.md` 哨兵就位；AC#5/#6/#7 实证通过，二次执行 no-op。A1 全部落地，待用户验证 |
 | 2026-09-06 | **E 线立项（多空间解耦与实验 profile）**：P7「助理」tab 遮蔽耦合确立为设计债；DSH 空间配置化（settings.jsonc 默认值 + 设置面板覆盖）；实验 profile 独立进程 + 独立 DSH_HOME + 服务器注册式空间 tab；设计落入 DESIGN-dsh-poc.md，暂不排期（用户裁定 E 线独立立项，暂不写 plan） |
 | 2026-09-06 | **A2 代码完成**（Plan feature-dsh-installer-retarget-bun-hmr Task 1–7，TDD 红/绿分阶段提交）：真相源切为 profile package.json（dependencies + dsh.profile.bundles，profile-manifest 读写层）；composePluginLayers 改读用户 bundles 段（官方段归 loadProfile，stackContext bundle 层同步收窄防 duplicate id）；Bun 安装器官方终态（失败不触碰 profile、github: 明确报错、覆盖更新）；store 退役 + 一次性迁移（installed.json → retired-<date> 可回退）；重放服务 chokidar 事件驱动 + 失败保留 hash（风暴消灭）；bun-hmr 适配器接线 watchUserPatches（Bun 路径热加载 0→1）；CLI add/remove/list/enable/disable 全走官方终态 + patch-layer 补丁层语义 + 迁移钩子 |
+| 2026-09-06 | **S 线立项（壳单端口化与 workbench 精简）**：desktop 删 4123 硬编码代理端口与 `oc://` 渲染宿主，renderer 加载 sidecar 端口 workbench（Phase 1 保留 sidecar 构建链——dsh Bun 兼容未收敛，Phase 2 收敛后引擎产物唯一化）；官方 app 移除 + `/` 设备协商前门（移动 UA → /dsh/，桌面 UA → /workbench；/dsh 不升根——前缀自治不变量、适配层改写已完成、B5 信任域边界三重理由）；i18n 18→2 语言、theme 37→1 主题数据收敛；设计落入 DESIGN-dsh-poc.md「壳单端口化与 workbench 精简」+ 设计约束 #23；批次 S1（精简数据层）→ S2（官方 app 移除 + 设备路由）→ S3（sidecar serve SPA）→ S4（renderer 迁移 + 4123 退役），S3 与 S1/S2 可并行 |
