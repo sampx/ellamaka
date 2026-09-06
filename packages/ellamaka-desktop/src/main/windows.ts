@@ -37,7 +37,10 @@ const dshProxy = createDshProxy((url, init) => fetch(url.toString(), init))
 // instead of the oc:// handler. Both proxies share the same sidecar target.
 const dshHttpProxy = createDshHttpProxy()
 let dshHttpProxyPort: number | undefined
-void dshHttpProxy.listen(4123).then((port) => {
+// Port 0: the OS assigns a free port so the packaged app and dev instances
+// can run side by side without an EADDRINUSE race (the listen() promise
+// resolves with the actual bound port).
+void dshHttpProxy.listen(0).then((port) => {
   dshHttpProxyPort = port
   writeLog("protocol", "dsh http proxy listening", { port })
 }).catch((error) => {
