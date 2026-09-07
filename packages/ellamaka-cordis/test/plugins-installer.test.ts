@@ -25,9 +25,10 @@ function fixturePluginDir(root: string, name = "fixture-greeter", version = "1.0
 }
 
 /**
- * A fake extract simulating pacote: it materialises `spec` (name@version)
- * into `dest/node_modules/<name>/` with a minimal package.json. Extract of
- * the failing spec throws (failure-path coverage).
+ * A fake extract mirroring the REAL pacote contract: the tarball content
+ * lands DIRECTLY in `dest` (the tarball's `package/` root is stripped), so
+ * the installer must pass each package's final `node_modules/<name>` slot
+ * as dest. Extract of the failing spec throws (failure-path coverage).
  */
 function fakeExtract(failing?: string) {
   const extracted: Array<{ spec: string; dest: string }> = []
@@ -39,10 +40,9 @@ function fakeExtract(failing?: string) {
       const at = spec.lastIndexOf("@")
       const name = spec.slice(0, at)
       const version = spec.slice(at + 1)
-      const pkgDir = join(dest, "node_modules", ...name.split("/"))
-      mkdirSync(pkgDir, { recursive: true })
+      mkdirSync(dest, { recursive: true })
       writeFileSync(
-        join(pkgDir, "package.json"),
+        join(dest, "package.json"),
         JSON.stringify({
           name,
           version,
@@ -50,6 +50,14 @@ function fakeExtract(failing?: string) {
         }),
       )
     },
+  }
+}
+
+/** Every extract dest must be the package's final staging slot `…/node_modules/<name>`. */
+function expectSlotDest(extracted: Array<{ spec: string; dest: string }>): void {
+  for (const { spec, dest } of extracted) {
+    const name = spec.slice(0, spec.lastIndexOf("@"))
+    expect(dest.endsWith(join("node_modules", ...name.split("/")))).toBe(true)
   }
 }
 
@@ -77,6 +85,8 @@ describe("Bun installer: registry pipeline (official end state)", () => {
       },
     )
     expect(result).toMatchObject({ name: "is-odd", version: "3.0.1", isBundle: true })
+    // Extract must target each package's final node_modules slot (real pacote contract).
+    expectSlotDest(fake.extracted)
     // The package entity sits in the PROFILE node_modules.
     const entity = join(profileDirOf(root, "web"), "node_modules", "is-odd")
     expect(existsSync(join(entity, "package.json"))).toBe(true)
@@ -103,6 +113,7 @@ describe("Bun installer: registry pipeline (official end state)", () => {
     )
     expect(result.name).toBe("root-pkg")
     expect(fake.extracted).toHaveLength(3)
+    expectSlotDest(fake.extracted)
     const target = join(profileDirOf(root, "web"), "node_modules", "root-pkg")
     expect(existsSync(join(target, "package.json"))).toBe(true)
     // Transitive deps hoisted flat under the entry package's node_modules.

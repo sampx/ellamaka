@@ -286,7 +286,14 @@ async function installFromRegistry(
     for (const pkg of tree.packages.values()) {
       if (isOfficialPackage(pkg.name)) continue // shared heal resolves them
       const spec2 = `${pkg.name}@${pkg.version}`
-      await extract(spec2, staging, options.registry ? { registry: options.registry } : undefined)
+      // pacote.extract strips the tarball's `package/` root into dest — pass
+      // each package's FINAL slot so the staged tree matches the layout
+      // placeStagedTree reads (staging/node_modules/<name>).
+      await extract(
+        spec2,
+        join(staging, "node_modules", ...pkg.name.split("/")),
+        options.registry ? { registry: options.registry } : undefined,
+      )
     }
     const stagedRoot = join(staging, "node_modules", ...rootPkg.name.split("/"))
     if (!existsSync(join(stagedRoot, "package.json"))) {
